@@ -7,11 +7,6 @@
   resolved "https://registry.npmmirror.com/3d-tiles-renderer/-/3d-tiles-renderer-0.4.16.tgz#32d6fd12716bb35a3c3afddfa46060edd63b546e"
   integrity sha512-2zGeUx89pU40yWqYbbLXg2loCzjwEh4NKxK4qUZBE5WNDzkxt7AOmygYF4eFzjcFCeDtCyqtGzRNZtjiBKeNQA==
 
-"3d-tiles-renderer@^0.4.19":
-  version "0.4.21"
-  resolved "https://registry.npmmirror.com/3d-tiles-renderer/-/3d-tiles-renderer-0.4.21.tgz#7dd830ac829f680e3c2333f2ec7c1dd9a4bf031c"
-  integrity sha512-tpXt8sGeQRst94jepL2LXZunQZD0x6zKaSsQX+OxeFsDjOTxfv3UK10xlqnD/j7MZH7jlBjiFur6jb3w3NKoeg==
-
 "@amap/amap-jsapi-loader@^1.0.1":
   version "1.0.1"
   resolved "https://registry.npmmirror.com/@amap/amap-jsapi-loader/-/amap-jsapi-loader-1.0.1.tgz#9ec4b4d5d2467eac451f6c852e35db69e9f9f0c0"
@@ -10512,14 +10507,6 @@ three-mesh-bvh@0.9.1:
   version "0.9.1"
   resolved "https://registry.npmmirror.com/three-mesh-bvh/-/three-mesh-bvh-0.9.1.tgz#fa6db25f14bb4d2453f15c926f5eb9eba1811168"
   integrity sha512-WNT+m9jGQgtp4YdtwEnl4oFylNVifRf7iphlwWdJ4bJu7oNkY0xHIyntep9OzHuR1hpe/pyAP840gB/EsYDJfg==
-
-three-player-controller@^0.3.3:
-  version "0.3.3"
-  resolved "https://registry.npmmirror.com/three-player-controller/-/three-player-controller-0.3.3.tgz#b599db39f8fa921d157d3db4772de5d6c7ffca20"
-  integrity sha512-ZEp9pbk3JFFaLoGSnUOzqKm+4+ZpI3Q1o5Z1ew6NiVsx3VHX00NOmO8TDRwPy5z8L4QeGq8DweHVPDlLqJFKHg==
-  dependencies:
-    "3d-tiles-renderer" "^0.4.19"
-    nipplejs "^0.10.2"
 
 three-stdlib@^2.36.0:
   version "2.36.0"
