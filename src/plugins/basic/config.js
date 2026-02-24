@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-11-03 15:07:09
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-11-04 08:54:50
+ * @LastEditTime: 2026-02-24 14:04:11
  */
 export default {
     name: 'basic',
@@ -78,6 +78,7 @@ export default {
                     title: '第一人称键盘控制',
                 },
                 { src: 'plugins/basic/controls/preview/scrollControls.png', type: 'img', name: 'scrollControls', title: '滚轮控制器' },
+                { src: 'plugins/basic/controls/preview/playerControls.png', type: 'img', name: 'playerControls', title: '玩家控制器' },
             ],
         },
         {
