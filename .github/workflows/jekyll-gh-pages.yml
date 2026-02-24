@@ -29,6 +29,6 @@ jobs:
         with:
           personal_token: ${{ secrets.PAGES_TOKEN }}
           external_repository: hawk86104/hawk86104.github.io
-          publish_branch: main        # 你 github.io 仓库的分支
+          publish_branch: master        # 你 github.io 仓库的分支
           publish_dir: ./dist
           commit_message: 'deploy: auto publish from three-vue-tres'
