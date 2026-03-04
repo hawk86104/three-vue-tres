@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-11-18 14:57:52
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-12-08 11:04:45
+ * @LastEditTime: 2026-03-04 15:20:24
 -->
 <template>
 
@@ -50,15 +50,26 @@ function toEuler(value: any): THREE.Euler | null {
 	}
 	return null
 }
-
-const { scene } = useTres()
+declare global {
+	interface Window {
+		globalTvtuseTres?: any // 当前场景的全局useTres变量
+	}
+}
+const { scene, camera, renderer } = useTres()
 const pTexture = ref(null) as any
-watch(() => [props.on, pTexture.value], ([on,p]) => {
+watch(() => [props.on, pTexture.value], ([on, p]) => {
 	if (scene.value) {
 		if (on && pTexture.value) {
 			scene.value.environment = pTexture.value
 		} else {
 			scene.value.environment = null
+		}
+		if (!window.globalTvtuseTres) {
+			window.globalTvtuseTres = {
+				scene: scene.value,
+				camera: camera.value,
+				renderer: renderer
+			}
 		}
 	}
 }, {
