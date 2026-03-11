@@ -10525,10 +10525,10 @@ three-subdivide@^1.1.5:
   resolved "https://registry.npmmirror.com/three-subdivide/-/three-subdivide-1.1.5.tgz#de688d328247380112bb1033aee88dcae435cd5b"
   integrity sha512-eEWMevrsHIMnC1xbsZSQZIB8QBr8XeXZhTSAdYrLm3ZC/yTdR4ocOZ2Qi+gEyPJFOt3iirQ+SQR0jCamk7e6FQ==
 
-three-tile@^0.11.9:
-  version "0.11.9"
-  resolved "https://registry.npmmirror.com/three-tile/-/three-tile-0.11.9.tgz#55f7791de90030b1b3fe7aca19614d7df78ba2b8"
-  integrity sha512-fljUdKblnBcSd8Bg/AUKsvs+8hazG9p2cbtmSzs/tgkdHKPI3JGsKLoCqebnmi4vZQDQInl6J52lm2a+hnRKdg==
+three-tile@0.11.10:
+  version "0.11.10"
+  resolved "https://registry.npmmirror.com/three-tile/-/three-tile-0.11.10.tgz#a7e7653040f0f2529a66550703c74bf862994025"
+  integrity sha512-T19DcFDXnbd7OaYcK631N/bQhr0GMuRHgaoaMM9eiDD3WfGJO8DwhIu9DFnYHz0uxlwichI9jKKljRVAEloK7w==
 
 three.quarks@^0.16.0:
   version "0.16.0"

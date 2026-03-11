@@ -31,7 +31,7 @@ const flyToPos = (cameraPos: THREE.Vector3, centerPos: THREE.Vector3) => {
         controls.value.target.copy(centerPos)
     }
     const start = camera.value.position
-    twInstant[0] = new TWEEN.Tween(start).to(cameraPos).start()
+    twInstant[0] = new TWEEN.Tween(start).to(cameraPos, 1000).start()
     // twInstant[1] = new TWEEN.Tween(start)
     //     // 先到10000km高空
     //     .to({ y: 10000, z: 0 }, 500)
@@ -68,6 +68,7 @@ const { onBeforeRender } = useLoop()
 onBeforeRender(() => {
     if (twInstant) {
         twInstant[0]?.update()
+        controls.value.update()
         // twInstant[1]?.update()
     }
 })

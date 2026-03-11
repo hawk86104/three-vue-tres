@@ -126,7 +126,7 @@
     "three-loader-3dtiles": "1.2.7",
     "three-mesh-bvh": "0.9.1",
     "three-subdivide": "^1.1.5",
-    "three-tile": "^0.11.9",
+    "three-tile": "0.11.10",
     "three.quarks": "^0.16.0",
     "tilebelt-wgs84": "1.1.4",
     "turf": "^3.0.14",

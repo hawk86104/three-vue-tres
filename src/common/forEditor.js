@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-08-14 10:52:40
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-11-05 16:41:29
+ * @LastEditTime: 2026-03-11 09:58:32
  */
 import { ref, shallowReactive } from 'vue'
 import * as THREE from 'three'
@@ -195,4 +195,4 @@ function onReadySenceOnce () {
   }
 }
 
-export { standardizationMeshCopy, useAnimations, meshAddEvent, extendMakeEvent, onReadySenceOnce }
+export { standardizationMeshCopy, bakeWorldTransformToGeometryTree, useAnimations, meshAddEvent, extendMakeEvent, onReadySenceOnce }
