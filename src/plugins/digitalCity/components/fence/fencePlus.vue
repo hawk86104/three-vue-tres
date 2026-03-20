@@ -8,7 +8,19 @@
 -->
 <template>
     <TresMesh :renderOrder="2000" :geometry="geometriesMesh">
-        <TresShaderMaterial v-bind="rippleShader" />
+        <CustomShaderMaterial
+            :baseMaterial="THREE.MeshBasicMaterial"
+            :vertexShader="rippleShader.vertexShader"
+            :fragmentShader="rippleShader.fragmentShader"
+            :uniforms="rippleShader.uniforms"
+            :side="THREE.DoubleSide"
+            transparent
+            :depthWrite="false"
+            :depthTest="true"
+            :blending="THREE.NormalBlending"
+            silent
+            :toneMapped="false"
+        />
     </TresMesh>
 </template>
 
@@ -17,6 +29,7 @@ import * as THREE from 'three'
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils'
 import { watch } from 'vue'
 import { useLoop } from '@tresjs/core'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 
 const props = withDefaults(
     defineProps<{
@@ -44,26 +57,19 @@ const props = withDefaults(
 )
 
 const rippleShader = {
-    side: THREE.DoubleSide,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.NormalBlending,
     vertexShader: `
 		precision highp float;
 		precision highp int;
 		varying vec2 vUv;
 		void main() {
-			vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
 			vUv = uv;
-			gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 		}
 `,
     fragmentShader: `
 				precision highp float;
 				precision highp int;
 				uniform float time;
-				uniform float opacity;
+				uniform float uOpacity;
 				uniform vec3 color;
 				uniform float num;
 				uniform float thickness;
@@ -78,13 +84,13 @@ const rippleShader = {
 
 					vec3 fade = mix(color, vec3(1., 1., 1.), vUv.y);
                     fragColor = mix(fragColor, vec4(fade, 1.), 0.85);
-                    gl_FragColor = vec4(fragColor.rgb, fragColor.a * opacity * (1. - vUv.y));
+                    csm_DiffuseColor = vec4(fragColor.rgb, fragColor.a * uOpacity * (1. - vUv.y));
 
 					if(vUv.y < room){
 						float alpha = smoothstep(1.0 - thickness - 0.1, 1.0 - thickness, sinnum);
-						fragColor = mix(gl_FragColor, wcolor, alpha);
-						fragColor.a = fragColor.a * opacity;
-						gl_FragColor = fragColor;
+						fragColor = mix(csm_DiffuseColor, wcolor, alpha);
+						fragColor.a = fragColor.a * uOpacity;
+						csm_DiffuseColor = fragColor;
 					}
 				}
 		`,
@@ -97,7 +103,7 @@ const rippleShader = {
             type: 'uvs',
             value: new THREE.Color(props.color),
         },
-        opacity: {
+        uOpacity: {
             value: props.opacity,
         },
         num: {
@@ -179,7 +185,7 @@ watch(
     () => [props.color, props.opacity, props.num, props.thickness, props.speed, props.room],
     ([color, opacity, num, thickness, speed, room]: any) => {
         rippleShader.uniforms.color.value = new THREE.Color(color)
-        rippleShader.uniforms.opacity.value = opacity
+        rippleShader.uniforms.uOpacity.value = opacity
         rippleShader.uniforms.num.value = num
         rippleShader.uniforms.thickness.value = thickness
         rippleShader.uniforms.speed.value = speed

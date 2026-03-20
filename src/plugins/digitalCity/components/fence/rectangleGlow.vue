@@ -4,17 +4,39 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-07-04 08:50:42
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-09-26 15:22:46
+ * @LastEditTime: 2026-03-20 15:24:12
 -->
 <template>
     <TresGroup :renderOrder="9999" >
         <TresMesh :rotation="[Math.PI / 2, 0, 0]">
             <TresPlaneGeometry :args="[w, h]" />
-            <TresShaderMaterial v-bind="pShader" />
+            <CustomShaderMaterial
+                :baseMaterial="THREE.MeshBasicMaterial"
+                :vertexShader="pShader.vertexShader"
+                :fragmentShader="pShader.fragmentShader"
+                :uniforms="pShader.uniforms"
+                :side="THREE.DoubleSide"
+                transparent
+                :depthWrite="false"
+                :depthTest="true"
+                silent
+                :toneMapped="false"
+            />
         </TresMesh>
         <TresMesh :rotation="[Math.PI / 2, 0, 0]">
             <TresPlaneGeometry :args="[w + lineWidth, h + lineWidth]" />
-            <TresShaderMaterial v-bind="lShader" />
+            <CustomShaderMaterial
+                :baseMaterial="THREE.MeshBasicMaterial"
+                :vertexShader="lShader.vertexShader"
+                :fragmentShader="lShader.fragmentShader"
+                :uniforms="lShader.uniforms"
+                :side="THREE.DoubleSide"
+                transparent
+                :depthWrite="false"
+                :depthTest="true"
+                silent
+                :toneMapped="false"
+            />
         </TresMesh>
     </TresGroup>
 </template>
@@ -22,6 +44,7 @@
 <script setup lang="ts">
 import * as THREE from 'three'
 import { watchEffect } from 'vue'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 
 const props = withDefaults(
     defineProps<{
@@ -71,13 +94,9 @@ const pShader = {
       float cutoff = 1.0 - gradientWidth;
   		float alpha = smoothstep(cutoff, cutoff + glowWidth, dist);
 
-      gl_FragColor = vec4(color, alpha);
+      csm_DiffuseColor = vec4(color, alpha);
     }
   `,
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    depthTest: true,
     uniforms: {
         color: {
             type: 'uvs',
@@ -132,7 +151,7 @@ const lShader = {
       float edge = max(max(left, right), max(bottom, top)); // 只保留边缘线
       float alpha = edge;
 
-      gl_FragColor = vec4(borderColor, alpha);
+      csm_DiffuseColor = vec4(borderColor, alpha);
     }
   `,
 }
