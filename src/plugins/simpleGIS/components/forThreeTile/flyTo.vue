@@ -19,7 +19,7 @@ const props = withDefaults(
     {},
 )
 
-const { camera, controls } = useTres()
+const { camera, controls } : any = useTres()
 let twInstant = [] as any
 /**
  * 飞行到某世界坐标
@@ -59,14 +59,19 @@ const goToGeo = (cameraGeo: THREE.Vector3, centerGeo: THREE.Vector3) => {
     const newCenterPos = props.map.localToWorld(props.map.geo2pos(centerGeo))
     const newCameraPos = props.map.localToWorld(props.map.geo2pos(cameraGeo))
 
-    camera.value.position.copy(newCameraPos)
-    controls.value.target.copy(newCenterPos)
-    controls.value.dispatchEvent({ type: 'change' })
+    if (camera.value && controls.value) {
+        camera.value.position.copy(newCameraPos)
+        controls.value.target.copy(newCenterPos)
+        controls.value.dispatchEvent({ type: 'change' })
+    }
+    else {
+        console.error('camera.value && controls.value as null')
+    }
 }
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(() => {
-    if (twInstant) {
+    if (twInstant && controls.value) {
         twInstant[0]?.update()
         controls.value.update()
         // twInstant[1]?.update()
