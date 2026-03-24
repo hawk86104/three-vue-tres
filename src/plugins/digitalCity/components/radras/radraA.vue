@@ -9,7 +9,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch, watchEffect } from 'vue'
 import { useLoop } from '@tresjs/core'
-import { Matrix4, DoubleSide, Color } from 'three'
+import * as THREE from 'three'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 const props = withDefaults(
 	defineProps<{
 		size?: number
@@ -36,18 +37,10 @@ onBeforeRender(() => {
 	timeDelta.value += 0.02 * props.speed
 })
 const shader = {
-	transparent: true,
-	// blending: AdditiveBlending,
-	depthWrite: false,
-	depthTest: true,
 	vertexShader: `
 	varying vec3 vPosition;
 	void main() {
 		vPosition = position;
-		vec4 modelPosition = modelMatrix * vec4(position, 1.0);
-		vec4 viewPosition = viewMatrix * modelPosition;
-    vec4 projectionPosition = projectionMatrix * viewPosition;
-    gl_Position = projectionPosition;
   }
   `,
 	fragmentShader: `
@@ -77,44 +70,47 @@ const shader = {
     return angle;
   }
   void main() {
+		vec4 radarColor;
 			// length内置函数，取向量的长度
 		if(length(vPosition) == 0.0 || length(vPosition) > uRadius-2.0){
-			gl_FragColor = vec4( ncolor, uOpacity );
+			radarColor = vec4( ncolor, uOpacity );
 		} else {
 			float angle = calcAngle(vPosition);
 			if(angle < uFollowWidth){
 				// 尾焰区域
 				float opacity =  1.0 - angle / uFollowWidth; 
-				gl_FragColor = vec4( ncolor, uOpacity * opacity );  
+				radarColor = vec4( ncolor, uOpacity * opacity );
 			} else {
 				// 其他位置的像素均为透明
-				gl_FragColor = vec4( ncolor, 0.0 ); 
+				radarColor = vec4( ncolor, 0.0 );
 			}
 		}
+		csm_DiffuseColor = radarColor;
+		csm_FragColor = radarColor;
 	}
   `,
 	uniforms: {
 		uRadius: { value: props.radius },
 		uTime: timeDelta,
 		uFollowWidth: { value: props.followWidth },
-		ncolor: { value: new Color(props.color) },
-		uOpacity: { value: props.opacity }
+		ncolor: { value: new THREE.Color(props.color) },
+		uOpacity: { value: props.opacity },
 	},
 }
 watch(TresCircleGeometryRef, (newValue, oldValue) => {
 	if (newValue && oldValue === undefined) {
-		TresCircleGeometryRef.value.applyMatrix4(new Matrix4().makeRotationX(-Math.PI / 2))
+		TresCircleGeometryRef.value.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2))
 	}
 })
 watch(() => props.size, () => {
 	nextTick(() => { 
-		TresCircleGeometryRef.value.applyMatrix4(new Matrix4().makeRotationX(Math.PI / 2))
+		TresCircleGeometryRef.value.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2))
 	})
 	
 })
 watchEffect(() => {
 	if (props.color) {
-		shader.uniforms.ncolor.value = new Color(props.color)
+		shader.uniforms.ncolor.value = new THREE.Color(props.color)
 	}
 	if (props.opacity) {
 		shader.uniforms.uOpacity.value = props.opacity
@@ -132,6 +128,17 @@ watchEffect(() => {
 <template>
 	<TresMesh>
 		<TresCircleGeometry ref="TresCircleGeometryRef" :args="[props.size, 64]" />
-		<TresShaderMaterial v-bind="shader" :side="DoubleSide" />
+		<CustomShaderMaterial
+			:baseMaterial="THREE.MeshBasicMaterial"
+			:vertexShader="shader.vertexShader"
+			:fragmentShader="shader.fragmentShader"
+			:uniforms="shader.uniforms"
+			:side="THREE.DoubleSide"
+			:depthWrite="false"
+			:depthTest="true"
+			:toneMapped="false"
+			transparent
+			silent
+		/>
 	</TresMesh>
 </template>

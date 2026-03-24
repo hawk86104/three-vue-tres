@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, watchEffect } from 'vue'
 import { useLoop } from '@tresjs/core'
-import { DoubleSide, Color, LineCurve3, Vector3 } from 'three'
+import * as THREE from 'three'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 
 const props = withDefaults(defineProps<{
 	radius?: number
@@ -20,22 +21,14 @@ const props = withDefaults(defineProps<{
 })
 
 const MeshRef = ref()
+const uniforms = {
+	uColor: { value: new THREE.Color(props.color) },
+	uOpacity: { value: props.opacity },
+	uHeight: { value: props.height },
+	uScale: { value: 1 },
+} as any
 
-/** 动态半径缩放 */
-const uScale = ref(1)
-
-/** Shader */
-const shader = {
-	transparent: true,
-	depthWrite: false,
-	side: DoubleSide,
-	uniforms: {
-		uColor: { value: new Color(props.color) },
-		uOpacity: { value: props.opacity },
-		uHeight: { value: props.height },
-		uScale: uScale,
-	},
-	vertexShader: `
+const vertexShader = `
     uniform float uScale;
     varying float vY;
 
@@ -43,10 +36,11 @@ const shader = {
       vec3 p = position;
       p.xz *= uScale;
       vY = position.y;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      csm_Position = p;
     }
-  `,
-	fragmentShader: `
+  `
+
+const fragmentShader = `
     uniform vec3 uColor;
     uniform float uOpacity;
     uniform float uHeight;
@@ -54,15 +48,14 @@ const shader = {
 
     void main() {
       float alpha = (1.0 - vY / uHeight) * uOpacity;
-      gl_FragColor = vec4(uColor, alpha);
+      csm_DiffuseColor = vec4(uColor, alpha);
     }
-  `,
-}
+  `
 
 watchEffect(() => {
-	shader.uniforms.uColor.value.set(props.color)
-	shader.uniforms.uOpacity.value = props.opacity
-	shader.uniforms.uHeight.value = props.height
+	uniforms.uColor.value.set(props.color)
+	uniforms.uOpacity.value = props.opacity
+	uniforms.uHeight.value = props.height
 })
 
 /** 动画 */
@@ -73,11 +66,11 @@ onBeforeRender(() => {
 	t += 0.02 * props.speed
 	const k = (t % 1)
 	const r = props.radius + k * (props.maxRadius - props.radius)
-	uScale.value = r / props.radius
+	uniforms.uScale.value = r / props.radius
 })
-const tubePath = ref(new LineCurve3(
-	new Vector3(0, 0, 0),
-	new Vector3(0, 10, 0)
+const tubePath = ref(new THREE.LineCurve3(
+	new THREE.Vector3(0, 0, 0),
+	new THREE.Vector3(0, 10, 0)
 ));
 defineExpose({ MeshRef })
 </script>
@@ -90,6 +83,17 @@ defineExpose({ MeshRef })
 			64,
 			false
 		]" />
-		<TresShaderMaterial v-bind="shader" />
+		<CustomShaderMaterial
+			:baseMaterial="THREE.MeshBasicMaterial"
+			:vertexShader="vertexShader"
+			:fragmentShader="fragmentShader"
+			:uniforms="uniforms"
+			:side="THREE.DoubleSide"
+			:depthWrite="false"
+			:depthTest="true"
+			:toneMapped="false"
+			transparent
+			silent
+		/>
 	</TresMesh>
 </template>

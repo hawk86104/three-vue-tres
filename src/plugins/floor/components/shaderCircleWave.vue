@@ -10,16 +10,29 @@
     <TresGroup>
         <TresMesh :rotation-x="-Math.PI / 2">
             <TresPlaneGeometry :args="[1, 1]" />
-            <TresShaderMaterial ref="tsmRef" v-bind="tmsMaterial" />
+            <CustomShaderMaterial
+                :baseMaterial="THREE.MeshBasicMaterial"
+                :vertexShader="vertexShader"
+                :fragmentShader="fragmentShader"
+                :uniforms="uniforms"
+                :side="THREE.DoubleSide"
+                transparent
+                :blending="THREE.AdditiveBlending"
+                :flatShading="true"
+                :depthTest="true"
+                :depthWrite="false"
+                :toneMapped="false"
+                silent
+            />
         </TresMesh>
     </TresGroup>
 </template>
 
 <script lang="ts" setup>
 import * as THREE from 'three'
-import { reactive, watch,ref } from 'vue'
+import { watch } from 'vue'
 import { useLoop } from '@tresjs/core'
-import { useTexture } from '@tresjs/cientos'
+import { CustomShaderMaterial, useTexture } from '@tresjs/cientos'
 
 const props = withDefaults(
     defineProps<{
@@ -34,38 +47,30 @@ const props = withDefaults(
     },
 )
 
-const tmsMaterial = reactive({
-    side: THREE.DoubleSide,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    flatShading: true,
-    depthTest: true,
-    depthWrite: false,
-    uniforms: {
-        uTime: { type: 'f', value: 0.0 },
-        uScanTex: {
-            type: 't',
-            value: null as THREE.Texture | null,
-        },
-        uScanColor: {
-            type: 'v3',
-            value: new THREE.Color(props.color),
-        },
-        uScanColorDark: {
-            type: 'v3',
-            value: new THREE.Color(props.colorDark),
-        },
+const uniforms = {
+    uTime: { value: 0.0 },
+    uScanTex: {
+        value: null as THREE.Texture | null,
     },
-    vertexShader: `
+    uScanColor: {
+        value: new THREE.Color(props.color),
+    },
+    uScanColorDark: {
+        value: new THREE.Color(props.colorDark),
+    },
+} as any
+
+const vertexShader = `
 varying vec2 vUv;
 varying vec3 vPosition;
 void main(){
 	vUv=uv;
 	vPosition=position;
-	gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);
+	csm_Position=position;
 }
-`,
-    fragmentShader: `
+`
+
+const fragmentShader = `
 #define uScanOrigin vec3(0.,0.,0.)
 #define uScanWaveRatio1 3.2
 #define uScanWaveRatio2 2.8
@@ -120,12 +125,10 @@ void main()
 {
     vec3 col=vec3(0.);
     col=getScanColor(vPosition,vUv*10.0,col);
-    gl_FragColor=vec4(col,1.);
+    csm_DiffuseColor=vec4(col,1.);
 }
-`,
-})
+`
 
-const tsmRef = ref<any>(null)
 const { state: pTexture } = useTexture('./plugins/floor/image/scan.png')
 watch(
     () => pTexture.value,
@@ -133,22 +136,21 @@ watch(
         if (mapv) {
             mapv.wrapS = THREE.RepeatWrapping
             mapv.wrapT = THREE.RepeatWrapping
-            tmsMaterial.uniforms.uScanTex.value = mapv
-            tsmRef.value.needsUpdate = true
-            tsmRef.value.uniformsNeedUpdate = true
+            mapv.needsUpdate = true
+            uniforms.uScanTex.value = mapv
         }
     }
 )
 watch(
     () => [props.color, props.colorDark],
     ([color, colorDark]) => {
-        tmsMaterial.uniforms.uScanColor.value = new THREE.Color(color!)
-        tmsMaterial.uniforms.uScanColorDark.value = new THREE.Color(colorDark!)
+        uniforms.uScanColor.value.set(color!)
+        uniforms.uScanColorDark.value.set(colorDark!)
     }
 )
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(() => {
-    tmsMaterial.uniforms.uTime.value += 0.01 * props.speed
+    uniforms.uTime.value += 0.01 * props.speed
 })
 </script>
