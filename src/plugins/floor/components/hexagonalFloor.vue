@@ -134,7 +134,7 @@ const setupEnvironment = () => {
     const environment = new RoomEnvironment()
     const envMap = pmremGenerator.fromScene(environment).texture
 
-    sceneValue.value.environment = envMap
+    // sceneValue.value.environment = envMap
     pState.value.scene.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
             child.material.envMap = envMap
