@@ -29,6 +29,7 @@
 - `src/stores/forPreview.js`
 - `src/components/forPreview/cardList.vue`
 - `src/components/forPreview/filterComFixed.vue`
+- `src/components/forPreview/oneImageQr.vue`
 
 ## 要求
 
@@ -100,6 +101,35 @@
 - GIVEN 本地不存在某插件配置
 - WHEN 线上接口返回了该插件条目
 - THEN 系统 SHALL 允许将该插件作为补充条目加入预览中心
+
+### Requirement: 线上菜单补充范围
+
+当前 `getOnlinePluginConfig` 驱动的线上补充 SHALL 仅作用于普通案例插件集合。`basic` 分组以及声明了 `tvtstore` 的插件市场/区域场景编辑器条目 SHALL 继续完全以本地配置为准，不走这条线上合并路径。
+
+#### Scenario: basic 不参与线上补充
+
+- GIVEN 线上接口返回 `basic` 相关菜单数据
+- WHEN 预览中心执行线上菜单合并
+- THEN `basic` 分组 SHALL 继续以本地 `child[].preview` 配置为准
+- AND 不应通过这条线上合并逻辑追加或覆盖 `basic` 条目
+
+#### Scenario: tvtstore 条目不参与线上补充
+
+- GIVEN 某个插件已声明 `tvtstore`
+- WHEN 预览中心执行线上菜单合并
+- THEN 该插件 SHALL 继续以本地配置为准
+- AND 不应通过这条线上合并逻辑追加或覆盖其预览条目
+
+### Requirement: 远程标签元数据与本地结构分离
+
+预览中心 SHALL 将远程 `menuSetup` 标签数据与本地插件结构分开处理。远程标签数据可以驱动左侧徽标、预览卡片标记、筛选条件与编辑器提示，但 SHALL 不直接替换本地 `pluginsConfig` 中的插件结构与条目来源。
+
+#### Scenario: editor 标签的特殊处理
+
+- GIVEN 远程 `menuSetup` 将某个预览项标记为 `editor`
+- WHEN 预览中心渲染左侧菜单与卡片
+- THEN 该标签 SHALL 主要用于卡片侧的编辑器提示与交互
+- AND 左侧菜单 MAY 不显示同名 `editor` 徽标
 
 ### Requirement: waitForGit 提示归属
 

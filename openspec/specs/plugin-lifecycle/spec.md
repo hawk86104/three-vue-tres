@@ -50,6 +50,17 @@
 - WHEN `pluginMaker/install/<plugin>.zip` 存在
 - THEN 系统 SHALL 将插件安装到当前仓库的正式插件命名空间中
 
+### Requirement: ZIP 路径保持正式命名空间
+
+插件生命周期 ZIP 包 SHALL 保持 `src/plugins/<plugin>` 与可选 `public/plugins/<plugin>` 这两组正式相对路径。`install` 命令 SHALL 依赖这组路径直接解压到仓库根目录，而不是在安装时做额外路径重映射。
+
+#### Scenario: 安装命令依赖规范 ZIP 结构
+
+- GIVEN 一个待安装插件包由既有打包流程生成
+- WHEN 维护者执行 `node pluginMaker/index.cjs install <plugin>`
+- THEN 该插件包 SHALL 以仓库根目录为解压落点恢复正式插件路径
+- AND 不应要求安装命令再额外推断自定义目录映射
+
 ### Requirement: 模板脚手架地位
 
 `template.zip` 生成的内容 SHALL 被视为插件初始化便利工具，而不是插件最终结构的全部规范来源。正式插件结构与约束应以 `plugin-system` 规范为准；脚手架只负责快速起步。
@@ -60,6 +71,17 @@
 - WHEN 脚手架生成了默认文件
 - THEN 这些文件 SHALL 被视为可替换的初始化模板
 - AND 维护者后续 SHALL 根据真实插件需求替换和完善实现
+
+### Requirement: create 命令初始化边界
+
+`create` 命令 SHALL 初始化 `src/plugins/<plugin>` 下的源码模板，并创建 `public/plugins/<plugin>/preview` 预览资源目录。该命令可以做插件名与日期等基础替换，但 SHALL 不被视为已经完成业务级插件设计。
+
+#### Scenario: create 只负责起步骨架
+
+- GIVEN 维护者执行 `node pluginMaker/index.cjs create <plugin>`
+- WHEN 命令执行成功
+- THEN 系统 SHALL 生成插件源码骨架并准备预览资源目录
+- AND 维护者后续仍 SHALL 手工完善 `config.js`、页面实现与预览资源
 
 ### Requirement: 单插件构建保留规则
 
