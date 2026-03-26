@@ -33,6 +33,8 @@
 - `src/common/copySelectedPublicDirsPlugin.js`
 - `pluginMaker/index.cjs`
 - `src/components/forPreview/cardList.vue`
+- `src/components/forPreview/oneImageQr.vue`
+- `src/components/forPreview/suspenseLayout.vue`
 - `src/plugins/basic/config.js`
 - `src/plugins/goView/config.js`
 - `src/plugins/qiankunTvt/config.js`
@@ -142,7 +144,7 @@ TvT.js 插件 SHALL 使用单一插件标识作为主命名空间，并在源码
 - GIVEN 一个普通插件采用平铺展示
 - WHEN 预览中心读取该插件配置
 - THEN 该插件的 `config.js` SHALL 提供 `preview`
-- AND `preview[].name` 应与对应页面文件名保持一致
+- AND 对于指向本地页面的条目，`preview[].name` 应与对应页面文件名保持一致
 
 #### Scenario: 分组插件使用 child
 
@@ -151,9 +153,34 @@ TvT.js 插件 SHALL 使用单一插件标识作为主命名空间，并在源码
 - THEN 该插件的 `config.js` SHALL 提供 `child`
 - AND 每个子分组的展示入口 SHALL 位于对应的 `child[].preview`
 
+#### Scenario: 外链或远程预览条目
+
+- GIVEN 某个 `preview` 条目通过 `url` 直接跳转到外链或远程页面
+- WHEN 维护者配置该条目
+- THEN 该条目 MAY 不对应本地 `pages/*.vue` 文件
+- AND 该条目仍 SHALL 保持稳定的 `name` 以供菜单、哈希和二维码等预览行为使用
+
+### Requirement: preview 条目最小字段与运行时扩展
+
+每个 `preview` 或 `child[].preview` 条目 SHALL 至少包含 `src`、`type`、`name`、`title`。当前预览渲染层正式支持 `img`、`text`、`video` 三类 `type`；`url`、`disableFPSGraph`、`disableSrcBtn`、`referenceSource` 作为可选运行时扩展字段 MAY 出现，并分别影响跳转目标、调试面板显示与参考来源展示。
+
+#### Scenario: 本地页面驱动的预览条目
+
+- GIVEN 一个普通案例页面需要进入预览中心
+- WHEN 维护者编写对应 `preview` 条目
+- THEN 该条目 SHALL 至少声明 `src`、`type`、`name`、`title`
+- AND 若未声明 `url`，该条目 SHOULD 对应本地受支持的插件页面路由
+
+#### Scenario: 带运行时扩展字段的预览条目
+
+- GIVEN 某个预览条目需要跳转外链、隐藏调试按钮或展示参考出处
+- WHEN 维护者编写该条目
+- THEN 该条目 MAY 使用 `url`、`disableFPSGraph`、`disableSrcBtn`、`referenceSource`
+- AND 这些字段 SHALL 被视为正式预览契约的一部分，而不是临时展示参数
+
 ### Requirement: 插件资源归属
 
-插件的公共静态资源 SHALL 归属在 `public/plugins/<plugin>` 名下，包括但不限于预览图、模型、纹理、配置文件、音视频和运行时加载资源。插件实现可以按周边代码选择 `./plugins/...` 或 `/plugins/...` 的访问形式，但 SHALL 不将插件公共资源无序散落到其他插件命名空间中。
+插件的公共静态资源 SHALL 归属在 `public/plugins/<plugin>` 名下，包括但不限于预览图、模型、纹理、配置文件、音视频和运行时加载资源。插件实现可以按周边代码选择 `plugins/...`、`./plugins/...`、`/plugins/...` 或完整 `https://...` 地址的访问形式，但 SHALL 不将插件公共资源无序散落到其他插件命名空间中。
 
 #### Scenario: 预览图归属到插件命名空间
 
@@ -167,6 +194,13 @@ TvT.js 插件 SHALL 使用单一插件标识作为主命名空间，并在源码
 - WHEN 维护者准备公共资源
 - THEN 这些资源 SHALL 优先放在 `public/plugins/<plugin>/...`
 - AND 不应默认放到其他插件的公共目录中复用
+
+#### Scenario: 远程托管资源或外链预览
+
+- GIVEN 某个预览图或跳转目标由外部站点托管
+- WHEN 维护者配置该资源或预览条目
+- THEN 该条目 MAY 使用完整 `https://...` 地址
+- AND 这不改变该插件本地源码与公共资源仍以 `<plugin>` 命名空间归属的约定
 
 ### Requirement: 插件依赖声明
 

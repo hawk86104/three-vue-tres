@@ -54,6 +54,17 @@
 - THEN SHALL 以 `package.json` 中的约束作为当前正式基线
 - AND README 中的差异应被视为待同步文档问题，而不是覆盖代码事实
 
+### Requirement: 核心技术栈锚点
+
+TvT.js 的仓库级技术栈 SHALL 以 `package.json` 与 `.fes.js` 中声明的组合为正式锚点：Vue 3、Fes.js 4、Tres.js 5、three.js 0.180.x，以及基于 Vite 的构建链路。维护者在升级这些基础依赖时 SHALL 把它视为框架级变更，而不是单个插件内部实现调整。
+
+#### Scenario: 升级框架主依赖
+
+- GIVEN 维护者计划升级 `vue`、`three`、`@tresjs/*` 或 `@fesjs/*` 等仓库级主依赖
+- WHEN 该升级会影响插件运行、构建或集成边界
+- THEN 维护者 SHALL 先以 `package.json` 与 `.fes.js` 为事实源确认新基线
+- AND 相关 spec SHALL 同步检查并更新，而不是只修改单个插件代码
+
 ### Requirement: Node.js 基线
 
 TvT.js 当前的 Node.js 基线 SHALL 以 `package.json` 中的 `engines.node` 为准。后续若要提升 Node.js 基线，应先改代码和包管理约束，再同步文档说明。

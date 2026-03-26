@@ -1,0 +1,4 @@
+interface:
+  display_name: "TvT.js 插件构建器"
+  short_description: "创建插件、预览条目与具备运行模式意识的 TvT.js 案例"
+  default_prompt: "使用 $tvt-js-plugin-builder 在这个工作区中创建或修改 TvT.js 插件、案例、preview 条目，或处理带集成约束的场景。"
