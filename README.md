@@ -63,14 +63,14 @@ This project integrates with three major ecosystems:
 <a href="./src/plugins/zoneFreeScene/pages/freeTvtStack.vue">git项目源码地址</a>
 
 在线编辑器再次编辑后免费导出源码项目二开 :
-<a href="https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack">zone3Deditor页面跳转</a>
+<a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack">zone3Deditor页面跳转</a>
 
 <a style="display:block;width:800px;max-width:100%;" href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeTvtStack"><img src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeTvtStack.png" alt="tres.js webgl three.js"></a>
 
 <table style="border: none; width: 100%; text-align: center;">
   <tr>
     <td style="padding:10px;font-size:1.2em;">
-      <a href="https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index">
+      <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index">
         在线三维场景编辑器：[🪅免费导出源码+二次开发 ]
       </a>
     </td>
@@ -82,7 +82,7 @@ This project integrates with three major ecosystems:
   </tr>
   <tr>
     <td style="padding: 10px;">
-      <a href="https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index" style="display:block;max-width:100%;">
+      <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index" style="display:block;max-width:100%;">
         <img src="./public/plugins/zone3Deditor/preview/index.png" alt="tres.js webgl">
       </a>
     </td>
@@ -136,7 +136,7 @@ This project integrates with three major ecosystems:
 			</a>
 		</td>
 		<td style="padding: 10px;">
-			<a href="https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index?sceneConfig=freeRefiningIndustry" style="display:block;max-width:100%;">
+			<a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeRefiningIndustry" style="display:block;max-width:100%;">
 				<img src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeRefiningIndustry.png" alt="tres.js webgl">
 			</a>
 		</td>

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-10-16 10:53:09
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-09-23 11:44:32
+ * @LastEditTime: 2026-03-28 13:26:49
  */
 import { defineBuildConfig } from '@fesjs/fes'
 // import viteCompression from 'vite-plugin-compression'
@@ -58,7 +58,7 @@ export default defineBuildConfig({
                 title: '🧩 插件市场',
             },
             {
-                path: 'https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index',
+                path: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index',
                 title: '🆓 区域场景编辑器',
             },
             {
@@ -123,8 +123,8 @@ export default defineBuildConfig({
                     target: 'https://t0.tianditu.gov.cn/',
                     changeOrigin: true,
                     headers: {
-                        Origin: 'oss.icegl.cn',
-                        Referer: 'http://oss.icegl.cn',
+                        Origin: 'opensource.icegl.cn',
+                        Referer: 'http://opensource.icegl.cn',
                     },
                     rewrite: (path) => path.replace(/^\/tianditu.map/, ''),
                 }

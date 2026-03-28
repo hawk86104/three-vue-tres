@@ -64,7 +64,7 @@
                 <n-tooltip v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover">
                     <template #trigger>
                         <a
-                            href="https://oss.icegl.cn/p/zone3Deditor/#/plugins/zone3Deditor/index"
+                            href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index"
                             target="_blank"
                             class="absolute bottom-11 right--3 no-underline z-99999"
                         >

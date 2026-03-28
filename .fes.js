@@ -142,8 +142,8 @@ export default defineBuildConfig({
                     target: 'https://t0.tianditu.gov.cn/',
                     changeOrigin: true,
                     headers: {
-                        Origin: 'oss.icegl.cn',
-                        Referer: 'http://oss.icegl.cn',
+                        Origin: 'opensource.icegl.cn',
+                        Referer: 'http://opensource.icegl.cn',
                     },
                     rewrite: (path) => path.replace(/^\/tianditu.map/, ''),
                 }

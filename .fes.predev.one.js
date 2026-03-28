@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-10-16 10:53:09
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-07-25 18:10:33
+ * @LastEditTime: 2026-03-28 13:26:53
  */
 import { defineBuildConfig } from '@fesjs/fes'
 import copyPublicWithPluginExclusion from './src/common/copySelectedPublicDirsPlugin.js'
@@ -114,8 +114,8 @@ export default defineBuildConfig({
                     target: 'https://t0.tianditu.gov.cn/',
                     changeOrigin: true,
                     headers: {
-                        Origin: 'oss.icegl.cn',
-                        Referer: 'http://oss.icegl.cn',
+                        Origin: 'opensource.icegl.cn',
+                        Referer: 'http://opensource.icegl.cn',
                     },
                     rewrite: (path) => path.replace(/^\/tianditu.map/, ''),
                 }
