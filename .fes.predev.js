@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-10-16 10:53:09
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-03-28 13:26:49
+ * @LastEditTime: 2026-03-31 14:08:45
  */
 import { defineBuildConfig } from '@fesjs/fes'
 // import viteCompression from 'vite-plugin-compression'
@@ -58,8 +58,21 @@ export default defineBuildConfig({
                 title: '🧩 插件市场',
             },
             {
-                path: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index',
-                title: '🆓 区域场景编辑器',
+                title: '🪢 编辑器生态',
+                children: [
+                    {
+                        path: 'https://dcser.icegl.cn',
+                        title: '🪡 动态组件服务',
+                    },
+                    {
+                        path: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index',
+                        title: '🖼️ 区域场景编辑器',
+                    },
+                    {
+                        path: 'https://gisplaneeditor.icegl.cn/#/plugins/gisPlaneEditor/index',
+                        title: '🗺️ GIS地理空间编辑器',
+                    },
+                ],
             },
             {
                 title: '🧊 ICEGL官网社区',

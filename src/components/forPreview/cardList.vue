@@ -61,25 +61,35 @@
                         点击web端演示
                     </div>
                 </FCard>
-                <n-tooltip v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover">
+                <n-popover v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover" placement="top-end" :show-arrow="false">
                     <template #trigger>
-                        <a
-                            href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index"
-                            target="_blank"
-                            class="absolute bottom-11 right--3 no-underline z-99999"
+                        <button
+                            type="button"
+                            aria-label="编辑器引导"
+                            class="editor-guide-trigger absolute bottom-11 right--3 z-99999"
+                            @click.prevent.stop
                         >
-                            <div
-                                class="flex items-center gap-1 px-1 py-1 rounded-1 cursor-pointer text-xs font-medium text-blue shadow-lg bg-white/100 backdrop-blur-md border border-white/30 transition-all hover:bg-white/50"
-                            >
-                                <n-icon size="16" class="text-blue-500">
-                                    <LogoXbox />
-                                </n-icon>
-                                <span>编辑器</span>
-                            </div>
-                        </a>
+                            <n-icon size="14" class="editor-guide-trigger__icon">
+                                <LogoXbox />
+                            </n-icon>
+                            <span>编辑器</span>
+                        </button>
                     </template>
-                    <span>此组件已规范封装，供给于场景编辑器中，灵活使用，点击跳转直接编辑，导出源码包</span>
-                </n-tooltip>
+                    <div class="editor-guide-popover">
+                        <div class="editor-guide-tip">已规范封装，供给于编辑器生态中，灵活使用</div>
+                        <a
+                            v-for="item in editorGuideLinks"
+                            :key="item.label"
+                            :href="item.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="editor-guide-link"
+                        >
+                            <span class="editor-guide-link__label">{{ item.label }}</span>
+                            <span class="editor-guide-link__arrow">↗</span>
+                        </a>
+                    </div>
+                </n-popover>
             </template>
         </div>
     </div>
@@ -92,7 +102,7 @@ import { useForPreviewStore } from '@/stores/forPreview'
 import { UserOutlined } from '@fesjs/fes-design/icon'
 import oneImageQr from './oneImageQr.vue'
 import { loadJweixin, loadWebView } from 'PLS/uniAppView/lib/initScript'
-import { NTooltip, NIcon } from 'naive-ui'
+import { NPopover, NIcon } from 'naive-ui'
 import { LogoXbox } from '@vicons/ionicons5'
 
 const props = withDefaults(
@@ -103,6 +113,17 @@ const props = withDefaults(
 )
 const { menuSetup } = useForPreviewStore()
 let publicPath = process.env.BASE_URL
+
+const editorGuideLinks = [
+    {
+        label: '🖼️ 区域场景编辑器',
+        url: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index',
+    },
+    {
+        label: '🗺️ GIS地理空间编辑器',
+        url: 'https://gisplaneeditor.icegl.cn/#/plugins/gisPlaneEditor/index',
+    },
+]
 
 const toAuthorPage = (url: string) => {
     window.open(url, '_blank')
@@ -223,5 +244,83 @@ const isEditor = (plugin: any, value: any) => {
     &.hot {
         background-color: #b51c22;
     }
+}
+
+.editor-guide-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.92);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 22px rgba(15, 18, 34, 0.14);
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: help;
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        background-color 0.2s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 12px 26px rgba(15, 18, 34, 0.18);
+        transform: translateY(-1px);
+    }
+}
+
+.editor-guide-trigger__icon {
+    color: #2563eb;
+}
+
+.editor-guide-popover {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 188px;
+}
+
+.editor-guide-tip {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 0 2px 4px;
+}
+
+.editor-guide-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    background: #f8fafc;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease,
+        transform 0.2s ease;
+
+    &:hover {
+        background: #eff6ff;
+        color: #1d4ed8;
+        transform: translateX(1px);
+    }
+}
+
+.editor-guide-link__label {
+    white-space: nowrap;
+}
+
+.editor-guide-link__arrow {
+    color: #94a3b8;
+    font-size: 11px;
 }
 </style>
