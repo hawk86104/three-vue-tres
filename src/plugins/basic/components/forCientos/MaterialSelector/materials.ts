@@ -9,6 +9,7 @@
 // materials.ts
 import type { ColorRepresentation } from 'three'
 import { FrontSide, BackSide, DoubleSide, NormalBlending, AdditiveBlending, SubtractiveBlending, MultiplyBlending, NoBlending, type Side, type Blending, } from 'three'
+import { liquidMetalMaterialDefaults } from '../LiquidMetalMaterial/controls'
 
 export const sideOptions =
   [
@@ -147,6 +148,10 @@ const clearcoatExtraProps = {
   clearcoatRoughness: 0,
 } as const
 
+const liquidMetalExtraProps = {
+  ...liquidMetalMaterialDefaults,
+} as const
+
 const dissolveEffectProps = {
   color: '#B520A9',
   uEdgeColor: '#4d9bff',
@@ -240,6 +245,16 @@ export const materialPresets = {
     },
     props: {
       ...clearcoatExtraProps
+    }
+  },
+
+  LiquidMetalMaterial: {
+    component: async () => {
+      const mod = await import('PLS/basic')
+      return mod.LiquidMetalMaterial
+    },
+    props: {
+      ...liquidMetalExtraProps
     }
   },
 

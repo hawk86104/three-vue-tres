@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-11-03 15:07:09
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-02-24 16:33:56
+ * @LastEditTime: 2026-03-31 14:03:58
  */
 export default {
     name: 'basic',
@@ -46,6 +46,13 @@ export default {
                 { src: 'plugins/basic/materials/preview/layerMaterial.png', type: 'img', name: 'layerMaterial', title: '图层材质' },
                 { src: 'plugins/basic/materials/preview/outline.png', type: 'img', name: 'outline', title: 'outline' },
                 { src: 'plugins/basic/materials/preview/clearcoat.png', type: 'img', name: 'clearcoat', title: '反光漆图层' },
+                {
+                    src: 'plugins/basic/materials/preview/liquidMetal.png',
+                    type: 'img',
+                    name: 'liquidMetal',
+                    title: '液态金属',
+                    referenceSource: { title: 'Liquid Metal', url: 'https://codepen.io/sabosugi/pen/yyabKEP' },
+                },
                 {
                     src: 'plugins/basic/materials/preview/instancedMeshCustomShaderMaterial.png',
                     type: 'img',

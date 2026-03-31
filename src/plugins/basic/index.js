@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2024-04-09 11:27:03
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-11-04 09:21:04
+ * @LastEditTime: 2026-03-31 14:58:35
  */
 
 import Environment from './components/forCientos/useEnvironment/component.vue'
@@ -28,6 +28,7 @@ import shapeConfigurator from './components/forCientos/ShapesList/shapeConfigura
 import shapeRenderer from './components/forCientos/ShapesList/shapeRenderer.vue'
 import shapesforEditor from './components/forCientos/ShapesList/forEditor.vue'
 import CustomShaderMaterial from './components/forCientos/customShaderMaterial.vue'
+import LiquidMetalMaterial from './components/forCientos/LiquidMetalMaterial/index.vue'
     
 export {
     Environment,
@@ -50,5 +51,6 @@ export {
     shapeConfigurator,
     shapeRenderer,
     shapesforEditor,
-    CustomShaderMaterial
+    CustomShaderMaterial,
+    LiquidMetalMaterial,
 }
