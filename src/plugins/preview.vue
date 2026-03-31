@@ -145,6 +145,36 @@
                         </f-menu-item>
                     </template>
                 </f-sub-menu>
+                <f-sub-menu value="5">
+                    <template #icon>
+                        <EditOutlined />
+                    </template>
+                    <template #label
+                        >GIS地理空间编辑器 <FBadge :max="999" :value="getMenusCount().gisEditor" class="count-fbdge big-cf" type="primary" size="small"
+                    /></template>
+                    <f-menu-item value="gisPlaneEditorIntroUrl">
+                        <template #label>
+                            <div class="flex absolute badge-group">
+                                <f-badge value="GIS" class="tag-fbdge" type="danger" size="small" />
+                            </div>
+                            <span class="left-m-text">编辑器介绍</span>
+                        </template>
+                    </f-menu-item>
+                    <template v-for="(onePlugin, pkey) in filteredData">
+                        <f-menu-item v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'gisEditor'" :value="pkey">
+                            <template #label>
+                                <div class="flex absolute badge-group">
+                                    <f-badge value="free" class="tag-fbdge afree-tag" type="success" size="small" v-if="onePlugin.tvtstore === 'FREE'" />
+                                </div>
+                                <div class="flex absolute" style="top: 3px; right: 30px">
+                                    <f-badge :value="onePlugin.version" class="tag-fbdge" type="primary" size="small" />
+                                </div>
+                                <span class="left-m-text">{{ onePlugin.title }}</span>
+                                <FBadge :value="onePlugin.preview.length" class="count-fbdge" type="primary" size="small" />
+                            </template>
+                        </f-menu-item>
+                    </template>
+                </f-sub-menu>
             </FMenu>
         </div>
         <div
@@ -173,6 +203,11 @@
             </template>
             <template v-for="(onePlugin, pkey) in filteredData" :key="pkey">
                 <div style="background-color: #f1f1f2" v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'zoneEditor'" :ref="(el) => (tabListRef[pkey] = el)">
+                    <cardList :onePlugin="onePlugin" />
+                </div>
+            </template>
+            <template v-for="(onePlugin, pkey) in filteredData" :key="pkey">
+                <div style="background-color: #f1f1f2" v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'gisEditor'" :ref="(el) => (tabListRef[pkey] = el)">
                     <cardList :onePlugin="onePlugin" />
                 </div>
             </template>
@@ -220,6 +255,8 @@ const goto = (value: any) => {
         window.open('https://www.icegl.cn/tvtstore', '_blank')
     } else if (value.value === 'zoneEditorUrl') {
         window.open('https://www.icegl.cn/tvtstore/zone3Deditor', '_blank')
+    } else if (value.value === 'gisPlaneEditorIntroUrl') {
+        window.open('https://www.icegl.cn/tvtstore/gisPlaneEditor', '_blank')
     } else {
         tabListRef.value[value.value]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         router.replace({ hash: `#${value.value}` })
@@ -353,6 +390,8 @@ const isTvtstore = (onePlugin: any) => {
     if (typeof onePlugin.tvtstore !== 'undefined') {
         if (onePlugin.name.startsWith('zone')) {
             return 'zoneEditor'
+        } else if (onePlugin.name.startsWith('gis')) {
+            return 'gisEditor'
         } else {
             return 'Tvtstore'
         }
@@ -366,6 +405,7 @@ const getMenusCount = () => {
         case: 0,
         tvtstore: 0,
         zoneEditor: 0,
+        gisEditor: 0,
     }
     for (const key in filteredData.value) {
         if (filteredData.value.hasOwnProperty(key)) {
@@ -382,6 +422,8 @@ const getMenusCount = () => {
                     reCount.case += filteredData.value[key].preview.length
                 } else if (isTvtstore(filteredData.value[key]) === 'zoneEditor') {
                     reCount.zoneEditor += filteredData.value[key].preview.length
+                } else if (isTvtstore(filteredData.value[key]) === 'gisEditor') {
+                    reCount.gisEditor += filteredData.value[key].preview.length
                 }
             }
         }
