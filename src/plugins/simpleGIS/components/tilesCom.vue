@@ -7,6 +7,7 @@
 <script lang="ts" setup>
 import { useTres, useLoop } from '@tresjs/core'
 import { watch } from 'vue'
+import { getActivePinia } from 'pinia'
 import { TilesRenderer } from '3d-tiles-renderer'
 import { alignmentCenter, applyTransform } from '../common/utils'
 import * as THREE from 'three'
@@ -16,6 +17,12 @@ import fragmentShader from '../shaders/buildingsShaderMaterial.frag'
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
+
+declare global {
+    interface Window {
+        gisPlaneEditor_extendMeshes_group?: any
+    }
+}
 
 const props = withDefaults(
     defineProps<{
@@ -55,6 +62,82 @@ const props = withDefaults(
 //  ./plugins/geokit/tiles/tileset.json
 
 const timeDelta = { value: 0 }
+
+const getTilesNativeGeoPosition = () => {
+    const box = new THREE.Box3()
+    const sphere = new THREE.Sphere()
+    let center = null as THREE.Vector3 | null
+
+    if (tiles.getBoundingBox(box) && !box.isEmpty()) {
+        center = box.getCenter(new THREE.Vector3())
+    } else if (tiles.getBoundingSphere(sphere) && Number.isFinite(sphere.radius) && sphere.radius > 0) {
+        center = sphere.center.clone()
+    }
+
+    if (!center) {
+        throw new Error('3DTiles 原始坐标尚未准备完成，请稍后再试')
+    }
+
+    const cartographic = { lat: 0, lon: 0, height: 0 }
+    tiles.ellipsoid.getPositionToCartographic(center, cartographic)
+
+    if (
+        !Number.isFinite(cartographic.lon)
+        || !Number.isFinite(cartographic.lat)
+        || !Number.isFinite(cartographic.height)
+    ) {
+        throw new Error('3DTiles 原始坐标解析失败')
+    }
+
+    return {
+        lon: Number(THREE.MathUtils.radToDeg(cartographic.lon).toFixed(6)),
+        lat: Number(THREE.MathUtils.radToDeg(cartographic.lat).toFixed(6)),
+        height: Number(cartographic.height.toFixed(3)),
+    }
+}
+
+const getGisPlaneEditorGeoPositionTarget = () => {
+    if (!window.gisPlaneEditor_extendMeshes_group) {
+        return null
+    }
+
+    const pinia = getActivePinia() as any
+    const emxlist = pinia?.state?.value?.gisPlaneEditorExtendMeshList?.emxlist
+    if (!emxlist) {
+        return null
+    }
+
+    let current = tiles.group?.parent as any
+
+    while (current) {
+        const uuid = current.uuid
+        if (uuid && emxlist[uuid]) {
+            const mesh = emxlist[uuid]
+            if (mesh?.object3D) {
+                return mesh.object3D
+            }
+        }
+        current = current.parent
+    }
+
+    return null
+}
+
+const applyNativeGeoPosition = () => {
+    const target = getGisPlaneEditorGeoPositionTarget()
+    if (!target) {
+        return
+    }
+
+    const geoPosition = getTilesNativeGeoPosition()
+    if (!target.geoPosition) {
+        target.geoPosition = { lon: 0, lat: 0, height: 0 }
+    }
+
+    Object.assign(target.geoPosition, geoPosition)
+    return geoPosition
+}
+
 const setEffectMaterial = (mesh: any) => {
     mesh.userData.builds = true
     const { geometry } = mesh
@@ -215,4 +298,8 @@ watch(
         }
     },
 )
+
+defineExpose({
+    applyNativeGeoPosition: applyNativeGeoPosition,
+})
 </script>
