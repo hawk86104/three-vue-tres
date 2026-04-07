@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-06-16 08:31:57
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-06 16:49:05
+ * @LastEditTime: 2026-04-07 11:51:12
 -->
 <template>
     <primitive :object="toRaw(modelSplat)" :renderOrder="9999999" />
@@ -20,6 +20,10 @@ const props = defineProps({
         type: String,
         default: './plugins/gaussianSplatting/model/luigi.splat',
     },
+    sizeCullThreshold: {
+        type: Number,
+        default: -0.0001,
+    },
 })
 
 const { camera, renderer } = useTres() as any
@@ -30,13 +34,19 @@ let oneSplat = await loader.loadAsync(props.url)
 
 const modelSplat = ref(null) as any
 
-modelSplat.value = new Splat(oneSplat, camera.value, { alphaTest: 0.1, sizeCullThreshold: 10000 })
+const createSplat = (sizeCullThreshold = props.sizeCullThreshold) => {
+    return new Splat(oneSplat, camera.value, { alphaTest: 0.1, sizeCullThreshold })
+}
+
+modelSplat.value = createSplat()
 watch(
-    () => props.url,
-    async (url) => {
-        url && (oneSplat = await loader.loadAsync(url))
+    [() => props.url, () => props.sizeCullThreshold],
+    async ([url, sizeCullThreshold], [oldUrl]) => {
+        if (url && url !== oldUrl) {
+            oneSplat = await loader.loadAsync(url)
+        }
         disposeThis()
-        modelSplat.value = new Splat(oneSplat, camera.value, { alphaTest: 0.1, sizeCullThreshold: 10000 })
+        modelSplat.value = createSplat(sizeCullThreshold)
     },
 )
 
