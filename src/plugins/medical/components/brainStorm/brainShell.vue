@@ -159,6 +159,7 @@ props.model.traverse((child) => {
         child.material = material
         child.castShadow = true
         child.receiveShadow = true
+        child.renderOrder = 0
     }
 })
 
@@ -180,6 +181,10 @@ watchEffect(() => {
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(({ elapsed }) => {
+    if (!props.visible) {
+        return
+    }
+
     material.uniforms.uTime.value = elapsed
 })
 

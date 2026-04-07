@@ -4,14 +4,14 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-11-10 16:11:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-07 09:35:30
+ * @LastEditTime: 2026-04-07 16:52:03
  */
 
 export default {
     name: 'medical',
     title: '医疗行业',
     intro: '医疗行业数字化例子',
-    version: '1.0.',
+    version: '1.0.0',
     author: '地虎降天龙',
     website: 'https://gitee.com/hawk86104',
     state: 'active',

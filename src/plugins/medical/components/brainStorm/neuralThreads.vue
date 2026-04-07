@@ -1,10 +1,6 @@
 <template>
     <TresGroup>
-        <primitive
-            v-for="thread in threads"
-            :key="thread.id"
-            :object="thread.mesh"
-        />
+        <primitive v-if="threadMesh" :object="threadMesh" />
         <primitive v-if="particlePoints" :object="particlePoints" />
     </TresGroup>
 </template>
@@ -17,20 +13,21 @@ import { createSeededRandom, randomRange } from './utils'
 
 interface ThreadState {
     id: number
-    mesh: THREE.Mesh
-    geometry: THREE.TubeGeometry
-    material: THREE.MeshBasicMaterial
-    curve: THREE.CatmullRomCurve3
     originalPositions: Float32Array
+    originalCenters: Float32Array
+    currentCenters: Float32Array
+    waveOffsets: Float32Array
     tubeSegments: number
     perpVectors: Array<{ perp1: THREE.Vector3; perp2: THREE.Vector3 }>
-    waveOffsets: THREE.Vector3[]
     offset: number
     needsUpdate: boolean
     opacityFactor: number
     baseOpacity: number
     targetOpacity: number
     currentOpacity: number
+    positionOffset: number
+    vertexCount: number
+    alphaOffset: number
 }
 
 interface Props {
@@ -104,38 +101,93 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const threads = shallowRef<ThreadState[]>([])
+const threadMesh = shallowRef<THREE.Mesh | null>(null)
 const particlePoints = shallowRef<THREE.Points | null>(null)
 
+let threadGeometry: THREE.BufferGeometry | null = null
+let threadMaterial: THREE.ShaderMaterial | null = null
+let threadPositionAttribute: THREE.BufferAttribute | null = null
+let threadAlphaAttribute: THREE.BufferAttribute | null = null
+let threadPositionArray: Float32Array | null = null
+let threadAlphaArray: Float32Array | null = null
 let particleGeometry: THREE.BufferGeometry | null = null
 let particleMaterial: THREE.ShaderMaterial | null = null
 let pointerIsDown = false
+let pointerDirty = false
+let mouseUpdateCooldown = 0
+let speedMultiplier = 1
+const pointPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25)
 
 const pointer = new THREE.Vector2(2, 2)
 const raycaster = new THREE.Raycaster()
 const { camera } = useTres()
 
-const curveSegments = 96
-const radialSegments = 8
+const curveSegments = 72
+const tubeSegments = 32
+const radialSegments = 5
 const verticesPerRing = radialSegments + 1
-let speedMultiplier = 1
+const rayPoint = new THREE.Vector3()
+const rayClosestPoint = new THREE.Vector3()
+const rayDirection = new THREE.Vector3()
+const tempCenterA = new THREE.Vector3()
+const tempCenterB = new THREE.Vector3()
+const tempCurvePoint = new THREE.Vector3()
+
+const getCenterValue = (centers: Float32Array, index: number, target: THREE.Vector3) => {
+    const base = index * 3
+    target.set(centers[base], centers[base + 1], centers[base + 2])
+    return target
+}
+
+const setCenterValue = (
+    centers: Float32Array,
+    index: number,
+    x: number,
+    y: number,
+    z: number,
+) => {
+    const base = index * 3
+    centers[base] = x
+    centers[base + 1] = y
+    centers[base + 2] = z
+}
+
+const fillThreadAlpha = (thread: ThreadState, opacity: number) => {
+    if (!threadAlphaArray) {
+        return false
+    }
+
+    threadAlphaArray.fill(opacity, thread.alphaOffset, thread.alphaOffset + thread.vertexCount)
+    return true
+}
 
 const updateThreadMaterialState = (thread: ThreadState) => {
+    const previousOpacity = thread.currentOpacity
     thread.baseOpacity = props.opacity * thread.opacityFactor
+
     if (!props.mouseGlowEnabled) {
         thread.currentOpacity = thread.baseOpacity
         thread.targetOpacity = thread.baseOpacity
-        thread.material.opacity = thread.baseOpacity
+    } else {
+        thread.currentOpacity = Math.max(thread.currentOpacity, thread.baseOpacity)
+        thread.targetOpacity = Math.max(thread.targetOpacity, thread.baseOpacity)
     }
 
-    thread.mesh.visible = props.visible
-    thread.material.color.set(props.color)
+    return Math.abs(thread.currentOpacity - previousOpacity) > 0.0001
+        ? fillThreadAlpha(thread, thread.currentOpacity)
+        : false
 }
 
 const disposeThreads = () => {
-    threads.value.forEach((thread) => {
-        thread.geometry.dispose()
-        thread.material.dispose()
-    })
+    threadMesh.value = null
+    threadGeometry?.dispose()
+    threadMaterial?.dispose()
+    threadGeometry = null
+    threadMaterial = null
+    threadPositionAttribute = null
+    threadAlphaAttribute = null
+    threadPositionArray = null
+    threadAlphaArray = null
     threads.value = []
 }
 
@@ -147,11 +199,11 @@ const disposeParticles = () => {
     particlePoints.value = null
 }
 
-const getPerpVectors = (curve: THREE.CatmullRomCurve3, tubeSegments: number) => {
-    const perpVectors: Array<{ perp1: THREE.Vector3; perp2: THREE.Vector3 }> = []
+const getPerpVectors = (curve: THREE.CatmullRomCurve3, totalSegments: number) => {
+    const vectors: Array<{ perp1: THREE.Vector3; perp2: THREE.Vector3 }> = []
 
-    for (let index = 0; index <= tubeSegments; index++) {
-        const t = index / tubeSegments
+    for (let index = 0; index <= totalSegments; index++) {
+        const t = index / totalSegments
         const nextT = Math.min(t + 0.01, 1)
         const prevT = Math.max(t - 0.01, 0)
         const nextPoint = curve.getPointAt(nextT)
@@ -166,10 +218,10 @@ const getPerpVectors = (curve: THREE.CatmullRomCurve3, tubeSegments: number) => 
         }
 
         const perp2 = new THREE.Vector3().crossVectors(tangent, perp1).normalize()
-        perpVectors.push({ perp1, perp2 })
+        vectors.push({ perp1, perp2 })
     }
 
-    return perpVectors
+    return vectors
 }
 
 const createThread = (
@@ -210,7 +262,6 @@ const createThread = (
         perp1 = new THREE.Vector3(-finalDirection.z, 0, finalDirection.x).normalize()
     }
     const perp2 = new THREE.Vector3().crossVectors(finalDirection, perp1).normalize()
-
     const path = []
 
     for (let index = 0; index <= curveSegments; index++) {
@@ -231,38 +282,39 @@ const createThread = (
     const curve = new THREE.CatmullRomCurve3(path)
     curve.tension = 0.5
 
-    const tubeSegments = 64
-    const threadRadius = randomRange(random, props.threadRadiusMin, props.threadRadiusMax)
-    const geometry = new THREE.TubeGeometry(curve, tubeSegments, threadRadius, radialSegments, false)
+    const radius = randomRange(random, props.threadRadiusMin, props.threadRadiusMax)
+    const geometry = new THREE.TubeGeometry(curve, tubeSegments, radius, radialSegments, false)
     const opacityFactor = randomRange(random, 0.6, 1)
     const baseOpacity = props.opacity * opacityFactor
-    const material = new THREE.MeshBasicMaterial({
-        color: props.color,
-        transparent: true,
-        opacity: baseOpacity,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: true,
-    })
+    const ringCount = tubeSegments + 1
+    const originalCenters = new Float32Array(ringCount * 3)
+
+    for (let index = 0; index < ringCount; index++) {
+        const point = curve.getPointAt(index / tubeSegments)
+        setCenterValue(originalCenters, index, point.x, point.y, point.z)
+    }
 
     return {
-        id,
-        mesh: new THREE.Mesh(geometry, material),
         geometry,
-        material,
-        curve,
-        originalPositions: new Float32Array(geometry.attributes.position.array),
-        tubeSegments,
-        perpVectors: getPerpVectors(curve, tubeSegments),
-        waveOffsets: [],
-        offset: random(),
-        needsUpdate: false,
-        opacityFactor,
-        baseOpacity,
-        targetOpacity: baseOpacity,
-        currentOpacity: baseOpacity,
-    } satisfies ThreadState
+        state: {
+            id,
+            originalPositions: new Float32Array(geometry.attributes.position.array),
+            originalCenters,
+            currentCenters: originalCenters.slice(),
+            waveOffsets: new Float32Array(ringCount * 3),
+            tubeSegments,
+            perpVectors: getPerpVectors(curve, tubeSegments),
+            offset: random(),
+            needsUpdate: false,
+            opacityFactor,
+            baseOpacity,
+            targetOpacity: baseOpacity,
+            currentOpacity: baseOpacity,
+            positionOffset: 0,
+            vertexCount: 0,
+            alphaOffset: 0,
+        } satisfies ThreadState,
+    }
 }
 
 const buildThreads = () => {
@@ -270,7 +322,7 @@ const buildThreads = () => {
     disposeParticles()
 
     const random = createSeededRandom(props.seed)
-    const createdThreads: ThreadState[] = []
+    const builds: Array<{ geometry: THREE.TubeGeometry; state: ThreadState }> = []
     let id = 0
 
     for (let clusterIndex = 0; clusterIndex < props.clusterCount; clusterIndex++) {
@@ -289,7 +341,7 @@ const buildThreads = () => {
         const clusterWavePhaseTwo = random() * Math.PI * 2
 
         for (let threadIndex = 0; threadIndex < props.threadsPerCluster; threadIndex++) {
-            createdThreads.push(
+            builds.push(
                 createThread(
                     random,
                     clusterPosition,
@@ -304,7 +356,86 @@ const buildThreads = () => {
         }
     }
 
-    threads.value = createdThreads
+    if (!builds.length) {
+        return
+    }
+
+    const totalVertexCount = builds.reduce((sum, item) => sum + item.geometry.attributes.position.count, 0)
+    const totalIndexCount = builds.reduce((sum, item) => sum + (item.geometry.index?.count ?? 0), 0)
+    const IndexArrayType = totalVertexCount > 65535 ? Uint32Array : Uint16Array
+    const mergedIndices = new IndexArrayType(totalIndexCount)
+
+    threadPositionArray = new Float32Array(totalVertexCount * 3)
+    threadAlphaArray = new Float32Array(totalVertexCount)
+
+    let vertexCursor = 0
+    let positionCursor = 0
+    let indexCursor = 0
+
+    builds.forEach(({ geometry, state }) => {
+        const positionAttribute = geometry.attributes.position as THREE.BufferAttribute
+        const localPositions = positionAttribute.array as Float32Array
+        const indexAttribute = geometry.index
+
+        state.positionOffset = positionCursor
+        state.alphaOffset = vertexCursor
+        state.vertexCount = positionAttribute.count
+
+        threadPositionArray?.set(localPositions, positionCursor)
+        threadAlphaArray?.fill(state.currentOpacity, vertexCursor, vertexCursor + positionAttribute.count)
+
+        if (indexAttribute) {
+            const localIndices = indexAttribute.array as ArrayLike<number>
+            for (let index = 0; index < indexAttribute.count; index++) {
+                mergedIndices[indexCursor + index] = localIndices[index] + vertexCursor
+            }
+            indexCursor += indexAttribute.count
+        }
+
+        geometry.dispose()
+        vertexCursor += positionAttribute.count
+        positionCursor += localPositions.length
+    })
+
+    threadGeometry = new THREE.BufferGeometry()
+    threadPositionAttribute = new THREE.BufferAttribute(threadPositionArray, 3)
+    threadPositionAttribute.setUsage(THREE.DynamicDrawUsage)
+    threadAlphaAttribute = new THREE.BufferAttribute(threadAlphaArray, 1)
+    threadAlphaAttribute.setUsage(THREE.DynamicDrawUsage)
+    threadGeometry.setAttribute('position', threadPositionAttribute)
+    threadGeometry.setAttribute('aAlpha', threadAlphaAttribute)
+    threadGeometry.setIndex(new THREE.BufferAttribute(mergedIndices, 1))
+    threadGeometry.computeBoundingSphere()
+
+    threadMaterial = new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: new THREE.Color(props.color) } },
+        vertexShader: `
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 uColor;
+            varying float vAlpha;
+            void main() {
+                gl_FragColor = vec4(uColor, vAlpha);
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: true,
+    })
+
+    const mesh = new THREE.Mesh(threadGeometry, threadMaterial)
+    mesh.renderOrder = 12
+    mesh.visible = props.visible
+    threadMesh.value = mesh
+    threads.value = builds.map((item) => item.state)
     createThreadParticles()
 }
 
@@ -336,8 +467,13 @@ const createThreadParticles = () => {
     })
 
     particleGeometry = new THREE.BufferGeometry()
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    particleGeometry.setAttribute('aProgress', new THREE.BufferAttribute(progress, 1))
+    const positionAttribute = new THREE.BufferAttribute(positions, 3)
+    positionAttribute.setUsage(THREE.DynamicDrawUsage)
+    const progressAttribute = new THREE.BufferAttribute(progress, 1)
+    progressAttribute.setUsage(THREE.DynamicDrawUsage)
+
+    particleGeometry.setAttribute('position', positionAttribute)
+    particleGeometry.setAttribute('aProgress', progressAttribute)
     particleGeometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1))
     particleGeometry.setAttribute('aRandom', new THREE.BufferAttribute(randoms, 1))
     particleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
@@ -346,7 +482,7 @@ const createThreadParticles = () => {
         uniforms: {
             uTime: { value: 0 },
             uSize: { value: props.particleSize },
-            uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+            uPixelRatio: { value: pointPixelRatio },
             uColor1: { value: new THREE.Color(props.particleColor1) },
             uColor2: { value: new THREE.Color(props.particleColor2) },
         },
@@ -354,25 +490,19 @@ const createThreadParticles = () => {
             uniform float uTime;
             uniform float uSize;
             uniform float uPixelRatio;
-
             attribute float aProgress;
-            attribute float aSpeed;
             attribute float aRandom;
             attribute float aSize;
-
             varying float vRandom;
             varying float vProgress;
-
             void main() {
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                 float pulse = sin(uTime * 2.0 + aRandom * 6.28318) * 0.3 + 0.7;
                 float sizeVariation = aSize * pulse;
-
                 gl_PointSize = uSize * sizeVariation * uPixelRatio;
                 gl_PointSize *= (2.0 / -mvPosition.z);
                 gl_PointSize = max(gl_PointSize, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
-
                 vRandom = aRandom;
                 vProgress = aProgress;
             }
@@ -381,25 +511,19 @@ const createThreadParticles = () => {
             uniform float uTime;
             uniform vec3 uColor1;
             uniform vec3 uColor2;
-
             varying float vRandom;
             varying float vProgress;
-
             void main() {
                 vec2 centered = gl_PointCoord - 0.5;
                 float dist = length(centered);
-
                 if (dist > 0.5) {
                     discard;
                 }
-
                 float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
                 alpha = pow(alpha, 2.0);
-
                 float fadeOut = 1.0 - smoothstep(0.85, 1.0, vProgress);
                 float twinkle = sin(uTime * 4.0 + vRandom * 20.0) * 0.2 + 0.8;
                 vec3 color = mix(uColor1, uColor2, vProgress) * 3.0;
-
                 gl_FragColor = vec4(color, alpha * twinkle * fadeOut);
             }
         `,
@@ -412,65 +536,50 @@ const createThreadParticles = () => {
     const nextPoints = new THREE.Points(particleGeometry, particleMaterial)
     nextPoints.visible = props.visible && props.particlesVisible
     nextPoints.frustumCulled = false
+    nextPoints.renderOrder = 13
     particlePoints.value = nextPoints
 }
 
-const sampleThreadPosition = (geometry: THREE.BufferGeometry, progressValue: number) => {
-    const positionAttribute = geometry.getAttribute('position')
-    const segmentCount = Math.floor(positionAttribute.count / verticesPerRing)
-    const exactSegment = progressValue * Math.max(segmentCount - 1, 1)
+const sampleThreadCenter = (centers: Float32Array, progressValue: number, target: THREE.Vector3) => {
+    const exactSegment = progressValue * tubeSegments
     const segmentIndex = Math.floor(exactSegment)
     const segmentProgress = exactSegment - segmentIndex
+    const nextIndex = Math.min(segmentIndex + 1, tubeSegments)
 
-    const getRingCenter = (index: number) => {
-        const center = new THREE.Vector3()
-        const ringStart = index * verticesPerRing
-
-        for (let offset = 0; offset < verticesPerRing; offset++) {
-            const vertexIndex = Math.min(ringStart + offset, positionAttribute.count - 1)
-            center.x += positionAttribute.array[vertexIndex * 3]
-            center.y += positionAttribute.array[vertexIndex * 3 + 1]
-            center.z += positionAttribute.array[vertexIndex * 3 + 2]
-        }
-
-        return center.divideScalar(verticesPerRing)
-    }
-
-    const currentCenter = getRingCenter(segmentIndex)
-    if (segmentIndex < segmentCount - 1) {
-        return currentCenter.lerp(getRingCenter(segmentIndex + 1), segmentProgress)
-    }
-
-    return currentCenter
+    getCenterValue(centers, segmentIndex, tempCenterA)
+    getCenterValue(centers, nextIndex, tempCenterB)
+    target.copy(tempCenterA).lerp(tempCenterB, segmentProgress)
+    return target
 }
 
 const updateThreadParticles = (delta: number, elapsed: number) => {
-    if (!particleGeometry || !particleMaterial || !particlePoints.value) {
+    if (!particleGeometry || !particleMaterial || !particlePoints.value || !props.particlesVisible) {
         return
     }
 
-    const positionAttribute = particleGeometry.getAttribute('position')
-    const progressAttribute = particleGeometry.getAttribute('aProgress')
-    const speedAttribute = particleGeometry.getAttribute('aSpeed')
+    const positionAttribute = particleGeometry.getAttribute('position') as THREE.BufferAttribute
+    const progressAttribute = particleGeometry.getAttribute('aProgress') as THREE.BufferAttribute
+    const speedAttribute = particleGeometry.getAttribute('aSpeed') as THREE.BufferAttribute
+    const positionArray = positionAttribute.array as Float32Array
+    const progressArray = progressAttribute.array as Float32Array
+    const speedArray = speedAttribute.array as Float32Array
 
     particleMaterial.uniforms.uTime.value = elapsed
     let particleIndex = 0
 
     threads.value.forEach((thread) => {
         for (let index = 0; index < props.particlesPerThread; index++) {
-            let progressValue = progressAttribute.array[particleIndex]
-            const speed = speedAttribute.array[particleIndex]
-
+            let progressValue = progressArray[particleIndex]
+            const speed = speedArray[particleIndex]
             progressValue += delta * props.particleSpeed * speed * speedMultiplier * 0.1
             if (progressValue > 1) {
                 progressValue = progressValue % 1
             }
-
-            progressAttribute.array[particleIndex] = progressValue
-            const point = sampleThreadPosition(thread.geometry, progressValue)
-            positionAttribute.array[particleIndex * 3] = point.x
-            positionAttribute.array[particleIndex * 3 + 1] = point.y
-            positionAttribute.array[particleIndex * 3 + 2] = point.z
+            progressArray[particleIndex] = progressValue
+            sampleThreadCenter(thread.currentCenters, progressValue, tempCurvePoint)
+            positionArray[particleIndex * 3] = tempCurvePoint.x
+            positionArray[particleIndex * 3 + 1] = tempCurvePoint.y
+            positionArray[particleIndex * 3 + 2] = tempCurvePoint.z
             particleIndex++
         }
     })
@@ -479,104 +588,125 @@ const updateThreadParticles = (delta: number, elapsed: number) => {
     progressAttribute.needsUpdate = true
 }
 
-const updateWaveAnimation = (elapsed: number) => {
-    if (!props.animationEnabled) {
+const applyWaveAnimation = (elapsed: number) => {
+    if (!threadPositionArray) {
         return
     }
 
     const time = elapsed * props.animationSpeed
+    let geometryChanged = false
 
     threads.value.forEach((thread) => {
-        for (let ring = 0; ring <= thread.tubeSegments; ring++) {
-            const progress = ring / thread.tubeSegments
-            const amplitudeFalloff = progress * progress
-            const waveOne = Math.sin(progress * Math.PI * props.animationFrequency + time + thread.offset * Math.PI * 2)
-            const waveTwo = Math.cos(progress * Math.PI * props.animationFrequency * 1.3 + time * 0.7 + thread.offset * Math.PI * 2)
-            const { perp1, perp2 } = thread.perpVectors[ring]
-            const amplitude = props.animationAmplitude * amplitudeFalloff
+        let localChanged = false
 
-            if (!thread.waveOffsets[ring]) {
-                thread.waveOffsets[ring] = new THREE.Vector3()
+        for (let ring = 0; ring <= thread.tubeSegments; ring++) {
+            const centerBase = ring * 3
+            let offsetX = 0
+            let offsetY = 0
+            let offsetZ = 0
+
+            if (props.animationEnabled) {
+                const progress = ring / thread.tubeSegments
+                const amplitudeFalloff = progress * progress
+                const waveOne = Math.sin(progress * Math.PI * props.animationFrequency + time + thread.offset * Math.PI * 2)
+                const waveTwo = Math.cos(progress * Math.PI * props.animationFrequency * 1.3 + time * 0.7 + thread.offset * Math.PI * 2)
+                const { perp1, perp2 } = thread.perpVectors[ring]
+                const amplitude = props.animationAmplitude * amplitudeFalloff
+
+                offsetX = perp1.x * waveOne * amplitude + perp2.x * waveTwo * amplitude
+                offsetY = perp1.y * waveOne * amplitude + perp2.y * waveTwo * amplitude
+                offsetZ = perp1.z * waveOne * amplitude + perp2.z * waveTwo * amplitude
             }
 
-            thread.waveOffsets[ring].set(
-                perp1.x * waveOne * amplitude + perp2.x * waveTwo * amplitude,
-                perp1.y * waveOne * amplitude + perp2.y * waveTwo * amplitude,
-                perp1.z * waveOne * amplitude + perp2.z * waveTwo * amplitude,
+            thread.waveOffsets[centerBase] = offsetX
+            thread.waveOffsets[centerBase + 1] = offsetY
+            thread.waveOffsets[centerBase + 2] = offsetZ
+            setCenterValue(
+                thread.currentCenters,
+                ring,
+                thread.originalCenters[centerBase] + offsetX,
+                thread.originalCenters[centerBase + 1] + offsetY,
+                thread.originalCenters[centerBase + 2] + offsetZ,
             )
-        }
-    })
-}
 
-const applyWaveAnimation = () => {
-    threads.value.forEach((thread) => {
-        if (thread.needsUpdate || !thread.waveOffsets.length) {
-            return
-        }
-
-        const positionAttribute = thread.geometry.attributes.position
-
-        for (let ring = 0; ring <= thread.tubeSegments; ring++) {
-            const waveOffset = thread.waveOffsets[ring]
-            const ringStart = ring * verticesPerRing
-            const ringEnd = ringStart + verticesPerRing
-
-            for (let vertexIndex = ringStart; vertexIndex < ringEnd; vertexIndex++) {
-                const arrayIndex = vertexIndex * 3
-                positionAttribute.array[arrayIndex] = thread.originalPositions[arrayIndex] + waveOffset.x
-                positionAttribute.array[arrayIndex + 1] = thread.originalPositions[arrayIndex + 1] + waveOffset.y
-                positionAttribute.array[arrayIndex + 2] = thread.originalPositions[arrayIndex + 2] + waveOffset.z
+            if (!thread.needsUpdate) {
+                const ringStart = ring * verticesPerRing
+                const ringEnd = ringStart + verticesPerRing
+                for (let vertexIndex = ringStart; vertexIndex < ringEnd; vertexIndex++) {
+                    const arrayIndex = vertexIndex * 3
+                    const globalIndex = thread.positionOffset + arrayIndex
+                    threadPositionArray[globalIndex] = thread.originalPositions[arrayIndex] + offsetX
+                    threadPositionArray[globalIndex + 1] = thread.originalPositions[arrayIndex + 1] + offsetY
+                    threadPositionArray[globalIndex + 2] = thread.originalPositions[arrayIndex + 2] + offsetZ
+                }
+                localChanged = true
             }
         }
 
-        positionAttribute.needsUpdate = true
+        if (localChanged) {
+            geometryChanged = true
+        }
     })
+
+    if (geometryChanged && threadPositionAttribute) {
+        threadPositionAttribute.needsUpdate = true
+    }
 }
 
-const resetThreadToOriginal = (thread: ThreadState) => {
-    const positionAttribute = thread.geometry.attributes.position
+const resetThreadToWave = (thread: ThreadState) => {
+    if (!threadPositionArray) {
+        return
+    }
+
     let changed = false
 
     for (let ring = 0; ring <= thread.tubeSegments; ring++) {
-        const waveOffset = props.animationEnabled && thread.waveOffsets[ring]
-            ? thread.waveOffsets[ring]
-            : new THREE.Vector3()
+        const centerBase = ring * 3
+        const targetCenterX = thread.originalCenters[centerBase] + thread.waveOffsets[centerBase]
+        const targetCenterY = thread.originalCenters[centerBase + 1] + thread.waveOffsets[centerBase + 1]
+        const targetCenterZ = thread.originalCenters[centerBase + 2] + thread.waveOffsets[centerBase + 2]
+        setCenterValue(thread.currentCenters, ring, targetCenterX, targetCenterY, targetCenterZ)
+
         const ringStart = ring * verticesPerRing
         const ringEnd = ringStart + verticesPerRing
-
         for (let vertexIndex = ringStart; vertexIndex < ringEnd; vertexIndex++) {
             const arrayIndex = vertexIndex * 3
-            const targetX = thread.originalPositions[arrayIndex] + waveOffset.x
-            const targetY = thread.originalPositions[arrayIndex + 1] + waveOffset.y
-            const targetZ = thread.originalPositions[arrayIndex + 2] + waveOffset.z
-
-            const deltaX = (targetX - positionAttribute.array[arrayIndex]) * props.repulsionSmoothness
-            const deltaY = (targetY - positionAttribute.array[arrayIndex + 1]) * props.repulsionSmoothness
-            const deltaZ = (targetZ - positionAttribute.array[arrayIndex + 2]) * props.repulsionSmoothness
+            const globalIndex = thread.positionOffset + arrayIndex
+            const targetX = thread.originalPositions[arrayIndex] + thread.waveOffsets[centerBase]
+            const targetY = thread.originalPositions[arrayIndex + 1] + thread.waveOffsets[centerBase + 1]
+            const targetZ = thread.originalPositions[arrayIndex + 2] + thread.waveOffsets[centerBase + 2]
+            const deltaX = (targetX - threadPositionArray[globalIndex]) * props.repulsionSmoothness
+            const deltaY = (targetY - threadPositionArray[globalIndex + 1]) * props.repulsionSmoothness
+            const deltaZ = (targetZ - threadPositionArray[globalIndex + 2]) * props.repulsionSmoothness
 
             if (Math.abs(deltaX) > 0.0001 || Math.abs(deltaY) > 0.0001 || Math.abs(deltaZ) > 0.0001) {
-                positionAttribute.array[arrayIndex] += deltaX
-                positionAttribute.array[arrayIndex + 1] += deltaY
-                positionAttribute.array[arrayIndex + 2] += deltaZ
+                threadPositionArray[globalIndex] += deltaX
+                threadPositionArray[globalIndex + 1] += deltaY
+                threadPositionArray[globalIndex + 2] += deltaZ
                 changed = true
             }
         }
     }
 
-    positionAttribute.needsUpdate = true
+    if (threadPositionAttribute) {
+        threadPositionAttribute.needsUpdate = true
+    }
     thread.needsUpdate = changed
 }
 
 const deformThreadWithRay = (thread: ThreadState, ray: THREE.Ray) => {
-    const positionAttribute = thread.geometry.attributes.position
-    const threadCenter = thread.curve.getPointAt(0.5)
-    const closestToCenter = new THREE.Vector3()
-    ray.closestPointToPoint(threadCenter, closestToCenter)
-    const centerDistance = threadCenter.distanceTo(closestToCenter)
+    if (!threadPositionArray) {
+        return
+    }
+
+    const middleIndex = Math.floor(thread.tubeSegments * 0.5)
+    getCenterValue(thread.currentCenters, middleIndex, rayPoint)
+    ray.closestPointToPoint(rayPoint, rayClosestPoint)
+    const centerDistance = rayPoint.distanceTo(rayClosestPoint)
 
     if (centerDistance > props.mouseRepulsionRadius * 2) {
         if (thread.needsUpdate) {
-            resetThreadToOriginal(thread)
+            resetThreadToWave(thread)
         }
         if (props.mouseGlowEnabled) {
             thread.targetOpacity = thread.baseOpacity
@@ -588,42 +718,53 @@ const deformThreadWithRay = (thread: ThreadState, ray: THREE.Ray) => {
     let maxInfluence = 0
 
     for (let ring = 0; ring <= thread.tubeSegments; ring++) {
-        const progress = ring / thread.tubeSegments
-        const curvePoint = thread.curve.getPointAt(progress)
-        const closestPoint = new THREE.Vector3()
-        ray.closestPointToPoint(curvePoint, closestPoint)
-        const distance = curvePoint.distanceTo(closestPoint)
-        let offset = new THREE.Vector3()
+        const centerBase = ring * 3
+        getCenterValue(thread.currentCenters, ring, rayPoint)
+        ray.closestPointToPoint(rayPoint, rayClosestPoint)
+        const distance = rayPoint.distanceTo(rayClosestPoint)
+        let offsetX = 0
+        let offsetY = 0
+        let offsetZ = 0
 
         if (distance < props.mouseRepulsionRadius) {
-            const repulsionDirection = new THREE.Vector3().subVectors(curvePoint, closestPoint).normalize()
-            const falloff = Math.pow(1 - distance / props.mouseRepulsionRadius, 2)
-            const threadFalloff = Math.sin(progress * Math.PI)
-            const strength = props.mouseRepulsionStrength * falloff * threadFalloff
-            offset = repulsionDirection.multiplyScalar(strength)
-            maxInfluence = Math.max(maxInfluence, falloff)
+            rayDirection.subVectors(rayPoint, rayClosestPoint)
+            const directionLength = rayDirection.length()
+            if (directionLength > 0.00001) {
+                rayDirection.multiplyScalar(1 / directionLength)
+                const falloff = Math.pow(1 - distance / props.mouseRepulsionRadius, 2)
+                const threadFalloff = Math.sin((ring / thread.tubeSegments) * Math.PI)
+                const strength = props.mouseRepulsionStrength * falloff * threadFalloff
+                offsetX = rayDirection.x * strength
+                offsetY = rayDirection.y * strength
+                offsetZ = rayDirection.z * strength
+                maxInfluence = Math.max(maxInfluence, falloff)
+            }
         }
 
-        const waveOffset = props.animationEnabled && thread.waveOffsets[ring]
-            ? thread.waveOffsets[ring]
-            : new THREE.Vector3()
+        setCenterValue(
+            thread.currentCenters,
+            ring,
+            thread.originalCenters[centerBase] + thread.waveOffsets[centerBase] + offsetX,
+            thread.originalCenters[centerBase + 1] + thread.waveOffsets[centerBase + 1] + offsetY,
+            thread.originalCenters[centerBase + 2] + thread.waveOffsets[centerBase + 2] + offsetZ,
+        )
+
         const ringStart = ring * verticesPerRing
         const ringEnd = ringStart + verticesPerRing
-
         for (let vertexIndex = ringStart; vertexIndex < ringEnd; vertexIndex++) {
             const arrayIndex = vertexIndex * 3
-            const targetX = thread.originalPositions[arrayIndex] + offset.x + waveOffset.x
-            const targetY = thread.originalPositions[arrayIndex + 1] + offset.y + waveOffset.y
-            const targetZ = thread.originalPositions[arrayIndex + 2] + offset.z + waveOffset.z
-
-            const deltaX = (targetX - positionAttribute.array[arrayIndex]) * props.repulsionSmoothness
-            const deltaY = (targetY - positionAttribute.array[arrayIndex + 1]) * props.repulsionSmoothness
-            const deltaZ = (targetZ - positionAttribute.array[arrayIndex + 2]) * props.repulsionSmoothness
+            const globalIndex = thread.positionOffset + arrayIndex
+            const targetX = thread.originalPositions[arrayIndex] + thread.waveOffsets[centerBase] + offsetX
+            const targetY = thread.originalPositions[arrayIndex + 1] + thread.waveOffsets[centerBase + 1] + offsetY
+            const targetZ = thread.originalPositions[arrayIndex + 2] + thread.waveOffsets[centerBase + 2] + offsetZ
+            const deltaX = (targetX - threadPositionArray[globalIndex]) * props.repulsionSmoothness
+            const deltaY = (targetY - threadPositionArray[globalIndex + 1]) * props.repulsionSmoothness
+            const deltaZ = (targetZ - threadPositionArray[globalIndex + 2]) * props.repulsionSmoothness
 
             if (Math.abs(deltaX) > 0.0001 || Math.abs(deltaY) > 0.0001 || Math.abs(deltaZ) > 0.0001) {
-                positionAttribute.array[arrayIndex] += deltaX
-                positionAttribute.array[arrayIndex + 1] += deltaY
-                positionAttribute.array[arrayIndex + 2] += deltaZ
+                threadPositionArray[globalIndex] += deltaX
+                threadPositionArray[globalIndex + 1] += deltaY
+                threadPositionArray[globalIndex + 2] += deltaZ
                 changed = true
             }
         }
@@ -635,27 +776,31 @@ const deformThreadWithRay = (thread: ThreadState, ray: THREE.Ray) => {
             : thread.baseOpacity
     }
 
-    if (changed) {
-        positionAttribute.needsUpdate = true
+    if (changed && threadPositionAttribute) {
+        threadPositionAttribute.needsUpdate = true
         thread.needsUpdate = true
     }
 }
 
+const hasDeformedThreads = () => threads.value.some((thread) => thread.needsUpdate)
+
 const updateMouseRepulsion = () => {
+    const pointerActive = pointer.x <= 1.5 && pointer.y <= 1.5
+
     if (!props.mouseRepulsionEnabled || !camera.value) {
         threads.value.forEach((thread) => {
             if (thread.needsUpdate) {
-                resetThreadToOriginal(thread)
+                resetThreadToWave(thread)
             }
             thread.targetOpacity = thread.baseOpacity
         })
         return
     }
 
-    if (pointer.x > 1.5 || pointer.y > 1.5) {
+    if (!pointerActive) {
         threads.value.forEach((thread) => {
             if (thread.needsUpdate) {
-                resetThreadToOriginal(thread)
+                resetThreadToWave(thread)
             }
             thread.targetOpacity = thread.baseOpacity
         })
@@ -669,30 +814,40 @@ const updateMouseRepulsion = () => {
 }
 
 const updateGlowOpacity = () => {
+    let alphaChanged = false
+
     threads.value.forEach((thread) => {
         const delta = thread.targetOpacity - thread.currentOpacity
         if (Math.abs(delta) > 0.001) {
             thread.currentOpacity += delta * props.glowTransitionSpeed
-            thread.material.opacity = thread.currentOpacity
+            alphaChanged = fillThreadAlpha(thread, thread.currentOpacity) || alphaChanged
         }
     })
+
+    if (alphaChanged && threadAlphaAttribute) {
+        threadAlphaAttribute.needsUpdate = true
+    }
 }
 
 const onPointerMove = (event: PointerEvent) => {
     pointer.x = (event.clientX / window.innerWidth) * 2 - 1
     pointer.y = -(event.clientY / window.innerHeight) * 2 + 1
+    pointerDirty = true
 }
 
 const onPointerLeave = () => {
     pointer.set(2, 2)
+    pointerDirty = true
 }
 
 const onPointerDown = () => {
     pointerIsDown = true
+    pointerDirty = true
 }
 
 const onPointerUp = () => {
     pointerIsDown = false
+    pointerDirty = true
 }
 
 onMounted(() => {
@@ -732,9 +887,23 @@ watch(
 )
 
 watchEffect(() => {
+    let alphaChanged = false
+
     threads.value.forEach((thread) => {
-        updateThreadMaterialState(thread)
+        alphaChanged = updateThreadMaterialState(thread) || alphaChanged
     })
+
+    if (threadMesh.value) {
+        threadMesh.value.visible = props.visible
+    }
+
+    if (threadMaterial) {
+        threadMaterial.uniforms.uColor.value.set(props.color)
+    }
+
+    if (alphaChanged && threadAlphaAttribute) {
+        threadAlphaAttribute.needsUpdate = true
+    }
 
     if (particlePoints.value) {
         particlePoints.value.visible = props.visible && props.particlesVisible
@@ -749,14 +918,34 @@ watchEffect(() => {
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(({ delta, elapsed }) => {
+    if (!props.visible && !props.particlesVisible) {
+        if (hasDeformedThreads()) {
+            threads.value.forEach((thread) => {
+                if (thread.needsUpdate) {
+                    resetThreadToWave(thread)
+                }
+                thread.targetOpacity = thread.baseOpacity
+            })
+        }
+        pointerDirty = false
+        mouseUpdateCooldown = 0
+        speedMultiplier += (1 - speedMultiplier) * Math.min(delta * 4, 1)
+        return
+    }
+
     speedMultiplier += ((pointerIsDown ? 3 : 1) - speedMultiplier) * Math.min(delta * 4, 1)
 
-    updateWaveAnimation(elapsed)
-    if (props.animationEnabled) {
-        applyWaveAnimation()
+    if (props.visible) {
+        applyWaveAnimation(elapsed)
+        mouseUpdateCooldown += delta
+        if (pointerDirty || hasDeformedThreads() || (pointer.x <= 1.5 && pointer.y <= 1.5 && mouseUpdateCooldown >= 1 / 30)) {
+            updateMouseRepulsion()
+            mouseUpdateCooldown = 0
+            pointerDirty = false
+        }
+        updateGlowOpacity()
     }
-    updateMouseRepulsion()
-    updateGlowOpacity()
+
     updateThreadParticles(delta, elapsed)
 })
 

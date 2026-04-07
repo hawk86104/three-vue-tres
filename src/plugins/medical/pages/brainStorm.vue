@@ -21,6 +21,7 @@
 
             <TresGroup :rotation="[0, 0.55, 0]">
                 <brainShell
+                    v-if="brainState.visible"
                     :model="brainRoot"
                     :visible="brainState.visible"
                     :base-color="brainState.baseColor"
@@ -40,7 +41,7 @@
                 />
 
                 <grooveParticles
-                    v-if="brainMesh"
+                    v-if="brainMesh && grooveState.visible"
                     :mesh="brainMesh"
                     :visible="grooveState.visible"
                     :count="grooveState.count"
@@ -55,6 +56,7 @@
                 />
 
                 <neuralThreads
+                    v-if="threadState.visible || threadState.particlesVisible"
                     :visible="threadState.visible"
                     :color="threadState.color"
                     :opacity="threadState.opacity"
@@ -90,6 +92,7 @@
                 />
 
                 <sparkleParticles
+                    v-if="sparkleState.visible"
                     :visible="sparkleState.visible"
                     :count="sparkleState.count"
                     :size="sparkleState.size"
@@ -103,11 +106,19 @@
                 />
             </TresGroup>
 
-            <EffectComposer>
+            <EffectComposer v-if="hasPostEffects">
                 <UnrealBloom
-                    :radius="sceneState.bloomRadius"
+                    v-if="sceneState.bloomStrength > 0.001"
                     :strength="sceneState.bloomStrength"
                     :threshold="sceneState.bloomThreshold"
+                    :radius="sceneState.bloomRadius"
+                />
+                <brainBokehPass
+                    v-if="sceneState.dofEnabled"
+                    :focus="sceneState.dofFocusDistance"
+                    :aperture="dofAperture"
+                    :maxblur="dofMaxBlur"
+                    :resolution-scale="sceneState.dofResolutionScale"
                 />
                 <Output />
             </EffectComposer>
@@ -116,13 +127,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, watchEffect } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from '@tresjs/cientos'
 import { EffectComposer, Output, UnrealBloom } from '@tresjs/post-processing'
 import { Pane } from 'tweakpane'
 import { useGLTF } from 'PLS/basic'
 import brainShell from '../components/brainStorm/brainShell.vue'
+import brainBokehPass from '../components/brainStorm/brainBokehPass.vue'
 import grooveParticles from '../components/brainStorm/grooveParticles.vue'
 import neuralThreads from '../components/brainStorm/neuralThreads.vue'
 import sparkleParticles from '../components/brainStorm/sparkleParticles.vue'
@@ -132,64 +144,69 @@ import { getPrimaryMesh } from '../components/brainStorm/utils'
 const presets = {
     neuralPulse: {
         scene: {
-            clearColor: '#02030a',
-            exposure: 1.12,
-            bloomStrength: 0.5,
-            bloomRadius: 0.5,
-            bloomThreshold: 0.5,
-            domeTopColor: '#11142f',
-            domeBottomColor: '#02030a',
-            domeGlowColor: '#4f1d95',
-            domeGlowStrength: 0.72,
-            domeSpeed: 0.18,
+            clearColor: '#121316',
+            exposure: 1.2,
+            bloomStrength: 0.18,
+            bloomRadius: 0.24,
+            bloomThreshold: 0.62,
+            domeTopColor: '#1a1228',
+            domeBottomColor: '#090a0f',
+            domeGlowColor: '#772599',
+            domeGlowStrength: 0.4,
+            domeSpeed: 0.22,
+            dofEnabled: true,
+            dofFocusDistance: 1.8,
+            dofFocusRange: 0.55,
+            dofBokehScale: 1.9,
+            dofResolutionScale: 0.5,
         },
         brain: {
             visible: true,
-            baseColor: '#43205f',
-            fresnelColor: '#d5c7ff',
-            fresnelPower: 2.3,
-            fresnelIntensity: 1.3,
-            specularIntensity: 0.7,
-            specularShininess: 40,
-            roughness: 0.25,
-            electricColor: '#8f65ff',
-            electricIntensity: 2.8,
-            electricSpeed: 1.7,
-            electricFrequency: 8.5,
-            lightX: 2.1,
-            lightY: 2.9,
-            lightZ: 1.9,
+            baseColor: '#492469',
+            fresnelColor: '#b3a1cf',
+            fresnelPower: 2.5,
+            fresnelIntensity: 1.2,
+            specularIntensity: 0.6,
+            specularShininess: 32,
+            roughness: 0.3,
+            electricColor: '#8b5cf6',
+            electricIntensity: 2.5,
+            electricSpeed: 1.5,
+            electricFrequency: 8,
+            lightX: 2,
+            lightY: 3,
+            lightZ: 2,
         },
         groove: {
             visible: true,
-            count: 2800,
-            size: 22,
-            speed: 1.2,
-            outset: 0.004,
-            spread: 0.007,
-            threshold: 0.52,
-            color1: '#ffb46c',
-            color2: '#ff7b3b',
+            count: 3000,
+            size: 24,
+            speed: 1,
+            outset: 0.003,
+            spread: 0.0065,
+            threshold: 0.5,
+            color1: '#ff9b57',
+            color2: '#d5750f',
         },
         threads: {
             visible: true,
-            color: '#b58cff',
-            opacity: 0.42,
+            color: '#b089ff',
+            opacity: 0.4,
             clusterCount: 16,
             threadsPerCluster: 5,
-            threadRadiusMin: 0.00035,
-            threadRadiusMax: 0.0028,
-            minLength: 0.72,
-            maxLength: 2.45,
-            startRadiusMin: 0.34,
+            threadRadiusMin: 0.0003,
+            threadRadiusMax: 0.003,
+            minLength: 0.7,
+            maxLength: 2.8,
+            startRadiusMin: 0.35,
             startRadiusMax: 0.5,
-            waveAmplitude: 0.115,
+            waveAmplitude: 0.12,
             waveFrequency: 3.8,
             clusterSpread: 0.1,
             animationEnabled: true,
-            animationSpeed: 2.6,
-            animationAmplitude: 0.026,
-            animationFrequency: 2.3,
+            animationSpeed: 3,
+            animationAmplitude: 0.03,
+            animationFrequency: 2,
             mouseRepulsionEnabled: true,
             mouseRepulsionRadius: 0.35,
             mouseRepulsionStrength: 0.08,
@@ -206,14 +223,14 @@ const presets = {
         },
         sparkles: {
             visible: true,
-            count: 1800,
-            size: 1.6,
-            brightness: 2.8,
-            minRadius: 1.2,
-            maxRadius: 3.2,
-            speed: 0.45,
+            count: 2000,
+            size: 0.9,
+            brightness: 4.4,
+            minRadius: 0.8,
+            maxRadius: 2,
+            speed: 0.5,
             color1: '#ffffff',
-            color2: '#e28c45',
+            color2: '#895d0d',
         },
     },
     auroraSignal: {
@@ -228,6 +245,11 @@ const presets = {
             domeGlowColor: '#0f766e',
             domeGlowStrength: 0.62,
             domeSpeed: 0.22,
+            dofEnabled: true,
+            dofFocusDistance: 1.8,
+            dofFocusRange: 0.5,
+            dofBokehScale: 1.7,
+            dofResolutionScale: 0.45,
         },
         brain: {
             visible: true,
@@ -314,6 +336,11 @@ const presets = {
             domeGlowColor: '#c2410c',
             domeGlowStrength: 0.82,
             domeSpeed: 0.16,
+            dofEnabled: true,
+            dofFocusDistance: 1.8,
+            dofFocusRange: 0.58,
+            dofBokehScale: 1.85,
+            dofResolutionScale: 0.45,
         },
         brain: {
             visible: true,
@@ -405,6 +432,7 @@ const brainState = reactive({ ...presets.neuralPulse.brain })
 const grooveState = reactive({ ...presets.neuralPulse.groove })
 const threadState = reactive({ ...presets.neuralPulse.threads })
 const sparkleState = reactive({ ...presets.neuralPulse.sparkles })
+const renderPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25)
 
 const canvasConfig = reactive({
     clearColor: sceneState.clearColor,
@@ -413,7 +441,9 @@ const canvasConfig = reactive({
     toneMapping: THREE.ACESFilmicToneMapping,
     toneMappingExposure: sceneState.exposure,
     outputColorSpace: THREE.SRGBColorSpace,
-    antialias: true,
+    antialias: false,
+    dpr: renderPixelRatio,
+    powerPreference: 'high-performance' as WebGLPowerPreference,
 })
 
 const controlsState = reactive({
@@ -426,6 +456,17 @@ const controlsState = reactive({
     minDistance: 1.5,
     maxDistance: 3,
 })
+
+const hasBloomSubjects = computed(() => (
+    brainState.visible
+    || grooveState.visible
+    || threadState.visible
+    || threadState.particlesVisible
+    || sparkleState.visible
+))
+const hasPostEffects = computed(() => hasBloomSubjects.value && (sceneState.bloomStrength > 0.001 || sceneState.dofEnabled))
+const dofAperture = computed(() => THREE.MathUtils.clamp(sceneState.dofFocusRange / 20, 0.001, 0.08))
+const dofMaxBlur = computed(() => THREE.MathUtils.clamp(sceneState.dofBokehScale / 100, 0, 0.08))
 
 watchEffect(() => {
     canvasConfig.clearColor = sceneState.clearColor
@@ -458,35 +499,35 @@ const ensurePaneStyle = () => {
     styleElement.textContent = `
         .brain-storm-pane {
             position: fixed !important;
-            top: 10px !important;
-            right: 10px !important;
-            width: 292px !important;
-            max-height: calc(100vh - 20px) !important;
+            top: 8px !important;
+            right: 8px !important;
+            width: 280px !important;
+            max-height: calc(100vh - 16px) !important;
             overflow-y: auto !important;
             z-index: 10000;
             scrollbar-width: thin;
-            scrollbar-color: #7c3aed transparent;
-            --tp-base-background-color: rgba(9, 11, 20, 0.92);
+            scrollbar-color: #7444ff transparent;
+            --tp-base-background-color: #121316;
             --tp-base-shadow-color: rgba(0, 0, 0, 0.4);
-            --tp-button-background-color: #7c3aed;
-            --tp-button-background-color-active: #8b5cf6;
-            --tp-button-background-color-focus: #8b5cf6;
-            --tp-button-background-color-hover: #8b5cf6;
-            --tp-button-foreground-color: #f8fafc;
-            --tp-container-background-color: rgba(20, 24, 40, 0.9);
-            --tp-container-background-color-active: rgba(32, 37, 59, 0.95);
-            --tp-container-background-color-focus: rgba(32, 37, 59, 0.95);
-            --tp-container-background-color-hover: rgba(32, 37, 59, 0.95);
-            --tp-container-foreground-color: #f8fafc;
+            --tp-button-background-color: #7444ff;
+            --tp-button-background-color-active: #7444ff;
+            --tp-button-background-color-focus: #8855ff;
+            --tp-button-background-color-hover: #8855ff;
+            --tp-button-foreground-color: #ffffff;
+            --tp-container-background-color: #28292e;
+            --tp-container-background-color-active: #1e1f23;
+            --tp-container-background-color-focus: #1e1f23;
+            --tp-container-background-color-hover: #1e1f23;
+            --tp-container-foreground-color: #ffffff;
             --tp-groove-foreground-color: rgba(255, 255, 255, 0.08);
-            --tp-input-background-color: rgba(15, 19, 34, 0.95);
-            --tp-input-background-color-active: rgba(26, 31, 52, 0.98);
-            --tp-input-background-color-focus: rgba(26, 31, 52, 0.98);
-            --tp-input-background-color-hover: rgba(26, 31, 52, 0.98);
-            --tp-input-foreground-color: #f8fafc;
-            --tp-label-foreground-color: rgba(241, 245, 249, 0.75);
-            --tp-monitor-background-color: rgba(15, 19, 34, 0.95);
-            --tp-monitor-foreground-color: #c084fc;
+            --tp-input-background-color: #28292e;
+            --tp-input-background-color-active: #1e1f23;
+            --tp-input-background-color-focus: #1e1f23;
+            --tp-input-background-color-hover: #1e1f23;
+            --tp-input-foreground-color: #ffffff;
+            --tp-label-foreground-color: rgba(255, 255, 255, 0.6);
+            --tp-monitor-background-color: #28292e;
+            --tp-monitor-foreground-color: #7444ff;
         }
 
         .brain-storm-pane::-webkit-scrollbar {
@@ -494,15 +535,15 @@ const ensurePaneStyle = () => {
         }
 
         .brain-storm-pane::-webkit-scrollbar-thumb {
-            background: #7c3aed;
+            background: #7444ff;
             border-radius: 999px;
         }
 
         .brain-storm-pane .tp-rotv {
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            box-shadow: 0 18px 42px rgba(1, 4, 18, 0.48);
-            backdrop-filter: blur(14px);
+            border-radius: 6px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: none;
         }
 
         .brain-storm-pane .tp-rotv_t,
@@ -786,6 +827,32 @@ onMounted(() => {
     })
     sparkleFolder.addBinding(sparkleState, 'color1', { label: '颜色 A' })
     sparkleFolder.addBinding(sparkleState, 'color2', { label: '颜色 B' })
+    const postFolder = paneControl.addFolder({ title: 'Post Effects', expanded: false })
+    postFolder.addBinding(sceneState, 'dofEnabled', { label: 'Depth Of Field' })
+    postFolder.addBinding(sceneState, 'dofFocusDistance', {
+        label: 'Focus Distance',
+        min: 0.5,
+        max: 4,
+        step: 0.01,
+    })
+    postFolder.addBinding(sceneState, 'dofFocusRange', {
+        label: 'Aperture',
+        min: 0.1,
+        max: 1.2,
+        step: 0.01,
+    })
+    postFolder.addBinding(sceneState, 'dofBokehScale', {
+        label: 'Max Blur',
+        min: 0,
+        max: 4,
+        step: 0.01,
+    })
+    postFolder.addBinding(sceneState, 'dofResolutionScale', {
+        label: 'DOF Resolution',
+        min: 0.25,
+        max: 1,
+        step: 0.05,
+    })
 })
 
 onUnmounted(() => {

@@ -73,6 +73,10 @@ const materialConfig = {
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(({ elapsed }) => {
+    if (!props.visible) {
+        return
+    }
+
     materialConfig.uniforms.uTime.value = elapsed * props.speed
 })
 

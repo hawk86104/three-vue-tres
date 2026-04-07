@@ -38,6 +38,7 @@ const props = withDefaults(defineProps<Props>(), {
 const points = shallowRef<THREE.Points | null>(null)
 let geometry: THREE.BufferGeometry | null = null
 let material: THREE.ShaderMaterial | null = null
+const pointPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25)
 
 const disposeParticles = () => {
     geometry?.dispose()
@@ -133,7 +134,7 @@ const buildParticles = () => {
             uTime: { value: 0 },
             uSize: { value: props.size },
             uSpeed: { value: props.speed },
-            uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+            uPixelRatio: { value: pointPixelRatio },
             uColor1: { value: new THREE.Color(props.color1) },
             uColor2: { value: new THREE.Color(props.color2) },
         },
@@ -192,6 +193,7 @@ const buildParticles = () => {
 
     const nextPoints = new THREE.Points(geometry, material)
     nextPoints.frustumCulled = false
+    nextPoints.renderOrder = 8
     nextPoints.visible = props.visible
     points.value = nextPoints
 }
@@ -218,6 +220,10 @@ watchEffect(() => {
 
 const { onBeforeRender } = useLoop()
 onBeforeRender(({ elapsed }) => {
+    if (!props.visible) {
+        return
+    }
+
     if (material) {
         material.uniforms.uTime.value = elapsed
     }
