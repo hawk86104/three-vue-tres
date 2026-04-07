@@ -4,8 +4,8 @@
             <TresPerspectiveCamera
                 :position="[2.2, 0, 0.85]"
                 :fov="35"
-                :near="0.01"
-                :far="1000"
+                :near="0.05"
+                :far="80"
             />
             <OrbitControls v-bind="controlsState" />
 
@@ -106,22 +106,19 @@
                 />
             </TresGroup>
 
-            <EffectComposer v-if="hasPostEffects">
-                <UnrealBloom
-                    v-if="sceneState.bloomStrength > 0.001"
-                    :strength="sceneState.bloomStrength"
-                    :threshold="sceneState.bloomThreshold"
-                    :radius="sceneState.bloomRadius"
-                />
-                <brainBokehPass
-                    v-if="sceneState.dofEnabled"
-                    :focus="sceneState.dofFocusDistance"
-                    :aperture="dofAperture"
-                    :maxblur="dofMaxBlur"
-                    :resolution-scale="sceneState.dofResolutionScale"
-                />
-                <Output />
-            </EffectComposer>
+            <brainBokehPass
+                v-if="hasPostEffects"
+                :enabled="hasPostEffects"
+                :bloom-enabled="sceneState.bloomStrength > 0.001"
+                :bloom-strength="sceneState.bloomStrength"
+                :bloom-threshold="sceneState.bloomThreshold"
+                :bloom-radius="sceneState.bloomRadius"
+                :dof-enabled="sceneState.dofEnabled && brainState.visible"
+                :focus="sceneState.dofFocusDistance"
+                :aperture="dofAperture"
+                :maxblur="dofMaxBlur"
+                :resolution-scale="sceneState.dofResolutionScale"
+            />
         </TresCanvas>
     </div>
 </template>
@@ -130,7 +127,6 @@
 import { computed, onMounted, onUnmounted, reactive, watchEffect } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from '@tresjs/cientos'
-import { EffectComposer, Output, UnrealBloom } from '@tresjs/post-processing'
 import { Pane } from 'tweakpane'
 import { useGLTF } from 'PLS/basic'
 import brainShell from '../components/brainStorm/brainShell.vue'
@@ -158,7 +154,7 @@ const presets = {
             dofFocusDistance: 1.8,
             dofFocusRange: 0.55,
             dofBokehScale: 1.9,
-            dofResolutionScale: 0.5,
+            dofResolutionScale: 1,
         },
         brain: {
             visible: true,
@@ -249,7 +245,7 @@ const presets = {
             dofFocusDistance: 1.8,
             dofFocusRange: 0.5,
             dofBokehScale: 1.7,
-            dofResolutionScale: 0.45,
+            dofResolutionScale: 1,
         },
         brain: {
             visible: true,
@@ -340,7 +336,7 @@ const presets = {
             dofFocusDistance: 1.8,
             dofFocusRange: 0.58,
             dofBokehScale: 1.85,
-            dofResolutionScale: 0.45,
+            dofResolutionScale: 1,
         },
         brain: {
             visible: true,
@@ -435,15 +431,15 @@ const sparkleState = reactive({ ...presets.neuralPulse.sparkles })
 const renderPixelRatio = Math.min(window.devicePixelRatio || 1, 1.25)
 
 const canvasConfig = reactive({
-    clearColor: sceneState.clearColor,
-    alpha: false,
-    shadows: false,
-    toneMapping: THREE.ACESFilmicToneMapping,
-    toneMappingExposure: sceneState.exposure,
-    outputColorSpace: THREE.SRGBColorSpace,
-    antialias: false,
-    dpr: renderPixelRatio,
-    powerPreference: 'high-performance' as WebGLPowerPreference,
+    // clearColor: sceneState.clearColor,
+    // alpha: false,
+    // shadows: false,
+    // toneMapping: THREE.ACESFilmicToneMapping,
+    // toneMappingExposure: sceneState.exposure,
+    // outputColorSpace: THREE.SRGBColorSpace,
+    // antialias: false,
+    // dpr: renderPixelRatio,
+    // powerPreference: 'high-performance' as WebGLPowerPreference,
 })
 
 const controlsState = reactive({
@@ -849,7 +845,7 @@ onMounted(() => {
     })
     postFolder.addBinding(sceneState, 'dofResolutionScale', {
         label: 'DOF Resolution',
-        min: 0.25,
+        min: 0.75,
         max: 1,
         step: 0.05,
     })

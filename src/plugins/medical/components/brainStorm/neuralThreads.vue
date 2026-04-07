@@ -425,13 +425,14 @@ const buildThreads = () => {
             }
         `,
         transparent: true,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         depthTest: true,
     })
 
     const mesh = new THREE.Mesh(threadGeometry, threadMaterial)
+    mesh.frustumCulled = false
     mesh.renderOrder = 12
     mesh.visible = props.visible
     threadMesh.value = mesh
