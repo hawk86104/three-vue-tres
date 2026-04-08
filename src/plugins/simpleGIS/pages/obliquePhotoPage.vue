@@ -41,6 +41,7 @@ const configState = reactive({
     }/3Dtiles/simpleGIS/TilesetWithDiscreteLOD/tileset.json`,
     isRotation: true,
     isRranslation: true,
+    errorTarget: 16,
 })
 const tilesUrl = ref(configState.tilesUrl)
 const paneControl = new Pane()
@@ -66,4 +67,5 @@ btn.on('click', () => {
 
 paneControl.addBinding(configState, 'isRotation', { label: '地心旋转' })
 paneControl.addBinding(configState, 'isRranslation', { label: '居中展示' })
+paneControl.addBinding(configState, 'errorTarget', { label: 'LOD误差', min: 0, max: 500, step: 1 })
 </script>
