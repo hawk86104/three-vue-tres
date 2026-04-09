@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-09-01 09:14:44
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-09 08:47:04
+ * @LastEditTime: 2026-04-09 11:12:19
 -->
 <template>
     <TresGroup ref="groupRef">
@@ -121,12 +121,25 @@ const applyNativeGeoPosition = () => {
     return geoPosition
 }
 
-class GLTFImplicitKTX2Extension {
-    name = 'ICEGL_implicit_ktx2'
+class GLTFImplicitCompatibilityExtension {
+    name = 'ICEGL_implicit_compatibility'
     parser
 
     constructor(parser: any) {
         this.parser = parser
+        this.ensureImplicitExtensionsUsed()
+    }
+
+    ensureImplicitExtensionsUsed() {
+        const json = this.parser?.json
+        if (!json?.materials?.some((material: any) => material?.extensions?.KHR_materials_unlit)) {
+            return
+        }
+
+        const extensionsUsed = Array.isArray(json.extensionsUsed) ? json.extensionsUsed : []
+        if (!extensionsUsed.includes('KHR_materials_unlit')) {
+            json.extensionsUsed = [...extensionsUsed, 'KHR_materials_unlit']
+        }
     }
 
     loadTexture(textureIndex: number) {
@@ -160,7 +173,7 @@ const makeNewTiles = () => {
         new GLTFExtensionsPlugin({
             dracoLoader: new DRACOLoader().setDecoderPath('./draco/'),
             ktxLoader: ktx2Loader,
-            plugins: [(parser: any) => new GLTFImplicitKTX2Extension(parser)],
+            plugins: [(parser: any) => new GLTFImplicitCompatibilityExtension(parser)],
         }),
     )
 
