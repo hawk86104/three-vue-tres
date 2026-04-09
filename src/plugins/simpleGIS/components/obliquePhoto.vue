@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-09-01 09:14:44
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-09-29 12:33:04
+ * @LastEditTime: 2026-04-09 08:47:04
 -->
 <template>
     <TresGroup ref="groupRef">
@@ -14,12 +14,20 @@
 
 <script lang="ts" setup>
 import { useTres, useLoop } from '@tresjs/core'
+import { getActivePinia } from 'pinia'
 import { TilesRenderer } from '3d-tiles-renderer'
 import { GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 import { watch, ref, onBeforeUnmount } from 'vue'
 import { alignmentCenter, applyTransform } from '../common/utils'
+import * as THREE from 'three'
+
+declare global {
+    interface Window {
+        gisPlaneEditor_extendMeshes_group?: any
+    }
+}
 
 const props = withDefaults(
     defineProps<{
@@ -38,6 +46,80 @@ const props = withDefaults(
 
 const groupRef = ref(null as any)
 const { camera, renderer, sizes } = useTres()
+
+const getTilesNativeGeoPosition = () => {
+    const box = new THREE.Box3()
+    const sphere = new THREE.Sphere()
+    let center = null as THREE.Vector3 | null
+
+    if (tiles.getBoundingBox(box) && !box.isEmpty()) {
+        center = box.getCenter(new THREE.Vector3())
+    } else if (tiles.getBoundingSphere(sphere) && Number.isFinite(sphere.radius) && sphere.radius > 0) {
+        center = sphere.center.clone()
+    }
+
+    if (!center) {
+        throw new Error('倾斜摄影原始坐标尚未准备完成，请稍后再试')
+    }
+
+    const cartographic = { lat: 0, lon: 0, height: 0 }
+    tiles.ellipsoid.getPositionToCartographic(center, cartographic)
+
+    if (
+        !Number.isFinite(cartographic.lon)
+        || !Number.isFinite(cartographic.lat)
+        || !Number.isFinite(cartographic.height)
+    ) {
+        throw new Error('倾斜摄影原始坐标解析失败')
+    }
+
+    return {
+        lon: Number(THREE.MathUtils.radToDeg(cartographic.lon).toFixed(6)),
+        lat: Number(THREE.MathUtils.radToDeg(cartographic.lat).toFixed(6)),
+        height: Number(cartographic.height.toFixed(3)),
+    }
+}
+
+const getGisPlaneEditorGeoPositionTarget = () => {
+    if (!window.gisPlaneEditor_extendMeshes_group) {
+        return null
+    }
+
+    const pinia = getActivePinia() as any
+    const emxlist = pinia?.state?.value?.gisPlaneEditorExtendMeshList?.emxlist
+    if (!emxlist) {
+        return null
+    }
+
+    let current = tiles.group?.parent as any
+    while (current) {
+        const uuid = current.uuid
+        if (uuid && emxlist[uuid]) {
+            const mesh = emxlist[uuid]
+            if (mesh?.object3D) {
+                return mesh.object3D
+            }
+        }
+        current = current.parent
+    }
+
+    return null
+}
+
+const applyNativeGeoPosition = () => {
+    const target = getGisPlaneEditorGeoPositionTarget()
+    if (!target) {
+        return
+    }
+
+    const geoPosition = getTilesNativeGeoPosition()
+    if (!target.geoPosition) {
+        target.geoPosition = { lon: 0, lat: 0, height: 0 }
+    }
+
+    Object.assign(target.geoPosition, geoPosition)
+    return geoPosition
+}
 
 class GLTFImplicitKTX2Extension {
     name = 'ICEGL_implicit_ktx2'
@@ -144,5 +226,6 @@ onBeforeUnmount(() => {
 defineExpose({
     group: groupRef,
     tilesGroup: tiles.group,
+    applyNativeGeoPosition,
 })
 </script>
