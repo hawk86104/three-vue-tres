@@ -193,25 +193,39 @@ export const alignmentCenter = (tiles, isRotation = true, isRranslation = true) 
 }
 
 export const is3DTilesetJson = async (url) => {
-    // 1. 基础检查：后缀和文件名
-    if (!url.toLowerCase().endsWith('.json')) {
+    const rawUrl = typeof url === 'string' ? url.trim() : ''
+    if (!rawUrl) {
         return false
     }
 
     try {
-        // 2. 请求并解析
-        const response = await fetch(url)
+        const normalizedUrl = new URL(rawUrl, globalThis.location?.href || 'http://localhost/').toString()
+        const pathname = new URL(normalizedUrl).pathname.toLowerCase()
+
+        if (!pathname.endsWith('.json')) {
+            return false
+        }
+
+        const response = await fetch(normalizedUrl)
         if (!response.ok) return false
 
         const json = await response.json()
 
-        // 3. 必须字段检查
-        const hasRequiredKeys = typeof json.asset === 'object' && typeof json.geometricError !== 'undefined' && typeof json.root === 'object'
+        const hasAsset = json.asset && typeof json.asset === 'object'
+        const hasRoot = json.root && typeof json.root === 'object'
+        const hasGeometricError = Number.isFinite(Number(json.geometricError))
+            || Number.isFinite(Number(json.root?.geometricError))
+        const hasRootContent = Boolean(
+            json.root?.content
+            || (Array.isArray(json.root?.contents) && json.root.contents.length > 0)
+            || (Array.isArray(json.root?.children) && json.root.children.length > 0)
+            || json.root?.implicitTiling,
+        )
+        const hasBoundingVolume = json.root?.boundingVolume && typeof json.root.boundingVolume === 'object'
+        const version = json.asset?.version
+        const validVersion = /^(\d+)(\.\d+)?$/.test(String(version ?? '').trim())
 
-        // 4. 验证 asset.version
-        const validVersion = json.asset?.version === '1.0' || json.asset?.version === '1.1'
-
-        return hasRequiredKeys && validVersion
+        return hasAsset && hasRoot && hasGeometricError && hasBoundingVolume && hasRootContent && validVersion
     } catch (e) {
         console.error('❌ 验证失败:', e)
         return false

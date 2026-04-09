@@ -14,6 +14,7 @@
 
 <script lang="ts" setup>
 import { useTres, useLoop } from '@tresjs/core'
+import { FMessage } from '@fesjs/fes-design'
 import { getActivePinia } from 'pinia'
 import { TilesRenderer } from '3d-tiles-renderer'
 import { GLTFExtensionsPlugin } from '3d-tiles-renderer/plugins'
@@ -46,6 +47,7 @@ const props = withDefaults(
 
 const groupRef = ref(null as any)
 const { camera, renderer, sizes } = useTres()
+const LEGACY_BINARY_ERROR = 'Legacy binary file detected'
 
 const getTilesNativeGeoPosition = () => {
     const box = new THREE.Box3()
@@ -166,6 +168,8 @@ const syncTilesRuntimeOptions = (newTiles: any) => {
 }
 const makeNewTiles = () => {
     let newTiles = new TilesRenderer(props.tilesUrl as string) as any
+    let hasWarnedLegacyBinary = false
+
     newTiles.fetchOptions.mode = 'cors'
     syncTilesRuntimeOptions(newTiles)
     const ktx2Loader = new KTX2Loader().setTranscoderPath('./basis/').detectSupport(renderer)
@@ -185,6 +189,25 @@ const makeNewTiles = () => {
             if (c.material) {
                 c.material.dispose()
             }
+        })
+    })
+    newTiles.addEventListener('load-error', ({ error, url }) => {
+        const message = error instanceof Error ? error.message : String(error ?? '未知错误')
+
+        if (!message.includes(LEGACY_BINARY_ERROR) || hasWarnedLegacyBinary) {
+            return
+        }
+
+        hasWarnedLegacyBinary = true
+        FMessage.error?.({
+            content: '当前倾斜摄影数据内嵌的是旧版 glTF 1.0 b3dm，three.js 现版 GLTFLoader 无法加载，请先将数据转换为 glTF 2.0 / 3D Tiles 1.0+。',
+            colorful: true,
+            duration: 8,
+        })
+        console.error('[obliquePhoto] 检测到旧版 glTF 1.0 b3dm 数据，当前运行时不支持直接加载。', {
+            tilesUrl: props.tilesUrl,
+            failedUrl: String(url),
+            error,
         })
     })
 
