@@ -1,0 +1,19 @@
+diff --git a/node_modules/@fesjs/preset-built-in/dist/plugins/core/entry/getRootContainer.jsx.tpl b/node_modules/@fesjs/preset-built-in/dist/plugins/core/entry/getRootContainer.jsx.tpl
+index f69c69f..ce25aab 100644
+--- a/node_modules/@fesjs/preset-built-in/dist/plugins/core/entry/getRootContainer.jsx.tpl
++++ b/node_modules/@fesjs/preset-built-in/dist/plugins/core/entry/getRootContainer.jsx.tpl
+@@ -1,8 +1,7 @@
+ import { defineComponent, onBeforeMount, ref, provide,  } from 'vue'
+-import { useRouter, RouterView } from 'vue-router'
+ import { plugin } from './core/plugin';
+ import { updateInitialState } from './initialState';
+-import { ApplyPluginsType } from '{{{ runtimePath }}}';
++import { useRouter, RouterView, ApplyPluginsType } from '{{{ runtimePath }}}';
+ 
+ export const DefaultContainer = defineComponent({
+     name: 'DefaultContainer',
+@@ -79,4 +78,3 @@ export default function getRootContainer(_routes, _plugin) {
+         },
+     })
+ };
+-
