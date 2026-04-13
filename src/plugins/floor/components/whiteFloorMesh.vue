@@ -8,16 +8,24 @@
 -->
 
 <template>
-    <TresMesh ref="tmRef" :rotation-x="-Math.PI / 2">
+    <TresMesh :rotation-x="-Math.PI / 2" :receiveShadow="props.receiveShadow">
         <TresPlaneGeometry :args="props.size" />
-        <TresShaderMaterial v-bind="tsMaterial" />
+        <CustomShaderMaterial
+            :baseMaterial="THREE.MeshPhongMaterial"
+            :uniforms="uniforms"
+            :side="THREE.DoubleSide"
+            :vertexShader="getVertexShader()"
+            :fragmentShader="getFragmentShader()"
+            transparent
+            silent
+        />
     </TresMesh>
 </template>
 
 <script lang="ts" setup>
 import * as THREE from 'three'
-import { watch, ref } from 'vue'
-import { useTexture } from '@tresjs/cientos'
+import { watch } from 'vue'
+import { CustomShaderMaterial, useTexture } from '@tresjs/cientos'
 import { getVertexShader, getFragmentShader } from '../shaders/whiteFloor'
 
 const props = withDefaults(
@@ -26,34 +34,25 @@ const props = withDefaults(
         color?: string
         shadowColor?: string
         edge?: number
+        receiveShadow?: boolean
     }>(),
     {
         size: [20, 20],
         color: '#990',
         shadowColor: '#999',
         edge: 0.35,
+        receiveShadow: false,
     },
 )
 
-const tmRef = ref() as any
 const { state: pTexture } = useTexture('./plugins/floor/image/whiteFloor.jpg')
-const tsMaterial = {
-    uniforms: THREE.UniformsUtils.merge([
-        THREE.UniformsLib['lights'],
-        {
-            uColor: { value: new THREE.Color(props.color) },
-            uShadowColor: { value: new THREE.Color(props.shadowColor) },
-            fEdge: { value: props.edge },
-            uTexture: { value: null },
-        },
-    ]),
-    side: THREE.DoubleSide,
-    vertexShader: getVertexShader(),
-
-    fragmentShader: getFragmentShader(),
-    lights: true,
-    transparent: true,
+const uniforms = {
+    uColor: { value: new THREE.Color(props.color) },
+    uShadowColor: { value: new THREE.Color(props.shadowColor) },
+    fEdge: { value: props.edge },
+    uTexture: { value: null as THREE.Texture | null },
 }
+
 watch(
     pTexture,
     (texture) => {
@@ -61,7 +60,7 @@ watch(
             texture.wrapS = THREE.RepeatWrapping
             texture.wrapT = THREE.RepeatWrapping
             texture.repeat.set(6, 3)
-            tmRef.value.material.uniforms.uTexture.value = texture
+            uniforms.uTexture.value = texture
         }
     },
 )
@@ -69,20 +68,20 @@ watch(
 watch(
     () => props.edge,
     (newVal) => {
-        tsMaterial.uniforms.fEdge.value = newVal
+        uniforms.fEdge.value = newVal
     },
 )
 
 watch(
     () => props.color,
     (newVal) => {
-        tsMaterial.uniforms.uColor.value = new THREE.Color(props.color)
+        uniforms.uColor.value.set(newVal)
     },
 )
 watch(
     () => props.shadowColor,
     (newVal) => {
-        tsMaterial.uniforms.uShadowColor.value = new THREE.Color(props.shadowColor)
+        uniforms.uShadowColor.value.set(newVal)
     },
 )
 </script>
