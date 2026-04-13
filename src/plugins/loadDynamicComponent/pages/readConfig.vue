@@ -8,7 +8,7 @@
 -->
 <template>
 	<n-message-provider>
-		<ServiceLoader v-if="!serviceData" @loaded="handleLoaded"
+		<ServiceLoader ref="serviceLoaderRef" v-if="!serviceData" @loaded="handleLoaded"
 			style="z-index: 99999;position: absolute;left: 10px;top: 50px;" />
 		<ServiceViewer v-else :data="serviceData" :selectedType="comState?.comName" @select="handleSelectComponent" @reset="handleReset"
 			style="z-index: 99999;position: absolute;left: 10px;top: 50px;" />
@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { SRGBColorSpace, BasicShadowMap, NoToneMapping } from 'three'
-import { nextTick, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
 import { OrbitControls } from '@tresjs/cientos'
 import { NMessageProvider } from 'naive-ui'
 import ServiceLoader from '../components/ServiceLoader.vue'
@@ -49,9 +49,15 @@ const handleLoaded = (json: any) => {
 	console.log('服务配置加载完成：', json)
 }
 const serviceData = ref<any | null>(null)
+const serviceLoaderRef = ref<{ handleApply: () => Promise<void> } | null>(null)
 const comState = ref(null) as any
 const attrsData = ref<any>(null)
 const comConfig = ref<any>(null)
+
+onMounted(() => {
+	serviceLoaderRef.value?.handleApply?.()
+})
+
 const handleSelectComponent = (item: any) => {
 	console.log('选中组件', item)
 	if (comState.value && comState.value.comName === item.type) {

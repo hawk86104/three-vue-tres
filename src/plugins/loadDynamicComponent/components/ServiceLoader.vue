@@ -36,6 +36,10 @@ const handleApply = async () => {
 		loading.value = false
 	}
 }
+
+defineExpose({
+	handleApply,
+})
 </script>
 
 <template>
