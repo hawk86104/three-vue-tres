@@ -68,10 +68,6 @@ void main() {
 
   if (alpha < 0.01) discard;
 
-  gl_FragColor = vec4(color, alpha);
-
-
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
+  csm_DiffuseColor = vec4(color, alpha);
+  csm_DepthAlpha = alpha;
 }
-

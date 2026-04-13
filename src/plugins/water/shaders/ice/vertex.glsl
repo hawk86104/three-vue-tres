@@ -19,6 +19,6 @@ void main() {
   vParallax = tbnViewDir.xy;
   vParallax *= uParallaxDistance / dot(-tbnViewDir, vec3(0.0,0.0,1.0));
 
-  gl_Position = projectionMatrix * viewMatrix * wPos;
+  csm_Position = pos;
 
 }

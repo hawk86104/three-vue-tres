@@ -4,16 +4,18 @@
  * @Autor: Jsonco
  * @Date: 2025-06-05 09:50:35
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-10-14 08:55:13
+ * @LastEditTime: 2026-04-13 19:48:33
 -->
 <template>
-    <TresMesh :rotation-x="-Math.PI / 2" :position="[0, 0, 0]">
+    <TresMesh :rotation-x="-Math.PI / 2">
         <TresPlaneGeometry :args="[10, 10]" />
-        <TresShaderMaterial
+        <CustomShaderMaterial
+            :baseMaterial="THREE.MeshBasicMaterial"
             :uniforms="shaderUniforms"
             :vertex-shader="vertexShader"
             :fragment-shader="fragmentShader"
-            :side="2"
+            :side="THREE.DoubleSide"
+            silent
         />
     </TresMesh>
    
@@ -23,6 +25,7 @@
 import { onMounted, watch, reactive } from 'vue'
 import * as THREE from 'three'
 import { useLoop } from '@tresjs/core'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 
 const props = withDefaults(
     defineProps<{
@@ -73,7 +76,7 @@ const vertexShader = `
     varying vec2 vUv;
     void main() {
         vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        csm_Position = position;
     }
 `
 
@@ -170,7 +173,7 @@ const fragmentShader = `
         // 添加节点 - 使用飞线颜色而不是白色
         finalColor = mix(finalColor, flyLineColor, dotMask);
         
-        gl_FragColor = vec4(finalColor, 1.0);
+        csm_DiffuseColor = vec4(finalColor, 1.0);
     }
 `
 

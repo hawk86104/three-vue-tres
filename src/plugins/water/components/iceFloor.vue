@@ -10,14 +10,26 @@
     <TresGroup>
         <TresMesh :rotate-x="-Math.PI / 2">
             <TresPlaneGeometry :args="[40, 40]" />
-            <TresShaderMaterial :vertexShader="iceVertex" :fragmentShader="iceFragment" transparent
-                :uniforms="uniforms" />
+            <CustomShaderMaterial
+                :baseMaterial="THREE.MeshPhysicalMaterial"
+                :vertexShader="iceVertex"
+                :fragmentShader="iceFragment"
+                :uniforms="uniforms"
+                :side="THREE.DoubleSide"
+                :roughness="0.14"
+                :metalness="0.02"
+                :clearcoat="0.25"
+                :clearcoatRoughness="0.18"
+                transparent
+                silent
+            />
         </TresMesh>
     </TresGroup>
 </template>
 <script setup lang="ts">
 import * as THREE from 'three'
 import { watch } from 'vue'
+import { CustomShaderMaterial } from '@tresjs/cientos'
 import { useTextures } from 'PLS/basic'
 import iceVertex from '../shaders/ice/vertex.glsl'
 import iceFragment from '../shaders/ice/fragment.glsl'
