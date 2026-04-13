@@ -4,10 +4,10 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-07-04 08:50:42
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-03-20 15:24:12
+ * @LastEditTime: 2026-04-13 14:24:13
 -->
 <template>
-    <TresGroup :renderOrder="9999" >
+    <TresGroup>
         <TresMesh :rotation="[Math.PI / 2, 0, 0]">
             <TresPlaneGeometry :args="[w, h]" />
             <CustomShaderMaterial
@@ -23,7 +23,7 @@
                 :toneMapped="false"
             />
         </TresMesh>
-        <TresMesh :rotation="[Math.PI / 2, 0, 0]">
+        <TresMesh :renderOrder="1" :rotation="[Math.PI / 2, 0, 0]">
             <TresPlaneGeometry :args="[w + lineWidth, h + lineWidth]" />
             <CustomShaderMaterial
                 :baseMaterial="THREE.MeshBasicMaterial"
@@ -43,7 +43,7 @@
 
 <script setup lang="ts">
 import * as THREE from 'three'
-import { watchEffect } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { CustomShaderMaterial } from '@tresjs/cientos'
 
 const props = withDefaults(
