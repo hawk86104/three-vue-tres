@@ -143,5 +143,10 @@ export default defineBuildConfig({
                 }
             },
         },
+        build:{
+	        reportCompressedSize: false,
+            cssMinify: false,
+            minify: 'esbuild',
+        }
     },
 })
