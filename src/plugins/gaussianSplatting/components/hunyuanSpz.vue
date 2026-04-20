@@ -19,9 +19,25 @@ import { Float32BufferAttribute, Quaternion } from 'three'
 const props = withDefaults(defineProps<{
     url?: string
     splatAlphaRemovalThreshold?: number
+    bufferCompressionLevel?: number
+    antialiasedMode?: 'auto' | 'on' | 'off'
+    dynamicScene?: boolean
+    sharedMemoryForWorkers?: boolean
+    focalAdjustment?: number
+    kernel2DSize?: number
+    splatRenderMode?: 'ThreeD' | 'TwoD'
+    rotationInputOrder?: 'xyzw' | 'wxyz'
 }>(), {
     url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
     splatAlphaRemovalThreshold: 1,
+    bufferCompressionLevel: 0,
+    antialiasedMode: 'auto',
+    dynamicScene: false,
+    sharedMemoryForWorkers: false,
+    focalAdjustment: 1.15,
+    kernel2DSize: 0.3,
+    splatRenderMode: 'ThreeD',
+    rotationInputOrder: 'xyzw',
 })
 
 const clampToByte = (value: number) => {
@@ -33,11 +49,21 @@ const clampToByte = (value: number) => {
 
 const getRotation = (rotations: Float32Array, index: number, stride: number) => {
     const base = index * stride
-    const x = rotations[base] ?? 0
-    const y = rotations[base + 1] ?? 0
-    const z = rotations[base + 2] ?? 0
+    const x = props.rotationInputOrder === 'wxyz' && stride >= 4
+        ? (rotations[base + 1] ?? 0)
+        : (rotations[base] ?? 0)
+    const y = props.rotationInputOrder === 'wxyz' && stride >= 4
+        ? (rotations[base + 2] ?? 0)
+        : (rotations[base + 1] ?? 0)
+    const z = props.rotationInputOrder === 'wxyz' && stride >= 4
+        ? (rotations[base + 3] ?? 0)
+        : (rotations[base + 2] ?? 0)
     const w = stride >= 4
-        ? (rotations[base + 3] ?? 1)
+        ? (
+            props.rotationInputOrder === 'wxyz'
+                ? (rotations[base] ?? 1)
+                : (rotations[base + 3] ?? 1)
+        )
         : Math.sqrt(Math.max(0, 1 - x * x - y * y - z * z))
 
     return new Quaternion(x, y, z, w).normalize()
@@ -49,6 +75,7 @@ const createSplatBuffer = async () => {
         },
     })
 
+    const compressionLevel = Math.max(0, Math.min(2, Math.round(props.bufferCompressionLevel)))
     const rotationStride = Math.max(3, Math.floor(cloud.rotations.length / Math.max(1, cloud.numPoints)))
     const splats = new Array(cloud.numPoints)
 
@@ -64,10 +91,11 @@ const createSplatBuffer = async () => {
             cloud.scales[positionBase],
             cloud.scales[positionBase + 1],
             cloud.scales[positionBase + 2],
+            // GaussianSplats3D 的 UncompressedSplatArray 旋转槽位顺序是 w, x, y, z。
+            rotation.w,
             rotation.x,
             rotation.y,
             rotation.z,
-            rotation.w,
             clampToByte((cloud.colors[colorBase] ?? 0) * 255),
             clampToByte((cloud.colors[colorBase + 1] ?? 0) * 255),
             clampToByte((cloud.colors[colorBase + 2] ?? 0) * 255),
@@ -75,10 +103,14 @@ const createSplatBuffer = async () => {
         ]
     }
 
+    const antialiased = props.antialiasedMode === 'auto'
+        ? Boolean(cloud.antialiased)
+        : props.antialiasedMode === 'on'
+
     return {
-        antialiased: Boolean(cloud.antialiased),
+        antialiased,
         splatBuffer: GaussianSplats3D.SplatBufferGenerator
-            .getStandardGenerator(props.splatAlphaRemovalThreshold, 1)
+            .getStandardGenerator(props.splatAlphaRemovalThreshold, compressionLevel)
             .generateFromUncompressedSplatArray({
                 sphericalHarmonicsDegree: 0,
                 splatCount: splats.length,
@@ -88,10 +120,17 @@ const createSplatBuffer = async () => {
 }
 
 const { antialiased, splatBuffer } = await createSplatBuffer()
+const splatRenderMode = props.splatRenderMode === 'TwoD'
+    ? GaussianSplats3D.SplatRenderMode.TwoD
+    : GaussianSplats3D.SplatRenderMode.ThreeD
+
 const viewer = new GaussianSplats3D.DropInViewer({
     antialiased,
-    dynamicScene: false,
-    sharedMemoryForWorkers: false,
+    dynamicScene: props.dynamicScene,
+    focalAdjustment: props.focalAdjustment,
+    kernel2DSize: props.kernel2DSize,
+    sharedMemoryForWorkers: props.sharedMemoryForWorkers,
+    splatRenderMode,
 })
 
 await viewer.viewer.addSplatBuffers([splatBuffer], [{}], true, false, false)
