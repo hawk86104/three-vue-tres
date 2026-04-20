@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-20 11:48:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-20 17:13:58
+ * @LastEditTime: 2026-04-20 18:09:45
 -->
 <template>
     <primitive :object="viewer" :rotation="[-Math.PI / 2, 0, 0]" />
@@ -14,14 +14,14 @@
 import { onUnmounted } from 'vue'
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d'
 import { loadSpzFromUrl } from '@spz-loader/core'
-import { Float32BufferAttribute, Quaternion, Vector3 } from 'three'
+import { Float32BufferAttribute, Quaternion } from 'three'
 
 const props = withDefaults(defineProps<{
     url?: string
     splatAlphaRemovalThreshold?: number
 }>(), {
-    url: './plugins/gaussianSplatting/model/hunyuan.spz',
-    splatAlphaRemovalThreshold: 5,
+    url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
+    splatAlphaRemovalThreshold: 1,
 })
 
 const clampToByte = (value: number) => {
@@ -42,7 +42,6 @@ const getRotation = (rotations: Float32Array, index: number, stride: number) => 
 
     return new Quaternion(x, y, z, w).normalize()
 }
-
 const createSplatBuffer = async () => {
     const cloud = await loadSpzFromUrl(props.url, {
         unpackOptions: {
@@ -85,12 +84,12 @@ const createSplatBuffer = async () => {
         })
 }
 
+const splatBuffer = await createSplatBuffer()
 const viewer = new GaussianSplats3D.DropInViewer({
+    dynamicScene: false,
     sharedMemoryForWorkers: false,
-    dynamicScene: true,
 })
 
-const splatBuffer = await createSplatBuffer()
 await viewer.viewer.addSplatBuffers([splatBuffer], [{}], true, false, false)
 
 // Tres 通过 primitive 挂载时，这里补一个空的 position attribute，避免兼容问题。

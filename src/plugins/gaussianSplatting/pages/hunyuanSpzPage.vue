@@ -17,9 +17,16 @@ import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import hunyuanSpz from '../components/hunyuanSpz.vue'
 
+const renderPixelRatio = typeof window === 'undefined'
+    ? 1
+    : Math.min(window.devicePixelRatio || 1, 1.25)
+
 const state = reactive({
+    antialias: false,
     clearColor: '#f8fafc',
     alpha: false,
+    dpr: renderPixelRatio,
+    powerPreference: 'high-performance' as WebGLPowerPreference,
     shadowMapType: BasicShadowMap,
     outputColorSpace: SRGBColorSpace,
     toneMapping: NoToneMapping,

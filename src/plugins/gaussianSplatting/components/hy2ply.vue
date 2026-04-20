@@ -23,7 +23,7 @@ import {
     Vector3,
 } from 'three'
 
-const sourceGeometry = await useLoader((PLYLoader as any), './plugins/gaussianSplatting/model/hunyuan.ply') as BufferGeometry
+const sourceGeometry = await useLoader((PLYLoader as any), 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply') as BufferGeometry
 const geometry = sourceGeometry.clone()
 
 geometry.computeBoundingBox()
