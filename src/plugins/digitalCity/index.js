@@ -12,6 +12,7 @@ import diffuseCircle from './components/radras/diffuseCircle.vue'
 import depthBufferDiffuse from './components/radras/depthBufferDiffuse.vue'
 import precipitation from './components/weather/precipitation.vue'
 import precipitationForEditor from './components/weather/precipitationForEditor.vue'
+import weatherCanvas from './components/weather/weatherCanvas.vue'
 import cloudMesh from './components/weather/cloudMesh.vue'
 import clouds from './components/weather/clouds.vue'
 import markA from './components/buildings/buildingsMarkA.vue'
@@ -37,6 +38,7 @@ export {
     depthBufferDiffuse,
     precipitation,
     precipitationForEditor,
+    weatherCanvas,
     cloudMesh,
     clouds,
     markA,
