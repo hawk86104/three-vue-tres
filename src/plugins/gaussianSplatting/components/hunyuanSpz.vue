@@ -75,17 +75,21 @@ const createSplatBuffer = async () => {
         ]
     }
 
-    return GaussianSplats3D.SplatBufferGenerator
-        .getStandardGenerator(props.splatAlphaRemovalThreshold, 1)
-        .generateFromUncompressedSplatArray({
-            sphericalHarmonicsDegree: 0,
-            splatCount: splats.length,
-            splats,
-        })
+    return {
+        antialiased: Boolean(cloud.antialiased),
+        splatBuffer: GaussianSplats3D.SplatBufferGenerator
+            .getStandardGenerator(props.splatAlphaRemovalThreshold, 1)
+            .generateFromUncompressedSplatArray({
+                sphericalHarmonicsDegree: 0,
+                splatCount: splats.length,
+                splats,
+            }),
+    }
 }
 
-const splatBuffer = await createSplatBuffer()
+const { antialiased, splatBuffer } = await createSplatBuffer()
 const viewer = new GaussianSplats3D.DropInViewer({
+    antialiased,
     dynamicScene: false,
     sharedMemoryForWorkers: false,
 })
