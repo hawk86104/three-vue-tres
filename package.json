@@ -75,6 +75,7 @@
     "@mkkellogg/gaussian-splats-3d": "^0.4.7",
     "@pangenerator/tweakpane-textarea-plugin": "^2.0.0",
     "@pmndrs/vanilla": "^1.25.0",
+    "@spz-loader/core": "^0.3.1",
     "@tresjs/cientos": "5.2.1",
     "@tresjs/core": "5.2.1",
     "@tresjs/leches": "0.14.1",

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-06-13 16:23:57
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-09-19 12:54:09
+ * @LastEditTime: 2026-04-20 10:50:51
  */
 export default {
     name: 'gaussianSplatting',
@@ -54,6 +54,24 @@ export default {
             title: '通用格式的高斯',
             disableFPSGraph: false,
             disableSrcBtn: false,
+        },
+        {
+            src: 'plugins/gaussianSplatting/preview/hy2plyPage.png',
+            type: 'img',
+            name: 'hy2plyPage',
+            title: '混元2ply',
+            disableFPSGraph: false,
+            disableSrcBtn: false,
+            referenceSource: { title: 'hunyuan3D', url: 'https://3d.hunyuan.tencent.com/sceneTo3D' },
+        },
+        {
+            src: 'plugins/gaussianSplatting/preview/hunyuanSpzPage.png',
+            type: 'img',
+            name: 'hunyuanSpzPage',
+            title: '混元SPZ',
+            disableFPSGraph: false,
+            disableSrcBtn: false,
+            referenceSource: { title: 'HY-World-2.0', url: 'https://github.com/Tencent-Hunyuan/HY-World-2.0' },
         },
     ],
 }
