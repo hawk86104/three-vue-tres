@@ -4,183 +4,181 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-20 11:48:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-21 08:39:09
+ * @LastEditTime: 2026-04-21 15:26:51
 -->
 <template>
-    <primitive v-if="viewer" :object="viewer" :rotation="[-Math.PI / 2, 0, 0]" />
+    <primitive v-if="sceneRoot" :object="sceneRoot" />
 </template>
 
 <script lang="ts" setup>
 import { onUnmounted, shallowRef, watch } from 'vue'
-import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d'
-import { loadSpzFromUrl } from '@spz-loader/core'
-import { Float32BufferAttribute, Quaternion } from 'three'
+import { useTres } from '@tresjs/core'
+import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark'
+import { Group, WebGLRenderer } from 'three'
 
 const props = withDefaults(defineProps<{
     url?: string
-    splatAlphaRemovalThreshold?: number
-    bufferCompressionLevel?: number
-    antialiasedMode?: 'auto' | 'on' | 'off'
-    dynamicScene?: boolean
-    sharedMemoryForWorkers?: boolean
-    focalAdjustment?: number
-    kernel2DSize?: number
-    splatRenderMode?: 'ThreeD' | 'TwoD'
-    rotationInputOrder?: 'xyzw' | 'wxyz'
+    lod?: boolean | number
+    extSplats?: boolean
+    paged?: boolean
+    maxStdDev?: number
+    sortRadial?: boolean
+    lodSplatScale?: number
+    pagedExtSplats?: boolean
 }>(), {
     url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
-    splatAlphaRemovalThreshold: 1,
-    bufferCompressionLevel: 2,
-    antialiasedMode: 'off',
-    dynamicScene: false,
-    sharedMemoryForWorkers: false,
-    focalAdjustment: 1.15,
-    kernel2DSize: 0.3,
-    splatRenderMode: 'ThreeD',
-    rotationInputOrder: 'xyzw',
+    lod: true,
+    extSplats: false,
+    paged: false,
+    maxStdDev: 2,
+    sortRadial: true,
+    lodSplatScale: 1,
+    pagedExtSplats: false,
 })
 
-const clampToByte = (value: number) => {
-    if (!Number.isFinite(value)) {
-        return 0
-    }
-    return Math.max(0, Math.min(255, Math.round(value)))
+const { renderer } = useTres() as any
+
+type SparkScene = {
+    root: Group
+    splatMesh: SplatMesh
+    sparkRenderer: SparkRenderer
 }
 
-const getRotation = (rotations: Float32Array, index: number, stride: number) => {
-    const base = index * stride
-    const x = props.rotationInputOrder === 'wxyz' && stride >= 4
-        ? (rotations[base + 1] ?? 0)
-        : (rotations[base] ?? 0)
-    const y = props.rotationInputOrder === 'wxyz' && stride >= 4
-        ? (rotations[base + 2] ?? 0)
-        : (rotations[base + 1] ?? 0)
-    const z = props.rotationInputOrder === 'wxyz' && stride >= 4
-        ? (rotations[base + 3] ?? 0)
-        : (rotations[base + 2] ?? 0)
-    const w = stride >= 4
-        ? (
-            props.rotationInputOrder === 'wxyz'
-                ? (rotations[base] ?? 1)
-                : (rotations[base + 3] ?? 1)
-        )
-        : Math.sqrt(Math.max(0, 1 - x * x - y * y - z * z))
-
-    return new Quaternion(x, y, z, w).normalize()
-}
-const createSplatBuffer = async () => {
-    const cloud = await loadSpzFromUrl(props.url, {
-        unpackOptions: {
-            coordinateSystem: 'RUB',
-        },
-    })
-
-    const compressionLevel = Math.max(0, Math.min(2, Math.round(props.bufferCompressionLevel)))
-    const rotationStride = Math.max(3, Math.floor(cloud.rotations.length / Math.max(1, cloud.numPoints)))
-    const splats = new Array(cloud.numPoints)
-
-    for (let i = 0; i < cloud.numPoints; i++) {
-        const positionBase = i * 3
-        const colorBase = i * 3
-        const rotation = getRotation(cloud.rotations, i, rotationStride)
-
-        splats[i] = [
-            cloud.positions[positionBase],
-            cloud.positions[positionBase + 1],
-            cloud.positions[positionBase + 2],
-            cloud.scales[positionBase],
-            cloud.scales[positionBase + 1],
-            cloud.scales[positionBase + 2],
-            // GaussianSplats3D 的 UncompressedSplatArray 旋转槽位顺序是 w, x, y, z。
-            rotation.w,
-            rotation.x,
-            rotation.y,
-            rotation.z,
-            clampToByte((cloud.colors[colorBase] ?? 0) * 255),
-            clampToByte((cloud.colors[colorBase + 1] ?? 0) * 255),
-            clampToByte((cloud.colors[colorBase + 2] ?? 0) * 255),
-            clampToByte((cloud.alphas[i] ?? 0) * 255),
-        ]
-    }
-
-    const antialiased = props.antialiasedMode === 'auto'
-        ? Boolean(cloud.antialiased)
-        : props.antialiasedMode === 'on'
-
-    return {
-        antialiased,
-        splatBuffer: GaussianSplats3D.SplatBufferGenerator
-            .getStandardGenerator(props.splatAlphaRemovalThreshold, compressionLevel)
-            .generateFromUncompressedSplatArray({
-                sphericalHarmonicsDegree: 0,
-                splatCount: splats.length,
-                splats,
-            }),
-    }
-}
-
-const viewer = shallowRef<GaussianSplats3D.DropInViewer | null>(null)
+const sceneRoot = shallowRef<Group | null>(null)
+let activeScene: SparkScene | null = null
 let loadVersion = 0
 
-const createViewer = async () => {
-    const { antialiased, splatBuffer } = await createSplatBuffer()
-    const splatRenderMode = props.splatRenderMode === 'TwoD'
-        ? GaussianSplats3D.SplatRenderMode.TwoD
-        : GaussianSplats3D.SplatRenderMode.ThreeD
+const resolveRenderer = () => (renderer?.value ?? renderer ?? null) as WebGLRenderer | null
 
-    const nextViewer = new GaussianSplats3D.DropInViewer({
-        antialiased,
-        dynamicScene: props.dynamicScene,
-        focalAdjustment: props.focalAdjustment,
-        kernel2DSize: props.kernel2DSize,
-        sharedMemoryForWorkers: props.sharedMemoryForWorkers,
-        splatRenderMode,
-    })
-
-    await nextViewer.viewer.addSplatBuffers([splatBuffer], [{}], true, false, false)
-
-    // Tres 通过 primitive 挂载时，这里补一个空的 position attribute，避免兼容问题。
-    if (nextViewer.splatMesh?.geometry && !nextViewer.splatMesh.geometry.getAttribute('position')) {
-        nextViewer.splatMesh.geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3))
+const normalizeLod = (value: boolean | number) => {
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || value <= 0) {
+            return true
+        }
+        return value
     }
 
-    return nextViewer
+    return value
 }
 
-const refreshViewer = async () => {
-    const currentVersion = ++loadVersion
-    const nextViewer = await createViewer()
+const normalizeMaxStdDev = (value: number) => {
+    if (!Number.isFinite(value)) {
+        return Math.sqrt(8)
+    }
 
-    if (currentVersion !== loadVersion) {
-        await nextViewer.dispose()
+    return Math.min(Math.sqrt(9), Math.max(Math.sqrt(4), value))
+}
+
+const normalizeLodSplatScale = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) {
+        return 1
+    }
+
+    return value
+}
+
+const applySparkRendererProps = () => {
+    if (!activeScene) {
         return
     }
 
-    const previousViewer = viewer.value
-    viewer.value = nextViewer
-    if (previousViewer) {
-        await previousViewer.dispose()
-    }
+    activeScene.sparkRenderer.maxStdDev = normalizeMaxStdDev(props.maxStdDev)
+    activeScene.sparkRenderer.sortRadial = props.sortRadial
+    activeScene.sparkRenderer.lodSplatScale = normalizeLodSplatScale(props.lodSplatScale)
+    activeScene.sparkRenderer.pagedExtSplats = props.pagedExtSplats
 }
 
-await refreshViewer()
+const disposeScene = (targetScene: SparkScene | null) => {
+    if (!targetScene) {
+        return
+    }
 
-watch([() => props.url, () => props.rotationInputOrder], () => {
-    void refreshViewer()
+    targetScene.root.removeFromParent()
+    targetScene.splatMesh.dispose()
+    ;(targetScene.sparkRenderer as any).dispose?.()
+}
+
+const createScene = async () => {
+    const webglRenderer = resolveRenderer()
+    if (!webglRenderer) {
+        return null
+    }
+
+    const splatMesh = new SplatMesh({
+        url: props.url,
+        lod: normalizeLod(props.lod),
+        extSplats: props.extSplats,
+        paged: props.paged,
+    })
+    splatMesh.rotation.x = -Math.PI / 2
+    await splatMesh.initialized
+
+    const sparkRenderer = new SparkRenderer({
+        renderer: webglRenderer,
+        maxStdDev: normalizeMaxStdDev(props.maxStdDev),
+        sortRadial: props.sortRadial,
+        lodSplatScale: normalizeLodSplatScale(props.lodSplatScale),
+        pagedExtSplats: props.pagedExtSplats,
+    })
+
+    const root = new Group()
+    root.add(sparkRenderer)
+    root.add(splatMesh)
+
+    return {
+        root,
+        splatMesh,
+        sparkRenderer,
+    } satisfies SparkScene
+}
+
+const refreshScene = async () => {
+    const currentVersion = ++loadVersion
+    const nextScene = await createScene()
+    if (!nextScene) {
+        return
+    }
+
+    if (currentVersion !== loadVersion) {
+        disposeScene(nextScene)
+        return
+    }
+
+    const previousScene = activeScene
+    activeScene = nextScene
+    sceneRoot.value = nextScene.root
+    disposeScene(previousScene)
+}
+
+watch(() => resolveRenderer(), (webglRenderer) => {
+    if (webglRenderer && !activeScene) {
+        void refreshScene()
+    }
+}, {
+    immediate: true,
 })
 
-// const bounds = viewer.splatMesh?.boundingBox?.clone()
-// if (bounds && Number.isFinite(bounds.min.x) && Number.isFinite(bounds.max.x)) {
-//     const center = bounds.getCenter(new Vector3())
-//     viewer.position.set(-center.x, -bounds.min.y, -center.z)
-// }
+watch(() => props.url, () => {
+    void refreshScene()
+})
+
+watch(
+    [() => props.lod, () => props.extSplats, () => props.paged, () => props.pagedExtSplats],
+    () => {
+        void refreshScene()
+    },
+)
+
+watch(
+    [() => props.maxStdDev, () => props.sortRadial, () => props.lodSplatScale],
+    applySparkRendererProps,
+)
 
 onUnmounted(() => {
     loadVersion++
-    const currentViewer = viewer.value
-    viewer.value = null
-    if (currentViewer) {
-        void currentViewer.dispose()
-    }
+    const currentScene = activeScene
+    activeScene = null
+    sceneRoot.value = null
+    disposeScene(currentScene)
 })
 </script>
