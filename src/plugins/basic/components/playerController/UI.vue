@@ -31,6 +31,10 @@
 			<span class="hint-text">切换飞行模式：</span>
 			<kbd>F</kbd>
 		</div>
+		<div class="row hint-group">
+			<span class="hint-text">手机端：</span>
+			<span class="touch-text">左摇杆移动，右侧滑动视角，右下按钮跳跃/飞行/切换视角</span>
+		</div>
 	</div>
 
 </template>
@@ -100,6 +104,13 @@ kbd {
 	display: flex;
 	align-items: center;
 	gap: 6px;
+}
+
+.touch-text {
+	max-width: 260px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: #cbd6e2;
 }
 
 @media (max-width: 480px) {
