@@ -41,8 +41,8 @@ const renderPixelRatio = typeof window === 'undefined'
 const debugState = reactive({
     url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
     splatAlphaRemovalThreshold: 1,
-    bufferCompressionLevel: 0,
-    antialiasedMode: 'auto' as AntialiasedMode,
+    bufferCompressionLevel: 2,
+    antialiasedMode: 'off' as AntialiasedMode,
     dynamicScene: false,
     sharedMemoryForWorkers: false,
     focalAdjustment: 1.15,

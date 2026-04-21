@@ -4,14 +4,14 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-20 11:48:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-20 18:09:45
+ * @LastEditTime: 2026-04-21 08:39:09
 -->
 <template>
-    <primitive :object="viewer" :rotation="[-Math.PI / 2, 0, 0]" />
+    <primitive v-if="viewer" :object="viewer" :rotation="[-Math.PI / 2, 0, 0]" />
 </template>
 
 <script lang="ts" setup>
-import { onUnmounted } from 'vue'
+import { onUnmounted, shallowRef, watch } from 'vue'
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d'
 import { loadSpzFromUrl } from '@spz-loader/core'
 import { Float32BufferAttribute, Quaternion } from 'three'
@@ -30,8 +30,8 @@ const props = withDefaults(defineProps<{
 }>(), {
     url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
     splatAlphaRemovalThreshold: 1,
-    bufferCompressionLevel: 0,
-    antialiasedMode: 'auto',
+    bufferCompressionLevel: 2,
+    antialiasedMode: 'off',
     dynamicScene: false,
     sharedMemoryForWorkers: false,
     focalAdjustment: 1.15,
@@ -119,26 +119,55 @@ const createSplatBuffer = async () => {
     }
 }
 
-const { antialiased, splatBuffer } = await createSplatBuffer()
-const splatRenderMode = props.splatRenderMode === 'TwoD'
-    ? GaussianSplats3D.SplatRenderMode.TwoD
-    : GaussianSplats3D.SplatRenderMode.ThreeD
+const viewer = shallowRef<GaussianSplats3D.DropInViewer | null>(null)
+let loadVersion = 0
 
-const viewer = new GaussianSplats3D.DropInViewer({
-    antialiased,
-    dynamicScene: props.dynamicScene,
-    focalAdjustment: props.focalAdjustment,
-    kernel2DSize: props.kernel2DSize,
-    sharedMemoryForWorkers: props.sharedMemoryForWorkers,
-    splatRenderMode,
-})
+const createViewer = async () => {
+    const { antialiased, splatBuffer } = await createSplatBuffer()
+    const splatRenderMode = props.splatRenderMode === 'TwoD'
+        ? GaussianSplats3D.SplatRenderMode.TwoD
+        : GaussianSplats3D.SplatRenderMode.ThreeD
 
-await viewer.viewer.addSplatBuffers([splatBuffer], [{}], true, false, false)
+    const nextViewer = new GaussianSplats3D.DropInViewer({
+        antialiased,
+        dynamicScene: props.dynamicScene,
+        focalAdjustment: props.focalAdjustment,
+        kernel2DSize: props.kernel2DSize,
+        sharedMemoryForWorkers: props.sharedMemoryForWorkers,
+        splatRenderMode,
+    })
 
-// Tres 通过 primitive 挂载时，这里补一个空的 position attribute，避免兼容问题。
-if (viewer.splatMesh?.geometry && !viewer.splatMesh.geometry.getAttribute('position')) {
-    viewer.splatMesh.geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3))
+    await nextViewer.viewer.addSplatBuffers([splatBuffer], [{}], true, false, false)
+
+    // Tres 通过 primitive 挂载时，这里补一个空的 position attribute，避免兼容问题。
+    if (nextViewer.splatMesh?.geometry && !nextViewer.splatMesh.geometry.getAttribute('position')) {
+        nextViewer.splatMesh.geometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0], 3))
+    }
+
+    return nextViewer
 }
+
+const refreshViewer = async () => {
+    const currentVersion = ++loadVersion
+    const nextViewer = await createViewer()
+
+    if (currentVersion !== loadVersion) {
+        await nextViewer.dispose()
+        return
+    }
+
+    const previousViewer = viewer.value
+    viewer.value = nextViewer
+    if (previousViewer) {
+        await previousViewer.dispose()
+    }
+}
+
+await refreshViewer()
+
+watch([() => props.url, () => props.rotationInputOrder], () => {
+    void refreshViewer()
+})
 
 // const bounds = viewer.splatMesh?.boundingBox?.clone()
 // if (bounds && Number.isFinite(bounds.min.x) && Number.isFinite(bounds.max.x)) {
@@ -147,6 +176,11 @@ if (viewer.splatMesh?.geometry && !viewer.splatMesh.geometry.getAttribute('posit
 // }
 
 onUnmounted(() => {
-    void viewer.dispose()
+    loadVersion++
+    const currentViewer = viewer.value
+    viewer.value = null
+    if (currentViewer) {
+        void currentViewer.dispose()
+    }
 })
 </script>
