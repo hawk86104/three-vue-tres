@@ -4,10 +4,12 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-20 11:48:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-21 15:26:51
+ * @LastEditTime: 2026-04-21 15:56:49
 -->
 <template>
-    <primitive v-if="sceneRoot" :object="sceneRoot" />
+    <TresGroup :rotation="[-Math.PI / 2, 0, 0]">
+        <primitive v-if="sceneRoot" :object="sceneRoot" />
+    </TresGroup>
 </template>
 
 <script lang="ts" setup>
@@ -110,7 +112,7 @@ const createScene = async () => {
         extSplats: props.extSplats,
         paged: props.paged,
     })
-    splatMesh.rotation.x = -Math.PI / 2
+    // splatMesh.rotation.x = -Math.PI / 2
     await splatMesh.initialized
 
     const sparkRenderer = new SparkRenderer({
