@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import * as THREE from "three";
 import { computed, onBeforeUnmount, watch } from "vue";
+import type { WatchOptions, WatchSource } from "vue";
 import { useLoop, useTres } from "@tresjs/core";
 import { playerController } from "./playerController";
 import type { MobileControlsOptions, PlayerControllerApi, PlayerModelOptions } from "./playerController";
@@ -90,6 +91,12 @@ const positionTuple = computed<[number, number, number]>(() => {
     return [value?.x ?? 0, value?.y ?? 0, value?.z ?? 0];
 });
 
+const toVector3 = (value?: Vec3Like) => {
+    if (value instanceof THREE.Vector3) return value.clone();
+    if (Array.isArray(value)) return new THREE.Vector3(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
+    return new THREE.Vector3(value?.x ?? 0, value?.y ?? 0, value?.z ?? 0);
+};
+
 const buildPlayerModel = (): PlayerModelOptions => ({
     url: props.modelUrl ?? DEFAULT_MODEL_URL,
     scale: props.scale,
@@ -112,7 +119,7 @@ const buildPlayerModel = (): PlayerModelOptions => ({
     capsuleRadiusRatio: props.capsuleRadiusRatio,
 });
 
-const buildPosition = () => new THREE.Vector3(...positionTuple.value);
+const buildPosition = () => toVector3(props.position);
 
 const modelReloadKey = computed(() => JSON.stringify({
     modelUrl: props.modelUrl ?? DEFAULT_MODEL_URL,
@@ -130,6 +137,33 @@ const modelReloadKey = computed(() => JSON.stringify({
     flyEnabled: props.flyEnabled,
     capsuleRadiusRatio: props.capsuleRadiusRatio,
 }));
+
+const syncControllerFlags = () => {
+    controller.setDebug(props.debug);
+    controller.setPlayerFlyEnabled(props.flyEnabled);
+};
+
+const watchControllerProp = <T,>(
+    source: WatchSource<T> | (() => T),
+    apply: (value: T) => void,
+    options?: {
+        skip?: (value: T) => boolean;
+        watch?: WatchOptions;
+    },
+) => {
+    watch(
+        source,
+        (value) => {
+            if (!isReady || options?.skip?.(value)) return;
+            apply(value);
+        },
+        options?.watch,
+    );
+};
+
+const resetController = (position?: Vec3Like) => {
+    controller.reset(position ? toVector3(position) : undefined);
+};
 
 const initController = async () => {
     if (!scene.value || !camera.value || !controls.value || isInitializing) return;
@@ -160,8 +194,7 @@ const initController = async () => {
             enableOverShoulderView: props.enableOverShoulderView,
         });
 
-        controller.setDebug(props.debug);
-        controller.setPlayerFlyEnabled(props.flyEnabled);
+        syncControllerFlags();
 
         isReady = true;
         lastScene = scene.value;
@@ -184,121 +217,23 @@ watch(
 watch(modelReloadKey, async () => {
     if (!isReady || isInitializing) return;
     await controller.switchPlayerModel(buildPlayerModel());
-    controller.setDebug(props.debug);
+    syncControllerFlags();
 });
 
-watch(
-    () => props.scale,
-    (value) => {
-        if (!isReady) return;
-        controller.setPlayerScale(value);
-    },
-);
-
-watch(
-    positionTuple,
-    (value) => {
-        if (!isReady) return;
-        controller.reset(new THREE.Vector3(...value));
-    },
-    { deep: true },
-);
-
-watch(
-    resolvedMouseSensitivity,
-    (value) => {
-        if (!isReady) return;
-        controller.setMouseSensitivity(value);
-    },
-);
-
-watch(
-    () => props.gravity,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setGravity(value);
-    },
-);
-
-watch(
-    () => props.jumpHeight,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setJumpHeight(value);
-    },
-);
-
-watch(
-    () => props.speed,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setPlayerSpeed(value);
-    },
-);
-
-watch(
-    () => props.flySpeed,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setPlayerFlySpeed(value);
-    },
-);
-
-watch(
-    () => props.flyEnabled,
-    (value) => {
-        if (!isReady) return;
-        controller.setPlayerFlyEnabled(value);
-    },
-);
-
-watch(
-    () => props.minCamDistance,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setMinCamDistance(value);
-    },
-);
-
-watch(
-    () => props.maxCamDistance,
-    (value) => {
-        if (!isReady || value == null) return;
-        controller.setMaxCamDistance(value);
-    },
-);
-
-watch(
-    () => props.thirdMouseMode,
-    (value) => {
-        if (!isReady) return;
-        controller.setThirdMouseMode(value);
-    },
-);
-
-watch(
-    () => props.enableZoom,
-    (value) => {
-        if (!isReady) return;
-        controller.setEnableZoom(value);
-    },
-);
-
-watch(
-    () => props.enableOverShoulderView,
-    (value) => {
-        if (!isReady) return;
-        controller.setOverShoulderView(value);
-    },
-);
-
-watch(
-    () => props.debug,
-    (value) => {
-        if (!isReady) return;
-        controller.setDebug(value);
-    },
-);
+watchControllerProp(() => props.scale, (value) => controller.setPlayerScale(value));
+watchControllerProp(positionTuple, () => resetController(props.position), { watch: { deep: true } });
+watchControllerProp(resolvedMouseSensitivity, (value) => controller.setMouseSensitivity(value));
+watchControllerProp(() => props.gravity, (value) => controller.setGravity(value), { skip: (value) => value == null });
+watchControllerProp(() => props.jumpHeight, (value) => controller.setJumpHeight(value), { skip: (value) => value == null });
+watchControllerProp(() => props.speed, (value) => controller.setPlayerSpeed(value), { skip: (value) => value == null });
+watchControllerProp(() => props.flySpeed, (value) => controller.setPlayerFlySpeed(value), { skip: (value) => value == null });
+watchControllerProp(() => props.flyEnabled, (value) => controller.setPlayerFlyEnabled(value));
+watchControllerProp(() => props.minCamDistance, (value) => controller.setMinCamDistance(value), { skip: (value) => value == null });
+watchControllerProp(() => props.maxCamDistance, (value) => controller.setMaxCamDistance(value), { skip: (value) => value == null });
+watchControllerProp(() => props.thirdMouseMode, (value) => controller.setThirdMouseMode(value));
+watchControllerProp(() => props.enableZoom, (value) => controller.setEnableZoom(value));
+watchControllerProp(() => props.enableOverShoulderView, (value) => controller.setOverShoulderView(value));
+watchControllerProp(() => props.debug, (value) => controller.setDebug(value));
 
 const { onBeforeRender } = useLoop();
 onBeforeRender(({ delta }: { delta: number }) => {
@@ -316,42 +251,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
     controller,
-    reset: (position?: Vec3Like) => {
-        if (!position) {
-            controller.reset();
-            return;
-        }
-
-        if (position instanceof THREE.Vector3) {
-            controller.reset(position);
-            return;
-        }
-
-        if (Array.isArray(position)) {
-            controller.reset(new THREE.Vector3(position[0] ?? 0, position[1] ?? 0, position[2] ?? 0));
-            return;
-        }
-
-        controller.reset(new THREE.Vector3(position.x ?? 0, position.y ?? 0, position.z ?? 0));
-    },
-    setInput: controller.setInput,
-    changeView: controller.changeView,
-    getPosition: controller.getPosition,
-    getPerson: controller.getPerson,
-    getCurrentPersonAnimationName: controller.getCurrentPersonAnimationName,
-    switchPlayerModel: controller.switchPlayerModel,
-    setPlayerScale: controller.setPlayerScale,
-    setMouseSensitivity: controller.setMouseSensitivity,
-    setGravity: controller.setGravity,
-    setJumpHeight: controller.setJumpHeight,
-    setPlayerSpeed: controller.setPlayerSpeed,
-    setPlayerFlySpeed: controller.setPlayerFlySpeed,
-    setPlayerFlyEnabled: controller.setPlayerFlyEnabled,
-    setMinCamDistance: controller.setMinCamDistance,
-    setMaxCamDistance: controller.setMaxCamDistance,
-    setThirdMouseMode: controller.setThirdMouseMode,
-    setEnableZoom: controller.setEnableZoom,
-    setOverShoulderView: controller.setOverShoulderView,
-    setDebug: controller.setDebug,
+    ...controller,
+    reset: resetController,
 });
 </script>

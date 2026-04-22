@@ -7,6 +7,17 @@ export type MobileControlsOptions = {
     view?: boolean;
 };
 
+export type PlayerControllerInput = {
+    moveX: 1 | 0 | -1;
+    moveY: 1 | 0 | -1;
+    lookDeltaX: number;
+    lookDeltaY: number;
+    jump: boolean;
+    shift: boolean;
+    toggleView: boolean;
+    toggleFly: boolean;
+};
+
 export type PlayerModelOptions = {
     url: string;
     scale: number;
@@ -44,4 +55,18 @@ export type PlayerControllerOptions = {
     thirdMouseMode?: 0 | 1 | 2 | 3;
     enableZoom?: boolean;
     enableOverShoulderView?: boolean;
+};
+
+export type VehicleAnimationOptions = {
+    openDoorAnim?: string;
+    wheelsTurnAnim?: string;
+    turnLeftAnim?: string;
+    turnRightAnim?: string;
+};
+
+export type VehicleModelOptions = {
+    url: string;
+    position: THREE.Vector3;
+    scale?: number;
+    animations?: VehicleAnimationOptions;
 };

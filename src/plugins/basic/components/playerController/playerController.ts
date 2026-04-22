@@ -7,7 +7,13 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as BufferGeometryUtils from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MobileControls } from "./mobileControls";
-import type { MobileControlsOptions, PlayerControllerOptions, PlayerModelOptions } from "./types";
+import type {
+    MobileControlsOptions,
+    PlayerControllerInput,
+    PlayerControllerOptions,
+    PlayerModelOptions,
+    VehicleModelOptions,
+} from "./types";
 
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
@@ -84,10 +90,12 @@ class PlayerController {
     private displayVisualizer = false;
 
     private collider: THREE.Mesh | null = null;
+    private extraRaycastColliders: THREE.Object3D[] = [];
     private visualizer: MeshBVHHelper | null = null;
     private player!: THREE.Mesh & { capsuleInfo?: any };
     private person: THREE.Object3D | null = null;
     private personHead: THREE.Object3D | null = null;
+    private vehicle: THREE.Object3D | null = null;
     private collected: THREE.BufferGeometry[] = [];
 
     private playerIsOnGround = false;
@@ -107,6 +115,8 @@ class PlayerController {
     private personActions?: Map<string, THREE.AnimationAction>;
     private actionState?: THREE.AnimationAction;
     private recheckAnimTimer: ReturnType<typeof setTimeout> | null = null;
+    private vehicleMixer?: THREE.AnimationMixer;
+    private vehicleActions?: Map<string, THREE.AnimationAction>;
 
     private mobileControls: MobileControls | null = null;
 
@@ -300,9 +310,72 @@ class PlayerController {
         }
     }
 
+    private shouldIgnoreColliderObject(object: THREE.Object3D) {
+        return Boolean(object?.userData?.playerControllerIgnoreCollider);
+    }
+
+    private shouldUseRaycastOnlyCollider(object: THREE.Object3D) {
+        return Boolean(object?.userData?.playerControllerRaycastOnly) && typeof (object as any)?.raycast === "function";
+    }
+
+    private registerExtraRaycastCollider(object: THREE.Object3D) {
+        if (!object || this.extraRaycastColliders.some((item) => item.uuid === object.uuid)) return;
+        this.extraRaycastColliders.push(object);
+    }
+
+    private getObjectBoundingMinY(object: THREE.Object3D): number {
+        const customBoundingBox = (object as any).getBoundingBox?.();
+        if (customBoundingBox?.isBox3) {
+            const worldBox = customBoundingBox.clone();
+            object.updateWorldMatrix(true, false);
+            worldBox.applyMatrix4(object.matrixWorld);
+            return worldBox.min.y;
+        }
+
+        object.updateWorldMatrix(true, false);
+        const worldBox = new THREE.Box3().setFromObject(object);
+        return Number.isFinite(worldBox.min.y) ? worldBox.min.y : Infinity;
+    }
+
+    private getExtraRaycastCollidersMinY() {
+        if (!this.extraRaycastColliders.length) return Infinity;
+        const minY = this.extraRaycastColliders.reduce((result, object) => {
+            return Math.min(result, this.getObjectBoundingMinY(object));
+        }, Infinity);
+        return Number.isFinite(minY) ? minY : Infinity;
+    }
+
+    private intersectWorldColliders(raycaster: THREE.Raycaster) {
+        const intersections: THREE.Intersection[] = [];
+
+        if (this.collider) {
+            intersections.push(...raycaster.intersectObject(this.collider, false));
+        }
+
+        for (const object of this.extraRaycastColliders) {
+            intersections.push(...raycaster.intersectObject(object, false));
+        }
+
+        intersections.sort((a, b) => a.distance - b.distance);
+        return intersections;
+    }
+
     async createBVH(meshUrl = ""): Promise<void> {
         await this.initLoader();
         this.collected = [];
+        this.extraRaycastColliders = [];
+
+        if (this.visualizer) {
+            this.scene.remove(this.visualizer);
+            this.visualizer = null;
+        }
+
+        if (this.collider) {
+            this.scene.remove(this.collider);
+            this.collider.geometry?.dispose?.();
+            disposeMaterial(this.collider.material);
+            this.collider = null;
+        }
 
         if (meshUrl) {
             const gltf = await this.loader.loadAsync(meshUrl);
@@ -316,14 +389,24 @@ class PlayerController {
         } else {
             this.scene.updateMatrixWorld(true);
             this.scene.traverse((child) => {
+                if (child.name === "capsule") return;
+                if (this.shouldUseRaycastOnlyCollider(child)) {
+                    this.registerExtraRaycastCollider(child);
+                    return;
+                }
+                if (this.shouldIgnoreColliderObject(child)) return;
                 const mesh = child as THREE.Mesh;
-                if (mesh?.isMesh && mesh.geometry && child.name !== "capsule") {
+                if (mesh?.isMesh && mesh.geometry) {
                     this.collectMeshGeometry(mesh, this.collected);
                 }
             });
         }
 
-        if (!this.collected.length) return;
+        if (!this.collected.length) {
+            const extraMinY = this.getExtraRaycastCollidersMinY();
+            this.boundingBoxMinY = Number.isFinite(extraMinY) ? extraMinY : 0;
+            return;
+        }
 
         this.collected = this.unifiedAttribute(this.collected);
 
@@ -353,7 +436,8 @@ class PlayerController {
             this.scene.add(this.visualizer);
         }
 
-        this.boundingBoxMinY = mergedGeometry.boundingBox?.min.y ?? 0;
+        const colliderMinY = mergedGeometry.boundingBox?.min.y ?? 0;
+        this.boundingBoxMinY = Math.min(colliderMinY, this.getExtraRaycastCollidersMinY());
     }
 
     private getBbox(object: THREE.Object3D) {
@@ -402,6 +486,25 @@ class PlayerController {
         }
 
         (this.player as any) = null;
+    }
+
+    private clearVehicleModel() {
+        if (this.vehicleMixer) {
+            this.vehicleMixer.stopAllAction();
+            this.vehicleMixer.uncacheRoot(this.vehicleMixer.getRoot());
+            this.vehicleMixer = undefined;
+        }
+        this.vehicleActions = undefined;
+
+        if (this.vehicle?.parent) {
+            this.vehicle.parent.remove(this.vehicle);
+        }
+        this.vehicle?.traverse((child: any) => {
+            if (!child.isMesh) return;
+            child.geometry?.dispose?.();
+            disposeMaterial(child.material);
+        });
+        this.vehicle = null;
     }
 
     async loadPersonGLB() {
@@ -534,6 +637,51 @@ class PlayerController {
         }
     }
 
+    async loadVehicleModel(params: VehicleModelOptions) {
+        try {
+            this.clearVehicleModel();
+
+            const { url, position, scale = 1 } = params;
+            const gltf = (await this.loader.loadAsync(url)) as GLTF;
+            this.vehicle = gltf.scene;
+            this.vehicle.scale.set(scale, scale, scale);
+            this.vehicle.position.copy(position);
+            this.vehicle.traverse((child: any) => {
+                if (!child.isMesh) return;
+                child.castShadow = true;
+                child.receiveShadow = true;
+            });
+
+            this.scene.add(this.vehicle);
+
+            const animations = gltf.animations ?? [];
+            this.vehicleActions = new Map<string, THREE.AnimationAction>();
+            this.vehicleMixer = new THREE.AnimationMixer(this.vehicle);
+
+            const mappings: [string, string][] = [
+                [params.animations?.openDoorAnim ?? "", "open_door"],
+                [params.animations?.wheelsTurnAnim ?? "", "wheels_turn"],
+                [params.animations?.turnLeftAnim ?? "", "turn_left"],
+                [params.animations?.turnRightAnim ?? "", "turn_right"],
+            ];
+
+            for (const [clipName, actionName] of mappings) {
+                if (!clipName) continue;
+                const clip = animations.find((animation) => animation.name === clipName);
+                if (!clip) continue;
+                const action = this.vehicleMixer.clipAction(clip);
+                action.setLoop(THREE.LoopOnce, 1);
+                action.clampWhenFinished = true;
+                action.setEffectiveTimeScale(2);
+                action.enabled = true;
+                action.setEffectiveWeight(0);
+                this.vehicleActions.set(actionName, action);
+            }
+        } catch (error) {
+            console.error("加载车辆模型失败:", error);
+        }
+    }
+
     async switchPlayerModel(nextModel: PlayerModelOptions) {
         if (!this.player) return;
 
@@ -622,7 +770,7 @@ class PlayerController {
             this.setOverShoulderView(this.enableOverShoulderView);
         }
 
-        this.setPointerLock();
+        this.setPointerLock(true);
     }
 
     private setFirstPersonCamera(verticalAngle = 0) {
@@ -644,15 +792,30 @@ class PlayerController {
         this.controls.enableZoom = false;
     }
 
-    private setPointerLock() {
-        if (!document.body.requestPointerLock) return;
+    private shouldUsePointerLock() {
+        return ((this.thirdMouseMode === 0 || this.thirdMouseMode === 1) && !this.isFirstPerson) || this.isFirstPerson;
+    }
 
-        if (((this.thirdMouseMode === 0 || this.thirdMouseMode === 1) && !this.isFirstPerson) || this.isFirstPerson) {
-            document.body.requestPointerLock();
+    private setPointerLock(forceRequest = false) {
+        if (!this.shouldUsePointerLock()) {
+            if (document.pointerLockElement === document.body) {
+                document.exitPointerLock();
+            }
             return;
         }
 
-        document.exitPointerLock();
+        if (!document.body.requestPointerLock || document.pointerLockElement === document.body || !forceRequest) {
+            return;
+        }
+
+        const requestResult = document.body.requestPointerLock() as Promise<void> | void;
+        if (requestResult instanceof Promise) {
+            requestResult.catch((error) => {
+                if (error?.name !== "NotAllowedError") {
+                    console.warn("请求 Pointer Lock 失败:", error);
+                }
+            });
+        }
     }
 
     private setCameraPos() {
@@ -731,7 +894,7 @@ class PlayerController {
     }
 
     async update(delta: number = clock.getDelta()) {
-        if (!this.isupdate || !this.player || !this.collider) return;
+        if (!this.isupdate || !this.player || (!this.collider && this.extraRaycastColliders.length === 0)) return;
 
         delta = Math.min(delta, 1 / 40);
         this.updatePlayer(delta);
@@ -743,6 +906,7 @@ class PlayerController {
         }
 
         this.personMixer?.update(delta);
+        this.vehicleMixer?.update(delta);
 
         this.camera.getWorldDirection(this.camDir);
         const angle = 2 * Math.PI - (Math.atan2(this.camDir.z, this.camDir.x) + Math.PI / 2);
@@ -766,7 +930,7 @@ class PlayerController {
 
         this.rayOrigin.copy(this.player.position);
         this.raycaster.ray.origin.copy(this.rayOrigin);
-        const hits = this.raycaster.intersectObject(this.collider, false);
+        const hits = this.intersectWorldColliders(this.raycaster);
 
         if (hits.length > 0 && !this.isFlying) {
             const distanceFromGround = this.player.position.y - hits[0].point.y;
@@ -810,42 +974,44 @@ class PlayerController {
 
         this.player.updateMatrixWorld();
 
-        const capsuleInfo = this.player.capsuleInfo;
-        this.tempBox.makeEmpty();
-        this.tempMat.copy(this.collider.matrixWorld).invert();
-        this.tempSegment.copy(capsuleInfo.segment);
-        this.tempSegment.start.applyMatrix4(this.player.matrixWorld).applyMatrix4(this.tempMat);
-        this.tempSegment.end.applyMatrix4(this.player.matrixWorld).applyMatrix4(this.tempMat);
-        this.tempBox.expandByPoint(this.tempSegment.start);
-        this.tempBox.expandByPoint(this.tempSegment.end);
-        this.tempBox.expandByScalar(capsuleInfo.radius);
+        if (this.collider) {
+            const capsuleInfo = this.player.capsuleInfo;
+            this.tempBox.makeEmpty();
+            this.tempMat.copy(this.collider.matrixWorld).invert();
+            this.tempSegment.copy(capsuleInfo.segment);
+            this.tempSegment.start.applyMatrix4(this.player.matrixWorld).applyMatrix4(this.tempMat);
+            this.tempSegment.end.applyMatrix4(this.player.matrixWorld).applyMatrix4(this.tempMat);
+            this.tempBox.expandByPoint(this.tempSegment.start);
+            this.tempBox.expandByPoint(this.tempSegment.end);
+            this.tempBox.expandByScalar(capsuleInfo.radius);
 
-        (this.collider.geometry as any)?.boundsTree?.shapecast({
-            intersectsBounds: (box: THREE.Box3) => box.intersectsBox(this.tempBox),
-            intersectsTriangle: (triangle: any) => {
-                const distance = triangle.closestPointToSegment(this.tempSegment, this.tempVector, this.tempVector2);
-                if (distance >= capsuleInfo.radius) return;
+            (this.collider.geometry as any)?.boundsTree?.shapecast({
+                intersectsBounds: (box: THREE.Box3) => box.intersectsBox(this.tempBox),
+                intersectsTriangle: (triangle: any) => {
+                    const distance = triangle.closestPointToSegment(this.tempSegment, this.tempVector, this.tempVector2);
+                    if (distance >= capsuleInfo.radius) return;
 
-                const normal = triangle.getNormal(new THREE.Vector3());
-                if (!this.isFlying && Math.abs(normal.y) > 0.5) return;
+                    const normal = triangle.getNormal(new THREE.Vector3());
+                    if (!this.isFlying && Math.abs(normal.y) > 0.5) return;
 
-                if (!this.isFlying && Math.abs(normal.y) <= 0.5) {
-                    const contactWorldY = this.tempVector.clone().applyMatrix4(this.collider!.matrixWorld).y;
-                    const feetY = this.player.position.y - this.playerCapsuleHeight * this.playerModel.scale * 0.75;
-                    if (contactWorldY < feetY + this.playerCapsuleHeight * this.playerModel.scale * 0.25) return;
-                }
+                    if (!this.isFlying && Math.abs(normal.y) <= 0.5) {
+                        const contactWorldY = this.tempVector.clone().applyMatrix4(this.collider!.matrixWorld).y;
+                        const feetY = this.player.position.y - this.playerCapsuleHeight * this.playerModel.scale * 0.75;
+                        if (contactWorldY < feetY + this.playerCapsuleHeight * this.playerModel.scale * 0.25) return;
+                    }
 
-                const direction = this.tempVector2.sub(this.tempVector).normalize();
-                const depth = capsuleInfo.radius - distance;
-                this.tempSegment.start.addScaledVector(direction, depth);
-                this.tempSegment.end.addScaledVector(direction, depth);
-            },
-        });
+                    const direction = this.tempVector2.sub(this.tempVector).normalize();
+                    const depth = capsuleInfo.radius - distance;
+                    this.tempSegment.start.addScaledVector(direction, depth);
+                    this.tempSegment.end.addScaledVector(direction, depth);
+                },
+            });
 
-        const newPosition = this.tempVector.copy(this.tempSegment.start).applyMatrix4(this.collider.matrixWorld);
-        const deltaVector = this.tempVector2.subVectors(newPosition, this.player.position);
-        const offset = Math.max(0, deltaVector.length() - 1e-5);
-        this.player.position.add(deltaVector.normalize().multiplyScalar(offset));
+            const newPosition = this.tempVector.copy(this.tempSegment.start).applyMatrix4(this.collider.matrixWorld);
+            const deltaVector = this.tempVector2.subVectors(newPosition, this.player.position);
+            const offset = Math.max(0, deltaVector.length() - 1e-5);
+            this.player.position.add(deltaVector.normalize().multiplyScalar(offset));
+        }
 
         if (!this.isFirstPerson) {
             const camDirFlat = this.camDir.clone().setY(0).normalize().negate();
@@ -899,7 +1065,7 @@ class PlayerController {
 
         if (this.player.position.y < this.boundingBoxMinY - 1) {
             this.raycaster.ray.origin.set(this.player.position.x, 10000, this.player.position.z);
-            const fallHits = this.raycaster.intersectObject(this.collider, false);
+            const fallHits = this.intersectWorldColliders(this.raycaster);
             this.reset(
                 new THREE.Vector3(
                     this.player.position.x,
@@ -916,7 +1082,7 @@ class PlayerController {
         this.raycasterPersonToCam.set(origin, direction);
         this.raycasterPersonToCam.far = desiredDistance;
 
-        const hits = this.raycasterPersonToCam.intersectObject(this.collider!, false);
+        const hits = this.intersectWorldColliders(this.raycasterPersonToCam);
         if (hits.length > 0) {
             const safeDistance = Math.max(hits[0].distance - this.camEpsilon, this.minCamDistance);
             const targetCameraPos = origin.clone().add(direction.multiplyScalar(safeDistance));
@@ -925,7 +1091,7 @@ class PlayerController {
         }
 
         this.raycasterPersonToCam.far = maxDistance;
-        const maxHits = this.raycasterPersonToCam.intersectObject(this.collider!, false);
+        const maxHits = this.intersectWorldColliders(this.raycasterPersonToCam);
         const safeDistance = maxHits.length > 0
             ? Math.min(maxDistance, maxHits[0].distance - this.camEpsilon)
             : maxDistance;
@@ -951,26 +1117,45 @@ class PlayerController {
         return this.actionState?.getClip()?.name ?? null;
     }
 
-    setInput(input: Partial<{
-        moveX: 1 | 0 | -1;
-        moveY: 1 | 0 | -1;
-        lookDeltaX: number;
-        lookDeltaY: number;
-        jump: boolean;
-        shift: boolean;
-        toggleView: boolean;
-        toggleFly: boolean;
-    }>) {
+    private setMoveXInput(value: PlayerControllerInput["moveX"]) {
+        this.lftPressed = value === -1;
+        this.rgtPressed = value === 1;
+        this.setAnimationByPressed();
+    }
+
+    private setMoveYInput(value: PlayerControllerInput["moveY"]) {
+        this.fwdPressed = value === 1;
+        this.bkdPressed = value === -1;
+        this.setAnimationByPressed();
+    }
+
+    private setJumpInput(pressed: boolean) {
+        this.spacePressed = pressed;
+        if (!pressed || !this.playerIsOnGround || this.isFlying) return;
+        if (this.personActions?.get("jumping") === this.actionState) return;
+
+        this.playPersonAnimationByName("jumping");
+        this.playerVelocity.y = this.jumpHeight;
+        this.playerIsOnGround = false;
+    }
+
+    private toggleFlyMode() {
+        if (!this.playerFlyEnabled) return;
+
+        this.isFlying = !this.isFlying;
+        this.setAnimationByPressed();
+        if (!this.isFlying && !this.playerIsOnGround) {
+            this.playPersonAnimationByName("jumping");
+        }
+    }
+
+    setInput(input: Partial<PlayerControllerInput>) {
         if (typeof input.moveX === "number") {
-            this.lftPressed = input.moveX === -1;
-            this.rgtPressed = input.moveX === 1;
-            this.setAnimationByPressed();
+            this.setMoveXInput(input.moveX);
         }
 
         if (typeof input.moveY === "number") {
-            this.fwdPressed = input.moveY === 1;
-            this.bkdPressed = input.moveY === -1;
-            this.setAnimationByPressed();
+            this.setMoveYInput(input.moveY);
         }
 
         if (typeof input.lookDeltaX === "number" && typeof input.lookDeltaY === "number") {
@@ -978,15 +1163,7 @@ class PlayerController {
         }
 
         if (typeof input.jump === "boolean") {
-            if (input.jump) {
-                this.spacePressed = true;
-                if (!this.playerIsOnGround || this.isFlying) return;
-                this.playPersonAnimationByName("jumping");
-                this.playerVelocity.y = this.jumpHeight;
-                this.playerIsOnGround = false;
-            } else {
-                this.spacePressed = false;
-            }
+            this.setJumpInput(input.jump);
         }
 
         if (typeof input.shift === "boolean") {
@@ -998,12 +1175,8 @@ class PlayerController {
             this.changeView();
         }
 
-        if (input.toggleFly && this.playerFlyEnabled) {
-            this.isFlying = !this.isFlying;
-            this.setAnimationByPressed();
-            if (!this.isFlying && !this.playerIsOnGround) {
-                this.playPersonAnimationByName("jumping");
-            }
+        if (input.toggleFly) {
+            this.toggleFlyMode();
         }
     }
 
@@ -1064,6 +1237,8 @@ class PlayerController {
             event.preventDefault();
         }
 
+        this.setPointerLock(true);
+
         switch (event.code) {
             case "KeyW":
             case "ArrowUp":
@@ -1092,12 +1267,7 @@ class PlayerController {
                 this.controls.mouseButtons = { LEFT: 2, MIDDLE: 1, RIGHT: 0 };
                 break;
             case "Space":
-                this.spacePressed = true;
-                if (!this.playerIsOnGround || this.isFlying) return;
-                if (this.personActions?.get("jumping") === this.actionState) return;
-                this.playPersonAnimationByName("jumping");
-                this.playerVelocity.y = this.jumpHeight;
-                this.playerIsOnGround = false;
+                this.setJumpInput(true);
                 break;
             case "ControlLeft":
                 this.ctPressed = true;
@@ -1106,12 +1276,7 @@ class PlayerController {
                 this.changeView();
                 break;
             case "KeyF":
-                if (!this.playerFlyEnabled) return;
-                this.isFlying = !this.isFlying;
-                this.setAnimationByPressed();
-                if (!this.isFlying && !this.playerIsOnGround) {
-                    this.playPersonAnimationByName("jumping");
-                }
+                this.toggleFlyMode();
                 break;
             default:
                 break;
@@ -1147,7 +1312,7 @@ class PlayerController {
                 this.controls.mouseButtons = { LEFT: 0, MIDDLE: 1, RIGHT: 2 };
                 break;
             case "Space":
-                this.spacePressed = false;
+                this.setJumpInput(false);
                 break;
             case "ControlLeft":
                 this.ctPressed = false;
@@ -1163,7 +1328,7 @@ class PlayerController {
     };
 
     private readonly mouseClick = () => {
-        this.setPointerLock();
+        this.setPointerLock(true);
     };
 
     onAllEvent() {
@@ -1292,6 +1457,8 @@ class PlayerController {
         this.mobileControls?.destroy();
         this.mobileControls = null;
 
+        this.clearVehicleModel();
+
         this.clearPlayerModel();
         this.resetControls();
 
@@ -1308,6 +1475,7 @@ class PlayerController {
         }
 
         this.collected = [];
+        this.extraRaycastColliders = [];
         this.playerVelocity.set(0, 0, 0);
 
         if (activeController === this) {
@@ -1328,8 +1496,10 @@ export function playerController() {
         setInput: (input: Parameters<PlayerController["setInput"]>[0]) => controller.setInput(input),
         changeView: () => controller.changeView(),
         getPosition: () => controller.getPosition(),
+        getposition: () => controller.getPosition(),
         getPerson: () => controller.getPerson(),
         getCurrentPersonAnimationName: () => controller.getCurrentPersonAnimationName(),
+        loadVehicleModel: (params: Parameters<PlayerController["loadVehicleModel"]>[0]) => controller.loadVehicleModel(params),
         switchPlayerModel: (model: PlayerModelOptions) => controller.switchPlayerModel(model),
         setPlayerScale: (value: number) => controller.setPlayerScale(value),
         setMouseSensitivity: (value: number) => controller.setMouseSensitivity(value),
@@ -1357,4 +1527,11 @@ export function offAllEvent(): void {
     activeController?.offAllEvent();
 }
 
-export type { MobileControlsOptions, PlayerControllerOptions, PlayerModelOptions } from "./types";
+export type {
+    MobileControlsOptions,
+    PlayerControllerInput,
+    PlayerControllerOptions,
+    PlayerModelOptions,
+    VehicleAnimationOptions,
+    VehicleModelOptions,
+} from "./types";

@@ -1,16 +1,7 @@
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { MobileControlsOptions } from "./types";
+import type { MobileControlsOptions, PlayerControllerInput } from "./types";
 
-type SetInputFn = (input: Partial<{
-    moveX: 1 | 0 | -1;
-    moveY: 1 | 0 | -1;
-    lookDeltaX: number;
-    lookDeltaY: number;
-    jump: boolean;
-    shift: boolean;
-    toggleView: boolean;
-    toggleFly: boolean;
-}>) => void;
+type SetInputFn = (input: Partial<PlayerControllerInput>) => void;
 
 const iconDataUri = (body: string) =>
     `data:image/svg+xml;utf8,${encodeURIComponent(
