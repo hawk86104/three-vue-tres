@@ -17,6 +17,7 @@ import { onUnmounted, shallowRef, watch } from 'vue'
 import { useTres } from '@tresjs/core'
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark'
 import { Group, WebGLRenderer } from 'three'
+import { createHunyuanSpzColliderBinding, type HunyuanSpzColliderBinding } from '../common/hunyuanSpzCollider'
 
 const props = withDefaults(defineProps<{
     url?: string
@@ -27,6 +28,8 @@ const props = withDefaults(defineProps<{
     sortRadial?: boolean
     lodSplatScale?: number
     pagedExtSplats?: boolean
+    useColliderUrl?: boolean
+    colliderUrl?: string
 }>(), {
     url: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz',
     lod: true,
@@ -36,6 +39,8 @@ const props = withDefaults(defineProps<{
     sortRadial: true,
     lodSplatScale: 1,
     pagedExtSplats: false,
+    useColliderUrl: false,
+    colliderUrl: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply',
 })
 
 const { renderer } = useTres() as any
@@ -44,6 +49,7 @@ type SparkScene = {
     root: Group
     splatMesh: SplatMesh
     sparkRenderer: SparkRenderer
+    colliderBinding: HunyuanSpzColliderBinding
 }
 
 const sceneRoot = shallowRef<Group | null>(null)
@@ -96,6 +102,7 @@ const disposeScene = (targetScene: SparkScene | null) => {
     }
 
     targetScene.root.removeFromParent()
+    targetScene.colliderBinding.dispose()
     targetScene.splatMesh.dispose()
     ;(targetScene.sparkRenderer as any).dispose?.()
 }
@@ -127,10 +134,21 @@ const createScene = async () => {
     root.add(sparkRenderer)
     root.add(splatMesh)
 
+    const colliderBinding = createHunyuanSpzColliderBinding({
+        root,
+        sparkRenderer,
+        splatMesh,
+    })
+    await colliderBinding.sync({
+        useColliderUrl: props.useColliderUrl,
+        colliderUrl: props.colliderUrl,
+    })
+
     return {
         root,
         splatMesh,
         sparkRenderer,
+        colliderBinding,
     } satisfies SparkScene
 }
 
@@ -152,6 +170,17 @@ const refreshScene = async () => {
     disposeScene(previousScene)
 }
 
+const refreshCollider = async () => {
+    if (!activeScene) {
+        return
+    }
+
+    await activeScene.colliderBinding.sync({
+        useColliderUrl: props.useColliderUrl,
+        colliderUrl: props.colliderUrl,
+    })
+}
+
 watch(() => resolveRenderer(), (webglRenderer) => {
     if (webglRenderer && !activeScene) {
         void refreshScene()
@@ -165,15 +194,26 @@ watch(() => props.url, () => {
 })
 
 watch(
-    [() => props.lod, () => props.extSplats, () => props.paged, () => props.pagedExtSplats],
+    [
+        () => props.lod,
+        () => props.extSplats,
+        () => props.paged,
+    ],
     () => {
         void refreshScene()
     },
 )
 
 watch(
-    [() => props.maxStdDev, () => props.sortRadial, () => props.lodSplatScale],
+    [() => props.maxStdDev, () => props.sortRadial, () => props.lodSplatScale, () => props.pagedExtSplats],
     applySparkRendererProps,
+)
+
+watch(
+    [() => props.useColliderUrl, () => props.colliderUrl],
+    () => {
+        void refreshCollider()
+    },
 )
 
 onUnmounted(() => {

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-21 12:22:38
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-21 15:26:44
+ * @LastEditTime: 2026-04-21 15:37:42
 -->
 <template>
     <TresCanvas v-bind="canvasState" window-size>
@@ -19,6 +19,8 @@
             :sort-radial="debugState.sortRadial"
             :lod-splat-scale="debugState.lodSplatScale"
             :paged-ext-splats="debugState.pagedExtSplats"
+            :use-collider-url="debugState.useColliderUrl"
+            :collider-url="debugState.colliderUrl"
         />
 
         <!-- <TresGridHelper :args="[20, 20, '#94a3b8', '#cbd5e1']" /> -->
@@ -46,6 +48,8 @@ const debugState = reactive({
     sortRadial: true,
     lodSplatScale: 1,
     pagedExtSplats: false,
+    useColliderUrl: false,
+    colliderUrl: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply',
     canvasDpr: renderPixelRatio,
     canvasAntialias: false,
 })
@@ -76,6 +80,12 @@ meshFolder.addBinding(debugState, 'extSplats', {
 })
 meshFolder.addBinding(debugState, 'paged', {
     label: 'Paged(.rad)',
+})
+meshFolder.addBinding(debugState, 'useColliderUrl', {
+    label: 'UseCollider',
+})
+meshFolder.addBinding(debugState, 'colliderUrl', {
+    label: 'ColliderURL',
 })
 
 const rendererFolder = pane.addFolder({ title: 'SparkRenderer' })
