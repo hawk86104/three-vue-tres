@@ -4,10 +4,11 @@
  * @Autor: 地虎降天龙
  * @Date: 2026-04-23 00:44:46
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-04-23 10:59:27
+ * @LastEditTime: 2026-04-23 11:52:27
 -->
 <template>
-    <loading useResourceManager />
+    <loading />
+    <UI />
     <TresCanvas v-bind="tcConfig">
         <TresPerspectiveCamera :position="[-1.22, 1.67, 0.6]" :fov="75" :aspect="1" :near="0.1" :far="10000" />
         <PreviewMapControls makeDefault :target="[1.82, -1.62, 0.04]" />
