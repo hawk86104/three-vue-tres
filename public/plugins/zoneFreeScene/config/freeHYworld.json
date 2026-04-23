@@ -1,0 +1,689 @@
+{
+  "history": [
+    {
+      "mlist": {},
+      "selectedMeshUUID": null,
+      "emxlist": {
+        "774509a2-8483-4647-9d7e-0b48c199dcdf": {
+          "object3D": {
+            "uuid": "774509a2-8483-4647-9d7e-0b48c199dcdf",
+            "rotation": {
+              "x": -1.6807963267948969,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": 0,
+              "y": 0.979,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "renderOrder": 0,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "混元SPZ",
+            "type": "hunyuanSpz",
+            "canSelect": false
+          },
+          "extendProperties": {
+            "name": "混元SPZ",
+            "type": "hunyuanSpz",
+            "pluginPath": "PLS/gaussianSplatting",
+            "vueFile": "PLS/gaussianSplatting/components/hunyuanSpz.vue",
+            "previewPath": "./plugins/gaussianSplatting/preview/hunyuanSpzPage.png",
+            "default": {
+              "url": "https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz",
+              "lod": true,
+              "extSplats": false,
+              "paged": false,
+              "maxStdDev": 2,
+              "sortRadial": true,
+              "lodSplatScale": 1,
+              "pagedExtSplats": false,
+              "useColliderUrl": false,
+              "colliderUrl": "https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply"
+            },
+            "defaultObject3D": {
+              "rotation": {
+                "x": -1.5707963267948966,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "config": {
+              "url": {
+                "name": "SPZ在线网址",
+                "com": "textModal"
+              },
+              "useColliderUrl": {
+                "name": "启用代理碰撞",
+                "com": "Switch"
+              },
+              "colliderUrl": {
+                "name": "代理碰撞URL",
+                "com": "textModal"
+              },
+              "lod": {
+                "name": "启用LOD",
+                "com": "Switch"
+              },
+              "extSplats": {
+                "name": "扩展Splats",
+                "com": "Switch"
+              },
+              "paged": {
+                "name": "分页加载(.rad)",
+                "com": "Switch"
+              },
+              "maxStdDev": {
+                "name": "最大标准差",
+                "com": "Slider",
+                "min": 2,
+                "max": 3,
+                "step": 0.01
+              },
+              "sortRadial": {
+                "name": "径向排序",
+                "com": "Switch"
+              },
+              "lodSplatScale": {
+                "name": "LOD缩放",
+                "com": "Slider",
+                "min": 0.25,
+                "max": 3,
+                "step": 0.05
+              },
+              "pagedExtSplats": {
+                "name": "分页扩展Splats",
+                "com": "Switch"
+              }
+            },
+            "curValue": {
+              "url": "https://cos.icegl.cn/model/gaussianSplatting/jiedao.spz",
+              "lod": true,
+              "extSplats": false,
+              "paged": false,
+              "maxStdDev": 2,
+              "sortRadial": true,
+              "lodSplatScale": 1,
+              "pagedExtSplats": false,
+              "useColliderUrl": true,
+              "colliderUrl": "https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply"
+            }
+          }
+        },
+        "84735b4f-cdfc-4dfd-9406-c747c382e767": {
+          "object3D": {
+            "uuid": "84735b4f-cdfc-4dfd-9406-c747c382e767",
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": -0.001,
+              "y": 0.032,
+              "z": 0.255
+            },
+            "scale": {
+              "x": 0.3,
+              "y": 0.3,
+              "z": 0.3
+            },
+            "renderOrder": 9999,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "卡通能量圈",
+            "type": "cartoonMagic",
+            "canSelect": false
+          },
+          "extendProperties": {
+            "name": "卡通能量圈",
+            "type": "cartoonMagic",
+            "pluginPath": "PLS/floor",
+            "vueFile": "PLS/floor/components/cartoonMagic.vue",
+            "previewPath": "./plugins/floor/preview/cartoonMagicZone.png",
+            "default": {
+              "color": "#ffffff",
+              "speed": 1
+            },
+            "defaultObject3D": {},
+            "config": {
+              "color": {
+                "name": "颜色",
+                "com": "ColorPicker"
+              },
+              "speed": {
+                "name": "速度",
+                "com": "Slider",
+                "min": 0.01,
+                "max": 2,
+                "step": 0.01
+              }
+            },
+            "curValue": {
+              "color": "#F7E69D",
+              "speed": 1
+            }
+          }
+        },
+        "f395bb38-03ae-427d-bd1d-37a326860b3c": {
+          "object3D": {
+            "uuid": "f395bb38-03ae-427d-bd1d-37a326860b3c",
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": -2.684,
+              "y": -0.002,
+              "z": 0.23
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 0.5,
+              "z": 0.5
+            },
+            "renderOrder": 999,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "花纹圈动画",
+            "type": "shaderCircleWave",
+            "canSelect": true
+          },
+          "extendProperties": {
+            "name": "花纹圈动画",
+            "type": "shaderCircleWave",
+            "pluginPath": "PLS/floor",
+            "vueFile": "PLS/floor/components/shaderCircleWave.vue",
+            "previewPath": "./plugins/floor/preview/circleWave.png",
+            "default": {
+              "color": "#ffffff",
+              "colorDark": "#000000",
+              "speed": 1
+            },
+            "defaultObject3D": {
+              "scale": {
+                "x": 3,
+                "y": 3,
+                "z": 3
+              }
+            },
+            "config": {
+              "color": {
+                "name": "渐变色",
+                "com": "ColorPicker"
+              },
+              "colorDark": {
+                "name": "花纹颜色",
+                "com": "ColorPicker"
+              },
+              "speed": {
+                "name": "速度",
+                "com": "Slider",
+                "min": -2,
+                "max": 2,
+                "step": 0.01
+              }
+            },
+            "curValue": {
+              "color": "#54023B",
+              "colorDark": "#000000",
+              "speed": 1
+            }
+          }
+        },
+        "6e2b0ac2-46e5-4209-adc9-2e417819cbf8": {
+          "object3D": {
+            "uuid": "6e2b0ac2-46e5-4209-adc9-2e417819cbf8",
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": -2.864,
+              "y": 0.767,
+              "z": 0.234
+            },
+            "scale": {
+              "x": 0.02,
+              "y": 0.02,
+              "z": 0.02
+            },
+            "renderOrder": 0,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "浮锚标识B",
+            "type": "coneAnchorMeshB",
+            "canSelect": true
+          },
+          "extendProperties": {
+            "name": "浮锚标识B",
+            "type": "coneAnchorMeshB",
+            "pluginPath": "PLS/digitalCity",
+            "vueFile": "PLS/digitalCity/components/mark/coneAnchorMeshB.vue",
+            "previewPath": "./plugins/digitalCity/preview/coneAnchorB.png",
+            "default": {
+              "anchorColor": "#0059ff",
+              "rotateSpeed": 0.05,
+              "floorSize": 12,
+              "floorColor": "#0059ff",
+              "floorSpeed": 0.6,
+              "depthTest": true
+            },
+            "defaultObject3D": {
+              "scale": {
+                "x": 0.03,
+                "y": 0.03,
+                "z": 0.03
+              }
+            },
+            "config": {
+              "anchorColor": {
+                "name": "浮标颜色",
+                "com": "ColorPicker"
+              },
+              "rotateSpeed": {
+                "name": "旋转速度",
+                "com": "Slider",
+                "min": -0.2,
+                "max": 0.2,
+                "step": 0.001
+              },
+              "floorColor": {
+                "name": "波浪颜色",
+                "com": "ColorPicker"
+              },
+              "floorSize": {
+                "name": "波浪大小",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 20,
+                "step": 0.1
+              },
+              "floorSpeed": {
+                "name": "波浪速度",
+                "com": "Slider",
+                "min": -2,
+                "max": 3,
+                "step": 0.1
+              }
+            },
+            "curValue": {
+              "anchorColor": "#FF00F7",
+              "rotateSpeed": 0.05,
+              "floorSize": 12,
+              "floorColor": "#0059ff",
+              "floorSpeed": 0.6,
+              "depthTest": true
+            }
+          }
+        },
+        "4957e8cf-1517-4dd2-8216-a8fc4996710d": {
+          "object3D": {
+            "uuid": "4957e8cf-1517-4dd2-8216-a8fc4996710d",
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": 4.933,
+              "y": 0,
+              "z": 0.31
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "renderOrder": 9999,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "粒子底座",
+            "type": "particleBase",
+            "canSelect": true
+          },
+          "extendProperties": {
+            "name": "粒子底座",
+            "type": "particleBase",
+            "pluginPath": "PLS/floor",
+            "vueFile": "PLS/floor/components/particleBase.vue",
+            "previewPath": "./plugins/floor/preview/particleBasePage.png",
+            "default": {
+              "speed": -0.03,
+              "randomness": 0.5,
+              "count": 100,
+              "size": 0.1,
+              "color": "#ff0",
+              "areaX": 1,
+              "areaY": 1,
+              "areaZ": 1,
+              "opacity": 1
+            },
+            "defaultObject3D": {
+              "renderOrder": 9999
+            },
+            "config": {
+              "areaX": {
+                "name": "区域宽",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 5,
+                "step": 0.1
+              },
+              "areaY": {
+                "name": "区域高",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 5,
+                "step": 0.1
+              },
+              "areaZ": {
+                "name": "区域长",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 5,
+                "step": 0.1
+              },
+              "speed": {
+                "name": "速度",
+                "com": "Slider",
+                "min": -0.5,
+                "max": 0.5,
+                "step": 0.01
+              },
+              "color": {
+                "name": "颜色",
+                "com": "ColorPicker"
+              },
+              "size": {
+                "name": "大小",
+                "com": "Slider",
+                "min": 0.01,
+                "max": 1,
+                "step": 0.01
+              },
+              "count": {
+                "name": "数量",
+                "com": "Slider",
+                "min": 1,
+                "max": 200,
+                "step": 1
+              },
+              "randomness": {
+                "name": "随机性",
+                "com": "Slider",
+                "min": 0,
+                "max": 1,
+                "step": 0.01
+              },
+              "opacity": {
+                "name": "透明度",
+                "com": "Slider",
+                "min": 0,
+                "max": 1,
+                "step": 0.01
+              }
+            },
+            "curValue": {
+              "speed": -0.03,
+              "randomness": 0.69,
+              "count": 80,
+              "size": 0.05,
+              "color": "#FB0000",
+              "areaX": 2.5,
+              "areaY": 1.2,
+              "areaZ": 1.5,
+              "opacity": 0.51
+            }
+          }
+        },
+        "421143ac-6bd6-49a7-acd0-4e9506b4bcf9": {
+          "object3D": {
+            "uuid": "421143ac-6bd6-49a7-acd0-4e9506b4bcf9",
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "visible": true,
+            "position": {
+              "x": 4.57,
+              "y": -0.024,
+              "z": 0.367
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 1
+            },
+            "renderOrder": 999,
+            "castShadow": false,
+            "receiveShadow": false,
+            "name": "围墙高级",
+            "type": "fencePlus",
+            "canSelect": true
+          },
+          "extendProperties": {
+            "name": "围墙高级",
+            "type": "fencePlus",
+            "pluginPath": "PLS/digitalCity",
+            "vueFile": "PLS/digitalCity/components/fence/fencePlus.vue",
+            "previewPath": "./plugins/digitalCity/preview/fencePlusPage.png",
+            "default": {
+              "width": 2,
+              "height": 2,
+              "depth": 2,
+              "color": "#00ffdd",
+              "opacity": 1,
+              "num": 6,
+              "thickness": 0.01,
+              "speed": 0.2,
+              "room": 0.7
+            },
+            "config": {
+              "width": {
+                "name": "宽度",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 10,
+                "step": 0.001
+              },
+              "height": {
+                "name": "高度",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 10,
+                "step": 0.001
+              },
+              "depth": {
+                "name": "长度",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 10,
+                "step": 0.001
+              },
+              "color": {
+                "name": "颜色",
+                "com": "ColorPicker"
+              },
+              "opacity": {
+                "name": "透明度",
+                "com": "Slider",
+                "min": 0.1,
+                "max": 1,
+                "step": 0.1
+              },
+              "speed": {
+                "name": "滚动速度",
+                "com": "Slider",
+                "min": -0.5,
+                "max": 0.5,
+                "step": 0.01
+              },
+              "thickness": {
+                "name": "粗细",
+                "com": "Slider",
+                "min": 0.01,
+                "max": 1,
+                "step": 0.01
+              },
+              "num": {
+                "name": "条纹数",
+                "com": "Slider",
+                "min": 0,
+                "max": 20,
+                "step": 1
+              },
+              "room": {
+                "name": "条纹空间占比",
+                "com": "Slider",
+                "min": 0,
+                "max": 1,
+                "step": 0.01
+              }
+            },
+            "curValue": {
+              "width": 0.943,
+              "height": 0.591,
+              "depth": 1.153,
+              "color": "#FF0004",
+              "opacity": 1,
+              "num": 4,
+              "thickness": 0.01,
+              "speed": 0.2,
+              "room": 0.45
+            }
+          }
+        }
+      },
+      "selectedExtendMeshUUID": null,
+      "eventlist": [],
+      "dataSourcesBindingList": {
+        "dataSources": [],
+        "bindings": []
+      },
+      "camera": {
+        "type": "perspective",
+        "position": {
+          "x": -1.22,
+          "y": 1.67,
+          "z": 0.6
+        },
+        "target": {
+          "x": 1.82,
+          "y": -1.62,
+          "z": 0.04
+        },
+        "fov": 75,
+        "near": 0.1,
+        "left": -5,
+        "right": 5,
+        "top": 3.5,
+        "bottom": -3.5,
+        "zoom": 80,
+        "aspect": 1,
+        "far": 10000
+      },
+      "weather": {
+        "curTime": 8,
+        "direct": 0,
+        "shadowIntensity": 1,
+        "toneMapping": 4,
+        "toneMappingExposure": 1,
+        "intensity": 1,
+        "isRain": false,
+        "rainConfig": {
+          "type": "rain",
+          "speed": 10,
+          "size": 5,
+          "count": 100,
+          "intensity": 1,
+          "lightning": false,
+          "lightningStrength": 0.55,
+          "color": "#fff"
+        },
+        "isSnow": false,
+        "snowConfig": {
+          "type": "snow",
+          "speed": 10,
+          "size": 5,
+          "count": 100,
+          "intensity": 1,
+          "color": "#fff"
+        },
+        "isCloud": false,
+        "cloudConfig": {
+          "color": "#ffffff",
+          "segments": 56,
+          "volume": 0.1,
+          "opacity": 0.8,
+          "seed": 0,
+          "fade": 10,
+          "growth": 10,
+          "speed": 0.06,
+          "bounds": {
+            "x": 15.8,
+            "y": 0,
+            "z": 15.8
+          },
+          "position-y": 6
+        }
+      },
+      "backgroundEnv": {
+        "type": "sunset",
+        "on": false,
+        "environmentIntensity": 0.6,
+        "environmentRotations": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "viewSettings": {
+        "antialias": false,
+        "shadows": false,
+        "powerPreference": "high-performance"
+      },
+      "floor": {
+        "showGrid": false,
+        "gridState": {
+          "cellSize": 0.6,
+          "cellThickness": 1,
+          "cellColor": "#6f6f6f",
+          "sectionColor": "#63e2b7",
+          "sectionSize": 3.3,
+          "sectionThickness": 1.5,
+          "fadeDistance": 25,
+          "fadeStrength": 1,
+          "infiniteGrid": true
+        },
+        "floorType": null,
+        "fState": null,
+        "comConfig": null
+      },
+      "postProcessing": {
+        "isOpenList": {},
+        "configList": {}
+      },
+      "label": "配置导入",
+      "timestamp": 1776830054284,
+      "otherParams": {
+        "isCollision": false
+      }
+    }
+  ],
+  "currentIndex": 0
+}
