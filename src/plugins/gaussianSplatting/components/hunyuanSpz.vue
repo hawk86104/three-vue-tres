@@ -13,7 +13,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onUnmounted, shallowRef, watch } from 'vue'
+import { nextTick, onUnmounted, shallowRef, watch } from 'vue'
 import { useTres } from '@tresjs/core'
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark'
 import { Group, WebGLRenderer } from 'three'
@@ -42,6 +42,8 @@ const props = withDefaults(defineProps<{
     useColliderUrl: false,
     colliderUrl: 'https://cos.icegl.cn/model/gaussianSplatting/jiedao.ply',
 })
+
+const emit = defineEmits(['ready'])
 
 const { renderer } = useTres() as any
 
@@ -168,6 +170,8 @@ const refreshScene = async () => {
     activeScene = nextScene
     sceneRoot.value = nextScene.root
     disposeScene(previousScene)
+    await nextTick()
+    emit('ready')
 }
 
 const refreshCollider = async () => {

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-09-11 08:59:53
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-12-08 12:25:17
+ * @LastEditTime: 2026-04-23 08:57:46
  */
 
 export default {
@@ -26,17 +26,18 @@ export default {
      QA问答:<br>
     1、此插件包依赖免费插件，请前往下载安装： <a style="color: #5384ff;" href="https://www.icegl.cn/tvtstore/useViewportGizmo" target="_blank">ViewportGizmo插件</a><br>
     `,
-    version: '2.1.0',
+    version: '2.5.0',
     author: '地虎降天龙',
     website: 'https://gitee.com/hawk86104',
     state: 'active',
     creatTime: '2025-09-11',
-    updateTime: '2025-11-17',
+    updateTime: '2026-04-23',
     require: [],
     tvtstore: 'FREE',
     preview: [
         { src: './plugins/zoneFreeScene/preview/freeRefiningIndustry.png', type: 'img', name: 'freeRefiningIndustry', title: '低像素炼油厂', disableFPSGraph: false, disableSrcBtn: false },
         { src: './plugins/zoneFreeScene/preview/freeTvtStack.png', type: 'img', name: 'freeTvtStack', title: 'TvT.js技术栈', disableFPSGraph: false, disableSrcBtn: false },
-        { src: './plugins/zoneFreeScene/preview/freeShipSea.png', type: 'img', name: 'freeShipSea', title: '海洋船运', disableFPSGraph: false, disableSrcBtn: false }
+        { src: './plugins/zoneFreeScene/preview/freeShipSea.png', type: 'img', name: 'freeShipSea', title: '海洋船运', disableFPSGraph: false, disableSrcBtn: false },
+        { src: './plugins/zoneFreeScene/preview/freeHYworld.png', type: 'img', name: 'freeHYworld', title: '混元世界', disableFPSGraph: false, disableSrcBtn: false }
     ],
 }
