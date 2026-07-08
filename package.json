@@ -39,7 +39,7 @@
   "devDependencies": {
     "@fesjs/plugin-icon": "5.0.0-beta.0",
     "@fesjs/utils": "4.0.0-beta.0",
-    "@originjs/vite-plugin-federation": "^1.4.1",
+    "@module-federation/vite": "^1.16.8",
     "@tweakpane/core": "^2.0.5",
     "@types/mapbox__tilebelt": "^1.0.4",
     "@types/offscreencanvas": "^2019.7.3",
