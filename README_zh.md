@@ -1,3 +1,7 @@
+> **📢 重要说明：** 因内部业务调整，ICEGL 官网域名 icegl.cn 目前正在重新履行备案审核流程。在备案审核完成前，该域名将暂时无法直接访问，预计一周内完成，更多说明请查看[微信公众号文章](https://mp.weixin.qq.com/s/WvGxSpnKjC3X6EzEjz1S_A)。
+
+> **🌐 临时预览：** 若要预览，可临时访问：[https://hawk86104.github.io](https://hawk86104.github.io)。
+
 # 🧊 TvT.js
 
 简体中文 | [English](./README.md)
