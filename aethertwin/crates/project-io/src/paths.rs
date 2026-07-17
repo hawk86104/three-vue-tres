@@ -622,7 +622,7 @@ enum FileIdentity {
     #[cfg(unix)]
     Unix { device: u64, inode: u64 },
     #[cfg(windows)]
-    Windows { volume: u32, index: u64 },
+    Windows { volume: u64, id: [u8; 16] },
     #[cfg(not(any(unix, windows)))]
     Unsupported,
 }
@@ -835,50 +835,49 @@ fn file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
     use std::os::windows::io::AsRawHandle;
 
     #[repr(C)]
-    struct IoStatusBlock {
-        status_or_pointer: *mut c_void,
-        information: usize,
+    struct FileId128 {
+        identifier: [u8; 16],
     }
 
     #[repr(C)]
-    struct FileInternalInformation {
-        index_number: i64,
+    struct FileIdInfo {
+        volume_serial_number: u64,
+        file_id: FileId128,
     }
 
-    #[link(name = "ntdll")]
+    #[link(name = "Kernel32")]
     unsafe extern "system" {
-        fn NtQueryInformationFile(
+        fn GetFileInformationByHandleEx(
             file: *mut c_void,
-            io_status: *mut IoStatusBlock,
-            information: *mut c_void,
-            length: u32,
             information_class: u32,
+            information: *mut c_void,
+            buffer_size: u32,
         ) -> i32;
     }
 
-    const FILE_INTERNAL_INFORMATION_CLASS: u32 = 6;
-    let mut io_status = IoStatusBlock {
-        status_or_pointer: std::ptr::null_mut(),
-        information: 0,
+    const FILE_ID_INFO_CLASS: u32 = 18;
+    let mut information = FileIdInfo {
+        volume_serial_number: 0,
+        file_id: FileId128 {
+            identifier: [0; 16],
+        },
     };
-    let mut information = FileInternalInformation { index_number: 0 };
-    // SAFETY: the handle is live and both output structures point to valid writable storage.
-    let status = unsafe {
-        NtQueryInformationFile(
+    // SAFETY: the handle is live and the fixed-size output buffer is writable.
+    if unsafe {
+        GetFileInformationByHandleEx(
             file.as_raw_handle(),
-            &mut io_status,
-            (&mut information as *mut FileInternalInformation).cast(),
-            u32::try_from(std::mem::size_of::<FileInternalInformation>())
+            FILE_ID_INFO_CLASS,
+            (&mut information as *mut FileIdInfo).cast(),
+            u32::try_from(std::mem::size_of::<FileIdInfo>())
                 .map_err(|_| ProjectIoError::FilesystemError)?,
-            FILE_INTERNAL_INFORMATION_CLASS,
         )
-    };
-    if status < 0 {
+    } == 0
+    {
         return Err(ProjectIoError::FilesystemError);
     }
     Ok(FileIdentity::Windows {
-        volume: 0,
-        index: information.index_number as u64,
+        volume: information.volume_serial_number,
+        id: information.file_id.identifier,
     })
 }
 
@@ -890,8 +889,8 @@ fn file_identity(_file: &File) -> Result<FileIdentity, ProjectIoError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        StagingWorkspace, cleanup_verified_staging, rename_no_replace, set_before_bind_test_hook,
-        staging_identity,
+        FileIdentity, StagingWorkspace, cleanup_verified_staging, file_identity, open_directory,
+        rename_no_replace, set_before_bind_test_hook, staging_identity,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -1002,6 +1001,41 @@ mod tests {
             b"theirs"
         );
         assert!(!root.path().join("Bind Race.twinproj").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_identity_uses_volume_and_the_complete_128_bit_file_id() {
+        let base = FileIdentity::Windows {
+            volume: 7,
+            id: [1; 16],
+        };
+        assert_ne!(
+            base,
+            FileIdentity::Windows {
+                volume: 8,
+                id: [1; 16],
+            }
+        );
+        let mut high_byte_differs = [1; 16];
+        high_byte_differs[15] = 2;
+        assert_ne!(
+            base,
+            FileIdentity::Windows {
+                volume: 7,
+                id: high_byte_differs,
+            }
+        );
+
+        let root = tempdir().unwrap();
+        let child = root.path().join("stable-id");
+        fs::create_dir(&child).unwrap();
+        let first = open_directory(&child).unwrap();
+        let second = open_directory(&child).unwrap();
+        assert_eq!(
+            file_identity(&first).unwrap(),
+            file_identity(&second).unwrap()
+        );
     }
 
     #[cfg(unix)]
