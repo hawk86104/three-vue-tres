@@ -1,6 +1,7 @@
-use crate::model::{CURRENT_SCHEMA_VERSION, Floor};
+use crate::model::{CURRENT_SCHEMA_VERSION, Floor, parse_contract_uuid};
 use crate::paths::{
-    canonical_parent, cleanup_verified_staging, validate_project_name, validate_project_structure,
+    PROJECT_SUFFIX, canonical_parent, cleanup_verified_staging, normalize_project_name,
+    rename_no_replace, staging_identity, validate_project_extension, validate_project_structure,
 };
 use crate::schema::{create_database, latest_snapshot, open_database, read_meta};
 use crate::{
@@ -8,6 +9,7 @@ use crate::{
     ProjectSnapshot, SpatialProject,
 };
 use chrono::{SecondsFormat, Utc};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -18,16 +20,17 @@ const APP_VERSION: &str = "0.1.0";
 const PROJECT_DIRECTORIES: [&str; 4] = ["assets", "thumbnails", "derived", "exports"];
 
 pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, ProjectIoError> {
-    let name = validate_project_name(&request.name)?.to_owned();
+    let name = normalize_project_name(&request.name)?;
     let parent = canonical_parent(&request.parent)?;
-    let destination = parent.join(format!("{name}.twinproj"));
+    let destination = parent.join(format!("{name}{PROJECT_SUFFIX}"));
     if path_entry_exists(&destination) {
         return Err(ProjectIoError::ProjectAlreadyExists);
     }
 
-    let staging_prefix = format!("{name}.twinproj.staging-");
+    let staging_prefix = format!("{name}{PROJECT_SUFFIX}.staging-");
     let staging = parent.join(format!("{staging_prefix}{}", Uuid::new_v4()));
     fs::create_dir(&staging)?;
+    let staging_identity = staging_identity(&staging)?;
 
     let result = (|| {
         for directory in PROJECT_DIRECTORIES {
@@ -53,17 +56,8 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
         create_database(&staging.join("project.db"), &manifest, &snapshot)?;
         write_manifest_atomically(&staging, &manifest)?;
 
-        if path_entry_exists(&destination) {
-            return Err(ProjectIoError::ProjectAlreadyExists);
-        }
-        fs::rename(&staging, &destination).map_err(|error| {
-            if path_entry_exists(&destination) {
-                ProjectIoError::ProjectAlreadyExists
-            } else {
-                let _ = error;
-                ProjectIoError::FilesystemError
-            }
-        })?;
+        rename_no_replace(&staging, &destination)?;
+        sync_directory(&parent)?;
 
         Ok(OpenedProject {
             project_path: destination,
@@ -74,22 +68,32 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
     })();
 
     if result.is_err() {
-        cleanup_verified_staging(&parent, &staging, &staging_prefix);
+        cleanup_verified_staging(&parent, &staging, &staging_identity);
     }
     result
 }
 
 pub fn open_project(path: &Path) -> Result<OpenedProject, ProjectIoError> {
+    validate_project_extension(path)?;
     let project_path = validate_project_structure(path)?;
     let mut manifest = read_manifest(&project_path.join("manifest.json"))?;
     let connection = open_database(&project_path.join("project.db"))?;
 
-    let database_schema: u32 = read_meta(&connection, "schemaVersion")?;
-    let database_id: Uuid = read_meta(&connection, "projectId")?;
-    let database_profile: ProjectProfile = read_meta(&connection, "profile")?;
+    let database_schema: u32 = read_immutable_meta(&connection, "schemaVersion")?;
+    let database_id_text: String = read_immutable_meta(&connection, "projectId")?;
+    let database_id = parse_contract_uuid(&database_id_text)
+        .map_err(|_| ProjectIoError::ManifestDatabaseMismatch)?;
+    let database_profile: ProjectProfile = read_immutable_meta(&connection, "profile")?;
+    let database_created_at: String = read_immutable_meta(&connection, "createdAt")?;
+    let database_app_version: String = read_immutable_meta(&connection, "appVersion")?;
+    let database_min_compatible_app_version: String =
+        read_immutable_meta(&connection, "minCompatibleAppVersion")?;
     if manifest.schema_version != database_schema
         || manifest.project_id != database_id
         || manifest.profile != database_profile
+        || manifest.created_at != database_created_at
+        || manifest.app_version != database_app_version
+        || manifest.min_compatible_app_version != database_min_compatible_app_version
     {
         return Err(ProjectIoError::ManifestDatabaseMismatch);
     }
@@ -117,6 +121,13 @@ pub fn open_project(path: &Path) -> Result<OpenedProject, ProjectIoError> {
         snapshot,
         recovered: false,
     })
+}
+
+fn read_immutable_meta<T: DeserializeOwned>(
+    connection: &rusqlite::Connection,
+    key: &str,
+) -> Result<T, ProjectIoError> {
+    read_meta(connection, key).map_err(|_| ProjectIoError::ManifestDatabaseMismatch)
 }
 
 fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSnapshot {
@@ -168,22 +179,36 @@ fn write_manifest_atomically(
     project_path: &Path,
     manifest: &ProjectManifest,
 ) -> Result<(), ProjectIoError> {
-    let temporary = project_path.join("manifest.json.tmp");
+    let temporary = project_path.join(format!("manifest.json.tmp-{}", Uuid::new_v4()));
     let destination = project_path.join("manifest.json");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)?;
-    serde_json::to_writer_pretty(&mut file, manifest)
-        .map_err(|_| ProjectIoError::FilesystemError)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    drop(file);
-    let replace_existing = path_entry_exists(&destination);
-    if let Err(error) = replace_file_atomically(&temporary, &destination, replace_existing) {
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        serde_json::to_writer_pretty(&mut file, manifest)
+            .map_err(|_| ProjectIoError::FilesystemError)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        drop(file);
+        let replace_existing = path_entry_exists(&destination);
+        replace_file_atomically(&temporary, &destination, replace_existing)?;
+        sync_directory(project_path)
+    })();
+    if result.is_err() {
         let _ = fs::remove_file(&temporary);
-        return Err(error);
     }
+    result
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), ProjectIoError> {
+    fs::File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), ProjectIoError> {
     Ok(())
 }
 

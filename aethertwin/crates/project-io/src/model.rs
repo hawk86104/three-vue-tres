@@ -25,6 +25,7 @@ pub struct CreateProjectRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectManifest {
     pub schema_version: u32,
+    #[serde(with = "contract_uuid")]
     pub project_id: Uuid,
     pub name: String,
     pub profile: ProjectProfile,
@@ -37,6 +38,7 @@ pub struct ProjectManifest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Floor {
+    #[serde(with = "contract_uuid")]
     pub id: Uuid,
     pub name: String,
     pub tags: Vec<String>,
@@ -45,6 +47,7 @@ pub struct Floor {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpatialProject {
+    #[serde(with = "contract_uuid")]
     pub id: Uuid,
     pub name: String,
     pub tags: Vec<String>,
@@ -55,6 +58,7 @@ pub struct SpatialProject {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetRecord {
+    #[serde(with = "contract_uuid")]
     pub id: Uuid,
     pub sha256: String,
     pub relative_path: String,
@@ -137,6 +141,49 @@ impl ProjectSnapshot {
 
 pub(crate) fn valid_uuid(value: &Uuid) -> bool {
     matches!(value.get_version_num(), 1..=5)
+        && matches!(value.get_variant(), uuid::Variant::RFC4122)
+}
+
+pub(crate) fn parse_contract_uuid(value: &str) -> Result<Uuid, ProjectIoError> {
+    if !contract_uuid_text(value) {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Uuid::parse_str(value).map_err(|_| ProjectIoError::InvalidProjectStructure)
+}
+
+fn contract_uuid_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 36
+        || bytes[8] != b'-'
+        || bytes[13] != b'-'
+        || bytes[18] != b'-'
+        || bytes[23] != b'-'
+        || !matches!(bytes[14], b'1'..=b'5')
+        || !matches!(bytes[19].to_ascii_lowercase(), b'8' | b'9' | b'a' | b'b')
+    {
+        return false;
+    }
+    bytes
+        .iter()
+        .enumerate()
+        .all(|(index, byte)| matches!(index, 8 | 13 | 18 | 23) || byte.is_ascii_hexdigit())
+}
+
+mod contract_uuid {
+    use super::{Uuid, contract_uuid_text};
+    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+
+    pub fn serialize<S: Serializer>(value: &Uuid, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&value.hyphenated().to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Uuid, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        if !contract_uuid_text(&value) {
+            return Err(D::Error::custom("invalid project UUID"));
+        }
+        Uuid::parse_str(&value).map_err(|_| D::Error::custom("invalid project UUID"))
+    }
 }
 
 pub(crate) fn valid_timestamp(value: &str) -> bool {

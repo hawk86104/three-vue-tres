@@ -108,3 +108,34 @@ fn project_io_errors_expose_stable_codes() {
         assert_eq!(error.code(), expected);
     }
 }
+
+#[test]
+fn uuid_serde_matches_the_typescript_canonical_regex() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/contracts/manifest.v1.json");
+    let mut manifest: Value =
+        serde_json::from_str(&fs::read_to_string(fixture_path).unwrap()).unwrap();
+
+    manifest["projectId"] = json!("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
+    let uppercase: ProjectManifest = serde_json::from_value(manifest.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(uppercase).unwrap()["projectId"],
+        json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    );
+
+    for rejected in [
+        "00000000000040008000000000000001",
+        "{00000000-0000-4000-8000-000000000001}",
+        "urn:uuid:00000000-0000-4000-8000-000000000001",
+        "00000000-0000-0000-8000-000000000001",
+        "00000000-0000-6000-8000-000000000001",
+        "00000000-0000-4000-7000-000000000001",
+        "00000000-0000-4000-c000-000000000001",
+    ] {
+        manifest["projectId"] = json!(rejected);
+        assert!(
+            serde_json::from_value::<ProjectManifest>(manifest.clone()).is_err(),
+            "accepted {rejected}"
+        );
+    }
+}

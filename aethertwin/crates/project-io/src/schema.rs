@@ -57,6 +57,7 @@ const REQUIRED_TABLES: [&str; 6] = [
     "snapshots",
     "asset_records",
 ];
+const BUSY_TIMEOUT_MILLIS: u64 = 5_000;
 
 pub(crate) fn create_database(
     path: &Path,
@@ -123,10 +124,24 @@ fn configured_connection(path: &Path, create: bool) -> Result<Connection, Projec
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?
     };
-    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.busy_timeout(Duration::from_millis(BUSY_TIMEOUT_MILLIS))?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
+    validate_connection_settings(&connection)?;
     Ok(connection)
+}
+
+fn validate_connection_settings(connection: &Connection) -> Result<(), ProjectIoError> {
+    let journal_mode: String = connection.query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+    let foreign_keys: i64 = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+    let busy_timeout: i64 = connection.query_row("PRAGMA busy_timeout", [], |row| row.get(0))?;
+    if !journal_mode.eq_ignore_ascii_case("wal")
+        || foreign_keys != 1
+        || busy_timeout != BUSY_TIMEOUT_MILLIS as i64
+    {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    Ok(())
 }
 
 fn validate_migrations(connection: &Connection) -> Result<(), ProjectIoError> {
@@ -150,7 +165,29 @@ fn validate_migrations(connection: &Connection) -> Result<(), ProjectIoError> {
     if migrations[0].1 != migration_1_checksum() {
         return Err(ProjectIoError::DatabaseError);
     }
+    validate_live_schema(connection)?;
     Ok(())
+}
+
+fn validate_live_schema(connection: &Connection) -> Result<(), ProjectIoError> {
+    let expected = Connection::open_in_memory()?;
+    expected.execute_batch(MIGRATION_1_SQL)?;
+    for table in REQUIRED_TABLES {
+        if schema_sql(connection, table)? != schema_sql(&expected, table)? {
+            return Err(ProjectIoError::DatabaseError);
+        }
+    }
+    Ok(())
+}
+
+fn schema_sql(connection: &Connection, table: &str) -> Result<String, ProjectIoError> {
+    connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |row| row.get(0),
+        )
+        .map_err(|_| ProjectIoError::DatabaseError)
 }
 
 pub(crate) fn read_meta<T: DeserializeOwned>(
@@ -218,4 +255,53 @@ pub fn snapshot_checksum(value: &str) -> String {
         let _ = write!(result, "{byte:02x}");
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_connection_settings;
+    use crate::ProjectIoError;
+    use rusqlite::Connection;
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    fn configured_test_connection() -> (tempfile::TempDir, Connection) {
+        let root = tempdir().unwrap();
+        let connection = Connection::open(root.path().join("settings.db")).unwrap();
+        connection.busy_timeout(Duration::from_secs(5)).unwrap();
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+        connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        (root, connection)
+    }
+
+    fn assert_database_error(result: Result<(), ProjectIoError>) {
+        assert_eq!(result.unwrap_err().code(), "DATABASE_ERROR");
+    }
+
+    #[test]
+    fn rejects_ineffective_sqlite_runtime_settings() {
+        let (_root, connection) = configured_test_connection();
+        validate_connection_settings(&connection).unwrap();
+
+        connection
+            .pragma_update(None, "foreign_keys", "OFF")
+            .unwrap();
+        assert_database_error(validate_connection_settings(&connection));
+        connection
+            .pragma_update(None, "foreign_keys", "ON")
+            .unwrap();
+
+        connection.busy_timeout(Duration::from_millis(1)).unwrap();
+        assert_database_error(validate_connection_settings(&connection));
+        connection.busy_timeout(Duration::from_secs(5)).unwrap();
+
+        connection
+            .pragma_update(None, "journal_mode", "DELETE")
+            .unwrap();
+        assert_database_error(validate_connection_settings(&connection));
+    }
 }

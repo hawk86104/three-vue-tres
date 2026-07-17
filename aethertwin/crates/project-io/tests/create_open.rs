@@ -86,6 +86,15 @@ fn rejects_blank_and_path_like_project_names_without_writing() {
         "Demo.",
         "Demo ",
         "CON",
+        "CONIN$",
+        "CONOUT$",
+        "COM¹",
+        "COM².txt",
+        "COM³",
+        "LPT¹",
+        "LPT².log",
+        "LPT³",
+        "Demo.twinproj.twinproj",
     ] {
         let root = tempdir().unwrap();
         assert_code(
@@ -98,6 +107,33 @@ fn rejects_blank_and_path_like_project_names_without_writing() {
             "wrote for {name:?}"
         );
     }
+}
+
+#[test]
+fn applies_one_canonical_project_suffix_and_requires_it_on_open() {
+    for requested in ["Named", "Named.twinproj", "Named.TWINPROJ"] {
+        let root = tempdir().unwrap();
+        let opened =
+            create_project(request(root.path(), requested, ProjectProfile::Showroom)).unwrap();
+        assert_eq!(
+            opened.project_path.file_name().unwrap(),
+            std::ffi::OsStr::new("Named.twinproj")
+        );
+    }
+
+    let root = tempdir().unwrap();
+    let opened = create_project(request(
+        root.path(),
+        "Wrong Extension",
+        ProjectProfile::Market,
+    ))
+    .unwrap();
+    let wrong_path = root.path().join("Wrong Extension.project");
+    fs::rename(&opened.project_path, &wrong_path).unwrap();
+    assert_code(
+        open_project(&wrong_path).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
 }
 
 #[test]
@@ -244,6 +280,48 @@ fn rejects_immutable_manifest_database_mismatch() {
 }
 
 #[test]
+fn rejects_all_immutable_manifest_database_mismatches_and_missing_metadata() {
+    for (key, value) in [
+        ("createdAt", json!("2026-07-17T03:00:00.000Z")),
+        ("appVersion", json!("0.2.0")),
+        ("minCompatibleAppVersion", json!("0.0.9")),
+    ] {
+        let root = tempdir().unwrap();
+        let opened =
+            create_project(request(root.path(), "Immutable", ProjectProfile::Showroom)).unwrap();
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE project_meta SET value_json = ?1 WHERE key = ?2",
+                params![serde_json::to_string(&value).unwrap(), key],
+            )
+            .unwrap();
+        drop(connection);
+        assert_code(
+            open_project(&opened.project_path).unwrap_err(),
+            "MANIFEST_DATABASE_MISMATCH",
+        );
+    }
+
+    let root = tempdir().unwrap();
+    let opened = create_project(request(
+        root.path(),
+        "Missing Immutable",
+        ProjectProfile::Market,
+    ))
+    .unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute("DELETE FROM project_meta WHERE key = 'createdAt'", [])
+        .unwrap();
+    drop(connection);
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "MANIFEST_DATABASE_MISMATCH",
+    );
+}
+
+#[test]
 fn loads_the_latest_checksum_valid_snapshot() {
     let root = tempdir().unwrap();
     let opened = create_project(request(root.path(), "Latest", ProjectProfile::Market)).unwrap();
@@ -312,6 +390,93 @@ fn repairs_mutable_manifest_cache_fields_from_sqlite() {
             .unwrap();
     assert_eq!(disk_manifest, reopened.manifest);
     assert!(!opened.project_path.join("manifest.json.tmp").exists());
+}
+
+#[test]
+fn fixed_manifest_temp_residue_does_not_block_atomic_repair() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Residue", ProjectProfile::Showroom)).unwrap();
+    let residue = opened.project_path.join("manifest.json.tmp");
+    fs::write(&residue, b"crash residue").unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = ?1 WHERE key = 'name'",
+            [serde_json::to_string("Repaired Despite Residue").unwrap()],
+        )
+        .unwrap();
+    drop(connection);
+
+    let reopened = open_project(&opened.project_path).unwrap();
+    assert_eq!(reopened.manifest.name, "Repaired Despite Residue");
+    assert_eq!(fs::read(&residue).unwrap(), b"crash residue");
+    let unique_temps: Vec<_> = fs::read_dir(&opened.project_path)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("manifest.json.tmp-")
+        })
+        .collect();
+    assert!(
+        unique_temps.is_empty(),
+        "unique manifest temps remained: {unique_temps:?}"
+    );
+}
+
+#[test]
+fn rejects_live_schema_tampering_despite_a_valid_migration_checksum() {
+    for tamper in [
+        "DROP TABLE asset_records;
+         CREATE TABLE asset_records (
+           id TEXT PRIMARY KEY,
+           sha256 TEXT NOT NULL,
+           relative_path TEXT NOT NULL,
+           media_type TEXT NOT NULL,
+           size INTEGER NOT NULL,
+           metadata_json TEXT NOT NULL
+         );",
+        "DROP TABLE command_journal;
+         CREATE TABLE command_journal (
+           sequence INTEGER PRIMARY KEY,
+           transaction_id TEXT NOT NULL,
+           command_type TEXT NOT NULL,
+           payload_json TEXT NOT NULL,
+           inverse_payload_json TEXT NOT NULL,
+           action TEXT NOT NULL,
+           created_at TEXT NOT NULL
+         );",
+    ] {
+        let root = tempdir().unwrap();
+        let opened = create_project(request(
+            root.path(),
+            "Forged Schema",
+            ProjectProfile::Market,
+        ))
+        .unwrap();
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        connection.execute_batch(tamper).unwrap();
+        let checksum: String = connection
+            .query_row(
+                "SELECT checksum FROM schema_migrations WHERE version = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            checksum.len(),
+            64,
+            "tamper changed the self-reported migration checksum"
+        );
+        drop(connection);
+
+        assert_code(
+            open_project(&opened.project_path).unwrap_err(),
+            "DATABASE_ERROR",
+        );
+    }
 }
 
 #[test]

@@ -8,7 +8,10 @@ license.workspace = true
 [dependencies]
 chrono.workspace = true
 fs2.workspace = true
+fs_at.workspace = true
 rusqlite.workspace = true
+remove_dir_all.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
