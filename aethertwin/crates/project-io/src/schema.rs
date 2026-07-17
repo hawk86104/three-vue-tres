@@ -172,22 +172,27 @@ fn validate_migrations(connection: &Connection) -> Result<(), ProjectIoError> {
 fn validate_live_schema(connection: &Connection) -> Result<(), ProjectIoError> {
     let expected = Connection::open_in_memory()?;
     expected.execute_batch(MIGRATION_1_SQL)?;
-    for table in REQUIRED_TABLES {
-        if schema_sql(connection, table)? != schema_sql(&expected, table)? {
-            return Err(ProjectIoError::DatabaseError);
-        }
+    if schema_objects(connection)? != schema_objects(&expected)? {
+        return Err(ProjectIoError::DatabaseError);
     }
     Ok(())
 }
 
-fn schema_sql(connection: &Connection, table: &str) -> Result<String, ProjectIoError> {
+fn schema_objects(
+    connection: &Connection,
+) -> Result<Vec<(String, String, String, Option<String>)>, ProjectIoError> {
     connection
-        .query_row(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            [table],
-            |row| row.get(0),
-        )
-        .map_err(|_| ProjectIoError::DatabaseError)
+        .prepare(
+            "SELECT type, name, tbl_name, sql
+             FROM sqlite_master
+             WHERE name NOT GLOB 'sqlite_*'
+             ORDER BY type, name, tbl_name",
+        )?
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<Result<_, _>>()
+        .map_err(ProjectIoError::from)
 }
 
 pub(crate) fn read_meta<T: DeserializeOwned>(

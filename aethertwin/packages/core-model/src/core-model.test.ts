@@ -53,6 +53,13 @@ describe("core model", () => {
     expect(() => parseManifest({ ...validManifest, createdAt: "2026-07-17" })).toThrow(/createdAt/i);
   });
 
+  it("canonicalizes accepted UUID text to lowercase", () => {
+    expect(
+      parseManifest({ ...validManifest, projectId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA" })
+        .projectId,
+    ).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  });
+
   it.each(["/media/x.png", "\\media\\x.png", "C:\\media\\x.png", "\\\\server\\share\\x.png", "media/../x.png"])(
     "rejects unsafe asset path %s",
     (relativePath) => {

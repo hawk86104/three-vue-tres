@@ -1,7 +1,7 @@
 use crate::model::{CURRENT_SCHEMA_VERSION, Floor, parse_contract_uuid};
 use crate::paths::{
-    PROJECT_SUFFIX, canonical_parent, cleanup_verified_staging, normalize_project_name,
-    rename_no_replace, staging_identity, validate_project_extension, validate_project_structure,
+    PROJECT_SUFFIX, StagingWorkspace, canonical_parent, normalize_project_name,
+    validate_project_extension, validate_project_structure,
 };
 use crate::schema::{create_database, latest_snapshot, open_database, read_meta};
 use crate::{
@@ -27,14 +27,12 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
         return Err(ProjectIoError::ProjectAlreadyExists);
     }
 
-    let staging_prefix = format!("{name}{PROJECT_SUFFIX}.staging-");
-    let staging = parent.join(format!("{staging_prefix}{}", Uuid::new_v4()));
-    fs::create_dir(&staging)?;
-    let staging_identity = staging_identity(&staging)?;
+    let mut staging = StagingWorkspace::create(&parent, &name)?;
+    let staging_path = staging.bound_project_path().to_owned();
 
     let result = (|| {
         for directory in PROJECT_DIRECTORIES {
-            fs::create_dir(staging.join(directory))?;
+            fs::create_dir(staging_path.join(directory))?;
         }
 
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -53,10 +51,10 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
         let snapshot = initial_snapshot(project_id, &name, request.profile);
         snapshot.validate()?;
 
-        create_database(&staging.join("project.db"), &manifest, &snapshot)?;
-        write_manifest_atomically(&staging, &manifest)?;
+        create_database(&staging_path.join("project.db"), &manifest, &snapshot)?;
+        write_manifest_atomically(&staging_path, &manifest)?;
 
-        rename_no_replace(&staging, &destination)?;
+        staging.publish(&destination)?;
         sync_directory(&parent)?;
 
         Ok(OpenedProject {
@@ -67,9 +65,6 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
         })
     })();
 
-    if result.is_err() {
-        cleanup_verified_staging(&parent, &staging, &staging_identity);
-    }
     result
 }
 

@@ -70,7 +70,7 @@ export function assertUuid(value: unknown, field: string): string {
   if (!UUID_PATTERN.test(uuid)) {
     invalid(field, "expected a UUID");
   }
-  return uuid;
+  return uuid.toLowerCase();
 }
 
 function timestampField(record: UnknownRecord, key: string, field = key): string {

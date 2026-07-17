@@ -134,6 +134,16 @@ fn applies_one_canonical_project_suffix_and_requires_it_on_open() {
         open_project(&wrong_path).unwrap_err(),
         "INVALID_PROJECT_STRUCTURE",
     );
+
+    for invalid_name in [".twinproj", "Wrong Extension.twinproj.twinproj"] {
+        let invalid_path = root.path().join(invalid_name);
+        fs::rename(&wrong_path, &invalid_path).unwrap();
+        assert_code(
+            open_project(&invalid_path).unwrap_err(),
+            "INVALID_PROJECT_STRUCTURE",
+        );
+        fs::rename(&invalid_path, &wrong_path).unwrap();
+    }
 }
 
 #[test]
@@ -470,6 +480,33 @@ fn rejects_live_schema_tampering_despite_a_valid_migration_checksum() {
             64,
             "tamper changed the self-reported migration checksum"
         );
+        drop(connection);
+
+        assert_code(
+            open_project(&opened.project_path).unwrap_err(),
+            "DATABASE_ERROR",
+        );
+    }
+}
+
+#[test]
+fn rejects_extra_sqlite_schema_objects_despite_exact_required_tables() {
+    for statement in [
+        "CREATE TABLE injected_table(value TEXT)",
+        "CREATE TABLE sqliteX(value TEXT)",
+        "CREATE VIEW injected_view AS SELECT key FROM project_meta",
+        "CREATE INDEX injected_index ON project_meta(value_json)",
+        "CREATE TRIGGER injected_trigger AFTER UPDATE ON project_meta BEGIN DELETE FROM snapshots; END",
+    ] {
+        let root = tempdir().unwrap();
+        let opened = create_project(request(
+            root.path(),
+            "Extra Schema Object",
+            ProjectProfile::Market,
+        ))
+        .unwrap();
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        connection.execute_batch(statement).unwrap();
         drop(connection);
 
         assert_code(
