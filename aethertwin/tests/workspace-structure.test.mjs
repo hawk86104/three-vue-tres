@@ -28,8 +28,11 @@ const required = [
   "packages/plugin-sdk",
   "crates/desktop-host",
   "crates/project-io",
+  "crates/project-io/Cargo.toml",
+  "crates/project-io/src/lib.rs",
   "crates/asset-io",
   "crates/media-export",
+  "Cargo.lock",
   "docs/ARCHITECTURE.md",
   "docs/PRODUCT_SPEC.md",
   "docs/PROJECT_FORMAT.md",
@@ -53,4 +56,34 @@ test("workspace exposes only the two product profiles", () => {
   assert.match(spec, /showroom/);
   assert.match(spec, /market/);
   assert.doesNotMatch(spec, /third profile/i);
+});
+
+test("active Rust workspace member is executable and locked", () => {
+  const workspace = readFileSync(join(root, "Cargo.toml"), "utf8");
+  const projectIo = readFileSync(
+    join(root, "crates/project-io/Cargo.toml"),
+    "utf8",
+  );
+
+  assert.match(workspace, /members\s*=\s*\["crates\/project-io"\]/);
+  assert.match(projectIo, /name\s*=\s*"aethertwin-project-io"/);
+});
+
+test("root tooling pins a TypeScript 6.0 stable release", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.match(manifest.devDependencies.typescript, /^6\.0\.\d+$/);
+});
+
+test("architecture preserves transactional and UI-state boundaries", () => {
+  const architecture = readFileSync(join(root, "docs/ARCHITECTURE.md"), "utf8");
+
+  assert.match(architecture, /same SQLite transaction/i);
+  assert.match(architecture, /Zustand stores transient UI state only/i);
+});
+
+test("product scope requires the real 2D-first M0 overview", () => {
+  const spec = readFileSync(join(root, "docs/PRODUCT_SPEC.md"), "utf8");
+
+  assert.match(spec, /real project overview/i);
+  assert.match(spec, /2D-first editor/i);
 });
