@@ -1,0 +1,392 @@
+use project_io::{
+    CreateProjectRequest, ProjectIoError, ProjectProfile, create_project, open_project,
+};
+use rusqlite::{Connection, params};
+use serde_json::{Value, json};
+use std::fs;
+use tempfile::tempdir;
+
+fn request(parent: &std::path::Path, name: &str, profile: ProjectProfile) -> CreateProjectRequest {
+    CreateProjectRequest {
+        parent: parent.to_path_buf(),
+        name: name.into(),
+        profile,
+    }
+}
+
+fn assert_code(error: ProjectIoError, expected: &str) {
+    assert_eq!(error.code(), expected, "unexpected error: {error}");
+}
+
+#[test]
+fn creates_and_reopens_both_profiles() {
+    for profile in [ProjectProfile::Showroom, ProjectProfile::Market] {
+        let root = tempdir().unwrap();
+        let opened = create_project(request(root.path(), "Demo", profile)).unwrap();
+
+        assert!(opened.project_path.ends_with("Demo.twinproj"));
+        for entry in [
+            "manifest.json",
+            "project.db",
+            "assets",
+            "thumbnails",
+            "derived",
+            "exports",
+        ] {
+            assert!(opened.project_path.join(entry).exists(), "missing {entry}");
+        }
+        assert!(!opened.project_path.join("manifest.json.tmp").exists());
+        assert!(!opened.recovered);
+
+        let reopened = open_project(&opened.project_path).unwrap();
+        assert_eq!(opened.manifest, reopened.manifest);
+        assert_eq!(opened.snapshot, reopened.snapshot);
+        assert_eq!(opened.manifest.project_id, opened.snapshot.project.id);
+        assert_eq!(opened.manifest.profile, opened.snapshot.project.profile);
+        assert!(!reopened.recovered);
+    }
+}
+
+#[test]
+fn never_overwrites_an_existing_project_or_leaves_staging() {
+    let root = tempdir().unwrap();
+    let request = request(root.path(), "Demo", ProjectProfile::Market);
+    let first = create_project(request.clone()).unwrap();
+    let original_manifest = fs::read(first.project_path.join("manifest.json")).unwrap();
+
+    assert_code(
+        create_project(request).unwrap_err(),
+        "PROJECT_ALREADY_EXISTS",
+    );
+    assert_eq!(
+        fs::read(first.project_path.join("manifest.json")).unwrap(),
+        original_manifest
+    );
+    let leftovers: Vec<_> = fs::read_dir(root.path())
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".staging-"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "staging directories remained: {leftovers:?}"
+    );
+}
+
+#[test]
+fn rejects_blank_and_path_like_project_names_without_writing() {
+    for name in [
+        "",
+        "   ",
+        ".",
+        "..",
+        "Demo/Child",
+        "Demo\\Child",
+        "C:Demo",
+        "Demo.",
+        "Demo ",
+        "CON",
+    ] {
+        let root = tempdir().unwrap();
+        assert_code(
+            create_project(request(root.path(), name, ProjectProfile::Showroom)).unwrap_err(),
+            "INVALID_PROJECT_NAME",
+        );
+        assert_eq!(
+            fs::read_dir(root.path()).unwrap().count(),
+            0,
+            "wrote for {name:?}"
+        );
+    }
+}
+
+#[test]
+fn creates_schema_migration_and_sqlite_runtime_settings() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Schema", ProjectProfile::Showroom)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+
+    let journal_mode: String = connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(journal_mode.to_ascii_lowercase(), "wal");
+
+    let tables: Vec<String> = connection
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for table in [
+        "asset_records",
+        "command_journal",
+        "entity_records",
+        "project_meta",
+        "schema_migrations",
+        "snapshots",
+    ] {
+        assert!(
+            tables.iter().any(|candidate| candidate == table),
+            "missing {table}"
+        );
+    }
+
+    let (version, checksum): (u32, String) = connection
+        .query_row(
+            "SELECT version, checksum FROM schema_migrations",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(version, 1);
+    assert_eq!(checksum.len(), 64);
+    assert!(
+        checksum
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    );
+}
+
+#[test]
+fn rejects_migration_checksum_drift() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Drift", ProjectProfile::Market)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE schema_migrations SET checksum = 'bad' WHERE version = 1",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "DATABASE_ERROR",
+    );
+}
+
+#[test]
+fn rejects_missing_or_malformed_project_structure() {
+    let root = tempdir().unwrap();
+    assert_code(
+        open_project(root.path()).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+
+    let opened = create_project(request(root.path(), "Broken", ProjectProfile::Showroom)).unwrap();
+    fs::remove_dir_all(opened.project_path.join("assets")).unwrap();
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+}
+
+#[test]
+fn rejects_invalid_manifest_fields_and_unsupported_schema() {
+    let root = tempdir().unwrap();
+    let opened =
+        create_project(request(root.path(), "Manifest", ProjectProfile::Showroom)).unwrap();
+    let manifest_path = opened.project_path.join("manifest.json");
+    let original: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+
+    for (field, invalid) in [
+        ("projectId", json!("not-a-uuid")),
+        ("createdAt", json!("not-a-timestamp")),
+        ("updatedAt", json!("2026-13-40T25:61:61Z")),
+        ("profile", json!("iot")),
+        ("appVersion", json!(" ")),
+        ("minCompatibleAppVersion", json!("")),
+    ] {
+        let mut changed = original.clone();
+        changed[field] = invalid;
+        fs::write(&manifest_path, serde_json::to_vec_pretty(&changed).unwrap()).unwrap();
+        assert_code(
+            open_project(&opened.project_path).unwrap_err(),
+            "INVALID_PROJECT_STRUCTURE",
+        );
+    }
+
+    let mut newer = original;
+    newer["schemaVersion"] = json!(2);
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&newer).unwrap()).unwrap();
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "UNSUPPORTED_SCHEMA_VERSION",
+    );
+}
+
+#[test]
+fn rejects_immutable_manifest_database_mismatch() {
+    for (key, value) in [
+        ("projectId", json!("00000000-0000-4000-8000-000000000099")),
+        ("profile", json!("market")),
+        ("schemaVersion", json!(99)),
+    ] {
+        let root = tempdir().unwrap();
+        let opened =
+            create_project(request(root.path(), "Mismatch", ProjectProfile::Showroom)).unwrap();
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE project_meta SET value_json = ?1 WHERE key = ?2",
+                params![serde_json::to_string(&value).unwrap(), key],
+            )
+            .unwrap();
+        drop(connection);
+
+        assert_code(
+            open_project(&opened.project_path).unwrap_err(),
+            "MANIFEST_DATABASE_MISMATCH",
+        );
+    }
+}
+
+#[test]
+fn loads_the_latest_checksum_valid_snapshot() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Latest", ProjectProfile::Market)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let mut latest = opened.snapshot.clone();
+    latest.sequence = 3;
+    latest.checkpoint_sequence = 3;
+    latest.project.name = "Latest Name".into();
+    let snapshot_json = serde_json::to_string(&latest).unwrap();
+    let checksum = project_io::snapshot_checksum(&snapshot_json);
+    connection
+        .execute(
+            "INSERT INTO snapshots(sequence, snapshot_json, checksum, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![3_i64, snapshot_json, checksum, "2026-07-17T01:00:00.000Z"],
+        )
+        .unwrap();
+    drop(connection);
+
+    let reopened = open_project(&opened.project_path).unwrap();
+    assert_eq!(reopened.snapshot, latest);
+}
+
+#[test]
+fn rejects_a_snapshot_with_a_bad_checksum() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Checksum", ProjectProfile::Market)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET checksum = 'bad' WHERE sequence = 0",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+}
+
+#[test]
+fn repairs_mutable_manifest_cache_fields_from_sqlite() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Cache", ProjectProfile::Showroom)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = ?1 WHERE key = 'name'",
+            [serde_json::to_string("Database Name").unwrap()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = ?1 WHERE key = 'updatedAt'",
+            [serde_json::to_string("2026-07-17T02:00:00.000Z").unwrap()],
+        )
+        .unwrap();
+    drop(connection);
+
+    let reopened = open_project(&opened.project_path).unwrap();
+    assert_eq!(reopened.manifest.name, "Database Name");
+    assert_eq!(reopened.manifest.updated_at, "2026-07-17T02:00:00.000Z");
+    let disk_manifest: project_io::ProjectManifest =
+        serde_json::from_slice(&fs::read(opened.project_path.join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(disk_manifest, reopened.manifest);
+    assert!(!opened.project_path.join("manifest.json.tmp").exists());
+}
+
+#[test]
+fn enforces_cross_platform_relative_resource_paths() {
+    assert!(project_io::validate_relative_resource_path("assets/images/item.png").is_ok());
+    for invalid in [
+        "",
+        "/assets/item.png",
+        "C:\\assets\\item.png",
+        "C:/assets/item.png",
+        "\\\\server\\share\\item.png",
+        "assets\\item.png",
+        "assets/../item.png",
+    ] {
+        assert_code(
+            project_io::validate_relative_resource_path(invalid).unwrap_err(),
+            "INVALID_RESOURCE_PATH",
+        );
+    }
+}
+
+#[test]
+fn rejects_snapshot_numbers_outside_typescript_safe_integer_range() {
+    let root = tempdir().unwrap();
+    let opened =
+        create_project(request(root.path(), "Safe Integer", ProjectProfile::Market)).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let mut snapshot = serde_json::to_value(&opened.snapshot).unwrap();
+    snapshot["assets"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000123",
+        "sha256": "a".repeat(64),
+        "relativePath": "assets/item.png",
+        "mediaType": "image/png",
+        "size": 9_007_199_254_740_992_u64
+    }]);
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2 WHERE sequence = 0",
+            params![snapshot_json, project_io::snapshot_checksum(&snapshot_json)],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+}
+
+#[test]
+fn does_not_repair_manifest_until_the_database_is_fully_valid() {
+    let root = tempdir().unwrap();
+    let opened =
+        create_project(request(root.path(), "Safe Open", ProjectProfile::Showroom)).unwrap();
+    let manifest_path = opened.project_path.join("manifest.json");
+    let original_manifest = fs::read(&manifest_path).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = ?1 WHERE key = 'name'",
+            [serde_json::to_string("Must Not Be Repaired").unwrap()],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET checksum = 'bad' WHERE sequence = 0",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert_code(
+        open_project(&opened.project_path).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+    assert_eq!(fs::read(manifest_path).unwrap(), original_manifest);
+}

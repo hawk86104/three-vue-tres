@@ -1,0 +1,237 @@
+use crate::model::{CURRENT_SCHEMA_VERSION, Floor};
+use crate::paths::{
+    canonical_parent, cleanup_verified_staging, validate_project_name, validate_project_structure,
+};
+use crate::schema::{create_database, latest_snapshot, open_database, read_meta};
+use crate::{
+    CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest, ProjectProfile,
+    ProjectSnapshot, SpatialProject,
+};
+use chrono::{SecondsFormat, Utc};
+use serde_json::Value;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+use uuid::Uuid;
+
+const APP_VERSION: &str = "0.1.0";
+const PROJECT_DIRECTORIES: [&str; 4] = ["assets", "thumbnails", "derived", "exports"];
+
+pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, ProjectIoError> {
+    let name = validate_project_name(&request.name)?.to_owned();
+    let parent = canonical_parent(&request.parent)?;
+    let destination = parent.join(format!("{name}.twinproj"));
+    if path_entry_exists(&destination) {
+        return Err(ProjectIoError::ProjectAlreadyExists);
+    }
+
+    let staging_prefix = format!("{name}.twinproj.staging-");
+    let staging = parent.join(format!("{staging_prefix}{}", Uuid::new_v4()));
+    fs::create_dir(&staging)?;
+
+    let result = (|| {
+        for directory in PROJECT_DIRECTORIES {
+            fs::create_dir(staging.join(directory))?;
+        }
+
+        let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let project_id = Uuid::new_v4();
+        let manifest = ProjectManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            project_id,
+            name: name.clone(),
+            profile: request.profile,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+            app_version: APP_VERSION.into(),
+            min_compatible_app_version: APP_VERSION.into(),
+        };
+        manifest.validate()?;
+        let snapshot = initial_snapshot(project_id, &name, request.profile);
+        snapshot.validate()?;
+
+        create_database(&staging.join("project.db"), &manifest, &snapshot)?;
+        write_manifest_atomically(&staging, &manifest)?;
+
+        if path_entry_exists(&destination) {
+            return Err(ProjectIoError::ProjectAlreadyExists);
+        }
+        fs::rename(&staging, &destination).map_err(|error| {
+            if path_entry_exists(&destination) {
+                ProjectIoError::ProjectAlreadyExists
+            } else {
+                let _ = error;
+                ProjectIoError::FilesystemError
+            }
+        })?;
+
+        Ok(OpenedProject {
+            project_path: destination,
+            manifest,
+            snapshot,
+            recovered: false,
+        })
+    })();
+
+    if result.is_err() {
+        cleanup_verified_staging(&parent, &staging, &staging_prefix);
+    }
+    result
+}
+
+pub fn open_project(path: &Path) -> Result<OpenedProject, ProjectIoError> {
+    let project_path = validate_project_structure(path)?;
+    let mut manifest = read_manifest(&project_path.join("manifest.json"))?;
+    let connection = open_database(&project_path.join("project.db"))?;
+
+    let database_schema: u32 = read_meta(&connection, "schemaVersion")?;
+    let database_id: Uuid = read_meta(&connection, "projectId")?;
+    let database_profile: ProjectProfile = read_meta(&connection, "profile")?;
+    if manifest.schema_version != database_schema
+        || manifest.project_id != database_id
+        || manifest.profile != database_profile
+    {
+        return Err(ProjectIoError::ManifestDatabaseMismatch);
+    }
+
+    let snapshot = latest_snapshot(&connection)?;
+    if snapshot.schema_version != manifest.schema_version
+        || snapshot.project.id != manifest.project_id
+        || snapshot.project.profile != manifest.profile
+    {
+        return Err(ProjectIoError::ManifestDatabaseMismatch);
+    }
+
+    let database_name: String = read_meta(&connection, "name")?;
+    let database_updated_at: String = read_meta(&connection, "updatedAt")?;
+    if manifest.name != database_name || manifest.updated_at != database_updated_at {
+        manifest.name = database_name;
+        manifest.updated_at = database_updated_at;
+        manifest.validate()?;
+        write_manifest_atomically(&project_path, &manifest)?;
+    }
+
+    Ok(OpenedProject {
+        project_path,
+        manifest,
+        snapshot,
+        recovered: false,
+    })
+}
+
+fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSnapshot {
+    ProjectSnapshot {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        sequence: 0,
+        checkpoint_sequence: 0,
+        project: SpatialProject {
+            id,
+            name: name.into(),
+            tags: Vec::new(),
+            profile,
+            floors: vec![Floor {
+                id: Uuid::new_v4(),
+                name: "一层".into(),
+                tags: Vec::new(),
+            }],
+        },
+        assets: Vec::new(),
+    }
+}
+
+fn path_entry_exists(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => true,
+    }
+}
+
+fn read_manifest(path: &Path) -> Result<ProjectManifest, ProjectIoError> {
+    let bytes = fs::read(path).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+    let value: Value =
+        serde_json::from_slice(&bytes).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+    match value.get("schemaVersion").and_then(Value::as_u64) {
+        Some(version) if version > u64::from(CURRENT_SCHEMA_VERSION) => {
+            return Err(ProjectIoError::UnsupportedSchemaVersion);
+        }
+        Some(_) => {}
+        None => return Err(ProjectIoError::InvalidProjectStructure),
+    }
+    let manifest: ProjectManifest =
+        serde_json::from_value(value).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+    manifest.validate()?;
+    Ok(manifest)
+}
+
+fn write_manifest_atomically(
+    project_path: &Path,
+    manifest: &ProjectManifest,
+) -> Result<(), ProjectIoError> {
+    let temporary = project_path.join("manifest.json.tmp");
+    let destination = project_path.join("manifest.json");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
+    serde_json::to_writer_pretty(&mut file, manifest)
+        .map_err(|_| ProjectIoError::FilesystemError)?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    drop(file);
+    let replace_existing = path_entry_exists(&destination);
+    if let Err(error) = replace_file_atomically(&temporary, &destination, replace_existing) {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file_atomically(
+    source: &Path,
+    destination: &Path,
+    _replace_existing: bool,
+) -> Result<(), ProjectIoError> {
+    fs::rename(source, destination).map_err(ProjectIoError::from)
+}
+
+#[cfg(windows)]
+fn replace_file_atomically(
+    source: &Path,
+    destination: &Path,
+    replace_existing: bool,
+) -> Result<(), ProjectIoError> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn MoveFileExW(
+            existing_file_name: *const u16,
+            new_file_name: *const u16,
+            flags: u32,
+        ) -> i32;
+    }
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: both path buffers are NUL-terminated and remain alive for the duration of the call.
+    let flags = MOVEFILE_WRITE_THROUGH
+        | if replace_existing {
+            MOVEFILE_REPLACE_EXISTING
+        } else {
+            0
+        };
+    let result = unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), flags) };
+    if result == 0 {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    Ok(())
+}
