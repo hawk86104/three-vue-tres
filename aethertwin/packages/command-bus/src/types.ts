@@ -1,53 +1,59 @@
+import { ownedCopy } from "./ownership";
+
 export interface PreparedMutation<S> {
-  next: S;
-  inversePayload: unknown;
+  readonly next: S;
+  readonly inversePayload: unknown;
 }
 
 export interface SequencedState {
-  sequence: number;
+  readonly sequence: number;
 }
 
 export interface CommandDefinition<S extends SequencedState, P> {
-  type: string;
-  prepare(state: S, payload: P): PreparedMutation<S>;
-  applyInverse(state: S, inversePayload: unknown): S;
+  readonly type: string;
+  readonly prepare: (state: S, payload: P) => PreparedMutation<S>;
+  readonly applyInverse: (state: S, inversePayload: unknown) => S;
 }
 
 export interface CommandIntent<S extends SequencedState> {
-  type: string;
-  payload: unknown;
-  prepare(state: S): PreparedMutation<S>;
-  applyInverse(state: S, inversePayload: unknown): S;
+  readonly type: string;
+  readonly payload: unknown;
+  readonly prepare: (state: S) => PreparedMutation<S>;
+  readonly applyInverse: (state: S, inversePayload: unknown) => S;
 }
 
 export function commandIntent<S extends SequencedState, P>(
   definition: CommandDefinition<S, P>,
   payload: P,
 ): CommandIntent<S> {
+  const type = definition.type;
+  const prepare = definition.prepare;
+  const applyInverse = definition.applyInverse;
+  const ownedPayload = ownedCopy(payload);
   return {
-    type: definition.type,
-    payload,
-    prepare: (state) => definition.prepare(state, payload),
-    applyInverse: (state, inversePayload) => definition.applyInverse(state, inversePayload),
+    type,
+    payload: ownedPayload,
+    prepare: (state: S) => prepare(state, ownedPayload),
+    applyInverse: (state: S, inversePayload: unknown) => applyInverse(state, inversePayload),
   };
 }
 
 export interface JournalOperation {
-  sequence: number;
-  transactionId: string;
-  commandType: string;
-  payload: unknown;
-  inversePayload: unknown;
-  action: "apply" | "undo" | "redo";
-  timestamp: string;
+  readonly sequence: number;
+  readonly transactionId: string;
+  readonly commandType: string;
+  readonly payload: unknown;
+  readonly inversePayload: unknown;
+  readonly action: "apply" | "undo" | "redo";
+  readonly timestamp: string;
 }
 
 export interface CommitBatch<S extends SequencedState> {
-  before: S;
-  after: S;
-  journal: JournalOperation[];
+  readonly before: S;
+  readonly after: S;
+  readonly journal: readonly JournalOperation[];
 }
 
 export interface PersistencePort<S extends SequencedState> {
-  commit(batch: CommitBatch<S>): Promise<void>;
+  readonly commit: (batch: CommitBatch<S>) => Promise<void>;
 }

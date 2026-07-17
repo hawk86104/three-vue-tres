@@ -209,4 +209,192 @@ describe("CommandBus", () => {
     await second;
     expect(bus.getSnapshot()).toEqual({ name: "Second", tags: [], sequence: 2 });
   });
+
+  it("takes ownership of the initial state", () => {
+    const initial = initialState();
+    const bus = new CommandBus(initial, { commit: vi.fn().mockResolvedValue(undefined) });
+
+    initial.name = "Caller mutation";
+    initial.tags.push("caller-owned");
+
+    expect(bus.getSnapshot()).toEqual({ name: "Old", tags: [], sequence: 0 });
+  });
+
+  it("returns a recursively frozen snapshot", () => {
+    const bus = new CommandBus(initialState(), {
+      commit: vi.fn().mockResolvedValue(undefined),
+    });
+    const snapshot = bus.getSnapshot();
+
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.tags)).toBe(true);
+    expect(() => {
+      snapshot.name = "External mutation";
+    }).toThrow(TypeError);
+    expect(() => {
+      snapshot.tags.push("external");
+    }).toThrow(TypeError);
+    expect(bus.getSnapshot()).toEqual({ name: "Old", tags: [], sequence: 0 });
+  });
+
+  it("does not let an in-place command mutation leak through a failed operation", async () => {
+    const commit = vi.fn().mockResolvedValue(undefined);
+    const mutateInPlace: CommandDefinition<State, undefined> = {
+      type: "project.mutate-in-place",
+      prepare: (state) => {
+        state.name = "Leaked";
+        state.tags.push("leaked");
+        return { next: state, inversePayload: undefined };
+      },
+      applyInverse: (state) => state,
+    };
+    const bus = new CommandBus(initialState(), { commit });
+
+    await expect(bus.execute(mutateInPlace, undefined)).rejects.toThrow(TypeError);
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(bus.getSnapshot()).toEqual({ name: "Old", tags: [], sequence: 0 });
+    expect(bus.canUndo()).toBe(false);
+  });
+
+  it("gives persistence an isolated recursively frozen batch", async () => {
+    let retained!: CommitBatch<State>;
+    const commit = vi.fn(async (batch: CommitBatch<State>) => {
+      retained = batch;
+    });
+    const bus = new CommandBus(initialState(), { commit });
+
+    await bus.execute(rename, { name: "New" });
+
+    expect(Object.isFrozen(retained)).toBe(true);
+    expect(Object.isFrozen(retained.before)).toBe(true);
+    expect(Object.isFrozen(retained.after)).toBe(true);
+    expect(Object.isFrozen(retained.after.tags)).toBe(true);
+    expect(Object.isFrozen(retained.journal)).toBe(true);
+    expect(Object.isFrozen(retained.journal[0])).toBe(true);
+    expect(Object.isFrozen(retained.journal[0]?.payload)).toBe(true);
+    expect(() => {
+      retained.after.tags.push("persistence mutation");
+    }).toThrow(TypeError);
+    expect(() => {
+      (retained.journal[0]?.payload as { name: string }).name = "Tampered";
+    }).toThrow(TypeError);
+    expect(bus.getSnapshot()).toEqual({ name: "New", tags: [], sequence: 1 });
+
+    await bus.undo();
+    const undoBatch = commit.mock.calls[1]?.[0];
+    expect(undoBatch?.journal[0]?.payload).toEqual({ name: "New" });
+  });
+
+  it("captures owned intent data and callbacks before a queued transaction waits", async () => {
+    let release!: () => void;
+    const batches: CommitBatch<State>[] = [];
+    let commitCount = 0;
+    const commit = vi.fn((batch: CommitBatch<State>) => {
+      batches.push(batch);
+      commitCount += 1;
+      if (commitCount === 1) {
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return Promise.resolve();
+    });
+    const mutableDefinition: CommandDefinition<State, { name: string }> = {
+      ...rename,
+    };
+    const payload = { name: "Second" };
+    const intent = commandIntent(mutableDefinition, payload);
+    const bus = new CommandBus(initialState(), { commit });
+
+    const first = bus.execute(rename, { name: "First" });
+    const second = bus.transaction([intent]);
+
+    payload.name = "Payload mutation";
+    (mutableDefinition as { prepare: typeof rename.prepare }).prepare = (state) => ({
+      next: { ...state, name: "Definition mutation" },
+      inversePayload: { name: state.name },
+    });
+    (intent as { prepare: typeof intent.prepare }).prepare = (state) => ({
+      next: { ...state, name: "Intent mutation" },
+      inversePayload: { name: state.name },
+    });
+
+    release();
+    await first;
+    await second;
+
+    expect(bus.getSnapshot()).toEqual({ name: "Second", tags: [], sequence: 2 });
+    expect(batches[1]?.journal[0]?.payload).toEqual({ name: "Second" });
+  });
+
+  it("restores recorded snapshots without invoking command callbacks during undo or redo", async () => {
+    let prepareCalls = 0;
+    let inverseCalls = 0;
+    const nonDeterministic: CommandDefinition<State, undefined> = {
+      type: "project.generated-name",
+      prepare: (state) => {
+        prepareCalls += 1;
+        return {
+          next: { ...state, name: `Generated ${prepareCalls}` },
+          inversePayload: { name: state.name },
+        };
+      },
+      applyInverse: (state, payload) => {
+        inverseCalls += 1;
+        return { ...state, name: (payload as { name: string }).name };
+      },
+    };
+    const bus = new CommandBus(initialState(), {
+      commit: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await bus.execute(nonDeterministic, undefined);
+    await bus.undo();
+    await bus.redo();
+
+    expect(bus.getSnapshot()).toEqual({ name: "Generated 1", tags: [], sequence: 3 });
+    expect(prepareCalls).toBe(1);
+    expect(inverseCalls).toBe(0);
+  });
+
+  it("continues with the next queued command after the first rejects", async () => {
+    const commit = vi
+      .fn<(batch: CommitBatch<State>) => Promise<void>>()
+      .mockRejectedValueOnce(new Error("first rejected"))
+      .mockResolvedValueOnce(undefined);
+    const bus = new CommandBus(initialState(), { commit });
+
+    const first = bus.execute(rename, { name: "First" });
+    const second = bus.execute(rename, { name: "Second" });
+
+    await expect(first).rejects.toThrow("first rejected");
+    await expect(second).resolves.toEqual({ name: "Second", tags: [], sequence: 1 });
+    expect(commit).toHaveBeenCalledTimes(2);
+    expect(bus.getSnapshot()).toEqual({ name: "Second", tags: [], sequence: 1 });
+    expect(bus.canUndo()).toBe(true);
+  });
+
+  it("keeps state and history unchanged when redo persistence fails", async () => {
+    const commit = vi
+      .fn<(batch: CommitBatch<State>) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("redo failed"))
+      .mockResolvedValueOnce(undefined);
+    const bus = new CommandBus(initialState(), { commit });
+
+    await bus.execute(rename, { name: "New" });
+    await bus.undo();
+    await expect(bus.redo()).rejects.toThrow("redo failed");
+
+    expect(bus.getSnapshot()).toEqual({ name: "Old", tags: [], sequence: 2 });
+    expect(bus.canUndo()).toBe(false);
+    expect(bus.canRedo()).toBe(true);
+
+    await bus.redo();
+    expect(bus.getSnapshot()).toEqual({ name: "New", tags: [], sequence: 3 });
+    expect(bus.canUndo()).toBe(true);
+    expect(bus.canRedo()).toBe(false);
+  });
 });

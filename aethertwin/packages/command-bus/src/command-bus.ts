@@ -2,14 +2,14 @@ import {
   commandIntent,
   type CommandDefinition,
   type CommandIntent,
+  type CommitBatch,
   type JournalOperation,
   type PersistencePort,
   type SequencedState,
 } from "./types";
+import { deepFreeze, ownedCopy } from "./ownership";
 
 interface HistoryOperation<S extends SequencedState> {
-  readonly intent: CommandIntent<S>;
-  readonly inversePayload: unknown;
   readonly applyRecord: JournalOperation;
 }
 
@@ -23,15 +23,15 @@ type QueuedOperation = () => Promise<void>;
 
 export class CommandBus<S extends SequencedState> {
   private state: S;
-  private readonly persistence: PersistencePort<S>;
+  private readonly commit: PersistencePort<S>["commit"];
   private readonly undoStack: HistoryEntry<S>[] = [];
   private readonly redoStack: HistoryEntry<S>[] = [];
   private readonly queue: QueuedOperation[] = [];
   private queueRunning = false;
 
   constructor(initial: S, persistence: PersistencePort<S>) {
-    this.state = initial;
-    this.persistence = persistence;
+    this.state = ownedCopy(initial);
+    this.commit = persistence.commit.bind(persistence);
   }
 
   getSnapshot(): S {
@@ -51,7 +51,7 @@ export class CommandBus<S extends SequencedState> {
   }
 
   transaction(intents: readonly CommandIntent<S>[]): Promise<S> {
-    const queuedIntents = [...intents];
+    const queuedIntents = intents.map((intent) => this.captureIntent(intent));
     return this.enqueue(() => this.applyTransaction(queuedIntents));
   }
 
@@ -77,21 +77,21 @@ export class CommandBus<S extends SequencedState> {
     for (const intent of intents) {
       const prepared = intent.prepare(candidate);
       candidate = this.withNextSequence(prepared.next, candidate.sequence);
-      const applyRecord: JournalOperation = {
+      const applyRecord = ownedCopy<JournalOperation>({
         sequence: candidate.sequence,
         transactionId,
         commandType: intent.type,
         payload: intent.payload,
-        inversePayload: prepared.inversePayload,
+        inversePayload: ownedCopy(prepared.inversePayload),
         action: "apply",
         timestamp: new Date().toISOString(),
-      };
+      });
       journal.push(applyRecord);
-      operations.push({ intent, inversePayload: prepared.inversePayload, applyRecord });
+      operations.push(deepFreeze({ applyRecord }));
     }
 
-    const historyEntry: HistoryEntry<S> = { before, after: candidate, operations };
-    await this.persistence.commit({ before, after: candidate, journal });
+    const historyEntry = this.createHistoryEntry(before, candidate, operations);
+    await this.commitOwnedBatch(before, candidate, journal);
 
     this.state = candidate;
     this.undoStack.push(historyEntry);
@@ -108,17 +108,24 @@ export class CommandBus<S extends SequencedState> {
     const before = this.state;
     const transactionId = crypto.randomUUID();
     const journal: JournalOperation[] = [];
-    let candidate = before;
+    const reversedOperations = [...historyEntry.operations].reverse();
 
-    for (const operation of [...historyEntry.operations].reverse()) {
-      const inverse = operation.intent.applyInverse(candidate, operation.inversePayload);
-      candidate = this.withNextSequence(inverse, candidate.sequence);
+    for (const [index, operation] of reversedOperations.entries()) {
       journal.push(
-        this.replayRecord(operation.applyRecord, candidate.sequence, transactionId, "undo"),
+        this.replayRecord(
+          operation.applyRecord,
+          before.sequence + index + 1,
+          transactionId,
+          "undo",
+        ),
       );
     }
+    const candidate = this.withSequence(
+      historyEntry.before,
+      before.sequence + historyEntry.operations.length,
+    );
 
-    await this.persistence.commit({ before, after: candidate, journal });
+    await this.commitOwnedBatch(before, candidate, journal);
 
     this.state = candidate;
     this.undoStack.pop();
@@ -135,17 +142,23 @@ export class CommandBus<S extends SequencedState> {
     const before = this.state;
     const transactionId = crypto.randomUUID();
     const journal: JournalOperation[] = [];
-    let candidate = before;
 
-    for (const operation of historyEntry.operations) {
-      const prepared = operation.intent.prepare(candidate);
-      candidate = this.withNextSequence(prepared.next, candidate.sequence);
+    for (const [index, operation] of historyEntry.operations.entries()) {
       journal.push(
-        this.replayRecord(operation.applyRecord, candidate.sequence, transactionId, "redo"),
+        this.replayRecord(
+          operation.applyRecord,
+          before.sequence + index + 1,
+          transactionId,
+          "redo",
+        ),
       );
     }
+    const candidate = this.withSequence(
+      historyEntry.after,
+      before.sequence + historyEntry.operations.length,
+    );
 
-    await this.persistence.commit({ before, after: candidate, journal });
+    await this.commitOwnedBatch(before, candidate, journal);
 
     this.state = candidate;
     this.redoStack.pop();
@@ -154,7 +167,11 @@ export class CommandBus<S extends SequencedState> {
   }
 
   private withNextSequence(state: S, previousSequence: number): S {
-    return { ...state, sequence: previousSequence + 1 };
+    return this.withSequence(state, previousSequence + 1);
+  }
+
+  private withSequence(state: S, sequence: number): S {
+    return ownedCopy({ ...state, sequence });
   }
 
   private replayRecord(
@@ -163,13 +180,42 @@ export class CommandBus<S extends SequencedState> {
     transactionId: string,
     action: "undo" | "redo",
   ): JournalOperation {
-    return {
+    return ownedCopy({
       ...original,
       sequence,
       transactionId,
       action,
       timestamp: new Date().toISOString(),
-    };
+    });
+  }
+
+  private captureIntent(intent: CommandIntent<S>): CommandIntent<S> {
+    const type = intent.type;
+    const payload = ownedCopy(intent.payload);
+    const prepare = intent.prepare;
+    const applyInverse = intent.applyInverse;
+    return deepFreeze({ type, payload, prepare, applyInverse });
+  }
+
+  private createHistoryEntry(
+    before: S,
+    after: S,
+    operations: readonly HistoryOperation<S>[],
+  ): HistoryEntry<S> {
+    return deepFreeze({
+      before: ownedCopy(before),
+      after: ownedCopy(after),
+      operations: operations.map((operation) => ownedCopy(operation)),
+    });
+  }
+
+  private async commitOwnedBatch(
+    before: S,
+    after: S,
+    journal: readonly JournalOperation[],
+  ): Promise<void> {
+    const batch = ownedCopy<CommitBatch<S>>({ before, after, journal });
+    await this.commit(batch);
   }
 
   private enqueue<R>(operation: () => Promise<R>): Promise<R> {
