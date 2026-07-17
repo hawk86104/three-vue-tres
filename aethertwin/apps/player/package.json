@@ -1,0 +1,11 @@
+{
+  "name": "@aethertwin/player",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --root .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "vite build"
+  }
+}
