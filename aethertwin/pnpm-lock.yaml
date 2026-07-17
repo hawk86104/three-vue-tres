@@ -45,7 +45,14 @@ importers:
 
   packages/editor-shell: {}
 
-  packages/project-store: {}
+  packages/project-store:
+    dependencies:
+      '@aethertwin/command-bus':
+        specifier: workspace:*
+        version: link:../command-bus
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
 
 packages:
 
