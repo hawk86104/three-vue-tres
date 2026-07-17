@@ -27,3 +27,4 @@ public/plugins/freeDigitalHome
 # 排除安装插件包
 !pluginMaker/install/请把下载的插件包放在这里。
 pluginMaker/install
+.worktrees/
