@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "projectId": "00000000-0000-4000-8000-000000000001",
+  "name": "Showroom Demo",
+  "profile": "showroom",
+  "createdAt": "2026-07-17T00:00:00.000Z",
+  "updatedAt": "2026-07-17T00:00:00.000Z",
+  "appVersion": "0.1.0",
+  "minCompatibleAppVersion": "0.1.0"
+}
