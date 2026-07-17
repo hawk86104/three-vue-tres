@@ -1,47 +1,56 @@
+import {
+  assertNonEmptyString,
+  assertProfile,
+  assertTimestamp,
+  assertUuid,
+  parseManifest,
+  parseSnapshotV1,
+} from "./validation";
+
 export const CURRENT_SCHEMA_VERSION = 1 as const;
 
 export type ProjectProfile = "showroom" | "market";
 export type SaveState = "dirty" | "saving" | "saved" | "error" | "recovered";
 
 export interface ProjectManifest {
-  schemaVersion: typeof CURRENT_SCHEMA_VERSION;
-  projectId: string;
-  name: string;
-  profile: ProjectProfile;
-  createdAt: string;
-  updatedAt: string;
-  appVersion: string;
-  minCompatibleAppVersion: string;
+  readonly schemaVersion: typeof CURRENT_SCHEMA_VERSION;
+  readonly projectId: string;
+  readonly name: string;
+  readonly profile: ProjectProfile;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly appVersion: string;
+  readonly minCompatibleAppVersion: string;
 }
 
 export interface Floor {
-  id: string;
-  name: string;
-  tags: string[];
+  readonly id: string;
+  readonly name: string;
+  readonly tags: readonly string[];
 }
 
 export interface SpatialProject {
-  id: string;
-  name: string;
-  tags: string[];
-  profile: ProjectProfile;
-  floors: Floor[];
+  readonly id: string;
+  readonly name: string;
+  readonly tags: readonly string[];
+  readonly profile: ProjectProfile;
+  readonly floors: readonly Floor[];
 }
 
 export interface AssetRecord {
-  id: string;
-  sha256: string;
-  relativePath: string;
-  mediaType: string;
-  size: number;
+  readonly id: string;
+  readonly sha256: string;
+  readonly relativePath: string;
+  readonly mediaType: string;
+  readonly size: number;
 }
 
 export interface ProjectSnapshot {
-  schemaVersion: typeof CURRENT_SCHEMA_VERSION;
-  sequence: number;
-  checkpointSequence: number;
-  project: SpatialProject;
-  assets: AssetRecord[];
+  readonly schemaVersion: typeof CURRENT_SCHEMA_VERSION;
+  readonly sequence: number;
+  readonly checkpointSequence: number;
+  readonly project: SpatialProject;
+  readonly assets: readonly AssetRecord[];
 }
 
 export interface InitialProjectInput {
@@ -52,36 +61,40 @@ export interface InitialProjectInput {
 
 export function createInitialSnapshot(input: InitialProjectInput): ProjectSnapshot {
   const makeId = input.uuid ?? (() => crypto.randomUUID());
+  const name = assertNonEmptyString(input.name, "name").trim();
+  const profile = assertProfile(input.profile, "profile");
 
-  return {
+  return parseSnapshotV1({
     schemaVersion: CURRENT_SCHEMA_VERSION,
     sequence: 0,
     checkpointSequence: 0,
     project: {
-      id: makeId(),
-      name: input.name.trim(),
+      id: assertUuid(makeId(), "project.id"),
+      name,
       tags: [],
-      profile: input.profile,
-      floors: [{ id: makeId(), name: "一层", tags: [] }],
+      profile,
+      floors: [{ id: assertUuid(makeId(), "project.floors[0].id"), name: "一层", tags: [] }],
     },
     assets: [],
-  };
+  });
 }
 
 export function createManifest(
   snapshot: ProjectSnapshot,
   options: { now?: () => string; appVersion: string },
 ): ProjectManifest {
-  const timestamp = (options.now ?? (() => new Date().toISOString()))();
+  const validatedSnapshot = parseSnapshotV1(snapshot);
+  const timestamp = assertTimestamp((options.now ?? (() => new Date().toISOString()))(), "createdAt");
+  const appVersion = assertNonEmptyString(options.appVersion, "appVersion");
 
-  return {
-    schemaVersion: snapshot.schemaVersion,
-    projectId: snapshot.project.id,
-    name: snapshot.project.name,
-    profile: snapshot.project.profile,
+  return parseManifest({
+    schemaVersion: validatedSnapshot.schemaVersion,
+    projectId: validatedSnapshot.project.id,
+    name: validatedSnapshot.project.name,
+    profile: validatedSnapshot.project.profile,
     createdAt: timestamp,
     updatedAt: timestamp,
-    appVersion: options.appVersion,
-    minCompatibleAppVersion: options.appVersion,
-  };
+    appVersion,
+    minCompatibleAppVersion: appVersion,
+  });
 }

@@ -105,4 +105,95 @@ describe("core model", () => {
       "UNSUPPORTED_SCHEMA_VERSION",
     );
   });
+
+  it("returns deeply immutable snapshots and manifests from creators and parsers", () => {
+    const snapshot = createInitialSnapshot({ name: "Demo", profile: "showroom" });
+    const parsedSnapshot = parseSnapshot(JSON.parse(JSON.stringify(snapshot)));
+    const parsedSnapshotWithAsset = parseSnapshot({
+      ...JSON.parse(JSON.stringify(snapshot)),
+      assets: [
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          sha256: "a".repeat(64),
+          relativePath: "assets/x.png",
+          mediaType: "image/png",
+          size: 1,
+        },
+      ],
+    });
+    const manifest = createManifest(snapshot, {
+      now: () => "2026-07-17T00:00:00.000Z",
+      appVersion: "0.1.0",
+    });
+    const parsedManifest = parseManifest({ ...validManifest });
+
+    for (const immutableSnapshot of [snapshot, parsedSnapshot]) {
+      expect(Object.isFrozen(immutableSnapshot)).toBe(true);
+      expect(Object.isFrozen(immutableSnapshot.project)).toBe(true);
+      expect(Object.isFrozen(immutableSnapshot.project.tags)).toBe(true);
+      expect(Object.isFrozen(immutableSnapshot.project.floors)).toBe(true);
+      expect(Object.isFrozen(immutableSnapshot.project.floors[0])).toBe(true);
+      expect(Object.isFrozen(immutableSnapshot.assets)).toBe(true);
+      expect(() => {
+        (immutableSnapshot.project as { profile: string }).profile = "market";
+      }).toThrow(TypeError);
+      expect(() => {
+        (immutableSnapshot.project.floors as unknown as { push: (value: unknown) => void }).push({});
+      }).toThrow(TypeError);
+    }
+
+    const asset = parsedSnapshotWithAsset.assets[0];
+    if (asset === undefined) {
+      throw new Error("expected parsed asset");
+    }
+    expect(Object.isFrozen(asset)).toBe(true);
+    expect(() => {
+      (asset as { mediaType: string }).mediaType = "text/plain";
+    }).toThrow(TypeError);
+
+    for (const immutableManifest of [manifest, parsedManifest]) {
+      expect(Object.isFrozen(immutableManifest)).toBe(true);
+      expect(() => {
+        (immutableManifest as { name: string }).name = "Changed";
+      }).toThrow(TypeError);
+    }
+  });
+
+  it.each([
+    [{ name: "   ", profile: "showroom" }, /name/i],
+    [{ name: "Demo", profile: "iot" as never }, /profile/i],
+    [{ name: "Demo", profile: "showroom", uuid: () => "invalid" }, /uuid/i],
+    [
+      {
+        name: "Demo",
+        profile: "showroom",
+        uuid: (() => {
+          const ids = ["00000000-0000-4000-8000-000000000001", "invalid"];
+          return () => ids.shift()!;
+        })(),
+      },
+      /uuid/i,
+    ],
+  ])("rejects invalid initial project input %#", (input, error) => {
+    expect(() => createInitialSnapshot(input as Parameters<typeof createInitialSnapshot>[0])).toThrow(error);
+  });
+
+  it("rejects invalid manifest creator inputs", () => {
+    const snapshot = createInitialSnapshot({ name: "Demo", profile: "showroom" });
+    expect(() =>
+      createManifest(snapshot, { now: () => "2026-02-30T00:00:00.000Z", appVersion: "0.1.0" }),
+    ).toThrow(/createdAt/i);
+    expect(() =>
+      createManifest(snapshot, { now: () => "2026-07-17T00:00:00.000Z", appVersion: " " }),
+    ).toThrow(/appVersion/i);
+    expect(() =>
+      createManifest(
+        {
+          ...snapshot,
+          project: { ...snapshot.project, id: "invalid" },
+        },
+        { now: () => "2026-07-17T00:00:00.000Z", appVersion: "0.1.0" },
+      ),
+    ).toThrow(/project.id/i);
+  });
 });

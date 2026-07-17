@@ -7,6 +7,7 @@ import {
   type ProjectSnapshot,
   type SpatialProject,
 } from "./model";
+import { deepFreeze } from "./immutability";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -27,6 +28,10 @@ function asRecord(value: unknown, field: string): UnknownRecord {
 
 function stringField(record: UnknownRecord, key: string, field = key): string {
   const value = record[key];
+  return assertString(value, field);
+}
+
+export function assertString(value: unknown, field: string): string {
   if (typeof value !== "string") {
     invalid(field, "expected a string");
   }
@@ -34,15 +39,22 @@ function stringField(record: UnknownRecord, key: string, field = key): string {
 }
 
 function nonEmptyStringField(record: UnknownRecord, key: string, field = key): string {
-  const value = stringField(record, key, field);
-  if (value.trim().length === 0) {
+  return assertNonEmptyString(record[key], field);
+}
+
+export function assertNonEmptyString(value: unknown, field: string): string {
+  const text = assertString(value, field);
+  if (text.trim().length === 0) {
     invalid(field, "must not be empty");
   }
-  return value;
+  return text;
 }
 
 function integerField(record: UnknownRecord, key: string, field = key): number {
-  const value = record[key];
+  return assertNonNegativeSafeInteger(record[key], field);
+}
+
+function assertNonNegativeSafeInteger(value: unknown, field: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     invalid(field, "expected a non-negative safe integer");
   }
@@ -50,37 +62,49 @@ function integerField(record: UnknownRecord, key: string, field = key): number {
 }
 
 function uuidField(record: UnknownRecord, key: string, field = key): string {
-  const value = stringField(record, key, field);
-  if (!UUID_PATTERN.test(value)) {
+  return assertUuid(record[key], field);
+}
+
+export function assertUuid(value: unknown, field: string): string {
+  const uuid = assertString(value, field);
+  if (!UUID_PATTERN.test(uuid)) {
     invalid(field, "expected a UUID");
   }
-  return value;
+  return uuid;
 }
 
 function timestampField(record: UnknownRecord, key: string, field = key): string {
-  const value = stringField(record, key, field);
-  if (!UTC_TIMESTAMP_PATTERN.test(value)) {
+  return assertTimestamp(record[key], field);
+}
+
+export function assertTimestamp(value: unknown, field: string): string {
+  const timestamp = assertString(value, field);
+  if (!UTC_TIMESTAMP_PATTERN.test(timestamp)) {
     invalid(field, "expected an ISO 8601 UTC timestamp");
   }
 
-  const parsed = new Date(value);
+  const parsed = new Date(timestamp);
   if (Number.isNaN(parsed.getTime())) {
     invalid(field, "expected a real ISO 8601 timestamp");
   }
 
   const canonical = parsed.toISOString();
-  if (value !== canonical && value !== canonical.replace(".000Z", "Z")) {
+  if (timestamp !== canonical && timestamp !== canonical.replace(".000Z", "Z")) {
     invalid(field, "expected a real ISO 8601 timestamp");
   }
-  return value;
+  return timestamp;
 }
 
 function profileField(record: UnknownRecord, key: string, field = key): ProjectProfile {
-  const value = stringField(record, key, field);
-  if (value !== "showroom" && value !== "market") {
+  return assertProfile(record[key], field);
+}
+
+export function assertProfile(value: unknown, field: string): ProjectProfile {
+  const profile = assertString(value, field);
+  if (profile !== "showroom" && profile !== "market") {
     invalid(field, "expected showroom or market");
   }
-  return value;
+  return profile;
 }
 
 function stringArrayField(record: UnknownRecord, key: string, field = key): string[] {
@@ -156,7 +180,7 @@ function schemaVersionField(record: UnknownRecord, field: string): typeof CURREN
 
 export function parseManifest(value: unknown): ProjectManifest {
   const record = asRecord(value, "manifest");
-  return {
+  return deepFreeze({
     schemaVersion: schemaVersionField(record, "schemaVersion"),
     projectId: uuidField(record, "projectId"),
     name: nonEmptyStringField(record, "name"),
@@ -165,7 +189,7 @@ export function parseManifest(value: unknown): ProjectManifest {
     updatedAt: timestampField(record, "updatedAt"),
     appVersion: nonEmptyStringField(record, "appVersion"),
     minCompatibleAppVersion: nonEmptyStringField(record, "minCompatibleAppVersion"),
-  };
+  });
 }
 
 export function parseSnapshotV1(value: unknown): ProjectSnapshot {
@@ -174,11 +198,11 @@ export function parseSnapshotV1(value: unknown): ProjectSnapshot {
   if (!Array.isArray(assets)) {
     invalid("assets", "expected an array");
   }
-  return {
+  return deepFreeze({
     schemaVersion: schemaVersionField(record, "schemaVersion"),
     sequence: integerField(record, "sequence"),
     checkpointSequence: integerField(record, "checkpointSequence"),
     project: parseProject(record.project),
     assets: assets.map((asset, index) => parseAsset(asset, index)),
-  };
+  });
 }
