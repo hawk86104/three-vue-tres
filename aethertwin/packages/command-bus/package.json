@@ -5,7 +5,7 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "test": "vitest run --root .",
+    "test": "vitest run --root ../.. packages/command-bus/src/command-bus.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit"
   }
