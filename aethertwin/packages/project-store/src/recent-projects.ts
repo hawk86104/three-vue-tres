@@ -24,7 +24,8 @@ function parseRecentProject(value: unknown): RecentProject | null {
     typeof record.path !== "string" ||
     typeof record.name !== "string" ||
     (record.profile !== "showroom" && record.profile !== "market") ||
-    typeof record.openedAt !== "string"
+    typeof record.openedAt !== "string" ||
+    !Number.isFinite(Date.parse(record.openedAt))
   ) {
     return null;
   }
@@ -34,6 +35,30 @@ function parseRecentProject(value: unknown): RecentProject | null {
     profile: record.profile,
     openedAt: record.openedAt,
   });
+}
+
+function normalizeRecentProjects(values: readonly unknown[]): readonly RecentProject[] {
+  const newestByPath = new Map<
+    string,
+    { readonly project: RecentProject; readonly openedAt: number; readonly index: number }
+  >();
+
+  for (const [index, value] of values.entries()) {
+    const project = parseRecentProject(value);
+    if (project === null) {
+      continue;
+    }
+    const openedAt = Date.parse(project.openedAt);
+    const existing = newestByPath.get(project.path);
+    if (existing === undefined || openedAt > existing.openedAt) {
+      newestByPath.set(project.path, { project, openedAt, index });
+    }
+  }
+
+  const normalized = [...newestByPath.values()]
+    .sort((left, right) => right.openedAt - left.openedAt || left.index - right.index)
+    .map(({ project }) => project);
+  return ownedRecentProjects(normalized);
 }
 
 function ownedRecentProjects(values: readonly RecentProject[]): readonly RecentProject[] {
@@ -61,15 +86,17 @@ export class RecentProjects {
     try {
       const parsed: unknown = JSON.parse(serialized);
       if (!Array.isArray(parsed)) {
-        return ownedRecentProjects([]);
+        const empty = ownedRecentProjects([]);
+        this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(empty));
+        return empty;
       }
-      const projects = parsed.map(parseRecentProject);
-      if (projects.some((project) => project === null)) {
-        return ownedRecentProjects([]);
-      }
-      return ownedRecentProjects(projects as RecentProject[]);
+      const projects = normalizeRecentProjects(parsed);
+      this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+      return projects;
     } catch {
-      return ownedRecentProjects([]);
+      const empty = ownedRecentProjects([]);
+      this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(empty));
+      return empty;
     }
   }
 
@@ -78,7 +105,7 @@ export class RecentProjects {
     if (owned === null) {
       throw new Error("Invalid recent project");
     }
-    const next = [owned, ...this.list().filter((recent) => recent.path !== owned.path)];
+    const next = normalizeRecentProjects([owned, ...this.list()]);
     this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
   }
 }

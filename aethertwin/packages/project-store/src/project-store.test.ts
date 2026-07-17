@@ -495,6 +495,96 @@ describe("SandboxProjectBackend", () => {
 });
 
 describe("RecentProjects", () => {
+  it("normalizes duplicated and out-of-order legacy storage by newest valid timestamp", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "aethertwin.recentProjects.v1",
+      JSON.stringify([
+        {
+          path: "sandbox://one",
+          name: "One old",
+          profile: "showroom",
+          openedAt: "2026-07-17T01:00:00.000Z",
+        },
+        {
+          path: "sandbox://two",
+          name: "Two",
+          profile: "market",
+          openedAt: "2026-07-17T03:00:00.000Z",
+        },
+        {
+          path: "sandbox://one",
+          name: "One invalid",
+          profile: "market",
+          openedAt: "not-a-timestamp",
+        },
+        {
+          path: "sandbox://one",
+          name: "One newest",
+          profile: "market",
+          openedAt: "2026-07-17T04:00:00.000Z",
+        },
+        {
+          path: "sandbox://ONE",
+          name: "Case-sensitive path",
+          profile: "showroom",
+          openedAt: "2026-07-17T02:00:00.000Z",
+        },
+      ]),
+    );
+    const recents = new RecentProjects(storage);
+
+    const listed = recents.list();
+
+    expect(listed.map(({ path, name, openedAt }) => ({ path, name, openedAt }))).toEqual([
+      {
+        path: "sandbox://one",
+        name: "One newest",
+        openedAt: "2026-07-17T04:00:00.000Z",
+      },
+      {
+        path: "sandbox://two",
+        name: "Two",
+        openedAt: "2026-07-17T03:00:00.000Z",
+      },
+      {
+        path: "sandbox://ONE",
+        name: "Case-sensitive path",
+        openedAt: "2026-07-17T02:00:00.000Z",
+      },
+    ]);
+    expect(JSON.parse(storage.getItem("aethertwin.recentProjects.v1")!)).toEqual(listed);
+  });
+
+  it("keeps a newer stored record when an older timestamp is recorded later", () => {
+    const storage = new MemoryStorage();
+    const recents = new RecentProjects(storage);
+    recents.record({
+      path: "sandbox://one",
+      name: "Newest",
+      profile: "market",
+      openedAt: "2026-07-17T04:00:00.000Z",
+    });
+    recents.record({
+      path: "sandbox://two",
+      name: "Two",
+      profile: "showroom",
+      openedAt: "2026-07-17T03:00:00.000Z",
+    });
+
+    recents.record({
+      path: "sandbox://one",
+      name: "Stale event",
+      profile: "showroom",
+      openedAt: "2026-07-17T01:00:00.000Z",
+    });
+
+    expect(recents.list().map(({ path, name }) => ({ path, name }))).toEqual([
+      { path: "sandbox://one", name: "Newest" },
+      { path: "sandbox://two", name: "Two" },
+    ]);
+  });
+
   it("stores app-local immutable recents newest-first and deduplicates exact paths", () => {
     const storage = new MemoryStorage();
     const recents = new RecentProjects(storage);
