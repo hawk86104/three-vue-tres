@@ -11,6 +11,11 @@ pub(crate) const PROJECT_SUFFIX: &str = ".twinproj";
 thread_local! {
     static BEFORE_RECOVERY_FILES_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
         std::cell::RefCell::new(None);
+    static BEFORE_RECOVERY_PUBLISH_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path, &Path)>>> =
+        std::cell::RefCell::new(None);
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    static AFTER_RECOVERY_PUBLISH_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
+        std::cell::RefCell::new(None);
     static FAIL_RECOVERY_DESTINATION_IDENTITY_TEST_HOOK: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
 }
@@ -28,6 +33,40 @@ fn run_before_recovery_files_test_hook(path: &Path) {
         }
     });
 }
+
+#[cfg(test)]
+fn set_before_recovery_publish_test_hook(hook: impl FnOnce(&Path, &Path) + 'static) {
+    BEFORE_RECOVERY_PUBLISH_TEST_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn run_before_recovery_publish_test_hook(payload: &Path, destination: &Path) {
+    BEFORE_RECOVERY_PUBLISH_TEST_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook(payload, destination);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn run_before_recovery_publish_test_hook(_payload: &Path, _destination: &Path) {}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "android")))]
+fn set_after_recovery_publish_test_hook(hook: impl FnOnce(&Path) + 'static) {
+    AFTER_RECOVERY_PUBLISH_TEST_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "android")))]
+fn run_after_recovery_publish_test_hook(destination: &Path) {
+    AFTER_RECOVERY_PUBLISH_TEST_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook(destination);
+        }
+    });
+}
+
+#[cfg(not(all(test, any(target_os = "linux", target_os = "android"))))]
+fn run_after_recovery_publish_test_hook(_destination: &Path) {}
 
 #[cfg(test)]
 fn fail_next_recovery_destination_identity() {
@@ -228,36 +267,78 @@ impl BoundProjectDirectory {
             Uuid::new_v4()
         ));
         let destination_visible = recovery_visible.join(&destination_leaf);
+        let container_leaf =
+            OsString::from(format!(".aethertwin-recovery-staging-{}", Uuid::new_v4()));
+        let container_visible = recovery_visible.join(&container_leaf);
         let recovery_for_cleanup = recovery.try_clone()?;
-        let created = private_directory_options()
-            .mkdir_at(&recovery, &destination_leaf)
+        let created_container = private_directory_options()
+            .mkdir_at(&recovery, &container_leaf)
             .map_err(|_| ProjectIoError::FilesystemError)?;
         let mut pending = PendingRecoveryCopy {
             parent: recovery_for_cleanup,
             parent_path: recovery_visible.clone(),
+            container_path: container_visible.clone(),
+            container_leaf: container_leaf.clone(),
+            container_identity: None,
+            container: Some(created_container),
             destination_path: destination_visible.clone(),
             destination_leaf: destination_leaf.clone(),
-            destination_identity: None,
-            destination: Some(created),
+            payload_path: container_visible.join("payload"),
+            payload_leaf: OsString::from("payload"),
+            payload_identity: None,
+            destination: None,
             copied_files: Vec::new(),
+            copied_file_identities: Vec::new(),
+            published: false,
             armed: true,
         };
+        let container_identity = file_identity(
+            pending
+                .container
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+        )?;
+        pending.container_identity = Some(StagingIdentity {
+            leaf: container_leaf.clone(),
+            file: container_identity,
+        });
+        let created_container = pending
+            .container
+            .take()
+            .ok_or(ProjectIoError::FilesystemError)?;
+        let container = bind_created_directory(&container_visible, created_container)?;
+        let container_identity = file_identity(&container)?;
+        pending.container_identity = Some(StagingIdentity {
+            leaf: container_leaf.clone(),
+            file: container_identity,
+        });
+        pending.container = Some(container);
+
+        let created_payload = private_directory_options()
+            .mkdir_at(
+                pending
+                    .container
+                    .as_ref()
+                    .ok_or(ProjectIoError::FilesystemError)?,
+                &pending.payload_leaf,
+            )
+            .map_err(|_| ProjectIoError::FilesystemError)?;
+        pending.destination = Some(created_payload);
         let destination_identity = recovery_destination_identity(
             pending
                 .destination
                 .as_ref()
                 .ok_or(ProjectIoError::FilesystemError)?,
         )?;
-        pending.destination_identity = Some(StagingIdentity {
-            leaf: destination_leaf.clone(),
-            file: destination_identity.clone(),
-        });
-        let created = pending
+        pending.payload_identity = Some(destination_identity.clone());
+        let created_payload = pending
             .destination
             .take()
             .ok_or(ProjectIoError::FilesystemError)?;
-        let destination = bind_created_directory(&destination_visible, created)?;
-        let destination_bound = bound_directory_path(&destination, &destination_visible)?;
+        let destination = bind_created_directory(&pending.payload_path, created_payload)?;
+        if file_identity(&destination)? != destination_identity {
+            return Err(ProjectIoError::FilesystemError);
+        }
         pending.destination = Some(destination);
         run_before_recovery_files_test_hook(&self.canonical_path);
 
@@ -277,11 +358,14 @@ impl BoundProjectDirectory {
                     .destination
                     .as_ref()
                     .ok_or(ProjectIoError::FilesystemError)?,
-                &destination_visible,
+                &pending.payload_path,
                 name,
             )?;
             std::io::copy(&mut source, &mut target)?;
             target.sync_all()?;
+            pending
+                .copied_file_identities
+                .push((name.to_owned(), regular_file_identity(&target)?));
             pending.copied_files.push(target);
         }
         sync_directory_metadata(
@@ -290,6 +374,71 @@ impl BoundProjectDirectory {
                 .as_ref()
                 .ok_or(ProjectIoError::FilesystemError)?,
         )?;
+        sync_directory_metadata(
+            pending
+                .container
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+        )?;
+        pending.copied_files.clear();
+        run_before_recovery_publish_test_hook(&pending.payload_path, &destination_visible);
+        publish_bound_directory(
+            pending
+                .container
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+            &pending.payload_leaf,
+            pending
+                .destination
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+            &recovery,
+            &destination_visible,
+            &destination_leaf,
+            &destination_identity,
+        )?;
+        pending.published = true;
+        run_after_recovery_publish_test_hook(&destination_visible);
+        sync_directory_metadata(&recovery)?;
+        let published = open_child_directory(&recovery, &destination_leaf)?;
+        if file_identity(&published)? != destination_identity {
+            return Err(ProjectIoError::FilesystemError);
+        }
+        drop(published);
+        for (name, expected) in &pending.copied_file_identities {
+            let file = open_bound_regular_file(
+                pending
+                    .destination
+                    .as_ref()
+                    .ok_or(ProjectIoError::FilesystemError)?,
+                &destination_visible,
+                name,
+                false,
+            )?
+            .ok_or(ProjectIoError::FilesystemError)?;
+            if regular_file_identity(&file)? != *expected {
+                return Err(ProjectIoError::FilesystemError);
+            }
+            pending.copied_files.push(file);
+        }
+        let destination_bound = bound_directory_path(
+            pending
+                .destination
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+            &destination_visible,
+        )?;
+        pending.container.take();
+        remove_empty_bound_child(
+            &recovery,
+            &recovery_visible,
+            &container_leaf,
+            pending
+                .container_identity
+                .as_ref()
+                .ok_or(ProjectIoError::FilesystemError)?,
+        )?;
+        pending.container_identity = None;
         sync_directory_metadata(&recovery)?;
         pending.armed = false;
 
@@ -337,11 +486,19 @@ impl RecoveryCopy {
 struct PendingRecoveryCopy {
     parent: File,
     parent_path: PathBuf,
+    container_path: PathBuf,
+    container_leaf: OsString,
+    container_identity: Option<StagingIdentity>,
+    container: Option<File>,
     destination_path: PathBuf,
     destination_leaf: OsString,
-    destination_identity: Option<StagingIdentity>,
+    payload_path: PathBuf,
+    payload_leaf: OsString,
+    payload_identity: Option<FileIdentity>,
     destination: Option<File>,
     copied_files: Vec<File>,
+    copied_file_identities: Vec<(String, FileIdentity)>,
+    published: bool,
     armed: bool,
 }
 
@@ -352,53 +509,45 @@ impl Drop for PendingRecoveryCopy {
         }
         self.copied_files.clear();
         let destination = self.destination.take();
-        if let Some(identity) = &self.destination_identity {
-            drop(destination);
-            let _ = cleanup_bound_child(
-                &self.parent,
-                &self.parent_path,
-                &identity.leaf,
-                &identity.file,
-            );
-        } else if let Some(destination) = destination.as_ref() {
-            let _ = quarantine_unverified_recovery_child(
-                &self.parent,
-                &self.parent_path,
-                &self.destination_leaf,
-                destination,
-            );
+        let payload_was_created = destination.is_some();
+        drop(destination);
+        let mut payload_cleaned = !payload_was_created;
+        if self.published {
+            if let Some(identity) = &self.payload_identity {
+                let _ = cleanup_bound_child(
+                    &self.parent,
+                    &self.parent_path,
+                    &self.destination_leaf,
+                    identity,
+                );
+            }
+            payload_cleaned = true;
+        } else if let (Some(container), Some(identity)) =
+            (self.container.as_ref(), self.payload_identity.as_ref())
+        {
+            payload_cleaned = cleanup_bound_child(
+                container,
+                &self.container_path,
+                &self.payload_leaf,
+                identity,
+            )
+            .is_ok();
+        }
+        self.container.take();
+        if payload_cleaned {
+            if let Some(identity) = &self.container_identity {
+                let _ = remove_empty_bound_child(
+                    &self.parent,
+                    &self.parent_path,
+                    &self.container_leaf,
+                    identity,
+                );
+            }
         }
         debug_assert_eq!(
             self.destination_path.file_name(),
             Some(self.destination_leaf.as_os_str())
         );
-    }
-}
-
-fn quarantine_unverified_recovery_child(
-    parent: &File,
-    parent_path: &Path,
-    leaf: &OsStr,
-    destination: &File,
-) -> Result<(), ProjectIoError> {
-    let quarantine = OsString::from(format!(
-        ".aethertwin-recovery-unverified-{}",
-        Uuid::new_v4()
-    ));
-    #[cfg(windows)]
-    {
-        let _ = (parent_path, leaf);
-        return rename_open_directory_no_replace(destination, parent, &quarantine);
-    }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        let _ = destination;
-        return rename_child_no_replace(parent, parent_path, leaf, &quarantine);
-    }
-    #[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
-    {
-        let _ = (parent, parent_path, leaf, destination, quarantine);
-        Err(ProjectIoError::FilesystemError)
     }
 }
 
@@ -437,6 +586,50 @@ fn cleanup_bound_child(
     fs_at::OpenOptions::default()
         .rmdir_at(parent, &quarantine)
         .map_err(|_| ProjectIoError::FilesystemError)
+}
+
+fn remove_empty_bound_child(
+    parent: &File,
+    parent_path: &Path,
+    leaf: &OsStr,
+    expected: &StagingIdentity,
+) -> Result<(), ProjectIoError> {
+    if expected.leaf != leaf {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    let quarantine = OsString::from(format!(
+        ".aethertwin-recovery-container-cleanup-{}",
+        Uuid::new_v4()
+    ));
+    rename_child_no_replace(parent, parent_path, leaf, &quarantine)?;
+    let child = match open_child_directory(parent, &quarantine) {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
+            return Err(error);
+        }
+    };
+    let actual = match file_identity(&child) {
+        Ok(actual) => actual,
+        Err(error) => {
+            drop(child);
+            let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
+            return Err(error);
+        }
+    };
+    if actual != expected.file {
+        drop(child);
+        let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
+        return Err(ProjectIoError::FilesystemError);
+    }
+    drop(child);
+    match fs_at::OpenOptions::default().rmdir_at(parent, &quarantine) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
+            Err(ProjectIoError::FilesystemError)
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -1430,11 +1623,13 @@ fn regular_file_identity(_file: &File) -> Result<FileIdentity, ProjectIoError> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    use super::set_after_recovery_publish_test_hook;
     use super::{
         BoundProjectDirectory, FileIdentity, StagingWorkspace, cleanup_verified_staging,
         fail_next_recovery_destination_identity, file_identity, open_directory, rename_no_replace,
-        set_before_bind_test_hook, set_before_recovery_files_test_hook, staging_identity,
-        validate_project_structure,
+        set_before_bind_test_hook, set_before_recovery_files_test_hook,
+        set_before_recovery_publish_test_hook, staging_identity, validate_project_structure,
     };
     use crate::{CreateProjectRequest, ProjectProfile, create_project};
     use std::fs;
@@ -1484,7 +1679,37 @@ mod tests {
     }
 
     #[test]
-    fn identity_failure_quarantines_the_unverified_recovery_directory() {
+    fn successful_recovery_copy_publishes_only_the_completed_directory() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Successful Recovery Copy".into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let canonical = validate_project_structure(&opened.project_path).unwrap();
+        let bound = BoundProjectDirectory::open(canonical).unwrap();
+
+        let recovery = match bound.create_recovery_copy() {
+            Ok(recovery) => recovery,
+            Err(error) => {
+                let entries: Vec<_> = fs::read_dir(opened.project_path.join("derived/recovery"))
+                    .unwrap()
+                    .map(Result::unwrap)
+                    .map(|entry| entry.file_name())
+                    .collect();
+                panic!("recovery copy failed with {error:?}; entries: {entries:?}");
+            }
+        };
+        let recovery_root = opened.project_path.join("derived/recovery");
+        assert_eq!(fs::read_dir(&recovery_root).unwrap().count(), 1);
+        assert!(recovery.bound_path().join("manifest.json").is_file());
+        recovery.remove().unwrap();
+        assert_eq!(fs::read_dir(recovery_root).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn identity_failure_never_publishes_a_completed_recovery_name() {
         let root = tempdir().unwrap();
         let opened = create_project(CreateProjectRequest {
             parent: root.path().to_owned(),
@@ -1498,18 +1723,127 @@ mod tests {
 
         assert!(bound.create_recovery_copy().is_err());
         let recovery_root = opened.project_path.join("derived/recovery");
+        let entries: Vec<_> = fs::read_dir(recovery_root)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0]
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".aethertwin-recovery-staging-")
+        );
+    }
+
+    #[test]
+    fn recovery_publication_never_replaces_a_colliding_destination() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Recovery Collision".into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let canonical = validate_project_structure(&opened.project_path).unwrap();
+        let bound = BoundProjectDirectory::open(canonical).unwrap();
+        set_before_recovery_publish_test_hook(|_payload, destination| {
+            fs::create_dir(destination).unwrap();
+            fs::write(destination.join("replacement"), b"theirs").unwrap();
+        });
+
+        assert!(matches!(
+            bound.create_recovery_copy(),
+            Err(crate::ProjectIoError::ProjectAlreadyExists)
+        ));
+        let recovery_root = opened.project_path.join("derived/recovery");
         let entries: Vec<_> = fs::read_dir(&recovery_root)
             .unwrap()
             .map(Result::unwrap)
             .collect();
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].path().is_dir());
+        assert_eq!(
+            fs::read(entries[0].path().join("replacement")).unwrap(),
+            b"theirs"
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn recovery_publication_rejects_a_replaced_private_payload() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Recovery Payload Replacement".into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let canonical = validate_project_structure(&opened.project_path).unwrap();
+        let bound = BoundProjectDirectory::open(canonical).unwrap();
+        set_before_recovery_publish_test_hook(|payload, _destination| {
+            let preserved = payload.parent().unwrap().join("preserved-payload");
+            fs::rename(payload, &preserved).unwrap();
+            fs::create_dir(payload).unwrap();
+            fs::write(payload.join("replacement"), b"theirs").unwrap();
+        });
+
+        assert!(bound.create_recovery_copy().is_err());
+        let recovery_root = opened.project_path.join("derived/recovery");
+        let entries: Vec<_> = fs::read_dir(&recovery_root)
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(entries.len(), 1);
+        let staging = entries[0].path();
         assert!(
             entries[0]
                 .file_name()
                 .to_string_lossy()
-                .starts_with(".aethertwin-recovery-unverified-")
+                .starts_with(".aethertwin-recovery-staging-")
         );
+        assert_eq!(
+            fs::read(staging.join("payload/replacement")).unwrap(),
+            b"theirs"
+        );
+        assert!(staging.join("preserved-payload/manifest.json").is_file());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn post_publish_identity_mismatch_restores_without_deleting_the_replacement() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Published Recovery Replacement".into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let canonical = validate_project_structure(&opened.project_path).unwrap();
+        let bound = BoundProjectDirectory::open(canonical).unwrap();
+        let preserved = opened
+            .project_path
+            .join("derived/recovery/preserved-published");
+        set_after_recovery_publish_test_hook({
+            let preserved = preserved.clone();
+            move |destination| {
+                fs::rename(destination, &preserved).unwrap();
+                fs::create_dir(destination).unwrap();
+                fs::write(destination.join("replacement"), b"theirs").unwrap();
+            }
+        });
+
+        assert!(bound.create_recovery_copy().is_err());
+        let recovery_root = opened.project_path.join("derived/recovery");
+        let replacement = fs::read_dir(&recovery_root)
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|entry| entry.path().join("replacement").is_file())
+            .unwrap();
+        assert_eq!(
+            fs::read(replacement.path().join("replacement")).unwrap(),
+            b"theirs"
+        );
+        assert!(preserved.join("manifest.json").is_file());
     }
 
     #[test]
