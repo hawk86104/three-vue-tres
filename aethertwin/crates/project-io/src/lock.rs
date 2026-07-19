@@ -85,14 +85,14 @@ pub(crate) struct ProjectLock {
 
 struct LockAcquisitionGuard {
     directory: PathBuf,
-    leaf: OsString,
+    leaf: Option<OsString>,
     file: Option<File>,
     identity: Option<LockIdentity>,
     newly_created: bool,
 }
 
 impl LockAcquisitionGuard {
-    fn new(directory: &Path, leaf: OsString, file: File, existed: bool) -> Self {
+    fn new(directory: &Path, leaf: Option<OsString>, file: File, existed: bool) -> Self {
         Self {
             directory: directory.to_owned(),
             leaf,
@@ -114,9 +114,9 @@ impl LockAcquisitionGuard {
         self.identity = Some(identity);
     }
 
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     fn published(&mut self) {
-        self.leaf = OsString::from(LOCK_FILE_NAME);
+        self.leaf = Some(OsString::from(LOCK_FILE_NAME));
     }
 
     fn finish(mut self) -> Result<(File, LockIdentity), ProjectIoError> {
@@ -136,12 +136,10 @@ impl Drop for LockAcquisitionGuard {
             return;
         };
         if self.newly_created {
-            let _ = remove_newly_created_lock(
-                &self.directory,
-                &self.leaf,
-                file,
-                self.identity.as_ref(),
-            );
+            if let Some(leaf) = &self.leaf {
+                let _ =
+                    remove_newly_created_lock(&self.directory, leaf, file, self.identity.as_ref());
+            }
         }
         let _ = FileExt::unlock(file);
     }
@@ -255,7 +253,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let lock_path = root.path().join(LOCK_FILE_NAME);
         let file = open_test_lock(&lock_path, true);
-        let mut guard = LockAcquisitionGuard::new(root.path(), LOCK_FILE_NAME.into(), file, false);
+        let mut guard =
+            LockAcquisitionGuard::new(root.path(), Some(LOCK_FILE_NAME.into()), file, false);
         let identity = super::lock_identity(guard.file()).unwrap();
         guard.set_identity(identity);
         drop(guard);
@@ -265,7 +264,7 @@ mod tests {
         let file = open_test_lock(&lock_path, false);
         drop(LockAcquisitionGuard::new(
             root.path(),
-            LOCK_FILE_NAME.into(),
+            Some(LOCK_FILE_NAME.into()),
             file,
             true,
         ));
@@ -278,7 +277,8 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let lock_path = root.path().join(LOCK_FILE_NAME);
         let file = open_test_lock(&lock_path, true);
-        let mut guard = LockAcquisitionGuard::new(root.path(), LOCK_FILE_NAME.into(), file, false);
+        let mut guard =
+            LockAcquisitionGuard::new(root.path(), Some(LOCK_FILE_NAME.into()), file, false);
         let identity = super::lock_identity(guard.file()).unwrap();
         guard.set_identity(identity);
         fs::remove_file(&lock_path).unwrap();
@@ -287,33 +287,91 @@ mod tests {
         assert_eq!(fs::read(lock_path).unwrap(), b"replacement");
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn identity_failure_leaves_no_published_or_pending_stale_lock() {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    fn new_bound_project(name: &str) -> (tempfile::TempDir, crate::paths::BoundProjectDirectory) {
         let root = tempfile::tempdir().unwrap();
-        let pending_leaf = format!(".aethertwin.lock.pending-{}", uuid::Uuid::new_v4());
-        let pending_path = root.path().join(&pending_leaf);
-        let file = open_test_lock(&pending_path, true);
-        drop(LockAcquisitionGuard::new(
-            root.path(),
-            pending_leaf.into(),
-            file,
-            false,
-        ));
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: name.into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let canonical = crate::paths::validate_project_structure(&opened.project_path).unwrap();
+        let directory = crate::paths::BoundProjectDirectory::open(canonical).unwrap();
+        (root, directory)
+    }
 
-        assert!(!root.path().join(LOCK_FILE_NAME).exists());
-        assert!(!pending_path.exists());
-        let quarantines: Vec<_> = fs::read_dir(root.path())
-            .unwrap()
-            .map(Result::unwrap)
-            .filter(|entry| {
-                entry
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn published_lock_is_the_exact_held_tmpfile_inode() {
+        use fs2::FileExt;
+
+        let (_root, directory) = new_bound_project("Anonymous Lock");
+        super::lock_project_identity(&directory).unwrap();
+        let opened = super::open_lock_file(&directory).unwrap();
+        assert!(!opened.existed);
+        assert!(opened.leaf.is_none());
+        let mut guard = LockAcquisitionGuard::new(
+            directory.bound_path(),
+            opened.leaf,
+            opened.file,
+            opened.existed,
+        );
+        guard.file().try_lock_exclusive().unwrap();
+        let held_identity = super::lock_identity(guard.file()).unwrap();
+        guard.set_identity(held_identity.clone());
+        super::write_metadata(guard.file_mut(), &super::LockMetadata::new()).unwrap();
+
+        super::publish_new_lock(&directory, &mut guard).unwrap();
+        let published = super::open_lock_file(&directory).unwrap();
+        assert!(published.existed);
+        assert_eq!(
+            super::lock_identity(&published.file).unwrap(),
+            held_identity
+        );
+        drop(published);
+        drop(guard);
+        assert!(!directory.bound_path().join(LOCK_FILE_NAME).exists());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn tmpfile_publication_never_replaces_a_colliding_official_lock() {
+        use fs2::FileExt;
+
+        let (_root, directory) = new_bound_project("Lock Collision");
+        super::lock_project_identity(&directory).unwrap();
+        let opened = super::open_lock_file(&directory).unwrap();
+        assert!(!opened.existed);
+        assert!(opened.leaf.is_none());
+        let mut guard = LockAcquisitionGuard::new(
+            directory.bound_path(),
+            opened.leaf,
+            opened.file,
+            opened.existed,
+        );
+        guard.file().try_lock_exclusive().unwrap();
+        let identity = super::lock_identity(guard.file()).unwrap();
+        guard.set_identity(identity);
+        super::write_metadata(guard.file_mut(), &super::LockMetadata::new()).unwrap();
+        let official = directory.bound_path().join(LOCK_FILE_NAME);
+        fs::write(&official, b"collision").unwrap();
+
+        assert!(super::publish_new_lock(&directory, &mut guard).is_err());
+        assert_eq!(fs::read(&official).unwrap(), b"collision");
+        assert_eq!(
+            fs::read_dir(directory.bound_path())
+                .unwrap()
+                .map(Result::unwrap)
+                .filter(|entry| entry
                     .file_name()
                     .to_string_lossy()
-                    .starts_with(".aethertwin.lock.quarantine-")
-            })
-            .collect();
-        assert_eq!(quarantines.len(), 1);
+                    .starts_with(LOCK_FILE_NAME))
+                .count(),
+            1
+        );
+        drop(guard);
+        assert_eq!(fs::read(official).unwrap(), b"collision");
     }
 
     #[cfg(windows)]
@@ -395,11 +453,11 @@ fn write_metadata(file: &mut File, metadata: &LockMetadata) -> Result<(), Projec
 
 struct OpenedLockFile {
     file: File,
-    leaf: OsString,
+    leaf: Option<OsString>,
     existed: bool,
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, ProjectIoError> {
     use std::os::unix::fs::OpenOptionsExt;
     let final_path = directory.bound_path().join(LOCK_FILE_NAME);
@@ -412,7 +470,7 @@ fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, P
         Ok(file) => {
             return Ok(OpenedLockFile {
                 file,
-                leaf: OsString::from(LOCK_FILE_NAME),
+                leaf: Some(OsString::from(LOCK_FILE_NAME)),
                 existed: true,
             });
         }
@@ -420,23 +478,40 @@ fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, P
         Err(_) => return Err(ProjectIoError::InvalidProjectStructure),
     }
 
-    for _ in 0..8 {
-        let leaf = OsString::from(format!(".aethertwin.lock.pending-{}", Uuid::new_v4()));
-        let mut options = OpenOptions::new();
-        options.read(true).write(true).create_new(true).mode(0o600);
-        match options.open(directory.bound_path().join(&leaf)) {
-            Ok(file) => {
-                return Ok(OpenedLockFile {
-                    file,
-                    leaf,
-                    existed: false,
-                });
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(_) => return Err(ProjectIoError::FilesystemError),
+    use rustix::fs::{Mode, OFlags, openat};
+    let owned = openat(
+        directory.file(),
+        ".",
+        OFlags::TMPFILE | OFlags::RDWR | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    )
+    .map_err(|_| ProjectIoError::FilesystemError)?;
+    Ok(OpenedLockFile {
+        file: File::from(owned),
+        leaf: None,
+        existed: false,
+    })
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, ProjectIoError> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut existing = OpenOptions::new();
+    existing
+        .read(true)
+        .write(true)
+        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+    match existing.open(directory.bound_path().join(LOCK_FILE_NAME)) {
+        Ok(file) => Ok(OpenedLockFile {
+            file,
+            leaf: Some(OsString::from(LOCK_FILE_NAME)),
+            existed: true,
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(ProjectIoError::FilesystemError)
         }
+        Err(_) => Err(ProjectIoError::InvalidProjectStructure),
     }
-    Err(ProjectIoError::FilesystemError)
 }
 
 #[cfg(windows)]
@@ -445,14 +520,14 @@ fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, P
     match open_windows_lock_file(&path, true) {
         Ok(file) => Ok(OpenedLockFile {
             file,
-            leaf: OsString::from(LOCK_FILE_NAME),
+            leaf: Some(OsString::from(LOCK_FILE_NAME)),
             existed: false,
         }),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             match open_windows_lock_file(&path, false) {
                 Ok(file) => Ok(OpenedLockFile {
                     file,
-                    leaf: OsString::from(LOCK_FILE_NAME),
+                    leaf: Some(OsString::from(LOCK_FILE_NAME)),
                     existed: true,
                 }),
                 Err(error) if error.raw_os_error() == Some(32) => {
@@ -525,7 +600,7 @@ fn open_lock_file(_directory: &BoundProjectDirectory) -> Result<OpenedLockFile, 
     Err(ProjectIoError::FilesystemError)
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn publish_new_lock(
     directory: &BoundProjectDirectory,
     acquisition: &mut LockAcquisitionGuard,
@@ -533,18 +608,30 @@ fn publish_new_lock(
     if !acquisition.newly_created {
         return Ok(());
     }
-    use rustix::fs::{RenameFlags, renameat_with};
-    renameat_with(
-        directory.file(),
-        &acquisition.leaf,
+    use rustix::fs::{AtFlags, linkat};
+    linkat(
+        acquisition.file(),
+        "",
         directory.file(),
         LOCK_FILE_NAME,
-        RenameFlags::NOREPLACE,
+        AtFlags::EMPTY_PATH,
     )
     .map_err(|_| ProjectIoError::FilesystemError)?;
     acquisition.published();
     directory.file().sync_all()?;
     Ok(())
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+fn publish_new_lock(
+    _directory: &BoundProjectDirectory,
+    acquisition: &mut LockAcquisitionGuard,
+) -> Result<(), ProjectIoError> {
+    if acquisition.newly_created {
+        Err(ProjectIoError::FilesystemError)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(windows)]
