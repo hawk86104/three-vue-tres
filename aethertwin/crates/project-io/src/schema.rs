@@ -232,34 +232,6 @@ pub(crate) fn latest_snapshot(connection: &Connection) -> Result<ProjectSnapshot
     Ok(snapshot)
 }
 
-pub(crate) fn newest_valid_snapshot(
-    connection: &Connection,
-) -> Result<ProjectSnapshot, ProjectIoError> {
-    let mut statement = connection.prepare(
-        "SELECT sequence, snapshot_json, checksum FROM snapshots ORDER BY sequence DESC",
-    )?;
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    })?;
-    for row in rows {
-        let (sequence, snapshot_json, checksum) = row?;
-        if sequence < 0 || checksum != snapshot_checksum(&snapshot_json) {
-            continue;
-        }
-        let Ok(snapshot) = serde_json::from_str::<ProjectSnapshot>(&snapshot_json) else {
-            continue;
-        };
-        if snapshot.sequence == sequence as u64 && snapshot.validate().is_ok() {
-            return Ok(snapshot);
-        }
-    }
-    Err(ProjectIoError::RecoveryFailed)
-}
-
 fn write_meta(
     connection: &Connection,
     key: &str,

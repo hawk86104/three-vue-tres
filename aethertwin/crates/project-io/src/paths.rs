@@ -120,7 +120,8 @@ pub(crate) fn validate_project_structure(path: &Path) -> Result<PathBuf, Project
 pub(crate) struct BoundProjectDirectory {
     canonical_path: PathBuf,
     bound_path: PathBuf,
-    _file: File,
+    file: File,
+    identity: FileIdentity,
 }
 
 impl BoundProjectDirectory {
@@ -135,7 +136,8 @@ impl BoundProjectDirectory {
         Ok(Self {
             canonical_path,
             bound_path,
-            _file: file,
+            file,
+            identity: expected,
         })
     }
 
@@ -147,10 +149,194 @@ impl BoundProjectDirectory {
         &self.bound_path
     }
 
-    #[cfg(unix)]
     pub(crate) fn file(&self) -> &File {
-        &self._file
+        &self.file
     }
+
+    pub(crate) fn revalidate_stabilized(&self) -> Result<(), ProjectIoError> {
+        if file_identity(&self.file)? != self.identity {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        #[cfg(windows)]
+        {
+            let visible = open_identity_directory(&self.canonical_path)?;
+            if file_identity(&visible)? != self.identity {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        let validated = validate_project_structure(&self.bound_path)?;
+        if validated != self.canonical_path {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn create_recovery_copy(&self) -> Result<RecoveryCopy, ProjectIoError> {
+        let derived_visible = self.canonical_path.join("derived");
+        let derived = bind_existing_child_directory(self.file(), &derived_visible, "derived")?;
+
+        let recovery_visible = derived_visible.join("recovery");
+        let recovery = match private_directory_options().mkdir_at(&derived, "recovery") {
+            Ok(created) => bind_created_directory(&recovery_visible, created)?,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                bind_existing_child_directory(&derived, &recovery_visible, "recovery")?
+            }
+            Err(_) => return Err(ProjectIoError::FilesystemError),
+        };
+
+        let destination_leaf = OsString::from(format!(
+            "{}-{}",
+            chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ"),
+            Uuid::new_v4()
+        ));
+        let destination_visible = recovery_visible.join(&destination_leaf);
+        let created = private_directory_options()
+            .mkdir_at(&recovery, &destination_leaf)
+            .map_err(|_| ProjectIoError::FilesystemError)?;
+        let destination = bind_created_directory(&destination_visible, created)?;
+        let destination_bound = bound_directory_path(&destination, &destination_visible)?;
+
+        let mut copied_files = Vec::new();
+        for (name, optional) in [
+            ("manifest.json", false),
+            ("project.db", false),
+            ("project.db-wal", true),
+            ("project.db-shm", true),
+        ] {
+            let Some(mut source) =
+                open_bound_regular_file(self.file(), &self.canonical_path, name, optional)?
+            else {
+                continue;
+            };
+            let mut target = create_bound_regular_file(&destination, &destination_visible, name)?;
+            std::io::copy(&mut source, &mut target)?;
+            target.sync_all()?;
+            copied_files.push(target);
+        }
+
+        Ok(RecoveryCopy {
+            bound_path: destination_bound,
+            _derived: derived,
+            _recovery: recovery,
+            _destination: destination,
+            _copied_files: copied_files,
+        })
+    }
+}
+
+pub(crate) struct RecoveryCopy {
+    bound_path: PathBuf,
+    _derived: File,
+    _recovery: File,
+    _destination: File,
+    _copied_files: Vec<File>,
+}
+
+impl RecoveryCopy {
+    pub(crate) fn bound_path(&self) -> &Path {
+        &self.bound_path
+    }
+}
+
+fn bind_existing_child_directory(
+    parent: &File,
+    visible: &Path,
+    leaf: &str,
+) -> Result<File, ProjectIoError> {
+    let bridge = open_child_directory(parent, OsStr::new(leaf))?;
+    #[cfg(windows)]
+    {
+        let expected = file_identity(&bridge)?;
+        let locked = open_locked_directory(visible)?;
+        if file_identity(&locked)? != expected {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        return Ok(locked);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = visible;
+        Ok(bridge)
+    }
+}
+
+fn open_bound_regular_file(
+    parent: &File,
+    parent_visible: &Path,
+    leaf: &str,
+    optional: bool,
+) -> Result<Option<File>, ProjectIoError> {
+    let mut options = fs_at::OpenOptions::default();
+    options.read(true).follow(false);
+    let bridge = match options.open_at(parent, leaf) {
+        Ok(file) => file,
+        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        Err(_) => return Err(ProjectIoError::FilesystemError),
+    };
+    let expected = regular_file_identity(&bridge)?;
+    #[cfg(windows)]
+    {
+        let locked = open_locked_regular_file(&parent_visible.join(leaf), false)?;
+        if regular_file_identity(&locked)? != expected {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        return Ok(Some(locked));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (parent_visible, expected);
+        Ok(Some(bridge))
+    }
+}
+
+fn create_bound_regular_file(
+    parent: &File,
+    parent_visible: &Path,
+    leaf: &str,
+) -> Result<File, ProjectIoError> {
+    let mut options = fs_at::OpenOptions::default();
+    options
+        .read(true)
+        .write(fs_at::OpenOptionsWriteMode::Write)
+        .create_new(true)
+        .follow(false);
+    let bridge = options
+        .open_at(parent, leaf)
+        .map_err(|_| ProjectIoError::FilesystemError)?;
+    let expected = regular_file_identity(&bridge)?;
+    #[cfg(windows)]
+    {
+        let locked = open_locked_regular_file(&parent_visible.join(leaf), true)?;
+        if regular_file_identity(&locked)? != expected {
+            return Err(ProjectIoError::FilesystemError);
+        }
+        return Ok(locked);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (parent_visible, expected);
+        Ok(bridge)
+    }
+}
+
+#[cfg(windows)]
+fn open_locked_regular_file(path: &Path, writable: bool) -> Result<File, ProjectIoError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 1;
+    const FILE_SHARE_WRITE: u32 = 2;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    let mut options = fs::OpenOptions::new();
+    options
+        .read(true)
+        .write(writable)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    options
+        .open(path)
+        .map_err(|_| ProjectIoError::InvalidProjectStructure)
 }
 
 #[cfg(windows)]
@@ -842,9 +1028,12 @@ fn rename_child_no_replace(
 fn open_child_directory(parent: &File, leaf: &OsStr) -> Result<File, ProjectIoError> {
     let mut options = fs_at::OpenOptions::default();
     options.read(true);
+    options.follow(false);
     let file = options
         .open_dir_at(parent, Path::new(leaf))
         .map_err(|_| ProjectIoError::FilesystemError)?;
+    #[cfg(windows)]
+    validate_windows_directory(&file)?;
     file_identity(&file)?;
     Ok(file)
 }
@@ -885,6 +1074,11 @@ fn file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
 
 #[cfg(windows)]
 fn file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
+    object_identity(file)
+}
+
+#[cfg(windows)]
+fn object_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
     use std::ffi::c_void;
     use std::os::windows::io::AsRawHandle;
 
@@ -937,6 +1131,73 @@ fn file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
 
 #[cfg(not(any(unix, windows)))]
 fn file_identity(_file: &File) -> Result<FileIdentity, ProjectIoError> {
+    Err(ProjectIoError::FilesystemError)
+}
+
+#[cfg(unix)]
+fn regular_file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(FileIdentity::Unix {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    })
+}
+
+#[cfg(windows)]
+fn regular_file_identity(file: &File) -> Result<FileIdentity, ProjectIoError> {
+    validate_windows_regular_file(file)?;
+    object_identity(file)
+}
+
+#[cfg(windows)]
+fn validate_windows_regular_file(file: &File) -> Result<(), ProjectIoError> {
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileAttributeTagInfo {
+        attributes: u32,
+        reparse_tag: u32,
+    }
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn GetFileInformationByHandleEx(
+            file: *mut c_void,
+            information_class: u32,
+            information: *mut c_void,
+            buffer_size: u32,
+        ) -> i32;
+    }
+    const FILE_ATTRIBUTE_TAG_INFO_CLASS: u32 = 9;
+    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    let mut information = FileAttributeTagInfo {
+        attributes: 0,
+        reparse_tag: 0,
+    };
+    // SAFETY: the handle is live and the fixed-size output buffer is writable.
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FILE_ATTRIBUTE_TAG_INFO_CLASS,
+            (&mut information as *mut FileAttributeTagInfo).cast(),
+            std::mem::size_of::<FileAttributeTagInfo>() as u32,
+        )
+    } == 0
+        || information.attributes & FILE_ATTRIBUTE_DIRECTORY != 0
+        || information.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn regular_file_identity(_file: &File) -> Result<FileIdentity, ProjectIoError> {
     Err(ProjectIoError::FilesystemError)
 }
 

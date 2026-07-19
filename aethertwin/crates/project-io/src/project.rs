@@ -8,8 +8,8 @@ use crate::paths::{
     validate_project_extension, validate_project_structure,
 };
 use crate::schema::{
-    checkpoint_wal, create_database, latest_snapshot, newest_valid_snapshot, open_database,
-    read_meta, snapshot_checksum, timestamp_now, upsert_meta,
+    checkpoint_wal, create_database, latest_snapshot, open_database, read_meta, snapshot_checksum,
+    timestamp_now, upsert_meta,
 };
 use crate::{
     CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest, ProjectProfile,
@@ -22,7 +22,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use uuid::Uuid;
 
 const APP_VERSION: &str = "0.1.0";
@@ -163,9 +163,35 @@ pub fn open_session(
     recover_stale_lock: bool,
 ) -> Result<ProjectSession, ProjectIoError> {
     let mut lock = ProjectLock::acquire(path, recover_stale_lock)?;
-    let recovered = lock.stale_recovered();
+    let clean_shutdown = match (|| {
+        let connection = open_database(&lock.bound_path().join("project.db"))?;
+        read_meta::<bool>(&connection, "cleanShutdown")
+    })() {
+        Ok(clean_shutdown) => clean_shutdown,
+        Err(error) => {
+            if !lock.stale_recovered() {
+                let _ = lock.clean_close();
+            }
+            return Err(error);
+        }
+    };
+    let recovered = lock.stale_recovered() || !clean_shutdown;
+    if recovered && !recover_stale_lock {
+        if !lock.stale_recovered() {
+            let _ = lock.clean_close();
+        }
+        return Err(ProjectIoError::StaleProjectLock);
+    }
     let opened_result = if recovered {
-        recover_with_lock(&lock)?
+        match recover_with_lock(&lock) {
+            Ok(opened) => opened,
+            Err(error) => {
+                if !lock.stale_recovered() {
+                    let _ = lock.clean_close();
+                }
+                return Err(error);
+            }
+        }
     } else {
         match load_opened_project(lock.bound_path(), lock.canonical_path(), true) {
             Ok(opened) => opened,
@@ -182,7 +208,7 @@ pub fn open_session(
     })() {
         Ok(connection) => connection,
         Err(error) => {
-            if !recovered {
+            if !lock.stale_recovered() {
                 let _ = lock.clean_close();
             }
             return Err(error);
@@ -210,6 +236,9 @@ pub fn recover_project(path: &Path, confirm: bool) -> Result<OpenedProject, Proj
         return Err(ProjectIoError::StaleProjectLock);
     }
     let lock = ProjectLock::acquire(path, true)?;
+    let connection = open_database(&lock.bound_path().join("project.db"))?;
+    let _: bool = read_meta(&connection, "cleanShutdown")?;
+    drop(connection);
     recover_with_lock(&lock)
 }
 
@@ -592,54 +621,9 @@ fn sequence_i64(value: u64) -> Result<i64, ProjectIoError> {
 }
 
 fn recover_with_lock(lock: &ProjectLock) -> Result<OpenedProject, ProjectIoError> {
-    let recovery_path = create_recovery_copy(lock.bound_path())?;
-    reconstruct_recovery(&recovery_path, lock.canonical_path())
+    let recovery = lock.create_recovery_copy()?;
+    reconstruct_recovery(recovery.bound_path(), lock.canonical_path())
         .map_err(|_| ProjectIoError::RecoveryFailed)
-}
-
-fn create_recovery_copy(project_path: &Path) -> Result<PathBuf, ProjectIoError> {
-    let derived = project_path.join("derived");
-    let recovery_root = derived.join("recovery");
-    match fs::create_dir(&recovery_root) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let metadata = fs::symlink_metadata(&recovery_root)?;
-            if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                return Err(ProjectIoError::InvalidProjectStructure);
-            }
-        }
-        Err(_) => return Err(ProjectIoError::FilesystemError),
-    }
-    let canonical_derived = derived.canonicalize()?;
-    let canonical_recovery = recovery_root.canonicalize()?;
-    if canonical_recovery.parent() != Some(canonical_derived.as_path()) {
-        return Err(ProjectIoError::InvalidProjectStructure);
-    }
-
-    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ");
-    let destination = recovery_root.join(format!("{timestamp}-{}", Uuid::new_v4()));
-    fs::create_dir(&destination)?;
-    for name in [
-        "manifest.json",
-        "project.db",
-        "project.db-wal",
-        "project.db-shm",
-    ] {
-        let source = project_path.join(name);
-        match fs::symlink_metadata(&source) {
-            Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_file() {
-                    return Err(ProjectIoError::InvalidProjectStructure);
-                }
-                fs::copy(&source, destination.join(name))?;
-            }
-            Err(error)
-                if error.kind() == std::io::ErrorKind::NotFound
-                    && matches!(name, "project.db-wal" | "project.db-shm") => {}
-            Err(_) => return Err(ProjectIoError::FilesystemError),
-        }
-    }
-    Ok(destination)
 }
 
 fn reconstruct_recovery(
@@ -649,31 +633,65 @@ fn reconstruct_recovery(
     let mut manifest = read_manifest(&recovery_path.join("manifest.json"))?;
     let connection = open_database(&recovery_path.join("project.db"))?;
     validate_recovery_identity(&connection, &manifest)?;
-    let mut snapshot = newest_valid_snapshot(&connection)?;
-    if snapshot.schema_version != manifest.schema_version
-        || snapshot.project.id != manifest.project_id
-        || snapshot.project.profile != manifest.profile
+    let last_committed: u64 = read_meta(&connection, "lastCommittedSequence")?;
+    let last_checkpoint: u64 = read_meta(&connection, "lastCheckpointSequence")?;
+    if last_checkpoint > last_committed {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    let operations = read_recovery_journal(&connection, 0)?;
+    if operations.len() as u64 != last_committed
+        || operations
+            .iter()
+            .enumerate()
+            .any(|(index, operation)| operation.sequence != index as u64 + 1)
     {
         return Err(ProjectIoError::RecoveryFailed);
     }
-    let last_committed: u64 = read_meta(&connection, "lastCommittedSequence")?;
-    if snapshot.sequence > last_committed {
+    validate_recovery_journal_groups(&operations)?;
+    if checkpoint_splits_transaction(&operations, last_checkpoint) {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    let candidates = read_recovery_candidates(&connection, last_checkpoint)?;
+    if !candidates
+        .iter()
+        .any(|(row_sequence, _, _)| *row_sequence == last_checkpoint)
+    {
         return Err(ProjectIoError::RecoveryFailed);
     }
 
-    let operations = read_recovery_journal(&connection, snapshot.sequence)?;
-    validate_recovery_journal_groups(&operations)?;
-    let checkpoint_sequence = snapshot.sequence;
-    for (index, operation) in operations.iter().enumerate() {
-        if operation.sequence != checkpoint_sequence + index as u64 + 1 {
-            return Err(ProjectIoError::RecoveryFailed);
+    let mut recovered_snapshot = None;
+    for (row_sequence, snapshot_json, checksum) in candidates {
+        if checksum != snapshot_checksum(&snapshot_json) {
+            continue;
         }
-        apply_operation(&mut snapshot, operation).map_err(|_| ProjectIoError::RecoveryFailed)?;
+        let Ok(mut snapshot) = serde_json::from_str::<ProjectSnapshot>(&snapshot_json) else {
+            continue;
+        };
+        if snapshot.validate().is_err()
+            || snapshot.sequence != row_sequence
+            || snapshot.checkpoint_sequence != row_sequence
+            || snapshot.sequence > last_committed
+            || snapshot.schema_version != manifest.schema_version
+            || snapshot.project.id != manifest.project_id
+            || snapshot.project.profile != manifest.profile
+            || checkpoint_splits_transaction(&operations, row_sequence)
+        {
+            continue;
+        }
+        let replayed = operations
+            .iter()
+            .filter(|operation| operation.sequence > row_sequence)
+            .try_for_each(|operation| apply_operation(&mut snapshot, operation));
+        if replayed.is_err()
+            || snapshot.sequence != last_committed
+            || validate_entity_invariants(&connection, &snapshot).is_err()
+        {
+            continue;
+        }
+        recovered_snapshot = Some(snapshot);
+        break;
     }
-    if snapshot.sequence != last_committed {
-        return Err(ProjectIoError::RecoveryFailed);
-    }
-    validate_entity_invariants(&connection, &snapshot)?;
+    let snapshot = recovered_snapshot.ok_or(ProjectIoError::RecoveryFailed)?;
 
     let database_name: String = read_meta(&connection, "name")?;
     let database_updated_at: String = read_meta(&connection, "updatedAt")?;
@@ -690,6 +708,40 @@ fn reconstruct_recovery(
         snapshot,
         recovered: true,
     })
+}
+
+fn read_recovery_candidates(
+    connection: &Connection,
+    last_checkpoint: u64,
+) -> Result<Vec<(u64, String, String)>, ProjectIoError> {
+    let mut statement = connection.prepare(
+        "SELECT sequence, snapshot_json, checksum FROM snapshots
+         WHERE sequence <= ?1 ORDER BY sequence DESC",
+    )?;
+    statement
+        .query_map([sequence_i64(last_checkpoint)?], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .map(|row| {
+            let (sequence, snapshot_json, checksum) = row?;
+            if sequence < 0 {
+                return Err(ProjectIoError::RecoveryFailed);
+            }
+            Ok((sequence as u64, snapshot_json, checksum))
+        })
+        .collect()
+}
+
+fn checkpoint_splits_transaction(operations: &[JournalOperation], sequence: u64) -> bool {
+    if sequence == 0 || sequence >= operations.len() as u64 {
+        return false;
+    }
+    operations[(sequence - 1) as usize].transaction_id
+        == operations[sequence as usize].transaction_id
 }
 
 fn validate_recovery_identity(
@@ -835,9 +887,10 @@ fn validate_entity_invariants(
         }
     }
 
-    let actual_assets: BTreeMap<String, (String, String, String, i64)> = connection
+    let actual_assets: BTreeMap<String, (String, String, String, i64, String)> = connection
         .prepare(
-            "SELECT id, sha256, relative_path, media_type, size FROM asset_records ORDER BY id",
+            "SELECT id, sha256, relative_path, media_type, size, metadata_json
+             FROM asset_records ORDER BY id",
         )?
         .query_map([], |row| {
             Ok((
@@ -847,6 +900,7 @@ fn validate_entity_invariants(
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, String>(5)?,
                 ),
             ))
         })?
@@ -862,6 +916,7 @@ fn validate_entity_invariants(
                     asset.relative_path.clone(),
                     asset.media_type.clone(),
                     sequence_i64(asset.size)?,
+                    "{}".to_owned(),
                 ),
             ))
         })

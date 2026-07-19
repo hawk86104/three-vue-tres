@@ -1,6 +1,7 @@
 use project_io::{
-    CommitBatch, CreateProjectRequest, JournalAction, JournalOperation, ProjectIoError,
-    ProjectProfile, ProjectSnapshot, SaveState, create_project, open_session, recover_project,
+    AssetRecord, CommitBatch, CreateProjectRequest, JournalAction, JournalOperation,
+    ProjectIoError, ProjectProfile, ProjectSnapshot, SaveState, create_project, open_session,
+    recover_project,
 };
 use rusqlite::Connection;
 use serde_json::json;
@@ -68,6 +69,35 @@ fn rename_batch(before: &ProjectSnapshot, after: &ProjectSnapshot) -> CommitBatc
 
 fn assert_code(error: ProjectIoError, code: &str) {
     assert_eq!(error.code(), code, "unexpected error: {error}");
+}
+
+fn checkpoint_then_commit(opened: &project_io::OpenedProject) -> ProjectSnapshot {
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let checkpoint = renamed(initial.clone(), "Checkpoint", 1);
+    session.commit(rename_batch(&initial, &checkpoint)).unwrap();
+    session.checkpoint().unwrap();
+    let checkpoint = session.snapshot().clone();
+    let final_snapshot = renamed(checkpoint.clone(), "Final", 2);
+    let mut final_batch = rename_batch(&checkpoint, &final_snapshot);
+    final_batch.journal[0].transaction_id = "00000000-0000-4000-8000-000000000222".into();
+    session.commit(final_batch).unwrap();
+    drop(session);
+    final_snapshot
+}
+
+fn overwrite_checkpoint(project_path: &std::path::Path, snapshot: &ProjectSnapshot) {
+    let snapshot_json = serde_json::to_string(snapshot).unwrap();
+    Connection::open(project_path.join("project.db"))
+        .unwrap()
+        .execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2 WHERE sequence = 1",
+            (
+                &snapshot_json,
+                project_io::snapshot_checksum(&snapshot_json),
+            ),
+        )
+        .unwrap();
 }
 
 #[test]
@@ -189,6 +219,77 @@ fn active_lock_is_exclusive_and_crash_residue_requires_confirmation() {
 }
 
 #[test]
+fn clean_shutdown_false_requires_recovery_even_when_the_lock_file_was_deleted() {
+    let opened = create("Deleted Crash Lock", ProjectProfile::Market);
+    let session = open_session(&opened.project_path, false).unwrap();
+    drop(session);
+    fs::remove_file(opened.project_path.join(".aethertwin.lock")).unwrap();
+
+    assert_code(
+        open_session(&opened.project_path, false).unwrap_err(),
+        "STALE_PROJECT_LOCK",
+    );
+    assert!(!opened.project_path.join(".aethertwin.lock").exists());
+    let recovered = open_session(&opened.project_path, true).unwrap();
+    assert_eq!(recovered.save_state(), SaveState::Recovered);
+}
+
+#[test]
+fn failed_recovery_cleans_only_the_new_lock_created_for_the_attempt() {
+    let opened = create("Failed New Lock Recovery", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let original = session.snapshot().clone();
+    let next = renamed(original.clone(), "Committed", 1);
+    session.commit(rename_batch(&original, &next)).unwrap();
+    drop(session);
+    fs::remove_file(opened.project_path.join(".aethertwin.lock")).unwrap();
+    Connection::open(opened.project_path.join("project.db"))
+        .unwrap()
+        .execute(
+            "UPDATE entity_records SET payload_json = '{\"corrupt\":true}'
+             WHERE entity_type = 'project'",
+            [],
+        )
+        .unwrap();
+
+    assert_code(
+        open_session(&opened.project_path, true).unwrap_err(),
+        "RECOVERY_FAILED",
+    );
+    assert!(!opened.project_path.join(".aethertwin.lock").exists());
+}
+
+#[test]
+fn missing_or_malformed_clean_shutdown_markers_fail_stably() {
+    for malformed in [None, Some("not-json")] {
+        let opened = create("Bad Shutdown Marker", ProjectProfile::Showroom);
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        match malformed {
+            None => {
+                connection
+                    .execute("DELETE FROM project_meta WHERE key = 'cleanShutdown'", [])
+                    .unwrap();
+            }
+            Some(value) => {
+                connection
+                    .execute(
+                        "UPDATE project_meta SET value_json = ?1 WHERE key = 'cleanShutdown'",
+                        [value],
+                    )
+                    .unwrap();
+            }
+        }
+        drop(connection);
+
+        assert_code(
+            open_session(&opened.project_path, false).unwrap_err(),
+            "INVALID_PROJECT_STRUCTURE",
+        );
+        assert!(!opened.project_path.join(".aethertwin.lock").exists());
+    }
+}
+
+#[test]
 fn malformed_lock_metadata_is_rewritten_only_after_explicit_confirmation() {
     let opened = create("Malformed Lock Demo", ProjectProfile::Market);
     let lock_path = opened.project_path.join(".aethertwin.lock");
@@ -270,6 +371,61 @@ fn lock_file_never_follows_a_symlink_or_reparse_point() {
         "INVALID_PROJECT_STRUCTURE",
     );
     assert_eq!(fs::read(target).unwrap(), b"outside");
+}
+
+#[test]
+fn recovery_never_follows_a_replaced_derived_directory() {
+    let opened = create("Redirected Derived", ProjectProfile::Market);
+    let session = open_session(&opened.project_path, false).unwrap();
+    drop(session);
+    let outside = tempdir().unwrap();
+    let derived = opened.project_path.join("derived");
+    let preserved = opened.project_path.join("derived-preserved");
+    fs::rename(&derived, &preserved).unwrap();
+
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_dir(outside.path(), &derived).is_err() {
+        fs::rename(&preserved, &derived).unwrap();
+        return;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(outside.path(), &derived).unwrap();
+
+    assert_code(
+        recover_project(&opened.project_path, true).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+    assert_eq!(fs::read_dir(outside.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn recovery_never_follows_a_replaced_source_entry() {
+    let opened = create("Redirected Source", ProjectProfile::Showroom);
+    let session = open_session(&opened.project_path, false).unwrap();
+    drop(session);
+    let outside = tempdir().unwrap();
+    let outside_manifest = outside.path().join("outside-manifest.json");
+    fs::write(&outside_manifest, b"outside-must-not-change").unwrap();
+    let manifest = opened.project_path.join("manifest.json");
+    let preserved = opened.project_path.join("manifest-preserved.json");
+    fs::rename(&manifest, &preserved).unwrap();
+
+    #[cfg(windows)]
+    if std::os::windows::fs::symlink_file(&outside_manifest, &manifest).is_err() {
+        fs::rename(&preserved, &manifest).unwrap();
+        return;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside_manifest, &manifest).unwrap();
+
+    assert_code(
+        recover_project(&opened.project_path, true).unwrap_err(),
+        "INVALID_PROJECT_STRUCTURE",
+    );
+    assert_eq!(
+        fs::read(outside_manifest).unwrap(),
+        b"outside-must-not-change"
+    );
 }
 
 #[cfg(unix)]
@@ -419,6 +575,56 @@ fn recovery_uses_newest_valid_checkpoint_creates_unique_copies_and_replays_actio
 }
 
 #[test]
+fn recovery_falls_back_when_the_intended_checkpoint_is_semantically_corrupt() {
+    let mut corruptions: Vec<Box<dyn Fn(&mut ProjectSnapshot)>> = vec![
+        Box::new(|snapshot| snapshot.project.id = uuid::Uuid::new_v4()),
+        Box::new(|snapshot| snapshot.checkpoint_sequence = 0),
+        Box::new(|snapshot| snapshot.sequence = 3),
+        Box::new(|snapshot| snapshot.project.name = "Diverged".into()),
+    ];
+    for corrupt in corruptions.drain(..) {
+        let opened = create("Semantic Fallback", ProjectProfile::Market);
+        let expected = checkpoint_then_commit(&opened);
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        let snapshot_json: String = connection
+            .query_row(
+                "SELECT snapshot_json FROM snapshots WHERE sequence = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(connection);
+        let mut corrupt_checkpoint: ProjectSnapshot = serde_json::from_str(&snapshot_json).unwrap();
+        corrupt(&mut corrupt_checkpoint);
+        overwrite_checkpoint(&opened.project_path, &corrupt_checkpoint);
+
+        let recovered = recover_project(&opened.project_path, true).unwrap();
+        assert_eq!(recovered.snapshot.project, expected.project);
+        assert_eq!(recovered.snapshot.sequence, expected.sequence);
+        assert_eq!(recovered.snapshot.checkpoint_sequence, 0);
+    }
+}
+
+#[test]
+fn recovery_rejects_a_transaction_id_reused_across_the_checkpoint_boundary() {
+    let opened = create("Cross Boundary Transaction", ProjectProfile::Market);
+    checkpoint_then_commit(&opened);
+    Connection::open(opened.project_path.join("project.db"))
+        .unwrap()
+        .execute(
+            "UPDATE command_journal SET transaction_id =
+             '00000000-0000-4000-8000-000000000111' WHERE sequence = 2",
+            [],
+        )
+        .unwrap();
+
+    assert_code(
+        recover_project(&opened.project_path, true).unwrap_err(),
+        "RECOVERY_FAILED",
+    );
+}
+
+#[test]
 fn failed_recovery_preserves_source_manifest_and_checkpoint_state() {
     let opened = create("Invariant Demo", ProjectProfile::Showroom);
     let mut session = open_session(&opened.project_path, false).unwrap();
@@ -478,6 +684,51 @@ fn recovery_rejects_orphan_asset_rows_even_before_the_first_commit() {
                 &"a".repeat(64),
                 "assets/orphan.png",
                 "image/png",
+            ],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert_code(
+        recover_project(&opened.project_path, true).unwrap_err(),
+        "RECOVERY_FAILED",
+    );
+}
+
+#[test]
+fn recovery_requires_compiled_empty_asset_metadata() {
+    let opened = create("Asset Metadata Invariant", ProjectProfile::Market);
+    let mut snapshot = opened.snapshot.clone();
+    let asset = AssetRecord {
+        id: uuid::Uuid::new_v4(),
+        sha256: "a".repeat(64),
+        relative_path: "assets/example.png".into(),
+        media_type: "image/png".into(),
+        size: 7,
+    };
+    snapshot.assets.push(asset.clone());
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2 WHERE sequence = 0",
+            (
+                &snapshot_json,
+                project_io::snapshot_checksum(&snapshot_json),
+            ),
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO asset_records(
+               id, sha256, relative_path, media_type, size, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, '{\"unexpected\":true}')",
+            rusqlite::params![
+                asset.id.hyphenated().to_string(),
+                asset.sha256,
+                asset.relative_path,
+                asset.media_type,
+                asset.size as i64,
             ],
         )
         .unwrap();

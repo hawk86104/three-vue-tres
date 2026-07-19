@@ -1,6 +1,8 @@
 use crate::ProjectIoError;
 use crate::model::valid_timestamp;
-use crate::paths::{BoundProjectDirectory, validate_project_extension, validate_project_structure};
+use crate::paths::{
+    BoundProjectDirectory, RecoveryCopy, validate_project_extension, validate_project_structure,
+};
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -8,10 +10,33 @@ use std::fs::File;
 #[cfg(unix)]
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const LOCK_FILE_NAME: &str = ".aethertwin.lock";
+
+#[cfg(test)]
+thread_local! {
+    static BEFORE_LOCK_FILE_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(test)]
+fn set_before_lock_file_test_hook(hook: impl FnOnce(&Path) + 'static) {
+    BEFORE_LOCK_FILE_TEST_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn run_before_lock_file_test_hook(path: &Path) {
+    BEFORE_LOCK_FILE_TEST_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook(path);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn run_before_lock_file_test_hook(_path: &Path) {}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -57,36 +82,92 @@ pub(crate) struct ProjectLock {
     stale_recovered: bool,
 }
 
+struct LockAcquisitionGuard {
+    directory: PathBuf,
+    file: Option<File>,
+    identity: Option<LockIdentity>,
+    newly_created: bool,
+}
+
+impl LockAcquisitionGuard {
+    fn new(directory: &Path, file: File, existed: bool) -> Self {
+        Self {
+            directory: directory.to_owned(),
+            file: Some(file),
+            identity: None,
+            newly_created: !existed,
+        }
+    }
+
+    fn file(&self) -> &File {
+        self.file.as_ref().expect("acquisition file is present")
+    }
+
+    fn file_mut(&mut self) -> &mut File {
+        self.file.as_mut().expect("acquisition file is present")
+    }
+
+    fn set_identity(&mut self, identity: LockIdentity) {
+        self.identity = Some(identity);
+    }
+
+    fn finish(mut self) -> Result<(File, LockIdentity), ProjectIoError> {
+        let identity = self
+            .identity
+            .take()
+            .ok_or(ProjectIoError::FilesystemError)?;
+        let file = self.file.take().ok_or(ProjectIoError::FilesystemError)?;
+        self.newly_created = false;
+        Ok((file, identity))
+    }
+}
+
+impl Drop for LockAcquisitionGuard {
+    fn drop(&mut self) {
+        let Some(file) = self.file.as_ref() else {
+            return;
+        };
+        if self.newly_created {
+            let _ = remove_newly_created_lock(&self.directory, file, self.identity.as_ref());
+        }
+        let _ = FileExt::unlock(file);
+    }
+}
+
 impl ProjectLock {
     pub(crate) fn acquire(path: &Path, recover_stale: bool) -> Result<Self, ProjectIoError> {
         validate_project_extension(path)?;
         let canonical = validate_project_structure(path)?;
         let directory = BoundProjectDirectory::open(canonical)?;
         lock_project_identity(&directory)?;
+        run_before_lock_file_test_hook(directory.canonical_path());
         let lock_path = directory.bound_path().join(LOCK_FILE_NAME);
-        let (mut file, existed) = open_lock_file(&lock_path)?;
-        if let Err(error) = file.try_lock_exclusive() {
+        let (file, existed) = open_lock_file(&lock_path)?;
+        let mut acquisition = LockAcquisitionGuard::new(directory.bound_path(), file, existed);
+        if let Err(error) = acquisition.file().try_lock_exclusive() {
             return if error.kind() == std::io::ErrorKind::WouldBlock {
                 Err(ProjectIoError::ProjectLocked)
             } else {
                 Err(ProjectIoError::FilesystemError)
             };
         }
-        let identity = lock_identity(&file)?;
+        let identity = lock_identity(acquisition.file())?;
+        acquisition.set_identity(identity.clone());
+        directory.revalidate_stabilized()?;
 
         if existed {
-            let metadata_valid = read_metadata(&mut file)
+            let metadata_valid = read_metadata(acquisition.file_mut())
                 .ok()
                 .is_some_and(|metadata| metadata.is_valid());
             if !recover_stale {
-                let _ = FileExt::unlock(&file);
                 return Err(ProjectIoError::StaleProjectLock);
             }
             if !metadata_valid {
                 // Malformed crash residue still requires the explicit recovery path.
             }
         }
-        write_metadata(&mut file, &LockMetadata::new())?;
+        write_metadata(acquisition.file_mut(), &LockMetadata::new())?;
+        let (file, identity) = acquisition.finish()?;
 
         Ok(Self {
             directory,
@@ -108,6 +189,10 @@ impl ProjectLock {
         self.stale_recovered
     }
 
+    pub(crate) fn create_recovery_copy(&self) -> Result<RecoveryCopy, ProjectIoError> {
+        self.directory.create_recovery_copy()
+    }
+
     pub(crate) fn clean_close(&mut self) -> Result<(), ProjectIoError> {
         let file = self.file.as_ref().ok_or(ProjectIoError::FilesystemError)?;
         if lock_identity(file)? != self.identity {
@@ -118,6 +203,75 @@ impl ProjectLock {
         let _ = FileExt::unlock(&file);
         drop(file);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        LOCK_FILE_NAME, LockAcquisitionGuard, ProjectLock, open_lock_file,
+        set_before_lock_file_test_hook,
+    };
+    use crate::{CreateProjectRequest, ProjectProfile, create_project};
+    use std::fs;
+
+    #[test]
+    fn acquisition_guard_removes_only_a_newly_created_lock() {
+        let root = tempfile::tempdir().unwrap();
+        let lock_path = root.path().join(LOCK_FILE_NAME);
+        let (file, existed) = open_lock_file(&lock_path).unwrap();
+        assert!(!existed);
+        drop(LockAcquisitionGuard::new(root.path(), file, existed));
+        assert!(!lock_path.exists());
+
+        fs::write(&lock_path, b"residue").unwrap();
+        let (file, existed) = open_lock_file(&lock_path).unwrap();
+        assert!(existed);
+        drop(LockAcquisitionGuard::new(root.path(), file, existed));
+        assert_eq!(fs::read(lock_path).unwrap(), b"residue");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn acquisition_guard_preserves_a_replacement_path_entry() {
+        let root = tempfile::tempdir().unwrap();
+        let lock_path = root.path().join(LOCK_FILE_NAME);
+        let (file, existed) = open_lock_file(&lock_path).unwrap();
+        let guard = LockAcquisitionGuard::new(root.path(), file, existed);
+        fs::remove_file(&lock_path).unwrap();
+        fs::write(&lock_path, b"replacement").unwrap();
+        drop(guard);
+        assert_eq!(fs::read(lock_path).unwrap(), b"replacement");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn project_replacement_during_lock_handoff_is_rejected_and_new_lock_is_cleaned() {
+        let root = tempfile::tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Handoff".into(),
+            profile: ProjectProfile::Market,
+        })
+        .unwrap();
+        let visible = opened.project_path.clone();
+        let moved = root.path().join("preserved.twinproj");
+        set_before_lock_file_test_hook({
+            let visible = visible.clone();
+            let moved = moved.clone();
+            move |_| {
+                fs::rename(&visible, &moved).unwrap();
+                fs::create_dir(&visible).unwrap();
+            }
+        });
+
+        let error = match ProjectLock::acquire(&visible, true) {
+            Ok(_) => panic!("replacement handoff unexpectedly acquired the project"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), "INVALID_PROJECT_STRUCTURE");
+        assert!(!visible.join(LOCK_FILE_NAME).exists());
+        assert!(moved.join("manifest.json").is_file());
     }
 }
 
@@ -364,12 +518,48 @@ fn remove_locked_file(
     Ok(())
 }
 
+#[cfg(unix)]
+fn remove_newly_created_lock(
+    directory: &Path,
+    file: &File,
+    expected: Option<&LockIdentity>,
+) -> Result<(), ProjectIoError> {
+    let derived;
+    let expected = match expected {
+        Some(expected) => expected,
+        None => {
+            derived = lock_identity(file)?;
+            &derived
+        }
+    };
+    remove_locked_file(directory, file, expected)
+}
+
 #[cfg(windows)]
 fn remove_locked_file(
     _directory: &Path,
     file: &File,
     expected: &LockIdentity,
 ) -> Result<(), ProjectIoError> {
+    if lock_identity(file)? != *expected {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    mark_file_for_deletion(file)
+}
+
+#[cfg(windows)]
+fn remove_newly_created_lock(
+    _directory: &Path,
+    file: &File,
+    _expected: Option<&LockIdentity>,
+) -> Result<(), ProjectIoError> {
+    // The guard owns this exact handle from CREATE_NEW, so no path lookup or
+    // identity query is needed even when identity acquisition itself failed.
+    mark_file_for_deletion(file)
+}
+
+#[cfg(windows)]
+fn mark_file_for_deletion(file: &File) -> Result<(), ProjectIoError> {
     use std::ffi::c_void;
     use std::os::windows::io::AsRawHandle;
     #[repr(C)]
@@ -386,9 +576,6 @@ fn remove_locked_file(
         ) -> i32;
     }
     const FILE_DISPOSITION_INFO_CLASS: u32 = 4;
-    if lock_identity(file)? != *expected {
-        return Err(ProjectIoError::FilesystemError);
-    }
     let mut information = FileDispositionInfo { delete_file: 1 };
     // SAFETY: the handle carries DELETE access and the fixed-size input is initialized.
     if unsafe {
@@ -415,6 +602,15 @@ fn remove_locked_file(
     _directory: &Path,
     _file: &File,
     _expected: &LockIdentity,
+) -> Result<(), ProjectIoError> {
+    Err(ProjectIoError::FilesystemError)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn remove_newly_created_lock(
+    _directory: &Path,
+    _file: &File,
+    _expected: Option<&LockIdentity>,
 ) -> Result<(), ProjectIoError> {
     Err(ProjectIoError::FilesystemError)
 }
