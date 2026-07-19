@@ -67,6 +67,22 @@ fn rename_batch(before: &ProjectSnapshot, after: &ProjectSnapshot) -> CommitBatc
     }
 }
 
+#[test]
+fn session_exposes_bound_manifest_and_project_path() {
+    let root = tempdir().unwrap();
+    let opened = create_project(CreateProjectRequest {
+        parent: root.path().to_path_buf(),
+        name: "Getter Demo".into(),
+        profile: ProjectProfile::Showroom,
+    })
+    .unwrap();
+    let mut session = open_session(&opened.project_path, false).unwrap();
+
+    assert_eq!(session.manifest(), &opened.manifest);
+    assert_eq!(session.project_path(), opened.project_path.as_path());
+    session.close().unwrap();
+}
+
 fn assert_code(error: ProjectIoError, code: &str) {
     assert_eq!(error.code(), code, "unexpected error: {error}");
 }

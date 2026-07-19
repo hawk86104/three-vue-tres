@@ -1,0 +1,30 @@
+[package]
+name = "desktop-host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "desktop_host"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aethertwin-studio"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+project-io = { path = "../project-io" }
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+tauri-plugin-single-instance.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+tempfile.workspace = true

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/project-io"]
+members = ["crates/project-io", "crates/desktop-host"]
 
 [workspace.package]
 edition = "2024"

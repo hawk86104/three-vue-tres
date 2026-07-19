@@ -138,6 +138,7 @@ pub(crate) fn load_opened_project(
 }
 
 pub struct ProjectSession {
+    project_path: std::path::PathBuf,
     snapshot: ProjectSnapshot,
     manifest: ProjectManifest,
     save_state: SaveState,
@@ -150,6 +151,7 @@ impl std::fmt::Debug for ProjectSession {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("ProjectSession")
+            .field("project_path", &self.project_path)
             .field("snapshot", &self.snapshot)
             .field("manifest", &self.manifest)
             .field("save_state", &self.save_state)
@@ -245,6 +247,7 @@ pub fn open_session(
         SaveState::Dirty
     };
     Ok(ProjectSession {
+        project_path: opened_result.project_path,
         snapshot: opened_result.snapshot,
         manifest: opened_result.manifest,
         save_state,
@@ -263,6 +266,14 @@ pub fn recover_project(path: &Path, confirm: bool) -> Result<OpenedProject, Proj
 }
 
 impl ProjectSession {
+    pub fn project_path(&self) -> &Path {
+        &self.project_path
+    }
+
+    pub fn manifest(&self) -> &ProjectManifest {
+        &self.manifest
+    }
+
     pub fn snapshot(&self) -> &ProjectSnapshot {
         &self.snapshot
     }
