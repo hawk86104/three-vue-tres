@@ -76,6 +76,44 @@ pub struct ProjectSnapshot {
     pub assets: Vec<AssetRecord>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalOperation {
+    pub sequence: u64,
+    pub transaction_id: String,
+    pub command_type: String,
+    pub payload: serde_json::Value,
+    pub inverse_payload: serde_json::Value,
+    pub action: JournalAction,
+    pub timestamp: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JournalAction {
+    Apply,
+    Undo,
+    Redo,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SaveState {
+    Dirty,
+    Saving,
+    Saved,
+    Error,
+    Recovered,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitBatch {
+    pub before: ProjectSnapshot,
+    pub after: ProjectSnapshot,
+    pub journal: Vec<JournalOperation>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OpenedProject {
     pub project_path: PathBuf,
@@ -100,6 +138,20 @@ impl ProjectManifest {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
         Ok(())
+    }
+}
+
+impl JournalOperation {
+    pub fn rename(sequence: u64, transaction_id: &str, before: &str, after: &str) -> Self {
+        Self {
+            sequence,
+            transaction_id: transaction_id.into(),
+            command_type: "project.rename".into(),
+            payload: serde_json::json!({ "name": after }),
+            inverse_payload: serde_json::json!({ "name": before }),
+            action: JournalAction::Apply,
+            timestamp: Utc::now().to_rfc3339(),
+        }
     }
 }
 

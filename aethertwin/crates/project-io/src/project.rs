@@ -1,19 +1,28 @@
-use crate::model::{CURRENT_SCHEMA_VERSION, Floor, parse_contract_uuid};
+use crate::lock::ProjectLock;
+use crate::model::{
+    CURRENT_SCHEMA_VERSION, CommitBatch, Floor, JournalAction, JournalOperation, SaveState,
+    parse_contract_uuid,
+};
 use crate::paths::{
     PROJECT_SUFFIX, StagingWorkspace, canonical_parent, normalize_project_name,
     validate_project_extension, validate_project_structure,
 };
-use crate::schema::{create_database, latest_snapshot, open_database, read_meta};
+use crate::schema::{
+    checkpoint_wal, create_database, latest_snapshot, newest_valid_snapshot, open_database,
+    read_meta, snapshot_checksum, timestamp_now, upsert_meta,
+};
 use crate::{
     CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest, ProjectProfile,
     ProjectSnapshot, SpatialProject,
 };
 use chrono::{SecondsFormat, Utc};
+use rusqlite::{Connection, params};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const APP_VERSION: &str = "0.1.0";
@@ -71,8 +80,16 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
 pub fn open_project(path: &Path) -> Result<OpenedProject, ProjectIoError> {
     validate_project_extension(path)?;
     let project_path = validate_project_structure(path)?;
-    let mut manifest = read_manifest(&project_path.join("manifest.json"))?;
-    let connection = open_database(&project_path.join("project.db"))?;
+    load_opened_project(&project_path, &project_path, true)
+}
+
+pub(crate) fn load_opened_project(
+    io_path: &Path,
+    returned_path: &Path,
+    repair_manifest: bool,
+) -> Result<OpenedProject, ProjectIoError> {
+    let mut manifest = read_manifest(&io_path.join("manifest.json"))?;
+    let connection = open_database(&io_path.join("project.db"))?;
 
     let database_schema: u32 = read_immutable_meta(&connection, "schemaVersion")?;
     let database_id_text: String = read_immutable_meta(&connection, "projectId")?;
@@ -107,15 +124,752 @@ pub fn open_project(path: &Path) -> Result<OpenedProject, ProjectIoError> {
         manifest.name = database_name;
         manifest.updated_at = database_updated_at;
         manifest.validate()?;
-        write_manifest_atomically(&project_path, &manifest)?;
+        if repair_manifest {
+            write_manifest_atomically(io_path, &manifest)?;
+        }
     }
 
     Ok(OpenedProject {
-        project_path,
+        project_path: returned_path.to_owned(),
         manifest,
         snapshot,
         recovered: false,
     })
+}
+
+pub struct ProjectSession {
+    snapshot: ProjectSnapshot,
+    manifest: ProjectManifest,
+    save_state: SaveState,
+    connection: Option<Connection>,
+    lock: Option<ProjectLock>,
+    closed: bool,
+}
+
+impl std::fmt::Debug for ProjectSession {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProjectSession")
+            .field("snapshot", &self.snapshot)
+            .field("manifest", &self.manifest)
+            .field("save_state", &self.save_state)
+            .field("closed", &self.closed)
+            .finish_non_exhaustive()
+    }
+}
+
+pub fn open_session(
+    path: &Path,
+    recover_stale_lock: bool,
+) -> Result<ProjectSession, ProjectIoError> {
+    let mut lock = ProjectLock::acquire(path, recover_stale_lock)?;
+    let recovered = lock.stale_recovered();
+    let opened_result = if recovered {
+        recover_with_lock(&lock)?
+    } else {
+        match load_opened_project(lock.bound_path(), lock.canonical_path(), true) {
+            Ok(opened) => opened,
+            Err(error) => {
+                let _ = lock.clean_close();
+                return Err(error);
+            }
+        }
+    };
+    let connection = match (|| {
+        let connection = open_database(&lock.bound_path().join("project.db"))?;
+        upsert_meta(&connection, "cleanShutdown", &false)?;
+        Ok::<_, ProjectIoError>(connection)
+    })() {
+        Ok(connection) => connection,
+        Err(error) => {
+            if !recovered {
+                let _ = lock.clean_close();
+            }
+            return Err(error);
+        }
+    };
+    let save_state = if recovered {
+        SaveState::Recovered
+    } else if opened_result.snapshot.sequence == opened_result.snapshot.checkpoint_sequence {
+        SaveState::Saved
+    } else {
+        SaveState::Dirty
+    };
+    Ok(ProjectSession {
+        snapshot: opened_result.snapshot,
+        manifest: opened_result.manifest,
+        save_state,
+        connection: Some(connection),
+        lock: Some(lock),
+        closed: false,
+    })
+}
+
+pub fn recover_project(path: &Path, confirm: bool) -> Result<OpenedProject, ProjectIoError> {
+    if !confirm {
+        return Err(ProjectIoError::StaleProjectLock);
+    }
+    let lock = ProjectLock::acquire(path, true)?;
+    recover_with_lock(&lock)
+}
+
+impl ProjectSession {
+    pub fn snapshot(&self) -> &ProjectSnapshot {
+        &self.snapshot
+    }
+
+    pub fn save_state(&self) -> SaveState {
+        self.save_state
+    }
+
+    pub fn commit(&mut self, batch: CommitBatch) -> Result<(), ProjectIoError> {
+        let result = self.commit_inner(batch);
+        if result.is_err() {
+            self.save_state = SaveState::Error;
+        }
+        result
+    }
+
+    fn commit_inner(&mut self, batch: CommitBatch) -> Result<(), ProjectIoError> {
+        if self.closed || batch.before != self.snapshot {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        validate_commit_batch(&batch)?;
+        let connection = self
+            .connection
+            .as_mut()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let last_committed: u64 = read_meta(connection, "lastCommittedSequence")?;
+        if last_committed != self.snapshot.sequence {
+            return Err(ProjectIoError::DatabaseError);
+        }
+
+        let transaction = connection.transaction()?;
+        let reused_transaction: bool = transaction.query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM command_journal WHERE transaction_id = ?1
+             )",
+            [&batch.journal[0].transaction_id],
+            |row| row.get(0),
+        )?;
+        if reused_transaction {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        write_entity_records(&transaction, &batch.after)?;
+        write_asset_records(&transaction, &batch.after)?;
+        for operation in &batch.journal {
+            transaction.execute(
+                "INSERT INTO command_journal(
+                   sequence, transaction_id, command_type, payload_json,
+                   inverse_payload_json, action, created_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    sequence_i64(operation.sequence)?,
+                    operation.transaction_id,
+                    operation.command_type,
+                    serde_json::to_string(&operation.payload)
+                        .map_err(|_| ProjectIoError::DatabaseError)?,
+                    serde_json::to_string(&operation.inverse_payload)
+                        .map_err(|_| ProjectIoError::DatabaseError)?,
+                    journal_action_text(operation.action),
+                    operation.timestamp,
+                ],
+            )?;
+        }
+        let updated_at = timestamp_now();
+        upsert_meta(&transaction, "lastCommittedSequence", &batch.after.sequence)?;
+        upsert_meta(&transaction, "name", &batch.after.project.name)?;
+        upsert_meta(&transaction, "updatedAt", &updated_at)?;
+        upsert_meta(&transaction, "cleanShutdown", &false)?;
+        transaction.commit()?;
+
+        self.snapshot = batch.after;
+        self.save_state = SaveState::Dirty;
+        Ok(())
+    }
+
+    pub fn checkpoint(&mut self) -> Result<ProjectManifest, ProjectIoError> {
+        self.save_state = SaveState::Saving;
+        let result = self.checkpoint_inner();
+        if result.is_err() {
+            self.save_state = SaveState::Error;
+        }
+        result
+    }
+
+    fn checkpoint_inner(&mut self) -> Result<ProjectManifest, ProjectIoError> {
+        if self.closed {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        self.ensure_connection()?;
+        let mut checkpoint = self.snapshot.clone();
+        checkpoint.checkpoint_sequence = checkpoint.sequence;
+        checkpoint.validate()?;
+        let snapshot_json =
+            serde_json::to_string(&checkpoint).map_err(|_| ProjectIoError::DatabaseError)?;
+        let updated_at = timestamp_now();
+        let connection = self
+            .connection
+            .as_mut()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "INSERT INTO snapshots(sequence, snapshot_json, checksum, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(sequence) DO UPDATE SET
+               snapshot_json = excluded.snapshot_json,
+               checksum = excluded.checksum,
+               created_at = excluded.created_at",
+            params![
+                sequence_i64(checkpoint.sequence)?,
+                snapshot_json,
+                snapshot_checksum(&snapshot_json),
+                updated_at,
+            ],
+        )?;
+        upsert_meta(&transaction, "lastCheckpointSequence", &checkpoint.sequence)?;
+        upsert_meta(&transaction, "name", &checkpoint.project.name)?;
+        upsert_meta(&transaction, "updatedAt", &updated_at)?;
+        upsert_meta(&transaction, "cleanShutdown", &false)?;
+        transaction.commit()?;
+
+        self.snapshot = checkpoint;
+        let mut manifest = self.manifest.clone();
+        manifest.name = self.snapshot.project.name.clone();
+        manifest.updated_at = updated_at;
+        manifest.validate()?;
+        let io_path = self
+            .lock
+            .as_ref()
+            .ok_or(ProjectIoError::FilesystemError)?
+            .bound_path();
+        write_manifest_atomically(io_path, &manifest)?;
+        self.manifest = manifest.clone();
+        self.save_state = SaveState::Saved;
+        Ok(manifest)
+    }
+
+    pub fn close(&mut self) -> Result<(), ProjectIoError> {
+        if self.closed {
+            return Ok(());
+        }
+        if let Err(error) = self.close_inner() {
+            self.save_state = SaveState::Error;
+            return Err(error);
+        }
+        self.save_state = SaveState::Saved;
+        self.closed = true;
+        Ok(())
+    }
+
+    fn close_inner(&mut self) -> Result<(), ProjectIoError> {
+        self.checkpoint_inner()?;
+        let connection = self
+            .connection
+            .as_ref()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        upsert_meta(connection, "cleanShutdown", &true)?;
+        checkpoint_wal(connection)?;
+        let connection = self
+            .connection
+            .take()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        if let Err((connection, _)) = connection.close() {
+            self.connection = Some(connection);
+            return Err(ProjectIoError::DatabaseError);
+        }
+        self.lock
+            .as_mut()
+            .ok_or(ProjectIoError::FilesystemError)?
+            .clean_close()?;
+        self.lock.take();
+        Ok(())
+    }
+
+    fn ensure_connection(&mut self) -> Result<(), ProjectIoError> {
+        if self.connection.is_none() {
+            let path = self
+                .lock
+                .as_ref()
+                .ok_or(ProjectIoError::DatabaseError)?
+                .bound_path()
+                .join("project.db");
+            self.connection = Some(open_database(&path)?);
+        }
+        Ok(())
+    }
+}
+
+impl Drop for ProjectSession {
+    fn drop(&mut self) {
+        self.connection.take();
+        // ProjectLock::drop releases only the OS lock; crash metadata is intentionally retained.
+    }
+}
+
+fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> {
+    batch.before.validate()?;
+    batch.after.validate()?;
+    if batch.journal.is_empty()
+        || batch.after.checkpoint_sequence != batch.before.checkpoint_sequence
+        || batch.after.sequence
+            != batch
+                .before
+                .sequence
+                .checked_add(batch.journal.len() as u64)
+                .ok_or(ProjectIoError::DatabaseError)?
+    {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    let transaction_id = &batch.journal[0].transaction_id;
+    let action = batch.journal[0].action;
+    if !valid_transaction_id(transaction_id) {
+        return Err(ProjectIoError::DatabaseError);
+    }
+
+    let mut replayed = batch.before.clone();
+    for (index, operation) in batch.journal.iter().enumerate() {
+        let expected_sequence = batch.before.sequence + index as u64 + 1;
+        if operation.sequence != expected_sequence
+            || operation.transaction_id != *transaction_id
+            || operation.action != action
+            || !valid_journal_timestamp(&operation.timestamp)
+        {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        apply_operation(&mut replayed, operation)?;
+    }
+    if replayed != batch.after {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    Ok(())
+}
+
+fn valid_transaction_id(value: &str) -> bool {
+    let Ok(uuid) = Uuid::parse_str(value) else {
+        return false;
+    };
+    matches!(uuid.get_version_num(), 1..=5)
+        && matches!(uuid.get_variant(), uuid::Variant::RFC4122)
+        && uuid.hyphenated().to_string() == value.to_ascii_lowercase()
+}
+
+fn valid_journal_timestamp(value: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(value).is_ok()
+}
+
+fn apply_operation(
+    snapshot: &mut ProjectSnapshot,
+    operation: &JournalOperation,
+) -> Result<(), ProjectIoError> {
+    match operation.command_type.as_str() {
+        "project.rename" => {
+            let payload = operation
+                .payload
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(ProjectIoError::DatabaseError)?;
+            let inverse = operation
+                .inverse_payload
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(ProjectIoError::DatabaseError)?;
+            let (expected_before, next) = match operation.action {
+                JournalAction::Undo => (payload, inverse),
+                JournalAction::Apply | JournalAction::Redo => (inverse, payload),
+            };
+            if snapshot.project.name != expected_before {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            snapshot.project.name = next.to_owned();
+        }
+        "project.tags.set" => {
+            let payload = string_array(&operation.payload, "tags")?;
+            let inverse = string_array(&operation.inverse_payload, "tags")?;
+            let (expected_before, next) = match operation.action {
+                JournalAction::Undo => (&payload, &inverse),
+                JournalAction::Apply | JournalAction::Redo => (&inverse, &payload),
+            };
+            if &snapshot.project.tags != expected_before {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            snapshot.project.tags = next.clone();
+        }
+        _ => return Err(ProjectIoError::DatabaseError),
+    }
+    snapshot.sequence = operation.sequence;
+    snapshot.validate()?;
+    Ok(())
+}
+
+fn string_array(value: &Value, key: &str) -> Result<Vec<String>, ProjectIoError> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or(ProjectIoError::DatabaseError)?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or(ProjectIoError::DatabaseError)
+        })
+        .collect()
+}
+
+fn write_entity_records(
+    connection: &Connection,
+    snapshot: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    connection.execute("DELETE FROM entity_records", [])?;
+    connection.execute(
+        "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
+         VALUES (?1, 'project', NULL, ?2, ?3)",
+        params![
+            snapshot.project.id.hyphenated().to_string(),
+            sequence_i64(snapshot.sequence)?,
+            serde_json::to_string(&snapshot.project).map_err(|_| ProjectIoError::DatabaseError)?,
+        ],
+    )?;
+    for floor in &snapshot.project.floors {
+        connection.execute(
+            "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
+             VALUES (?1, 'floor', ?2, ?3, ?4)",
+            params![
+                floor.id.hyphenated().to_string(),
+                snapshot.project.id.hyphenated().to_string(),
+                sequence_i64(snapshot.sequence)?,
+                serde_json::to_string(floor).map_err(|_| ProjectIoError::DatabaseError)?,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn write_asset_records(
+    connection: &Connection,
+    snapshot: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    connection.execute("DELETE FROM asset_records", [])?;
+    for asset in &snapshot.assets {
+        connection.execute(
+            "INSERT INTO asset_records(
+               id, sha256, relative_path, media_type, size, metadata_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, '{}')",
+            params![
+                asset.id.hyphenated().to_string(),
+                asset.sha256,
+                asset.relative_path,
+                asset.media_type,
+                sequence_i64(asset.size)?,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn journal_action_text(action: JournalAction) -> &'static str {
+    match action {
+        JournalAction::Apply => "apply",
+        JournalAction::Undo => "undo",
+        JournalAction::Redo => "redo",
+    }
+}
+
+fn parse_journal_action(value: &str) -> Result<JournalAction, ProjectIoError> {
+    match value {
+        "apply" => Ok(JournalAction::Apply),
+        "undo" => Ok(JournalAction::Undo),
+        "redo" => Ok(JournalAction::Redo),
+        _ => Err(ProjectIoError::RecoveryFailed),
+    }
+}
+
+fn sequence_i64(value: u64) -> Result<i64, ProjectIoError> {
+    i64::try_from(value).map_err(|_| ProjectIoError::DatabaseError)
+}
+
+fn recover_with_lock(lock: &ProjectLock) -> Result<OpenedProject, ProjectIoError> {
+    let recovery_path = create_recovery_copy(lock.bound_path())?;
+    reconstruct_recovery(&recovery_path, lock.canonical_path())
+        .map_err(|_| ProjectIoError::RecoveryFailed)
+}
+
+fn create_recovery_copy(project_path: &Path) -> Result<PathBuf, ProjectIoError> {
+    let derived = project_path.join("derived");
+    let recovery_root = derived.join("recovery");
+    match fs::create_dir(&recovery_root) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = fs::symlink_metadata(&recovery_root)?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        Err(_) => return Err(ProjectIoError::FilesystemError),
+    }
+    let canonical_derived = derived.canonicalize()?;
+    let canonical_recovery = recovery_root.canonicalize()?;
+    if canonical_recovery.parent() != Some(canonical_derived.as_path()) {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+
+    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ");
+    let destination = recovery_root.join(format!("{timestamp}-{}", Uuid::new_v4()));
+    fs::create_dir(&destination)?;
+    for name in [
+        "manifest.json",
+        "project.db",
+        "project.db-wal",
+        "project.db-shm",
+    ] {
+        let source = project_path.join(name);
+        match fs::symlink_metadata(&source) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+                fs::copy(&source, destination.join(name))?;
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && matches!(name, "project.db-wal" | "project.db-shm") => {}
+            Err(_) => return Err(ProjectIoError::FilesystemError),
+        }
+    }
+    Ok(destination)
+}
+
+fn reconstruct_recovery(
+    recovery_path: &Path,
+    project_path: &Path,
+) -> Result<OpenedProject, ProjectIoError> {
+    let mut manifest = read_manifest(&recovery_path.join("manifest.json"))?;
+    let connection = open_database(&recovery_path.join("project.db"))?;
+    validate_recovery_identity(&connection, &manifest)?;
+    let mut snapshot = newest_valid_snapshot(&connection)?;
+    if snapshot.schema_version != manifest.schema_version
+        || snapshot.project.id != manifest.project_id
+        || snapshot.project.profile != manifest.profile
+    {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    let last_committed: u64 = read_meta(&connection, "lastCommittedSequence")?;
+    if snapshot.sequence > last_committed {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+
+    let operations = read_recovery_journal(&connection, snapshot.sequence)?;
+    validate_recovery_journal_groups(&operations)?;
+    let checkpoint_sequence = snapshot.sequence;
+    for (index, operation) in operations.iter().enumerate() {
+        if operation.sequence != checkpoint_sequence + index as u64 + 1 {
+            return Err(ProjectIoError::RecoveryFailed);
+        }
+        apply_operation(&mut snapshot, operation).map_err(|_| ProjectIoError::RecoveryFailed)?;
+    }
+    if snapshot.sequence != last_committed {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    validate_entity_invariants(&connection, &snapshot)?;
+
+    let database_name: String = read_meta(&connection, "name")?;
+    let database_updated_at: String = read_meta(&connection, "updatedAt")?;
+    if database_name != snapshot.project.name {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    manifest.name = database_name;
+    manifest.updated_at = database_updated_at;
+    manifest.validate()?;
+    drop(connection);
+    Ok(OpenedProject {
+        project_path: project_path.to_owned(),
+        manifest,
+        snapshot,
+        recovered: true,
+    })
+}
+
+fn validate_recovery_identity(
+    connection: &Connection,
+    manifest: &ProjectManifest,
+) -> Result<(), ProjectIoError> {
+    let schema_version: u32 = read_immutable_meta(connection, "schemaVersion")?;
+    let project_id: String = read_immutable_meta(connection, "projectId")?;
+    let profile: ProjectProfile = read_immutable_meta(connection, "profile")?;
+    let created_at: String = read_immutable_meta(connection, "createdAt")?;
+    let app_version: String = read_immutable_meta(connection, "appVersion")?;
+    let minimum: String = read_immutable_meta(connection, "minCompatibleAppVersion")?;
+    if schema_version != manifest.schema_version
+        || parse_contract_uuid(&project_id).ok() != Some(manifest.project_id)
+        || profile != manifest.profile
+        || created_at != manifest.created_at
+        || app_version != manifest.app_version
+        || minimum != manifest.min_compatible_app_version
+    {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    Ok(())
+}
+
+fn read_recovery_journal(
+    connection: &Connection,
+    after_sequence: u64,
+) -> Result<Vec<JournalOperation>, ProjectIoError> {
+    let mut statement = connection.prepare(
+        "SELECT sequence, transaction_id, command_type, payload_json,
+                inverse_payload_json, action, created_at
+         FROM command_journal WHERE sequence > ?1 ORDER BY sequence",
+    )?;
+    statement
+        .query_map([sequence_i64(after_sequence)?], |row| {
+            let sequence: i64 = row.get(0)?;
+            let payload: String = row.get(3)?;
+            let inverse: String = row.get(4)?;
+            let action: String = row.get(5)?;
+            Ok((
+                sequence,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                payload,
+                inverse,
+                action,
+                row.get::<_, String>(6)?,
+            ))
+        })?
+        .map(|row| {
+            let (sequence, transaction_id, command_type, payload, inverse, action, timestamp) =
+                row?;
+            if sequence < 0
+                || !valid_transaction_id(&transaction_id)
+                || !valid_journal_timestamp(&timestamp)
+            {
+                return Err(ProjectIoError::RecoveryFailed);
+            }
+            Ok(JournalOperation {
+                sequence: sequence as u64,
+                transaction_id,
+                command_type,
+                payload: serde_json::from_str(&payload)
+                    .map_err(|_| ProjectIoError::RecoveryFailed)?,
+                inverse_payload: serde_json::from_str(&inverse)
+                    .map_err(|_| ProjectIoError::RecoveryFailed)?,
+                action: parse_journal_action(&action)?,
+                timestamp,
+            })
+        })
+        .collect()
+}
+
+fn validate_recovery_journal_groups(operations: &[JournalOperation]) -> Result<(), ProjectIoError> {
+    let mut completed = BTreeSet::new();
+    let mut current: Option<(&str, JournalAction)> = None;
+    for operation in operations {
+        match current {
+            Some((transaction_id, action)) if transaction_id == operation.transaction_id => {
+                if action != operation.action {
+                    return Err(ProjectIoError::RecoveryFailed);
+                }
+            }
+            Some((transaction_id, _)) => {
+                completed.insert(transaction_id.to_owned());
+                if completed.contains(&operation.transaction_id) {
+                    return Err(ProjectIoError::RecoveryFailed);
+                }
+                current = Some((&operation.transaction_id, operation.action));
+            }
+            None => current = Some((&operation.transaction_id, operation.action)),
+        }
+    }
+    Ok(())
+}
+
+fn validate_entity_invariants(
+    connection: &Connection,
+    snapshot: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    let actual_entities: BTreeMap<String, (String, Option<String>, i64, String)> = connection
+        .prepare(
+            "SELECT id, entity_type, parent_id, revision, payload_json
+             FROM entity_records ORDER BY id",
+        )?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                ),
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+    if snapshot.sequence != 0 || !actual_entities.is_empty() {
+        let mut expected = BTreeMap::new();
+        expected.insert(
+            snapshot.project.id.hyphenated().to_string(),
+            (
+                "project".to_owned(),
+                None,
+                sequence_i64(snapshot.sequence)?,
+                serde_json::to_string(&snapshot.project)
+                    .map_err(|_| ProjectIoError::RecoveryFailed)?,
+            ),
+        );
+        for floor in &snapshot.project.floors {
+            expected.insert(
+                floor.id.hyphenated().to_string(),
+                (
+                    "floor".to_owned(),
+                    Some(snapshot.project.id.hyphenated().to_string()),
+                    sequence_i64(snapshot.sequence)?,
+                    serde_json::to_string(floor).map_err(|_| ProjectIoError::RecoveryFailed)?,
+                ),
+            );
+        }
+        if actual_entities != expected {
+            return Err(ProjectIoError::RecoveryFailed);
+        }
+    }
+
+    let actual_assets: BTreeMap<String, (String, String, String, i64)> = connection
+        .prepare(
+            "SELECT id, sha256, relative_path, media_type, size FROM asset_records ORDER BY id",
+        )?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ),
+            ))
+        })?
+        .collect::<Result<_, _>>()?;
+    let expected_assets = snapshot
+        .assets
+        .iter()
+        .map(|asset| {
+            Ok((
+                asset.id.hyphenated().to_string(),
+                (
+                    asset.sha256.clone(),
+                    asset.relative_path.clone(),
+                    asset.media_type.clone(),
+                    sequence_i64(asset.size)?,
+                ),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, ProjectIoError>>()?;
+    if actual_assets != expected_assets {
+        return Err(ProjectIoError::RecoveryFailed);
+    }
+    Ok(())
 }
 
 fn read_immutable_meta<T: DeserializeOwned>(
@@ -153,7 +907,7 @@ fn path_entry_exists(path: &Path) -> bool {
     }
 }
 
-fn read_manifest(path: &Path) -> Result<ProjectManifest, ProjectIoError> {
+pub(crate) fn read_manifest(path: &Path) -> Result<ProjectManifest, ProjectIoError> {
     let bytes = fs::read(path).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
     let value: Value =
         serde_json::from_slice(&bytes).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
@@ -170,7 +924,7 @@ fn read_manifest(path: &Path) -> Result<ProjectManifest, ProjectIoError> {
     Ok(manifest)
 }
 
-fn write_manifest_atomically(
+pub(crate) fn write_manifest_atomically(
     project_path: &Path,
     manifest: &ProjectManifest,
 ) -> Result<(), ProjectIoError> {

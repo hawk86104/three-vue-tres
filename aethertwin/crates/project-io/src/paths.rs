@@ -56,12 +56,15 @@ fn strip_suffix_ascii_case(value: &str) -> Option<&str> {
 pub fn validate_relative_resource_path(value: &str) -> Result<(), ProjectIoError> {
     let path = Path::new(value);
     if value.is_empty()
+        || value.contains('\0')
         || path.is_absolute()
         || value.starts_with('/')
         || value.starts_with('\\')
         || value.contains('\\')
         || value.as_bytes().get(1) == Some(&b':')
-        || value.split('/').any(|segment| segment == "..")
+        || value
+            .split('/')
+            .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
     {
         return Err(ProjectIoError::InvalidResourcePath);
     }
@@ -112,6 +115,57 @@ pub(crate) fn validate_project_structure(path: &Path) -> Result<PathBuf, Project
         }
     }
     Ok(canonical)
+}
+
+pub(crate) struct BoundProjectDirectory {
+    canonical_path: PathBuf,
+    bound_path: PathBuf,
+    _file: File,
+}
+
+impl BoundProjectDirectory {
+    pub(crate) fn open(canonical_path: PathBuf) -> Result<Self, ProjectIoError> {
+        let file = bind_existing_directory(&canonical_path)?;
+        let expected = file_identity(&file)?;
+        let bound_path = bound_directory_path(&file, &canonical_path)?;
+        let validated = validate_project_structure(&bound_path)?;
+        if validated != canonical_path || file_identity(&file)? != expected {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        Ok(Self {
+            canonical_path,
+            bound_path,
+            _file: file,
+        })
+    }
+
+    pub(crate) fn canonical_path(&self) -> &Path {
+        &self.canonical_path
+    }
+
+    pub(crate) fn bound_path(&self) -> &Path {
+        &self.bound_path
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn file(&self) -> &File {
+        &self._file
+    }
+}
+
+#[cfg(windows)]
+fn bind_existing_directory(path: &Path) -> Result<File, ProjectIoError> {
+    open_identity_directory(path)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn bind_existing_directory(path: &Path) -> Result<File, ProjectIoError> {
+    open_directory(path)
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
+fn bind_existing_directory(_path: &Path) -> Result<File, ProjectIoError> {
+    Err(ProjectIoError::FilesystemError)
 }
 
 pub(crate) struct StagingWorkspace {

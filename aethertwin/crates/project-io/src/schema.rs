@@ -90,6 +90,7 @@ pub(crate) fn create_database(
         "lastCheckpointSequence",
         &snapshot.checkpoint_sequence,
     )?;
+    write_meta(&transaction, "cleanShutdown", &true)?;
 
     let snapshot_json =
         serde_json::to_string(snapshot).map_err(|_| ProjectIoError::DatabaseError)?;
@@ -231,6 +232,34 @@ pub(crate) fn latest_snapshot(connection: &Connection) -> Result<ProjectSnapshot
     Ok(snapshot)
 }
 
+pub(crate) fn newest_valid_snapshot(
+    connection: &Connection,
+) -> Result<ProjectSnapshot, ProjectIoError> {
+    let mut statement = connection.prepare(
+        "SELECT sequence, snapshot_json, checksum FROM snapshots ORDER BY sequence DESC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (sequence, snapshot_json, checksum) = row?;
+        if sequence < 0 || checksum != snapshot_checksum(&snapshot_json) {
+            continue;
+        }
+        let Ok(snapshot) = serde_json::from_str::<ProjectSnapshot>(&snapshot_json) else {
+            continue;
+        };
+        if snapshot.sequence == sequence as u64 && snapshot.validate().is_ok() {
+            return Ok(snapshot);
+        }
+    }
+    Err(ProjectIoError::RecoveryFailed)
+}
+
 fn write_meta(
     connection: &Connection,
     key: &str,
@@ -242,6 +271,29 @@ fn write_meta(
         params![key, value_json],
     )?;
     Ok(())
+}
+
+pub(crate) fn upsert_meta(
+    connection: &Connection,
+    key: &str,
+    value: &impl Serialize,
+) -> Result<(), ProjectIoError> {
+    let value_json = serde_json::to_string(value).map_err(|_| ProjectIoError::DatabaseError)?;
+    connection.execute(
+        "INSERT INTO project_meta(key, value_json) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+        params![key, value_json],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn checkpoint_wal(connection: &Connection) -> Result<(), ProjectIoError> {
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+    Ok(())
+}
+
+pub(crate) fn timestamp_now() -> String {
+    now()
 }
 
 fn now() -> String {
