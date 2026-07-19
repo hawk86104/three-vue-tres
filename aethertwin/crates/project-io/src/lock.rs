@@ -6,9 +6,10 @@ use crate::paths::{
 use chrono::{SecondsFormat, Utc};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use std::ffi::{OsStr, OsString};
 use std::fs::File;
 #[cfg(unix)]
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -84,15 +85,17 @@ pub(crate) struct ProjectLock {
 
 struct LockAcquisitionGuard {
     directory: PathBuf,
+    leaf: OsString,
     file: Option<File>,
     identity: Option<LockIdentity>,
     newly_created: bool,
 }
 
 impl LockAcquisitionGuard {
-    fn new(directory: &Path, file: File, existed: bool) -> Self {
+    fn new(directory: &Path, leaf: OsString, file: File, existed: bool) -> Self {
         Self {
             directory: directory.to_owned(),
+            leaf,
             file: Some(file),
             identity: None,
             newly_created: !existed,
@@ -109,6 +112,11 @@ impl LockAcquisitionGuard {
 
     fn set_identity(&mut self, identity: LockIdentity) {
         self.identity = Some(identity);
+    }
+
+    #[cfg(unix)]
+    fn published(&mut self) {
+        self.leaf = OsString::from(LOCK_FILE_NAME);
     }
 
     fn finish(mut self) -> Result<(File, LockIdentity), ProjectIoError> {
@@ -128,7 +136,12 @@ impl Drop for LockAcquisitionGuard {
             return;
         };
         if self.newly_created {
-            let _ = remove_newly_created_lock(&self.directory, file, self.identity.as_ref());
+            let _ = remove_newly_created_lock(
+                &self.directory,
+                &self.leaf,
+                file,
+                self.identity.as_ref(),
+            );
         }
         let _ = FileExt::unlock(file);
     }
@@ -141,9 +154,10 @@ impl ProjectLock {
         let directory = BoundProjectDirectory::open(canonical)?;
         lock_project_identity(&directory)?;
         run_before_lock_file_test_hook(directory.canonical_path());
-        let lock_path = directory.bound_path().join(LOCK_FILE_NAME);
-        let (file, existed) = open_lock_file(&lock_path)?;
-        let mut acquisition = LockAcquisitionGuard::new(directory.bound_path(), file, existed);
+        let opened = open_lock_file(&directory)?;
+        let existed = opened.existed;
+        let mut acquisition =
+            LockAcquisitionGuard::new(directory.bound_path(), opened.leaf, opened.file, existed);
         if let Err(error) = acquisition.file().try_lock_exclusive() {
             return if error.kind() == std::io::ErrorKind::WouldBlock {
                 Err(ProjectIoError::ProjectLocked)
@@ -167,6 +181,7 @@ impl ProjectLock {
             }
         }
         write_metadata(acquisition.file_mut(), &LockMetadata::new())?;
+        publish_new_lock(&directory, &mut acquisition)?;
         let (file, identity) = acquisition.finish()?;
 
         Ok(Self {
@@ -198,7 +213,12 @@ impl ProjectLock {
         if lock_identity(file)? != self.identity {
             return Err(ProjectIoError::FilesystemError);
         }
-        remove_locked_file(self.directory.bound_path(), file, &self.identity)?;
+        remove_locked_file(
+            self.directory.bound_path(),
+            OsStr::new(LOCK_FILE_NAME),
+            file,
+            &self.identity,
+        )?;
         let file = self.file.take().ok_or(ProjectIoError::FilesystemError)?;
         let _ = FileExt::unlock(&file);
         drop(file);
@@ -209,25 +229,46 @@ impl ProjectLock {
 #[cfg(test)]
 mod tests {
     use super::{
-        LOCK_FILE_NAME, LockAcquisitionGuard, ProjectLock, open_lock_file,
-        set_before_lock_file_test_hook,
+        LOCK_FILE_NAME, LockAcquisitionGuard, ProjectLock, set_before_lock_file_test_hook,
     };
     use crate::{CreateProjectRequest, ProjectProfile, create_project};
     use std::fs;
+
+    #[cfg(windows)]
+    fn open_test_lock(path: &std::path::Path, create_new: bool) -> std::fs::File {
+        super::open_windows_lock_file(path, create_new).unwrap()
+    }
+
+    #[cfg(unix)]
+    fn open_test_lock(path: &std::path::Path, create_new: bool) -> std::fs::File {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create_new(create_new);
+        if !create_new {
+            options.custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+        }
+        options.open(path).unwrap()
+    }
 
     #[test]
     fn acquisition_guard_removes_only_a_newly_created_lock() {
         let root = tempfile::tempdir().unwrap();
         let lock_path = root.path().join(LOCK_FILE_NAME);
-        let (file, existed) = open_lock_file(&lock_path).unwrap();
-        assert!(!existed);
-        drop(LockAcquisitionGuard::new(root.path(), file, existed));
+        let file = open_test_lock(&lock_path, true);
+        let mut guard = LockAcquisitionGuard::new(root.path(), LOCK_FILE_NAME.into(), file, false);
+        let identity = super::lock_identity(guard.file()).unwrap();
+        guard.set_identity(identity);
+        drop(guard);
         assert!(!lock_path.exists());
 
         fs::write(&lock_path, b"residue").unwrap();
-        let (file, existed) = open_lock_file(&lock_path).unwrap();
-        assert!(existed);
-        drop(LockAcquisitionGuard::new(root.path(), file, existed));
+        let file = open_test_lock(&lock_path, false);
+        drop(LockAcquisitionGuard::new(
+            root.path(),
+            LOCK_FILE_NAME.into(),
+            file,
+            true,
+        ));
         assert_eq!(fs::read(lock_path).unwrap(), b"residue");
     }
 
@@ -236,12 +277,43 @@ mod tests {
     fn acquisition_guard_preserves_a_replacement_path_entry() {
         let root = tempfile::tempdir().unwrap();
         let lock_path = root.path().join(LOCK_FILE_NAME);
-        let (file, existed) = open_lock_file(&lock_path).unwrap();
-        let guard = LockAcquisitionGuard::new(root.path(), file, existed);
+        let file = open_test_lock(&lock_path, true);
+        let mut guard = LockAcquisitionGuard::new(root.path(), LOCK_FILE_NAME.into(), file, false);
+        let identity = super::lock_identity(guard.file()).unwrap();
+        guard.set_identity(identity);
         fs::remove_file(&lock_path).unwrap();
         fs::write(&lock_path, b"replacement").unwrap();
         drop(guard);
         assert_eq!(fs::read(lock_path).unwrap(), b"replacement");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn identity_failure_leaves_no_published_or_pending_stale_lock() {
+        let root = tempfile::tempdir().unwrap();
+        let pending_leaf = format!(".aethertwin.lock.pending-{}", uuid::Uuid::new_v4());
+        let pending_path = root.path().join(&pending_leaf);
+        let file = open_test_lock(&pending_path, true);
+        drop(LockAcquisitionGuard::new(
+            root.path(),
+            pending_leaf.into(),
+            file,
+            false,
+        ));
+
+        assert!(!root.path().join(LOCK_FILE_NAME).exists());
+        assert!(!pending_path.exists());
+        let quarantines: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".aethertwin.lock.quarantine-")
+            })
+            .collect();
+        assert_eq!(quarantines.len(), 1);
     }
 
     #[cfg(windows)]
@@ -321,36 +393,68 @@ fn write_metadata(file: &mut File, metadata: &LockMetadata) -> Result<(), Projec
     Ok(())
 }
 
+struct OpenedLockFile {
+    file: File,
+    leaf: OsString,
+    existed: bool,
+}
+
 #[cfg(unix)]
-fn open_lock_file(path: &Path) -> Result<(File, bool), ProjectIoError> {
+fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, ProjectIoError> {
     use std::os::unix::fs::OpenOptionsExt;
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create_new(true).mode(0o600);
-    match options.open(path) {
-        Ok(file) => Ok((file, false)),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let metadata = fs::symlink_metadata(path)?;
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                return Err(ProjectIoError::InvalidProjectStructure);
-            }
-            let mut existing = OpenOptions::new();
-            existing
-                .read(true)
-                .write(true)
-                .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
-            Ok((existing.open(path)?, true))
+    let final_path = directory.bound_path().join(LOCK_FILE_NAME);
+    let mut existing = OpenOptions::new();
+    existing
+        .read(true)
+        .write(true)
+        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+    match existing.open(&final_path) {
+        Ok(file) => {
+            return Ok(OpenedLockFile {
+                file,
+                leaf: OsString::from(LOCK_FILE_NAME),
+                existed: true,
+            });
         }
-        Err(_) => Err(ProjectIoError::FilesystemError),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(ProjectIoError::InvalidProjectStructure),
     }
+
+    for _ in 0..8 {
+        let leaf = OsString::from(format!(".aethertwin.lock.pending-{}", Uuid::new_v4()));
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true).mode(0o600);
+        match options.open(directory.bound_path().join(&leaf)) {
+            Ok(file) => {
+                return Ok(OpenedLockFile {
+                    file,
+                    leaf,
+                    existed: false,
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(ProjectIoError::FilesystemError),
+        }
+    }
+    Err(ProjectIoError::FilesystemError)
 }
 
 #[cfg(windows)]
-fn open_lock_file(path: &Path) -> Result<(File, bool), ProjectIoError> {
-    match open_windows_lock_file(path, true) {
-        Ok(file) => Ok((file, false)),
+fn open_lock_file(directory: &BoundProjectDirectory) -> Result<OpenedLockFile, ProjectIoError> {
+    let path = directory.bound_path().join(LOCK_FILE_NAME);
+    match open_windows_lock_file(&path, true) {
+        Ok(file) => Ok(OpenedLockFile {
+            file,
+            leaf: OsString::from(LOCK_FILE_NAME),
+            existed: false,
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            match open_windows_lock_file(path, false) {
-                Ok(file) => Ok((file, true)),
+            match open_windows_lock_file(&path, false) {
+                Ok(file) => Ok(OpenedLockFile {
+                    file,
+                    leaf: OsString::from(LOCK_FILE_NAME),
+                    existed: true,
+                }),
                 Err(error) if error.raw_os_error() == Some(32) => {
                     Err(ProjectIoError::ProjectLocked)
                 }
@@ -362,7 +466,7 @@ fn open_lock_file(path: &Path) -> Result<(File, bool), ProjectIoError> {
 }
 
 #[cfg(windows)]
-fn open_windows_lock_file(path: &Path, create_new: bool) -> std::io::Result<File> {
+fn open_windows_lock_file(path: impl AsRef<Path>, create_new: bool) -> std::io::Result<File> {
     use std::ffi::c_void;
     use std::os::windows::ffi::OsStrExt;
     use std::os::windows::io::FromRawHandle;
@@ -387,7 +491,12 @@ fn open_windows_lock_file(path: &Path, create_new: bool) -> std::io::Result<File
     const CREATE_NEW: u32 = 1;
     const OPEN_EXISTING: u32 = 3;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let path: Vec<u16> = path
+        .as_ref()
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
     // SAFETY: path is NUL-terminated and the optional pointers are allowed to be null.
     let handle = unsafe {
         CreateFileW(
@@ -412,7 +521,45 @@ fn open_windows_lock_file(path: &Path, create_new: bool) -> std::io::Result<File
 }
 
 #[cfg(not(any(unix, windows)))]
-fn open_lock_file(_path: &Path) -> Result<(File, bool), ProjectIoError> {
+fn open_lock_file(_directory: &BoundProjectDirectory) -> Result<OpenedLockFile, ProjectIoError> {
+    Err(ProjectIoError::FilesystemError)
+}
+
+#[cfg(unix)]
+fn publish_new_lock(
+    directory: &BoundProjectDirectory,
+    acquisition: &mut LockAcquisitionGuard,
+) -> Result<(), ProjectIoError> {
+    if !acquisition.newly_created {
+        return Ok(());
+    }
+    use rustix::fs::{RenameFlags, renameat_with};
+    renameat_with(
+        directory.file(),
+        &acquisition.leaf,
+        directory.file(),
+        LOCK_FILE_NAME,
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(|_| ProjectIoError::FilesystemError)?;
+    acquisition.published();
+    directory.file().sync_all()?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_new_lock(
+    _directory: &BoundProjectDirectory,
+    _acquisition: &mut LockAcquisitionGuard,
+) -> Result<(), ProjectIoError> {
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn publish_new_lock(
+    _directory: &BoundProjectDirectory,
+    _acquisition: &mut LockAcquisitionGuard,
+) -> Result<(), ProjectIoError> {
     Err(ProjectIoError::FilesystemError)
 }
 
@@ -506,38 +653,89 @@ fn lock_identity(file: &File) -> Result<LockIdentity, ProjectIoError> {
 #[cfg(unix)]
 fn remove_locked_file(
     directory: &Path,
+    leaf: &OsStr,
     file: &File,
     expected: &LockIdentity,
 ) -> Result<(), ProjectIoError> {
-    let path = directory.join(LOCK_FILE_NAME);
-    let current = OpenOptions::new().read(true).open(&path)?;
-    if lock_identity(file)? != *expected || lock_identity(&current)? != *expected {
-        return Err(ProjectIoError::FilesystemError);
-    }
-    fs::remove_file(path)?;
-    Ok(())
+    quarantine_unix_lock(directory, leaf, file, Some(expected))
 }
 
 #[cfg(unix)]
 fn remove_newly_created_lock(
     directory: &Path,
+    leaf: &OsStr,
     file: &File,
     expected: Option<&LockIdentity>,
 ) -> Result<(), ProjectIoError> {
-    let derived;
-    let expected = match expected {
-        Some(expected) => expected,
-        None => {
-            derived = lock_identity(file)?;
-            &derived
+    quarantine_unix_lock(directory, leaf, file, expected)
+}
+
+#[cfg(unix)]
+fn quarantine_unix_lock(
+    directory: &Path,
+    leaf: &OsStr,
+    file: &File,
+    expected: Option<&LockIdentity>,
+) -> Result<(), ProjectIoError> {
+    use rustix::fs::{AtFlags, RenameFlags, renameat_with, unlinkat};
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let directory_file = File::open(directory)?;
+    let quarantine = OsString::from(format!(".aethertwin.lock.quarantine-{}", Uuid::new_v4()));
+    renameat_with(
+        &directory_file,
+        leaf,
+        &directory_file,
+        &quarantine,
+        RenameFlags::NOREPLACE,
+    )
+    .map_err(|_| ProjectIoError::FilesystemError)?;
+
+    let Some(expected) = expected else {
+        // Identity acquisition failed before the unique pending leaf was
+        // published. Leave only an unambiguous quarantine artifact; never
+        // create false `.aethertwin.lock` crash residue or guess by pathname.
+        return Ok(());
+    };
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+    let current = match options.open(directory.join(&quarantine)) {
+        Ok(current) => current,
+        Err(error) => {
+            let _ = renameat_with(
+                &directory_file,
+                &quarantine,
+                &directory_file,
+                leaf,
+                RenameFlags::NOREPLACE,
+            );
+            return Err(error.into());
         }
     };
-    remove_locked_file(directory, file, expected)
+    if lock_identity(file)? != *expected || lock_identity(&current)? != *expected {
+        drop(current);
+        let _ = renameat_with(
+            &directory_file,
+            &quarantine,
+            &directory_file,
+            leaf,
+            RenameFlags::NOREPLACE,
+        );
+        return Err(ProjectIoError::FilesystemError);
+    }
+    drop(current);
+    unlinkat(&directory_file, &quarantine, AtFlags::empty())
+        .map_err(|_| ProjectIoError::FilesystemError)?;
+    directory_file.sync_all()?;
+    Ok(())
 }
 
 #[cfg(windows)]
 fn remove_locked_file(
     _directory: &Path,
+    _leaf: &OsStr,
     file: &File,
     expected: &LockIdentity,
 ) -> Result<(), ProjectIoError> {
@@ -550,6 +748,7 @@ fn remove_locked_file(
 #[cfg(windows)]
 fn remove_newly_created_lock(
     _directory: &Path,
+    _leaf: &OsStr,
     file: &File,
     _expected: Option<&LockIdentity>,
 ) -> Result<(), ProjectIoError> {
@@ -600,6 +799,7 @@ fn lock_identity(_file: &File) -> Result<LockIdentity, ProjectIoError> {
 #[cfg(not(any(unix, windows)))]
 fn remove_locked_file(
     _directory: &Path,
+    _leaf: &OsStr,
     _file: &File,
     _expected: &LockIdentity,
 ) -> Result<(), ProjectIoError> {
@@ -609,6 +809,7 @@ fn remove_locked_file(
 #[cfg(not(any(unix, windows)))]
 fn remove_newly_created_lock(
     _directory: &Path,
+    _leaf: &OsStr,
     _file: &File,
     _expected: Option<&LockIdentity>,
 ) -> Result<(), ProjectIoError> {

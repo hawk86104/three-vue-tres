@@ -4,7 +4,7 @@ use crate::model::{
     parse_contract_uuid,
 };
 use crate::paths::{
-    PROJECT_SUFFIX, StagingWorkspace, canonical_parent, normalize_project_name,
+    PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
     validate_project_extension, validate_project_structure,
 };
 use crate::schema::{
@@ -163,27 +163,50 @@ pub fn open_session(
     recover_stale_lock: bool,
 ) -> Result<ProjectSession, ProjectIoError> {
     let mut lock = ProjectLock::acquire(path, recover_stale_lock)?;
-    let clean_shutdown = match (|| {
-        let connection = open_database(&lock.bound_path().join("project.db"))?;
-        read_meta::<bool>(&connection, "cleanShutdown")
-    })() {
-        Ok(clean_shutdown) => clean_shutdown,
-        Err(error) => {
-            if !lock.stale_recovered() {
+    let mut recovery_copy = None;
+    let recovered = if lock.stale_recovered() {
+        true
+    } else {
+        let copy = match lock.create_recovery_copy() {
+            Ok(copy) => copy,
+            Err(error) => {
                 let _ = lock.clean_close();
+                return Err(error);
             }
-            return Err(error);
+        };
+        match inspect_clean_shutdown_copy(&copy) {
+            Ok(true) => {
+                if let Err(error) = copy.remove() {
+                    let _ = lock.clean_close();
+                    return Err(error);
+                }
+                false
+            }
+            Ok(false) => {
+                recovery_copy = Some(copy);
+                true
+            }
+            Err(error) => {
+                let _ = lock.clean_close();
+                return Err(error);
+            }
         }
     };
-    let recovered = lock.stale_recovered() || !clean_shutdown;
     if recovered && !recover_stale_lock {
+        if let Some(copy) = recovery_copy.take() {
+            let _ = copy.remove();
+        }
         if !lock.stale_recovered() {
             let _ = lock.clean_close();
         }
         return Err(ProjectIoError::StaleProjectLock);
     }
     let opened_result = if recovered {
-        match recover_with_lock(&lock) {
+        let recovered = match recovery_copy {
+            Some(copy) => recover_from_copy(copy, lock.canonical_path()),
+            None => recover_with_lock(&lock),
+        };
+        match recovered {
             Ok(opened) => opened,
             Err(error) => {
                 if !lock.stale_recovered() {
@@ -236,9 +259,6 @@ pub fn recover_project(path: &Path, confirm: bool) -> Result<OpenedProject, Proj
         return Err(ProjectIoError::StaleProjectLock);
     }
     let lock = ProjectLock::acquire(path, true)?;
-    let connection = open_database(&lock.bound_path().join("project.db"))?;
-    let _: bool = read_meta(&connection, "cleanShutdown")?;
-    drop(connection);
     recover_with_lock(&lock)
 }
 
@@ -622,7 +642,19 @@ fn sequence_i64(value: u64) -> Result<i64, ProjectIoError> {
 
 fn recover_with_lock(lock: &ProjectLock) -> Result<OpenedProject, ProjectIoError> {
     let recovery = lock.create_recovery_copy()?;
-    reconstruct_recovery(recovery.bound_path(), lock.canonical_path())
+    recover_from_copy(recovery, lock.canonical_path())
+}
+
+fn inspect_clean_shutdown_copy(recovery: &RecoveryCopy) -> Result<bool, ProjectIoError> {
+    let connection = open_database(&recovery.bound_path().join("project.db"))?;
+    read_meta(&connection, "cleanShutdown")
+}
+
+fn recover_from_copy(
+    recovery: RecoveryCopy,
+    project_path: &Path,
+) -> Result<OpenedProject, ProjectIoError> {
+    reconstruct_recovery(recovery.bound_path(), project_path)
         .map_err(|_| ProjectIoError::RecoveryFailed)
 }
 
@@ -633,6 +665,7 @@ fn reconstruct_recovery(
     let mut manifest = read_manifest(&recovery_path.join("manifest.json"))?;
     let connection = open_database(&recovery_path.join("project.db"))?;
     validate_recovery_identity(&connection, &manifest)?;
+    let _: bool = read_meta(&connection, "cleanShutdown")?;
     let last_committed: u64 = read_meta(&connection, "lastCommittedSequence")?;
     let last_checkpoint: u64 = read_meta(&connection, "lastCheckpointSequence")?;
     if last_checkpoint > last_committed {

@@ -71,6 +71,15 @@ fn assert_code(error: ProjectIoError, code: &str) {
     assert_eq!(error.code(), code, "unexpected error: {error}");
 }
 
+fn sqlite_source_fingerprint(
+    project_path: &std::path::Path,
+) -> Vec<(&'static str, Option<Vec<u8>>)> {
+    ["project.db", "project.db-wal", "project.db-shm"]
+        .into_iter()
+        .map(|name| (name, fs::read(project_path.join(name)).ok()))
+        .collect()
+}
+
 fn checkpoint_then_commit(opened: &project_io::OpenedProject) -> ProjectSnapshot {
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
@@ -232,6 +241,39 @@ fn clean_shutdown_false_requires_recovery_even_when_the_lock_file_was_deleted() 
     assert!(!opened.project_path.join(".aethertwin.lock").exists());
     let recovered = open_session(&opened.project_path, true).unwrap();
     assert_eq!(recovered.save_state(), SaveState::Recovered);
+}
+
+#[test]
+fn refused_no_lock_crash_recovery_never_touches_source_sqlite_or_sidecars() {
+    let opened = create("Immutable Refusal", ProjectProfile::Market);
+    let session = open_session(&opened.project_path, false).unwrap();
+    drop(session);
+    fs::remove_file(opened.project_path.join(".aethertwin.lock")).unwrap();
+    fs::write(opened.project_path.join("project.db-wal"), b"wal-sentinel").unwrap();
+    fs::write(opened.project_path.join("project.db-shm"), b"shm-sentinel").unwrap();
+    let before = sqlite_source_fingerprint(&opened.project_path);
+
+    assert_code(
+        open_session(&opened.project_path, false).unwrap_err(),
+        "STALE_PROJECT_LOCK",
+    );
+    assert_eq!(sqlite_source_fingerprint(&opened.project_path), before);
+}
+
+#[test]
+fn refused_stale_lock_recovery_never_touches_source_sqlite_or_sidecars() {
+    let opened = create("Immutable Stale Refusal", ProjectProfile::Showroom);
+    let session = open_session(&opened.project_path, false).unwrap();
+    drop(session);
+    fs::write(opened.project_path.join("project.db-wal"), b"wal-stale").unwrap();
+    fs::write(opened.project_path.join("project.db-shm"), b"shm-stale").unwrap();
+    let before = sqlite_source_fingerprint(&opened.project_path);
+
+    assert_code(
+        open_session(&opened.project_path, false).unwrap_err(),
+        "STALE_PROJECT_LOCK",
+    );
+    assert_eq!(sqlite_source_fingerprint(&opened.project_path), before);
 }
 
 #[test]
@@ -643,10 +685,16 @@ fn failed_recovery_preserves_source_manifest_and_checkpoint_state() {
         .unwrap();
     drop(connection);
 
+    let source_before = sqlite_source_fingerprint(&opened.project_path);
     assert_code(
         recover_project(&opened.project_path, true).unwrap_err(),
         "RECOVERY_FAILED",
     );
+    assert_eq!(
+        sqlite_source_fingerprint(&opened.project_path),
+        source_before
+    );
+    assert_eq!(recovery_directories(&opened.project_path).len(), 1);
     assert_eq!(
         fs::read(opened.project_path.join("manifest.json")).unwrap(),
         manifest_before
