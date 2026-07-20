@@ -1,12 +1,73 @@
 use desktop_host::{
-    AppService, CreateProjectDto, NativeErrorDto, OpenProjectDto, RecoverProjectDto,
+    AppService, CreateProjectDto, NativeLogSink, OpenProjectDto, RecoverProjectDto,
+    SanitizedLogRecord, with_invoke_handler,
 };
 use project_io::{CommitBatch, JournalOperation, ProjectProfile, ProjectSnapshot};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tempfile::{TempDir, tempdir};
 use uuid::Uuid;
+
+#[derive(Default)]
+struct CapturingLogSink {
+    records: Mutex<Vec<SanitizedLogRecord>>,
+}
+
+impl NativeLogSink for CapturingLogSink {
+    fn record(&self, record: &SanitizedLogRecord) {
+        self.records.lock().unwrap().push(record.clone());
+    }
+}
+
+fn invoke(
+    webview: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+    command: &str,
+    body: Value,
+) -> Result<Value, Value> {
+    tauri::test::get_ipc_response(
+        webview,
+        tauri::webview::InvokeRequest {
+            cmd: command.into(),
+            callback: tauri::ipc::CallbackFn(0),
+            error: tauri::ipc::CallbackFn(1),
+            url: if cfg!(any(windows, target_os = "android")) {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .parse()
+            .unwrap(),
+            body: tauri::ipc::InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: tauri::test::INVOKE_KEY.to_string(),
+        },
+    )
+    .map(|body| body.deserialize::<Value>().unwrap())
+}
+
+fn assert_invalid_ipc(error: &Value) {
+    let object = error.as_object().unwrap();
+    assert_eq!(
+        object.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["code", "details", "logRef", "message"]
+    );
+    assert_eq!(error["code"], "IPC_INVALID_REQUEST");
+    assert_eq!(error["details"], json!({ "retryable": false }));
+    assert!(
+        error["logRef"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty())
+    );
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character))
+    );
+}
 
 fn create(service: &AppService, root: &TempDir, name: &str) -> desktop_host::OpenedProjectDto {
     service
@@ -81,7 +142,7 @@ fn invalid_profile_path_and_session_inputs_fail_before_native_work() {
             profile: "visitor".into(),
         })
         .unwrap_err();
-    assert_eq!(profile.code, "INVALID_PROJECT_PROFILE");
+    assert_eq!(profile.code, "IPC_INVALID_REQUEST");
     assert_eq!(service.session_count().unwrap(), 0);
     assert!(!root.path().join("Invalid Profile.twinproj").exists());
 
@@ -91,10 +152,10 @@ fn invalid_profile_path_and_session_inputs_fail_before_native_work() {
             recover_stale_lock: false,
         })
         .unwrap_err();
-    assert_eq!(path.code, "INVALID_PROJECT_PATH");
+    assert_eq!(path.code, "IPC_INVALID_REQUEST");
 
     let malformed = service.close_project("not-a-session").unwrap_err();
-    assert_eq!(malformed.code, "INVALID_SESSION_ID");
+    assert_eq!(malformed.code, "IPC_INVALID_REQUEST");
     let missing = service
         .close_project(&Uuid::new_v4().to_string())
         .unwrap_err();
@@ -248,31 +309,6 @@ fn native_errors_have_exact_safe_envelope_and_redact_absolute_paths() {
 }
 
 #[test]
-fn every_project_io_code_has_a_safe_native_summary() {
-    let errors = [
-        project_io::ProjectIoError::InvalidProjectName,
-        project_io::ProjectIoError::ProjectAlreadyExists,
-        project_io::ProjectIoError::InvalidProjectStructure,
-        project_io::ProjectIoError::UnsupportedSchemaVersion,
-        project_io::ProjectIoError::ManifestDatabaseMismatch,
-        project_io::ProjectIoError::DatabaseError,
-        project_io::ProjectIoError::ProjectLocked,
-        project_io::ProjectIoError::StaleProjectLock,
-        project_io::ProjectIoError::InvalidResourcePath,
-        project_io::ProjectIoError::RecoveryFailed,
-        project_io::ProjectIoError::FilesystemError,
-    ];
-    for source in errors {
-        let code = source.code();
-        let native = NativeErrorDto::from(source);
-        assert_eq!(native.code, code);
-        assert!(!native.message.is_empty());
-        assert!(!native.message.contains(':'));
-        assert!(!native.log_ref.is_empty());
-    }
-}
-
-#[test]
 fn tauri_configuration_and_capability_are_exact_and_least_privilege() {
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
     assert_eq!(config["productName"], "AetherTwin Studio");
@@ -310,6 +346,8 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     for forbidden in ["rusqlite", "std::fs", "Command::new", "std::process"] {
         assert!(!commands.contains(forbidden));
     }
+    assert_eq!(commands.matches("payload: Option<Value>").count(), 6);
+    assert!(!commands.contains("batch: CommitBatch"));
 
     let main = include_str!("../src/main.rs");
     let single_instance = main.find("tauri_plugin_single_instance::init").unwrap();
@@ -317,4 +355,149 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     assert!(single_instance < dialog);
     assert!(main.contains("|app, _args, _cwd|"));
     assert!(!main.contains("std::env::args"));
+}
+
+#[test]
+fn real_tauri_invoke_handler_wraps_missing_payload_for_all_six_commands() {
+    let sink = Arc::new(CapturingLogSink::default());
+    let app = with_invoke_handler(
+        tauri::test::mock_builder().manage(AppService::with_log_sink(sink.clone())),
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+
+    let commands = [
+        "create_project",
+        "open_project",
+        "commit_project",
+        "checkpoint_project",
+        "close_project",
+        "recover_project",
+    ];
+    let mut returned_log_refs = Vec::new();
+    for command in commands {
+        let error = invoke(&webview, command, json!({})).unwrap_err();
+        assert_invalid_ipc(&error);
+        returned_log_refs.push(error["logRef"].as_str().unwrap().to_owned());
+    }
+
+    let records = sink.records.lock().unwrap();
+    assert_eq!(records.len(), commands.len());
+    for ((record, operation), returned_log_ref) in
+        records.iter().zip(commands).zip(returned_log_refs)
+    {
+        assert_eq!(record.operation, operation);
+        assert_eq!(record.code, "IPC_INVALID_REQUEST");
+        assert_eq!(record.log_ref, returned_log_ref);
+        let value = serde_json::to_value(record).unwrap();
+        assert_eq!(
+            value
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["code", "logRef", "operation"]
+        );
+        assert!(!value.to_string().contains("path"));
+    }
+}
+
+#[test]
+fn real_tauri_invoke_handler_rejects_wrong_unknown_and_invalid_nested_values() {
+    let root = tempdir().unwrap();
+    let app = with_invoke_handler(tauri::test::mock_builder().manage(AppService::default()))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+
+    for (command, body) in [
+        ("close_project", json!({ "payload": { "sessionId": 7 } })),
+        (
+            "close_project",
+            json!({ "payload": { "sessionId": Uuid::new_v4(), "extra": true } }),
+        ),
+        (
+            "create_project",
+            json!({ "payload": { "parent": "relative", "name": "Demo", "profile": "showroom" } }),
+        ),
+        (
+            "create_project",
+            json!({ "payload": { "parent": root.path(), "name": "Demo", "profile": "visitor" } }),
+        ),
+    ] {
+        assert_invalid_ipc(&invoke(&webview, command, body).unwrap_err());
+    }
+
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Nested Contract",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let next = renamed(opened.snapshot.clone(), "Never Applied", 1);
+    let batch = rename_batch(&opened.snapshot, &next);
+
+    let mut unknown_nested = serde_json::to_value(&batch).unwrap();
+    unknown_nested["before"]["project"]["unexpected"] = json!(true);
+    let mut noncanonical_uuid = serde_json::to_value(&batch).unwrap();
+    noncanonical_uuid["before"]["project"]["id"] = json!("550E8400-E29B-41D4-A716-446655440000");
+    let mut invalid_sequence = serde_json::to_value(&batch).unwrap();
+    invalid_sequence["journal"][0]["sequence"] = json!(2);
+    let mut invalid_journal = serde_json::to_value(&batch).unwrap();
+    invalid_journal["journal"][0]["transactionId"] = json!("not-a-canonical-uuid");
+    let mut missing_nested = serde_json::to_value(&batch).unwrap();
+    missing_nested["before"]["project"]
+        .as_object_mut()
+        .unwrap()
+        .remove("tags");
+
+    for batch in [
+        unknown_nested,
+        noncanonical_uuid,
+        invalid_sequence,
+        invalid_journal,
+        missing_nested,
+    ] {
+        let error = invoke(
+            &webview,
+            "commit_project",
+            json!({
+                "payload": {
+                    "sessionId": opened.session_id,
+                    "batch": batch
+                }
+            }),
+        )
+        .unwrap_err();
+        assert_invalid_ipc(&error);
+    }
+
+    invoke(
+        &webview,
+        "close_project",
+        json!({ "payload": { "sessionId": opened.session_id } }),
+    )
+    .unwrap();
+}
+
+#[test]
+fn build_overlay_uses_checked_utf8_and_structured_json_on_every_platform() {
+    let build = include_str!("../build.rs");
+    assert!(build.contains("path.to_str()"));
+    assert!(build.contains("serde_json::json!"));
+    assert!(!build.contains("to_string_lossy"));
+    assert!(!build.contains("TAURI_CONFIG={\\\"bundle\\\""));
 }

@@ -13,5 +13,8 @@ pub use model::{
     OpenedProject, ProjectManifest, ProjectProfile, ProjectSnapshot, SaveState, SpatialProject,
 };
 pub use paths::validate_relative_resource_path;
-pub use project::{ProjectSession, create_project, open_project, open_session, recover_project};
+pub use project::{
+    ProjectSession, create_project, open_project, open_session, recover_project,
+    validate_commit_batch,
+};
 pub use schema::snapshot_checksum;

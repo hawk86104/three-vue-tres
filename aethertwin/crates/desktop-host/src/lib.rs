@@ -1,9 +1,26 @@
 //! AetherTwin's least-privilege desktop host boundary.
 
+mod boundary;
 pub mod commands;
+mod dto;
+mod error;
+mod registry;
 mod state;
 
-pub use state::{
-    AppService, CreateProjectDto, NativeErrorDto, OpenProjectDto, OpenedProjectDto,
+pub use dto::{
+    CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto, OpenProjectDto,
     RecoverProjectDto,
 };
+pub use error::{NativeErrorDto, NativeLogSink, SanitizedLogRecord};
+pub use state::{AppService, OpenedProjectDto};
+
+pub fn with_invoke_handler<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder.invoke_handler(tauri::generate_handler![
+        commands::create_project,
+        commands::open_project,
+        commands::commit_project,
+        commands::checkpoint_project,
+        commands::close_project,
+        commands::recover_project
+    ])
+}

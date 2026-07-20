@@ -1,39 +1,27 @@
-use project_io::{
-    CommitBatch, CreateProjectRequest, ProjectIoError, ProjectManifest, ProjectProfile,
-    ProjectSession, ProjectSnapshot, SaveState, create_project, open_session,
+pub(crate) use crate::{boundary::validate_session_id, error::HostError};
+use crate::{
+    boundary::{require_recovery_confirmation, validate_absolute_path, validate_create_request},
+    dto::{
+        CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto, OpenProjectDto,
+        RecoverProjectDto,
+    },
+    error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use project_io::{
+    CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession, ProjectSnapshot,
+    SaveState, create_project, open_session, validate_commit_batch,
+};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateProjectDto {
-    pub parent: String,
-    pub name: String,
-    pub profile: String,
-}
+pub(crate) type SessionHandle = Arc<Mutex<ProjectSession>>;
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OpenProjectDto {
-    pub path: String,
-    pub recover_stale_lock: bool,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RecoverProjectDto {
-    pub path: String,
-    pub confirm: bool,
-}
-
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedProjectDto {
     pub session_id: String,
@@ -43,257 +31,264 @@ pub struct OpenedProjectDto {
     pub recovered: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeErrorDto {
-    pub code: String,
-    pub message: String,
-    pub details: Value,
-    pub log_ref: String,
-}
-
-impl NativeErrorDto {
-    fn request(code: &str, message: &str, field: &str) -> Self {
-        Self::new(code, message, json!({ "field": field }))
-    }
-
-    fn session_not_found() -> Self {
-        Self::new(
-            "SESSION_NOT_FOUND",
-            "项目会话不存在或已关闭",
-            json!({ "retryable": false }),
-        )
-    }
-
-    fn state_unavailable() -> Self {
-        Self::new(
-            "HOST_STATE_UNAVAILABLE",
-            "桌面服务状态暂时不可用",
-            json!({ "retryable": true }),
-        )
-    }
-
-    fn new(code: &str, message: &str, details: Value) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into(),
-            details,
-            log_ref: format!("native-{}", Uuid::new_v4()),
-        }
-    }
-}
-
-impl From<ProjectIoError> for NativeErrorDto {
-    fn from(source: ProjectIoError) -> Self {
-        let code = source.code();
-        let message = match code {
-            "INVALID_PROJECT_NAME" => "项目名称无效",
-            "PROJECT_ALREADY_EXISTS" => "同名项目已存在",
-            "INVALID_PROJECT_STRUCTURE" => "项目结构无效或不完整",
-            "UNSUPPORTED_SCHEMA_VERSION" => "项目版本高于当前应用支持范围",
-            "MANIFEST_DATABASE_MISMATCH" => "项目清单与数据库不一致",
-            "DATABASE_ERROR" => "项目数据库操作失败",
-            "PROJECT_LOCKED" => "项目正在由另一个会话使用",
-            "STALE_PROJECT_LOCK" => "项目需要确认后恢复",
-            "INVALID_RESOURCE_PATH" => "项目资源路径无效",
-            "RECOVERY_FAILED" => "项目恢复校验失败",
-            "FILESYSTEM_ERROR" => "项目文件操作失败",
-            _ => "桌面服务发生未知错误",
-        };
-        let details = json!({
-            "recoveryRequired": code == "STALE_PROJECT_LOCK",
-            "retryable": matches!(
-                code,
-                "DATABASE_ERROR" | "FILESYSTEM_ERROR" | "PROJECT_LOCKED"
-            )
-        });
-        Self::new(code, message, details)
-    }
-}
-
-#[derive(Default)]
 pub struct AppService {
-    sessions: Mutex<HashMap<Uuid, ProjectSession>>,
+    pub(crate) sessions: Mutex<HashMap<Uuid, SessionHandle>>,
+    log_sink: Arc<dyn NativeLogSink>,
+}
+
+impl Default for AppService {
+    fn default() -> Self {
+        Self::with_log_sink(Arc::new(StderrLogSink))
+    }
 }
 
 impl AppService {
-    pub fn session_count(&self) -> Result<usize, NativeErrorDto> {
-        Ok(self.lock_sessions()?.len())
+    pub fn with_log_sink(log_sink: Arc<dyn NativeLogSink>) -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            log_sink,
+        }
+    }
+
+    pub(crate) fn decode_payload<T: DeserializeOwned>(
+        &self,
+        operation: &'static str,
+        payload: Option<Value>,
+    ) -> Result<T, crate::NativeErrorDto> {
+        let result = payload
+            .ok_or(HostError::IpcInvalidRequest)
+            .and_then(|value| {
+                serde_json::from_value(value).map_err(|_| HostError::IpcInvalidRequest)
+            });
+        self.finish(operation, result)
+    }
+
+    pub(crate) fn render_error(
+        &self,
+        operation: &'static str,
+        error: HostError,
+    ) -> crate::NativeErrorDto {
+        let presentation = present(error);
+        let log_ref = format!("native-{}", Uuid::new_v4());
+        self.log_sink.record(&SanitizedLogRecord {
+            log_ref: log_ref.clone(),
+            operation: operation.into(),
+            code: presentation.code.into(),
+        });
+        crate::NativeErrorDto {
+            code: presentation.code.into(),
+            message: presentation.message.into(),
+            details: presentation.details,
+            log_ref,
+        }
+    }
+
+    pub fn session_count(&self) -> Result<usize, crate::NativeErrorDto> {
+        self.finish("session_count", self.registry_len())
     }
 
     pub fn create_project(
         &self,
         request: CreateProjectDto,
-    ) -> Result<OpenedProjectDto, NativeErrorDto> {
-        let request = validate_create_request(request)?;
-        let mut sessions = self.lock_sessions()?;
-        let created = create_project(request).map_err(NativeErrorDto::from)?;
-        let session = open_session(&created.project_path, false).map_err(NativeErrorDto::from)?;
-        track_session(&mut sessions, session)
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        self.create_project_for("create_project", request)
+    }
+
+    pub(crate) fn create_project_for(
+        &self,
+        operation: &'static str,
+        request: CreateProjectDto,
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        let result = (|| {
+            let request = validate_create_request(request)?;
+            let created = create_project(request)?;
+            let session =
+                finalize_created_session(&created, open_session(&created.project_path, false))?;
+            self.track_session(session)
+        })();
+        self.finish(operation, result)
     }
 
     pub fn open_project(
         &self,
         request: OpenProjectDto,
-    ) -> Result<OpenedProjectDto, NativeErrorDto> {
-        let path = validate_absolute_path(&request.path)?;
-        let mut sessions = self.lock_sessions()?;
-        let session =
-            open_session(&path, request.recover_stale_lock).map_err(NativeErrorDto::from)?;
-        track_session(&mut sessions, session)
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        self.open_project_for("open_project", request)
+    }
+
+    pub(crate) fn open_project_for(
+        &self,
+        operation: &'static str,
+        request: OpenProjectDto,
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        let result = (|| {
+            let path = validate_absolute_path(&request.path)?;
+            let session = open_session(&path, request.recover_stale_lock)?;
+            self.track_session(session)
+        })();
+        self.finish(operation, result)
     }
 
     pub fn recover_project(
         &self,
         request: RecoverProjectDto,
-    ) -> Result<OpenedProjectDto, NativeErrorDto> {
-        let path = validate_absolute_path(&request.path)?;
-        if !request.confirm {
-            return Err(ProjectIoError::StaleProjectLock.into());
-        }
-        let mut sessions = self.lock_sessions()?;
-        let session = open_session(&path, true).map_err(NativeErrorDto::from)?;
-        track_session(&mut sessions, session)
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        self.recover_project_for("recover_project", request)
+    }
+
+    pub(crate) fn recover_project_for(
+        &self,
+        operation: &'static str,
+        request: RecoverProjectDto,
+    ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
+        let result = (|| {
+            let path = validate_absolute_path(&request.path)?;
+            require_recovery_confirmation(request.confirm)?;
+            let session = open_session(&path, true)?;
+            self.track_session(session)
+        })();
+        self.finish(operation, result)
     }
 
     pub fn commit_project(
         &self,
         session_id: &str,
         batch: CommitBatch,
-    ) -> Result<(), NativeErrorDto> {
-        let session_id = validate_session_id(session_id)?;
-        let mut sessions = self.lock_sessions()?;
-        sessions
-            .get_mut(&session_id)
-            .ok_or_else(NativeErrorDto::session_not_found)?
-            .commit(batch)
-            .map_err(NativeErrorDto::from)
+    ) -> Result<(), crate::NativeErrorDto> {
+        self.commit_project_for("commit_project", session_id, batch)
     }
 
-    pub fn checkpoint_project(&self, session_id: &str) -> Result<ProjectManifest, NativeErrorDto> {
-        let session_id = validate_session_id(session_id)?;
-        let mut sessions = self.lock_sessions()?;
-        sessions
-            .get_mut(&session_id)
-            .ok_or_else(NativeErrorDto::session_not_found)?
-            .checkpoint()
-            .map_err(NativeErrorDto::from)
-    }
-
-    pub fn close_project(&self, session_id: &str) -> Result<(), NativeErrorDto> {
-        let session_id = validate_session_id(session_id)?;
-        let mut sessions = self.lock_sessions()?;
-        sessions
-            .get_mut(&session_id)
-            .ok_or_else(NativeErrorDto::session_not_found)?
-            .close()
-            .map_err(NativeErrorDto::from)?;
-        sessions.remove(&session_id);
-        Ok(())
-    }
-
-    fn lock_sessions(
+    pub(crate) fn commit_request(
         &self,
-    ) -> Result<MutexGuard<'_, HashMap<Uuid, ProjectSession>>, NativeErrorDto> {
-        self.sessions
-            .lock()
-            .map_err(|_| NativeErrorDto::state_unavailable())
+        operation: &'static str,
+        request: CommitProjectDto,
+    ) -> Result<(), crate::NativeErrorDto> {
+        match request.into_native() {
+            Ok((session_id, batch)) => self.commit_project_for(operation, &session_id, batch),
+            Err(error) => Err(self.render_error(operation, error)),
+        }
+    }
+
+    fn commit_project_for(
+        &self,
+        operation: &'static str,
+        session_id: &str,
+        batch: CommitBatch,
+    ) -> Result<(), crate::NativeErrorDto> {
+        let result = (|| {
+            let session_id = validate_session_id(session_id)?;
+            validate_commit_batch(&batch).map_err(|_| HostError::IpcInvalidRequest)?;
+            let session = self.lookup_session(session_id)?;
+            session
+                .lock()
+                .map_err(|_| HostError::SessionStateUnavailable)?
+                .commit(batch)?;
+            Ok(())
+        })();
+        self.finish(operation, result)
+    }
+
+    pub fn checkpoint_project(
+        &self,
+        session_id: &str,
+    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+        self.checkpoint_project_for("checkpoint_project", session_id)
+    }
+
+    pub(crate) fn checkpoint_request(
+        &self,
+        operation: &'static str,
+        request: CheckpointProjectDto,
+    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+        self.checkpoint_project_for(operation, &request.into_session_id())
+    }
+
+    fn checkpoint_project_for(
+        &self,
+        operation: &'static str,
+        session_id: &str,
+    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+        let result = (|| {
+            let session = self.lookup_session(validate_session_id(session_id)?)?;
+            let manifest = session
+                .lock()
+                .map_err(|_| HostError::SessionStateUnavailable)?
+                .checkpoint()?;
+            Ok(manifest)
+        })();
+        self.finish(operation, result)
+    }
+
+    pub fn close_project(&self, session_id: &str) -> Result<(), crate::NativeErrorDto> {
+        self.close_project_for("close_project", session_id)
+    }
+
+    pub(crate) fn close_request(
+        &self,
+        operation: &'static str,
+        request: CloseProjectDto,
+    ) -> Result<(), crate::NativeErrorDto> {
+        self.close_project_for(operation, &request.into_session_id())
+    }
+
+    fn close_project_for(
+        &self,
+        operation: &'static str,
+        session_id: &str,
+    ) -> Result<(), crate::NativeErrorDto> {
+        let result = (|| {
+            let session_id = validate_session_id(session_id)?;
+            let session = self.lookup_session(session_id)?;
+            {
+                session
+                    .lock()
+                    .map_err(|_| HostError::SessionStateUnavailable)?
+                    .close()?;
+            }
+            self.remove_if_same(session_id, &session)?;
+            Ok(())
+        })();
+        self.finish(operation, result)
+    }
+
+    fn finish<T>(
+        &self,
+        operation: &'static str,
+        result: Result<T, HostError>,
+    ) -> Result<T, crate::NativeErrorDto> {
+        result.map_err(|error| self.render_error(operation, error))
     }
 }
 
-fn validate_create_request(
-    request: CreateProjectDto,
-) -> Result<CreateProjectRequest, NativeErrorDto> {
-    let parent = validate_absolute_path(&request.parent)?;
-    let profile = match request.profile.as_str() {
-        "showroom" => ProjectProfile::Showroom,
-        "market" => ProjectProfile::Market,
-        _ => {
-            return Err(NativeErrorDto::request(
-                "INVALID_PROJECT_PROFILE",
-                "项目类型无效",
-                "profile",
-            ));
-        }
-    };
-    if request.name.is_empty() || request.name.contains('\0') {
-        return Err(ProjectIoError::InvalidProjectName.into());
-    }
-    Ok(CreateProjectRequest {
-        parent,
-        name: request.name,
-        profile,
+pub(crate) fn finalize_created_session(
+    created: &OpenedProject,
+    open_result: Result<ProjectSession, ProjectIoError>,
+) -> Result<ProjectSession, HostError> {
+    open_result.map_err(|source| HostError::ProjectCreatedSessionUnavailable {
+        project_id: created.manifest.project_id,
+        name: created.manifest.name.clone(),
+        profile: created.manifest.profile,
+        reason_code: crate::error::project_io_code(&source),
     })
 }
 
-fn validate_absolute_path(value: &str) -> Result<PathBuf, NativeErrorDto> {
-    if value.is_empty() || value.trim() != value || value.contains('\0') {
-        return Err(invalid_path());
-    }
-    let path = Path::new(value);
-    if !path.is_absolute() {
-        return Err(invalid_path());
-    }
-    Ok(path.to_owned())
-}
-
-fn invalid_path() -> NativeErrorDto {
-    NativeErrorDto::request("INVALID_PROJECT_PATH", "项目路径无效", "path")
-}
-
-fn validate_session_id(value: &str) -> Result<Uuid, NativeErrorDto> {
-    let parsed = Uuid::parse_str(value).map_err(|_| {
-        NativeErrorDto::request("INVALID_SESSION_ID", "项目会话标识无效", "sessionId")
-    })?;
-    if parsed.hyphenated().to_string() != value {
-        return Err(NativeErrorDto::request(
-            "INVALID_SESSION_ID",
-            "项目会话标识无效",
-            "sessionId",
-        ));
-    }
-    Ok(parsed)
-}
-
-fn track_session(
-    sessions: &mut HashMap<Uuid, ProjectSession>,
-    mut session: ProjectSession,
-) -> Result<OpenedProjectDto, NativeErrorDto> {
-    let Some(project_path) = session.project_path().to_str().map(str::to_owned) else {
-        let _ = session.close();
-        return Err(invalid_path());
-    };
-    let session_id = loop {
-        let candidate = Uuid::new_v4();
-        if !sessions.contains_key(&candidate) {
-            break candidate;
-        }
-    };
-    let opened = OpenedProjectDto {
+pub(crate) fn opened_project_dto(
+    session_id: Uuid,
+    session: &ProjectSession,
+) -> Result<OpenedProjectDto, HostError> {
+    let project_path = session
+        .project_path()
+        .to_str()
+        .ok_or(HostError::IpcInvalidRequest)?
+        .to_owned();
+    Ok(OpenedProjectDto {
         session_id: session_id.to_string(),
         project_path,
         manifest: session.manifest().clone(),
         snapshot: session.snapshot().clone(),
         recovered: session.save_state() == SaveState::Recovered,
-    };
-    sessions.insert(session_id, session);
-    Ok(opened)
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::AppService;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    #[test]
-    fn poisoned_session_registry_returns_a_safe_error_instead_of_panicking() {
-        let service = AppService::default();
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            let _guard = service.sessions.lock().unwrap();
-            panic!("poison session registry");
-        }));
-
-        let error = service.session_count().unwrap_err();
-        assert_eq!(error.code, "HOST_STATE_UNAVAILABLE");
-    }
-}
+mod tests;

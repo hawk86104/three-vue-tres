@@ -467,7 +467,7 @@ impl Drop for ProjectSession {
     }
 }
 
-fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> {
+pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> {
     batch.before.validate()?;
     batch.after.validate()?;
     if batch.journal.is_empty()

@@ -3,7 +3,7 @@ fn main() {
     let icon_path =
         std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("aethertwin-host.ico");
     write_build_icon(&icon_path).unwrap();
-    emit_icon_config(&icon_path);
+    emit_icon_config(&icon_path).unwrap();
     let windows = tauri_build::WindowsAttributes::new().window_icon_path(icon_path);
     tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows)).unwrap();
 }
@@ -13,13 +13,19 @@ fn main() {
     let icon_path =
         std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("aethertwin-host.png");
     write_build_png(&icon_path).unwrap();
-    emit_icon_config(&icon_path);
+    emit_icon_config(&icon_path).unwrap();
     tauri_build::build();
 }
 
-fn emit_icon_config(path: &std::path::Path) {
-    let icon_config_path = path.to_string_lossy().replace('\\', "/");
-    println!("cargo:rustc-env=TAURI_CONFIG={{\"bundle\":{{\"icon\":[\"{icon_config_path}\"]}}}}");
+fn emit_icon_config(path: &std::path::Path) -> Result<(), &'static str> {
+    let icon_config_path = path.to_str().ok_or("generated icon path is not UTF-8")?;
+    let overlay = serde_json::json!({
+        "bundle": {
+            "icon": [icon_config_path],
+        },
+    });
+    println!("cargo:rustc-env=TAURI_CONFIG={overlay}");
+    Ok(())
 }
 
 #[cfg(not(windows))]
