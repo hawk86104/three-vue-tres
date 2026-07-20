@@ -91,6 +91,7 @@ export function ProjectOverview({
     }
     setActionError(null);
     try {
+      onBeforeClose();
       await store.close();
       onBack();
     } catch (error) {

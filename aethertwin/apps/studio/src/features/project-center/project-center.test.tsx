@@ -840,6 +840,25 @@ describe("project center", () => {
     await waitFor(() => expect(backend.dispose).toHaveBeenCalledOnce());
   });
 
+  it("retries an optional backend dispose once when final teardown initially fails", async () => {
+    const backend = Object.assign(createDesktopBackend(), {
+      dispose: vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new Error("native cleanup unavailable"))
+        .mockResolvedValueOnce(undefined),
+    });
+    const rendered = render(
+      <StrictMode>
+        <App backend={backend} />
+      </StrictMode>,
+    );
+    expect(await screen.findByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
+
+    rendered.unmount();
+
+    await waitFor(() => expect(backend.dispose).toHaveBeenCalledTimes(2));
+  });
+
   it("keeps inspector name and tag errors associated with only their own field", async () => {
     const backend = new SandboxProjectBackend();
     render(<App backend={backend} />);

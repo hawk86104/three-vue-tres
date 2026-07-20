@@ -215,6 +215,45 @@ describe("ProjectOverview", () => {
     expect(screen.queryByText("manual checkpoint failed")).not.toBeInTheDocument();
   });
 
+  it("syncs the current snapshot before Back closes a project with an active save error", async () => {
+    const { backend, store } = await sandboxProject("Old");
+    const checkpoint = vi
+      .spyOn(backend, "checkpoint")
+      .mockRejectedValueOnce(new Error("save failed"));
+    const close = vi.spyOn(backend, "closeProject");
+    const onBack = vi.fn();
+    const observedNames: string[] = [];
+    render(
+      <ProjectOverview
+        store={store}
+        onBeforeClose={() => {
+          observedNames.push(store.getState().snapshot?.project.name ?? "missing");
+        }}
+        onBack={onBack}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("项目名称"), {
+      target: { value: "New" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "应用名称" }));
+      await store.flush();
+    });
+    expect(store.getState().snapshot?.project.name).toBe("New");
+
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("save failed")).toBeVisible();
+    expect(checkpoint).toHaveBeenCalledOnce();
+
+    await userEvent.click(screen.getByRole("button", { name: "返回" }));
+
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+    expect(observedNames).toEqual(["New"]);
+    expect(close).toHaveBeenCalledOnce();
+    expect(store.getState().snapshot).toBeNull();
+  });
+
   it("keeps the overview open after a close checkpoint failure and retries the whole close flow", async () => {
     const { backend, store } = await sandboxProject("关闭保存重试");
     const checkpointProject = backend.checkpoint.bind(backend);

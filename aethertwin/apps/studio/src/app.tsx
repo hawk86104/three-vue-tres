@@ -96,7 +96,14 @@ function missingRecentError(value: unknown): boolean {
 
 async function disposeBackend(backend: ProjectBackend): Promise<void> {
   const disposable = backend as ProjectBackend & { dispose?(): Promise<void> };
-  await disposable.dispose?.();
+  if (disposable.dispose === undefined) {
+    return;
+  }
+  try {
+    await disposable.dispose();
+  } catch {
+    await disposable.dispose();
+  }
 }
 
 export interface AppProps {
