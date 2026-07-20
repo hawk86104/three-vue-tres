@@ -8,9 +8,12 @@ The implementation is an isolated pnpm/Cargo workspace. Studio is the M0 applica
 
 ```text
 Studio React application
-  -> editor-shell / design-system / project-store
-  -> command-bus + core-model
-  -> TauriProjectBackend (desktop only) -> desktop-host -> project-io -> SQLite/filesystem
+  -> core-model + design-system + editor-shell + project-store
+  -> editor-shell -> core-model + design-system
+  -> project-store -> command-bus + core-model
+
+Desktop backend
+  -> TauriProjectBackend -> desktop-host -> project-io -> SQLite/filesystem
 
 Studio web development sandbox
   -> SandboxProjectBackend (in-memory only; no native filesystem or SQLite)

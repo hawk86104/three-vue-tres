@@ -2,7 +2,7 @@
 
 ## Scope and evidence
 
-This is the M0 direct runtime dependency record. Package names and pinned versions come from `package.json`/workspace `Cargo.toml`, resolved by `pnpm-lock.yaml` and `Cargo.lock`. JavaScript license identifiers were read from the installed direct package metadata and local LICENSE/COPYING files. Workspace packages are AetherTwin code and are not repeated. Development/test-only tooling is excluded. A distribution release still requires a full target-specific transitive inventory and verification of bundled license texts.
+This is the M0 direct runtime and build dependency baseline. Package names and pinned versions come from `package.json`/workspace `Cargo.toml`, resolved by `pnpm-lock.yaml` and `Cargo.lock`. JavaScript license identifiers were read from the installed direct package metadata and local LICENSE/COPYING files. Workspace packages are AetherTwin code and are not repeated. Development/test-only tooling is excluded. A distribution release still requires a full target-specific transitive inventory and verification of bundled license texts.
 
 ## JavaScript runtime dependencies
 
