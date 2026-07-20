@@ -8,8 +8,8 @@ use crate::{
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
 use project_io::{
-    CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession, ProjectSnapshot,
-    SaveState, create_project, open_session, validate_commit_batch,
+    CommitBatch, OpenedProject, ProjectManifest, ProjectSession, ProjectSnapshot, SaveState,
+    create_project, open_session, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -102,9 +102,10 @@ impl AppService {
         let result = (|| {
             let request = validate_create_request(request)?;
             let created = create_project(request)?;
-            let session =
-                finalize_created_session(&created, open_session(&created.project_path, false))?;
-            self.track_session(session)
+            let publication = open_session(&created.project_path, false)
+                .map_err(HostError::from)
+                .and_then(|session| self.track_session(session));
+            finalize_created_publication(&created, publication)
         })();
         self.finish(operation, result)
     }
@@ -260,15 +261,23 @@ impl AppService {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn finalize_created_session(
     created: &OpenedProject,
-    open_result: Result<ProjectSession, ProjectIoError>,
+    open_result: Result<ProjectSession, project_io::ProjectIoError>,
 ) -> Result<ProjectSession, HostError> {
-    open_result.map_err(|source| HostError::ProjectCreatedSessionUnavailable {
+    finalize_created_publication(created, open_result.map_err(HostError::from))
+}
+
+fn finalize_created_publication<T>(
+    created: &OpenedProject,
+    result: Result<T, HostError>,
+) -> Result<T, HostError> {
+    result.map_err(|source| HostError::ProjectCreatedSessionUnavailable {
         project_id: created.manifest.project_id,
         name: created.manifest.name.clone(),
         profile: created.manifest.profile,
-        reason_code: crate::error::project_io_code(&source),
+        reason_code: crate::error::host_error_code(&source),
     })
 }
 

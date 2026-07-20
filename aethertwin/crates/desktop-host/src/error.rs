@@ -119,6 +119,17 @@ pub(crate) const fn project_io_code(source: &ProjectIoError) -> &'static str {
     }
 }
 
+pub(crate) const fn host_error_code(source: &HostError) -> &'static str {
+    match source {
+        HostError::IpcInvalidRequest => "IPC_INVALID_REQUEST",
+        HostError::SessionNotFound => "SESSION_NOT_FOUND",
+        HostError::HostStateUnavailable => "HOST_STATE_UNAVAILABLE",
+        HostError::SessionStateUnavailable => "SESSION_STATE_UNAVAILABLE",
+        HostError::ProjectCreatedSessionUnavailable { .. } => "PROJECT_CREATED_SESSION_UNAVAILABLE",
+        HostError::ProjectIo(source) => project_io_code(source),
+    }
+}
+
 fn present_project_io(source: ProjectIoError) -> ErrorPresentation {
     match source {
         ProjectIoError::InvalidProjectName => {

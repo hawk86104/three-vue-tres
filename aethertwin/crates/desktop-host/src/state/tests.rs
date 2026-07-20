@@ -151,3 +151,44 @@ fn created_project_open_failure_is_explicit_and_keeps_durable_project() {
         finalize_created_session(&created, open_session(&project_path, false)).unwrap();
     session.close().unwrap();
 }
+
+#[test]
+fn post_open_registry_publication_failure_is_partial_success_and_closes_session() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let _guard = service.sessions.lock().unwrap();
+        panic!("poison registry before post-create publication");
+    }));
+    let request = CreateProjectDto {
+        parent: root.path().to_string_lossy().into_owned(),
+        name: "Publish Failure".into(),
+        profile: "showroom".into(),
+    };
+    let project_path = root.path().join("Publish Failure.twinproj");
+
+    let error = service.create_project(request.clone()).unwrap_err();
+    assert_eq!(error.code, "PROJECT_CREATED_SESSION_UNAVAILABLE");
+    assert!(project_path.exists());
+    assert!(
+        !serde_json::to_string(&error)
+            .unwrap()
+            .contains(&project_path.to_string_lossy().to_string())
+    );
+
+    let mut reopened = open_session(&project_path, false).unwrap();
+    assert_eq!(
+        error.details,
+        json!({
+            "projectId": reopened.manifest().project_id,
+            "name": "Publish Failure",
+            "profile": "showroom",
+            "reasonCode": "HOST_STATE_UNAVAILABLE"
+        })
+    );
+    reopened.close().unwrap();
+
+    let retry = AppService::default().create_project(request).unwrap_err();
+    assert_eq!(retry.code, "PROJECT_ALREADY_EXISTS");
+    assert!(project_path.exists());
+}
