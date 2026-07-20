@@ -7,6 +7,6 @@ import { PlayerBoundary } from "./player-boundary";
 it("does not claim M4 visitor capabilities", () => {
   render(<PlayerBoundary />);
   expect(screen.getByRole("heading", { name: "AetherTwin Player" })).toBeVisible();
-  expect(screen.getByText("璁垮鎾斁鍣ㄥ皢鍦?M4 鍚敤")).toBeVisible();
+  expect(screen.getByText("访客播放器将在 M4 启用")).toBeVisible();
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
 });

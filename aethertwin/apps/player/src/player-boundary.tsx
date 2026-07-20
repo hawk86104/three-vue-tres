@@ -2,7 +2,7 @@ export function PlayerBoundary() {
   return (
     <main>
       <h1>AetherTwin Player</h1>
-      <p>璁垮鎾斁鍣ㄥ皢鍦?M4 鍚敤</p>
+      <p>访客播放器将在 M4 启用</p>
     </main>
   );
 }
