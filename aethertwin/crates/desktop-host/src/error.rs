@@ -9,6 +9,7 @@ pub(crate) enum HostError {
     SessionNotFound,
     HostStateUnavailable,
     SessionStateUnavailable,
+    SessionRecoveryRequired,
     ProjectCreatedSessionUnavailable {
         project_id: Uuid,
         name: String,
@@ -84,21 +85,33 @@ pub(crate) fn present(error: HostError) -> ErrorPresentation {
             "项目会话状态暂时不可用",
             json!({ "retryable": true }),
         ),
+        HostError::SessionRecoveryRequired => safe(
+            "SESSION_RECOVERY_REQUIRED",
+            "项目会话清理失败，请确认恢复后重新打开项目",
+            json!({ "recoveryRequired": true, "retryable": false }),
+        ),
         HostError::ProjectCreatedSessionUnavailable {
             project_id,
             name,
             profile,
             reason_code,
-        } => safe(
-            "PROJECT_CREATED_SESSION_UNAVAILABLE",
-            "项目已创建，但当前无法建立会话，请重新打开该项目",
-            json!({
-                "projectId": project_id,
-                "name": name,
-                "profile": profile,
-                "reasonCode": reason_code,
-            }),
-        ),
+        } => {
+            let message = if reason_code == "SESSION_RECOVERY_REQUIRED" {
+                "项目已创建，但会话清理失败；重新打开前请确认恢复项目"
+            } else {
+                "项目已创建，但当前无法建立会话，请重新打开该项目"
+            };
+            safe(
+                "PROJECT_CREATED_SESSION_UNAVAILABLE",
+                message,
+                json!({
+                    "projectId": project_id,
+                    "name": name,
+                    "profile": profile,
+                    "reasonCode": reason_code,
+                }),
+            )
+        }
         HostError::ProjectIo(source) => present_project_io(source),
     }
 }
@@ -125,6 +138,7 @@ pub(crate) const fn host_error_code(source: &HostError) -> &'static str {
         HostError::SessionNotFound => "SESSION_NOT_FOUND",
         HostError::HostStateUnavailable => "HOST_STATE_UNAVAILABLE",
         HostError::SessionStateUnavailable => "SESSION_STATE_UNAVAILABLE",
+        HostError::SessionRecoveryRequired => "SESSION_RECOVERY_REQUIRED",
         HostError::ProjectCreatedSessionUnavailable { .. } => "PROJECT_CREATED_SESSION_UNAVAILABLE",
         HostError::ProjectIo(source) => project_io_code(source),
     }

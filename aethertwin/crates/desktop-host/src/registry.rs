@@ -28,15 +28,13 @@ impl AppService {
         let mut opened = match opened_project_dto(Uuid::nil(), &session) {
             Ok(opened) => opened,
             Err(error) => {
-                let _ = session.close();
-                return Err(error);
+                return Err(cleanup_tracking_failure(&mut session, error));
             }
         };
         let mut sessions = match self.lock_registry() {
             Ok(sessions) => sessions,
             Err(error) => {
-                let _ = session.close();
-                return Err(error);
+                return Err(cleanup_tracking_failure(&mut session, error));
             }
         };
         let session_id = {
@@ -72,5 +70,12 @@ impl AppService {
         self.sessions
             .lock()
             .map_err(|_| HostError::HostStateUnavailable)
+    }
+}
+
+fn cleanup_tracking_failure(session: &mut ProjectSession, publication: HostError) -> HostError {
+    match session.close() {
+        Ok(()) => publication,
+        Err(_) => HostError::SessionRecoveryRequired,
     }
 }

@@ -1,8 +1,11 @@
-use super::{AppService, finalize_created_session, validate_session_id};
+use super::{
+    AppService, finalize_created_publication, finalize_created_session, validate_session_id,
+};
 use crate::{CreateProjectDto, error::HostError};
 use project_io::{
     CreateProjectRequest, ProjectIoError, ProjectProfile, create_project, open_session,
 };
+use rusqlite::Connection;
 use serde_json::json;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -191,4 +194,59 @@ fn post_open_registry_publication_failure_is_partial_success_and_closes_session(
     let retry = AppService::default().create_project(request).unwrap_err();
     assert_eq!(retry.code, "PROJECT_ALREADY_EXISTS");
     assert!(project_path.exists());
+}
+
+#[test]
+fn failed_publication_cleanup_requires_confirmed_recovery() {
+    let root = tempdir().unwrap();
+    let created = create_project(CreateProjectRequest {
+        parent: root.path().to_owned(),
+        name: "Cleanup Failure".into(),
+        profile: ProjectProfile::Showroom,
+    })
+    .unwrap();
+    let project_path = created.project_path.clone();
+    let session = open_session(&project_path, false).unwrap();
+    let database = Connection::open(project_path.join("project.db")).unwrap();
+    let secret = "publication cleanup SQL must stay private";
+    database
+        .execute_batch(&format!(
+            "CREATE TRIGGER fail_publication_cleanup BEFORE INSERT ON snapshots \
+             BEGIN SELECT RAISE(ABORT, '{secret}'); END;"
+        ))
+        .unwrap();
+
+    let service = AppService::default();
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let _guard = service.sessions.lock().unwrap();
+        panic!("force publication failure after session open");
+    }));
+    let publication = service.track_session(session);
+    let host_error = finalize_created_publication(&created, publication).unwrap_err();
+    let error = service.render_error("create_project", host_error);
+
+    assert_eq!(error.code, "PROJECT_CREATED_SESSION_UNAVAILABLE");
+    assert_eq!(
+        error.details,
+        json!({
+            "projectId": created.manifest.project_id,
+            "name": "Cleanup Failure",
+            "profile": "showroom",
+            "reasonCode": "SESSION_RECOVERY_REQUIRED"
+        })
+    );
+    assert!(error.message.contains("确认恢复"));
+    let serialized = serde_json::to_string(&error).unwrap();
+    assert!(!serialized.contains(&project_path.to_string_lossy().to_string()));
+    assert!(!serialized.contains(secret));
+
+    let normal_open = open_session(&project_path, false).unwrap_err();
+    assert!(matches!(normal_open, ProjectIoError::StaleProjectLock));
+    database
+        .execute_batch("DROP TRIGGER fail_publication_cleanup;")
+        .unwrap();
+    drop(database);
+    let mut recovered = open_session(&project_path, true).unwrap();
+    assert_eq!(recovered.save_state(), project_io::SaveState::Recovered);
+    recovered.close().unwrap();
 }
