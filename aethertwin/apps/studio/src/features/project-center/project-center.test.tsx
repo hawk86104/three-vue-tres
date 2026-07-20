@@ -70,14 +70,17 @@ describe("project name validation", () => {
   it.each([
     ["\t\n\u00a0", EMPTY_NAME_ERROR],
     ["\u0085", EMPTY_NAME_ERROR],
+    ["\uFEFF", EMPTY_NAME_ERROR],
     ["项目 ", TRAILING_NAME_ERROR],
     ["项目\t", TRAILING_NAME_ERROR],
     ["项目\n", TRAILING_NAME_ERROR],
     ["项目\u00a0", TRAILING_NAME_ERROR],
     ["项目\u0085", TRAILING_NAME_ERROR],
+    ["项目\uFEFF", TRAILING_NAME_ERROR],
     ["项目.", TRAILING_NAME_ERROR],
     ["项目.\u00a0", TRAILING_NAME_ERROR],
     ["项目.\u0085", TRAILING_NAME_ERROR],
+    ["项目.\uFEFF", TRAILING_NAME_ERROR],
   ])(
     "rejects empty or trailing Unicode whitespace without normalizing to an invalid name: %j",
     (name, error) => {
@@ -92,6 +95,7 @@ describe("project name validation", () => {
     const eightyCodePoints = "😀".repeat(80);
     expect(validateProjectName("\t\u00a0  项目")).toEqual({ ok: true, name: "项目" });
     expect(validateProjectName("\u0085项目")).toEqual({ ok: true, name: "项目" });
+    expect(validateProjectName("\uFEFF项目")).toEqual({ ok: true, name: "项目" });
     expect(validateProjectName(eightyCodePoints)).toEqual({
       ok: true,
       name: eightyCodePoints,

@@ -25,8 +25,8 @@ export type ProjectNameValidation =
 
 function trimUnicodeWhiteSpace(value: string): string {
   return value
-    .replace(/^\p{White_Space}+/u, "")
-    .replace(/\p{White_Space}+$/u, "");
+    .replace(/^[\p{White_Space}\uFEFF]+/u, "")
+    .replace(/[\p{White_Space}\uFEFF]+$/u, "");
 }
 
 export function validateProjectName(value: string): ProjectNameValidation {
@@ -37,7 +37,7 @@ export function validateProjectName(value: string): ProjectNameValidation {
   if (/[\\/]/u.test(canonicalName)) {
     return { ok: false, error: "项目名称不能包含路径分隔符" };
   }
-  if (/(?:[.]|\p{White_Space})$/u.test(value)) {
+  if (/(?:[.]|[\p{White_Space}\uFEFF])$/u.test(value)) {
     return { ok: false, error: "项目名称不能以点或空格结尾" };
   }
   const nameBeforeExtension = canonicalName.split(".", 1)[0] ?? "";

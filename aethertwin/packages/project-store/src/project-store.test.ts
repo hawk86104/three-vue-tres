@@ -217,6 +217,38 @@ describe("ProjectStore", () => {
     expect(store.getState().snapshot?.project.name).toBe("Old");
   });
 
+  it("flush retains a failed mutation after a later manual save succeeds", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Old", location: "sandbox", profile: "showroom" });
+    const failure = new Error("rename failure must survive manual save");
+    backend.failNextCommit = failure;
+
+    await expect(store.renameProject("Rejected")).rejects.toBe(failure);
+    await expect(store.save()).resolves.toBeUndefined();
+    expect(backend.checkpointCount).toBe(1);
+
+    await expect(store.flush()).rejects.toBe(failure);
+    expect(store.getState().snapshot?.project.name).toBe("Old");
+  });
+
+  it("flush retains a failed mutation after an earlier mutation autosaves", async () => {
+    vi.useFakeTimers();
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 500 });
+    await store.create({ name: "Old", location: "sandbox", profile: "market" });
+    await store.renameProject("Durable");
+    const failure = new Error("rename failure must survive autosave");
+    backend.failNextCommit = failure;
+
+    await expect(store.renameProject("Rejected")).rejects.toBe(failure);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backend.checkpointCount).toBe(1);
+
+    await expect(store.flush()).rejects.toBe(failure);
+    expect(store.getState().snapshot?.project.name).toBe("Durable");
+  });
+
   it("flush forgets a prior failure after a later operation succeeds", async () => {
     const backend = new SandboxProjectBackend();
     const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });

@@ -28,11 +28,11 @@ export interface ProjectStoreOptions {
 
 type StateListener = () => void;
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
-type OperationOutcome =
+type MutationOutcome =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: unknown };
 
-const successfulOperationOutcome: OperationOutcome = Object.freeze({ ok: true });
+const successfulMutationOutcome: MutationOutcome = Object.freeze({ ok: true });
 
 interface PreparedProject {
   readonly projectPath: string;
@@ -74,8 +74,8 @@ export class ProjectStore {
   private bus: CommandBus<ProjectSnapshot> | null = null;
   private autosaveTimer: TimerHandle | null = null;
   private operationTail: Promise<void> = Promise.resolve();
-  private latestOperationOutcome: Promise<OperationOutcome> = Promise.resolve(
-    successfulOperationOutcome,
+  private latestMutationOutcome: Promise<MutationOutcome> = Promise.resolve(
+    successfulMutationOutcome,
   );
   private activeCloseAttempt: Promise<void> | null = null;
   private disposed = false;
@@ -106,36 +106,36 @@ export class ProjectStore {
 
   create(request: CreateProjectRequest): Promise<void> {
     const ownedRequest = Object.freeze({ ...request });
-    return this.enqueueOperation(() =>
+    return this.enqueueMutation(() =>
       this.replaceProject(() => this.backend.createProject(ownedRequest)),
     );
   }
 
   open(projectPath: string): Promise<void> {
-    return this.enqueueOperation(() =>
+    return this.enqueueMutation(() =>
       this.replaceProject(() => this.backend.openProject(projectPath)),
     );
   }
 
   renameProject(name: string): Promise<void> {
-    return this.enqueueOperation(() =>
+    return this.enqueueMutation(() =>
       this.mutate((bus) => bus.execute(renameProjectCommand, { name })),
     );
   }
 
   setProjectTags(tags: readonly string[]): Promise<void> {
     const ownedTags = Object.freeze([...tags]);
-    return this.enqueueOperation(() =>
+    return this.enqueueMutation(() =>
       this.mutate((bus) => bus.execute(setProjectTagsCommand, { tags: ownedTags })),
     );
   }
 
   undo(): Promise<void> {
-    return this.enqueueOperation(() => this.mutate((bus) => bus.undo()));
+    return this.enqueueMutation(() => this.mutate((bus) => bus.undo()));
   }
 
   redo(): Promise<void> {
-    return this.enqueueOperation(() => this.mutate((bus) => bus.redo()));
+    return this.enqueueMutation(() => this.mutate((bus) => bus.redo()));
   }
 
   save(): Promise<void> {
@@ -146,12 +146,15 @@ export class ProjectStore {
     if (this.disposed) {
       return Promise.reject(new Error("ProjectStore is disposed"));
     }
-    const boundary = this.latestOperationOutcome;
-    return boundary.then((outcome) => {
-      if (!outcome.ok) {
-        throw outcome.error;
-      }
-    });
+    const operationBoundary = this.operationTail;
+    const mutationBoundary = this.latestMutationOutcome;
+    return operationBoundary
+      .then(() => mutationBoundary)
+      .then((outcome) => {
+        if (!outcome.ok) {
+          throw outcome.error;
+        }
+      });
   }
 
   close(): Promise<void> {
@@ -378,9 +381,14 @@ export class ProjectStore {
       () => undefined,
       () => undefined,
     );
-    this.latestOperationOutcome = pending.then(
-      () => successfulOperationOutcome,
-      (error): OperationOutcome => ({ ok: false, error }),
+    return pending;
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = this.enqueueOperation(operation);
+    this.latestMutationOutcome = pending.then(
+      () => successfulMutationOutcome,
+      (error): MutationOutcome => ({ ok: false, error }),
     );
     return pending;
   }
