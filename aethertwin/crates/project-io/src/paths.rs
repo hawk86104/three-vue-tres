@@ -159,9 +159,13 @@ pub(crate) fn canonical_parent(parent: &Path) -> Result<PathBuf, ProjectIoError>
 }
 
 pub(crate) fn validate_project_structure(path: &Path) -> Result<PathBuf, ProjectIoError> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+    let canonical = match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ProjectIoError::ProjectNotFound);
+        }
+        Err(_) => return Err(ProjectIoError::InvalidProjectStructure),
+    };
     if !canonical.is_dir() {
         return Err(ProjectIoError::InvalidProjectStructure);
     }

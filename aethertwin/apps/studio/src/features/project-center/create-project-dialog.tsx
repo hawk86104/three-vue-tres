@@ -1,6 +1,8 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { Badge, Button, Dialog, Field, StatusNotice } from "@aethertwin/design-system";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 
 const WINDOWS_RESERVED_DEVICE_NAME =
   /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/iu;
@@ -53,19 +55,38 @@ export function validateProjectName(value: string): ProjectNameValidation {
 export interface CreateProjectDialogProps {
   open: boolean;
   profile: ProjectProfile;
+  mode?: "desktop" | "sandbox";
   onOpenChange(open: boolean): void;
-  onCreate(name: string, profile: ProjectProfile): Promise<void>;
+  onCreate(name: string, profile: ProjectProfile, location?: string): Promise<void>;
+}
+
+interface CreateErrorNotice {
+  readonly message: string;
+  readonly logRef: string | null;
+}
+
+function createErrorNotice(value: unknown): CreateErrorNotice {
+  if (value instanceof ProjectBackendError) {
+    return Object.freeze({
+      message: value.message,
+      logRef: value.logRef.length === 0 ? null : value.logRef,
+    });
+  }
+  return Object.freeze({ message: "创建失败，请重试", logRef: null });
 }
 
 export function CreateProjectDialog({
   open,
   profile,
+  mode = "sandbox",
   onOpenChange,
   onCreate,
 }: CreateProjectDialogProps) {
   const [name, setName] = useState("");
+  const [location, setLocation] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<CreateErrorNotice | null>(null);
   const [busy, setBusy] = useState(false);
   const nameFieldRef = useRef<HTMLInputElement>(null);
   const presentation = profilePresentation[profile];
@@ -73,7 +94,9 @@ export function CreateProjectDialog({
   useEffect(() => {
     if (!open) {
       setName("");
+      setLocation("");
       setValidationError(null);
+      setLocationError(null);
       setCreateError(null);
       setBusy(false);
     }
@@ -88,16 +111,43 @@ export function CreateProjectDialog({
       return;
     }
 
+    if (mode === "desktop" && location.length === 0) {
+      setLocationError("请选择项目位置");
+      setCreateError(null);
+      return;
+    }
+
     setBusy(true);
     setValidationError(null);
     setCreateError(null);
     try {
-      await onCreate(validation.name, profile);
+      if (mode === "desktop") {
+        await onCreate(validation.name, profile, location);
+      } else {
+        await onCreate(validation.name, profile);
+      }
       onOpenChange(false);
-    } catch {
-      setCreateError("创建失败，请重试");
+    } catch (error) {
+      setCreateError(createErrorNotice(error));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function chooseLocation() {
+    setLocationError(null);
+    setCreateError(null);
+    try {
+      const selected = await openFolderDialog({
+        directory: true,
+        multiple: false,
+        title: "选择项目位置",
+      });
+      if (typeof selected === "string") {
+        setLocation(selected);
+      }
+    } catch {
+      setLocationError("无法选择项目位置，请重试");
     }
   }
 
@@ -111,7 +161,11 @@ export function CreateProjectDialog({
         }
       }}
       title="新建项目"
-      description="项目只保存在当前 Web 沙盒会话中，关闭页面后不会保留。"
+      description={
+        mode === "desktop"
+          ? "选择本地目录并创建可持久保存的项目。"
+          : "项目只保存在当前 Web 沙盒会话中，关闭页面后不会保留。"
+      }
     >
       <form
         className="studio-create-form"
@@ -126,7 +180,12 @@ export function CreateProjectDialog({
           <p>{presentation.description}</p>
         </div>
         {createError === null ? null : (
-          <StatusNotice tone="error">{createError}</StatusNotice>
+          <StatusNotice tone="error">
+            <span>{createError.message}</span>
+            {createError.logRef === null ? null : (
+              <span>日志参考：{createError.logRef}</span>
+            )}
+          </StatusNotice>
         )}
         <Field
           ref={nameFieldRef}
@@ -139,13 +198,22 @@ export function CreateProjectDialog({
             setCreateError(null);
           }}
         />
-        <Field
-          label="项目位置"
-          value="sandbox"
-          helpText="Web 沙盒位置固定且不持久保存。"
-          disabled
-          readOnly
-        />
+        {mode === "desktop" ? (
+          <div className="studio-create-form__location">
+            <Field label="项目位置" value={location} error={locationError} readOnly />
+            <Button variant="secondary" disabled={busy} onClick={() => void chooseLocation()}>
+              选择项目位置
+            </Button>
+          </div>
+        ) : (
+          <Field
+            label="项目位置"
+            value="sandbox"
+            helpText="Web 沙盒位置固定且不持久保存。"
+            disabled
+            readOnly
+          />
+        )}
         <div className="studio-create-form__actions">
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
             取消

@@ -309,6 +309,50 @@ fn native_errors_have_exact_safe_envelope_and_redact_absolute_paths() {
 }
 
 #[test]
+fn missing_and_corrupt_projects_have_distinct_safe_native_errors_without_sessions() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let missing = root.path().join("Missing.twinproj");
+    assert!(!missing.exists());
+
+    let missing_error = service
+        .open_project(OpenProjectDto {
+            path: missing.to_string_lossy().into_owned(),
+            recover_stale_lock: false,
+        })
+        .unwrap_err();
+    assert_eq!(missing_error.code, "PROJECT_NOT_FOUND");
+    assert_eq!(
+        missing_error.details,
+        json!({ "recoveryRequired": false, "retryable": false })
+    );
+    assert!(!missing_error.message.is_empty());
+    assert!(!missing_error.log_ref.is_empty());
+    let missing_serialized = serde_json::to_string(&missing_error).unwrap();
+    assert!(!missing_serialized.contains(&missing.to_string_lossy().to_string()));
+    assert_eq!(service.session_count().unwrap(), 0);
+
+    let corrupt = root.path().join("Corrupt.twinproj");
+    std::fs::create_dir(&corrupt).unwrap();
+    let corrupt_error = service
+        .open_project(OpenProjectDto {
+            path: corrupt.to_string_lossy().into_owned(),
+            recover_stale_lock: false,
+        })
+        .unwrap_err();
+    assert_eq!(corrupt_error.code, "INVALID_PROJECT_STRUCTURE");
+    assert_eq!(
+        corrupt_error.details,
+        json!({ "recoveryRequired": false, "retryable": false })
+    );
+    assert!(!corrupt_error.message.is_empty());
+    assert!(!corrupt_error.log_ref.is_empty());
+    let corrupt_serialized = serde_json::to_string(&corrupt_error).unwrap();
+    assert!(!corrupt_serialized.contains(&corrupt.to_string_lossy().to_string()));
+    assert_eq!(service.session_count().unwrap(), 0);
+}
+
+#[test]
 fn tauri_configuration_and_capability_are_exact_and_least_privilege() {
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
     assert_eq!(config["productName"], "AetherTwin Studio");

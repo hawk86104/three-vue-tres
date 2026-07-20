@@ -162,6 +162,27 @@ input {
   gap: 8px;
 }
 
+.studio-create-form__location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.studio-project-error,
+.studio-bootstrap-state {
+  display: grid;
+  width: min(720px, calc(100% - 40px));
+  gap: 16px;
+  margin: 64px auto;
+}
+
+.studio-project-error .aether-status-notice span,
+.studio-overview .aether-status-notice span,
+.studio-inspector-form .aether-status-notice span {
+  display: block;
+}
+
 .studio-project-tree h2,
 .studio-inspector-form h2 {
   margin-top: 0;
@@ -180,6 +201,12 @@ input {
   border-radius: var(--aether-radius-sm);
   background: var(--aether-accent-soft);
   color: var(--aether-accent);
+}
+
+.studio-project-tree li ul {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .studio-overview {
@@ -278,6 +305,10 @@ input {
 
   .studio-project-center__hero {
     flex-direction: column;
+  }
+
+  .studio-create-form__location {
+    grid-template-columns: 1fr;
   }
 }
 

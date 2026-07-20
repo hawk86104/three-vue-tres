@@ -120,6 +120,7 @@ pub(crate) const fn project_io_code(source: &ProjectIoError) -> &'static str {
     match source {
         ProjectIoError::InvalidProjectName => "INVALID_PROJECT_NAME",
         ProjectIoError::ProjectAlreadyExists => "PROJECT_ALREADY_EXISTS",
+        ProjectIoError::ProjectNotFound => "PROJECT_NOT_FOUND",
         ProjectIoError::InvalidProjectStructure => "INVALID_PROJECT_STRUCTURE",
         ProjectIoError::UnsupportedSchemaVersion => "UNSUPPORTED_SCHEMA_VERSION",
         ProjectIoError::ManifestDatabaseMismatch => "MANIFEST_DATABASE_MISMATCH",
@@ -151,6 +152,9 @@ fn present_project_io(source: ProjectIoError) -> ErrorPresentation {
         }
         ProjectIoError::ProjectAlreadyExists => {
             project_io("PROJECT_ALREADY_EXISTS", "同名项目已存在", false, false)
+        }
+        ProjectIoError::ProjectNotFound => {
+            project_io("PROJECT_NOT_FOUND", "项目不存在或已移动", false, false)
         }
         ProjectIoError::InvalidProjectStructure => project_io(
             "INVALID_PROJECT_STRUCTURE",
@@ -225,6 +229,7 @@ mod tests {
         let errors = [
             ProjectIoError::InvalidProjectName,
             ProjectIoError::ProjectAlreadyExists,
+            ProjectIoError::ProjectNotFound,
             ProjectIoError::InvalidProjectStructure,
             ProjectIoError::UnsupportedSchemaVersion,
             ProjectIoError::ManifestDatabaseMismatch,

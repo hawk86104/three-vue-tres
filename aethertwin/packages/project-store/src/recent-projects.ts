@@ -108,4 +108,11 @@ export class RecentProjects {
     const next = normalizeRecentProjects([owned, ...this.list()]);
     this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
   }
+
+  remove(projectPath: string): void {
+    const next = normalizeRecentProjects(
+      this.list().filter((project) => project.path !== projectPath),
+    );
+    this.storage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(next));
+  }
 }

@@ -6,6 +6,8 @@ pub enum ProjectIoError {
     InvalidProjectName,
     #[error("project already exists")]
     ProjectAlreadyExists,
+    #[error("project not found")]
+    ProjectNotFound,
     #[error("invalid project structure")]
     InvalidProjectStructure,
     #[error("unsupported schema version")]
@@ -31,6 +33,7 @@ impl ProjectIoError {
         match self {
             Self::InvalidProjectName => "INVALID_PROJECT_NAME",
             Self::ProjectAlreadyExists => "PROJECT_ALREADY_EXISTS",
+            Self::ProjectNotFound => "PROJECT_NOT_FOUND",
             Self::InvalidProjectStructure => "INVALID_PROJECT_STRUCTURE",
             Self::UnsupportedSchemaVersion => "UNSUPPORTED_SCHEMA_VERSION",
             Self::ManifestDatabaseMismatch => "MANIFEST_DATABASE_MISMATCH",

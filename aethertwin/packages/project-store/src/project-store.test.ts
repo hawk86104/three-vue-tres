@@ -877,6 +877,62 @@ describe("RecentProjects", () => {
     expect([...storage.values.keys()]).toEqual(["aethertwin.recentProjects.v1"]);
   });
 
+  it("removes an existing path while preserving an immutable, persisted recent list", () => {
+    const storage = new MemoryStorage();
+    const recents = new RecentProjects(storage);
+    recents.record({
+      path: "sandbox://one",
+      name: "One",
+      profile: "showroom",
+      openedAt: "2026-07-17T03:00:00.000Z",
+    });
+    recents.record({
+      path: "sandbox://two",
+      name: "Two",
+      profile: "market",
+      openedAt: "2026-07-17T02:00:00.000Z",
+    });
+    recents.record({
+      path: "sandbox://three",
+      name: "Three",
+      profile: "showroom",
+      openedAt: "2026-07-17T01:00:00.000Z",
+    });
+
+    recents.remove("sandbox://two");
+
+    const listed = recents.list();
+    expect(listed.map(({ path, name }) => ({ path, name }))).toEqual([
+      { path: "sandbox://one", name: "One" },
+      { path: "sandbox://three", name: "Three" },
+    ]);
+    expect(Object.isFrozen(listed)).toBe(true);
+    expect(listed.every((project) => Object.isFrozen(project))).toBe(true);
+    expect(JSON.parse(storage.getItem("aethertwin.recentProjects.v1")!)).toEqual(listed);
+  });
+
+  it("treats an unknown path as an immutable, persistence-preserving no-op", () => {
+    const storage = new MemoryStorage();
+    const recents = new RecentProjects(storage);
+    recents.record({
+      path: "sandbox://one",
+      name: "One",
+      profile: "showroom",
+      openedAt: "2026-07-17T03:00:00.000Z",
+    });
+    const serializedBefore = storage.getItem("aethertwin.recentProjects.v1");
+
+    recents.remove("sandbox://missing");
+
+    const listed = recents.list();
+    expect(listed.map(({ path, name }) => ({ path, name }))).toEqual([
+      { path: "sandbox://one", name: "One" },
+    ]);
+    expect(Object.isFrozen(listed)).toBe(true);
+    expect(Object.isFrozen(listed[0])).toBe(true);
+    expect(storage.getItem("aethertwin.recentProjects.v1")).toBe(serializedBefore);
+  });
+
   it("returns an empty list for malformed preferences without leaking paths into project data", async () => {
     const storage = new MemoryStorage();
     storage.setItem("aethertwin.recentProjects.v1", "{not-json");

@@ -214,10 +214,23 @@ fn rejects_migration_checksum_drift() {
 }
 
 #[test]
-fn rejects_missing_or_malformed_project_structure() {
+fn reports_project_not_found_for_a_missing_project_root() {
     let root = tempdir().unwrap();
+    let missing = root.path().join("Missing.twinproj");
+    assert!(!missing.exists());
     assert_code(
-        open_project(root.path()).unwrap_err(),
+        open_project(&missing).unwrap_err(),
+        "PROJECT_NOT_FOUND",
+    );
+}
+
+#[test]
+fn rejects_existing_project_roots_with_missing_or_malformed_structure() {
+    let root = tempdir().unwrap();
+    let missing_manifest = root.path().join("Missing Manifest.twinproj");
+    fs::create_dir(&missing_manifest).unwrap();
+    assert_code(
+        open_project(&missing_manifest).unwrap_err(),
         "INVALID_PROJECT_STRUCTURE",
     );
 

@@ -1,6 +1,5 @@
-import type { ProjectProfile, ProjectSnapshot } from "@aethertwin/core-model";
-import { Field, Panel, StatusNotice } from "@aethertwin/design-system";
-import { EditorShell } from "@aethertwin/editor-shell";
+import type { ProjectProfile } from "@aethertwin/core-model";
+import { StatusNotice } from "@aethertwin/design-system";
 import {
   ProjectStore,
   RecentProjects,
@@ -8,18 +7,13 @@ import {
   type ProjectBackend,
   type RecentProject,
 } from "@aethertwin/project-store";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import {
-  selectBackend,
-  type ForcedBackend,
-  type StudioBackend,
-} from "./backend/select-backend";
+import { selectBackend, type ForcedBackend } from "./backend/select-backend";
 import { UiGallery } from "./dev/ui-gallery";
-import {
-  CreateProjectDialog,
-  validateProjectName,
-} from "./features/project-center/create-project-dialog";
+import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
+import { ProjectOverview } from "./features/project-overview/project-overview";
 
 class SessionStorage implements KeyValueStorage {
   private readonly values = new Map<string, string>();
@@ -37,6 +31,45 @@ class SessionStorage implements KeyValueStorage {
   }
 }
 
+class ProtectedStorage implements KeyValueStorage {
+  constructor(private readonly storage: Storage) {}
+
+  getItem(key: string): string | null {
+    try {
+      return this.storage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  setItem(key: string, value: string): void {
+    try {
+      this.storage.setItem(key, value);
+    } catch {
+      // Application-local preferences are optional; project data remains authoritative.
+    }
+  }
+
+  removeItem(key: string): void {
+    try {
+      this.storage.removeItem(key);
+    } catch {
+      // Treat unavailable preferences as an empty recent-project list.
+    }
+  }
+}
+
+function recentStorage(mode: ProjectBackend["mode"]): KeyValueStorage {
+  if (mode === "desktop" && typeof window !== "undefined") {
+    try {
+      return new ProtectedStorage(window.localStorage);
+    } catch {
+      return new SessionStorage();
+    }
+  }
+  return new SessionStorage();
+}
+
 function useProjectStore(store: ProjectStore) {
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
   const getSnapshot = useCallback(() => store.getState(), [store]);
@@ -44,28 +77,39 @@ function useProjectStore(store: ProjectStore) {
 }
 
 function readableError(value: unknown): string {
-  return value instanceof Error ? value.message : String(value);
+  const message = value instanceof Error ? value.message : String(value);
+  if (value === null || typeof value !== "object" || !("logRef" in value)) {
+    return message;
+  }
+
+  return typeof value.logRef === "string" && value.logRef.length > 0
+    ? `${message}（日志参考：${value.logRef}）`
+    : message;
+}
+
+function missingRecentError(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || !("code" in value)) {
+    return false;
+  }
+  return value.code === "PROJECT_NOT_FOUND";
+}
+
+async function disposeBackend(backend: ProjectBackend): Promise<void> {
+  const disposable = backend as ProjectBackend & { dispose?(): Promise<void> };
+  await disposable.dispose?.();
 }
 
 export interface AppProps {
-  backend?: StudioBackend;
+  backend?: ProjectBackend;
   forceBackend?: ForcedBackend;
 }
 
-function requireSandboxBackend(backend: ProjectBackend): StudioBackend {
-  if (backend.mode !== "sandbox") {
-    throw new Error("AetherTwin Studio requires a sandbox backend");
-  }
-  return backend as StudioBackend;
-}
-
-function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
-  const [backend] = useState(() =>
-    requireSandboxBackend(injectedBackend ?? selectBackend(forceBackend)),
-  );
+function StudioApp({ backend }: { backend: ProjectBackend }) {
   const [store] = useState(() => new ProjectStore(backend));
   const storeLifecycleGeneration = useRef(0);
-  const [recentRepository] = useState(() => new RecentProjects(new SessionStorage()));
+  const [recentRepository] = useState(
+    () => new RecentProjects(recentStorage(backend.mode)),
+  );
   const [recentProjects, setRecentProjects] = useState<readonly RecentProject[]>(() =>
     recentRepository.list(),
   );
@@ -81,18 +125,19 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
     return () => {
       void Promise.resolve().then(() => {
         if (storeLifecycleGeneration.current === generation) {
-          return store.dispose().catch(() => undefined);
+          return store
+            .dispose()
+            .finally(() => disposeBackend(backend))
+            .catch(() => undefined);
         }
         return undefined;
       });
     };
-  }, [store]);
+  }, [backend, store]);
 
   const recordCurrentProject = useCallback(() => {
     const current = store.getState();
-    if (current.projectPath === null || current.snapshot === null) {
-      return;
-    }
+    if (current.projectPath === null || current.snapshot === null) return;
     recentRepository.record({
       path: current.projectPath,
       name: current.snapshot.project.name,
@@ -102,16 +147,19 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
     setRecentProjects(recentRepository.list());
   }, [recentRepository, store]);
 
-  async function createProject(name: string, profile: ProjectProfile) {
+  async function createProject(
+    name: string,
+    profile: ProjectProfile,
+    selectedLocation?: string,
+  ) {
     setCenterError(null);
-    try {
-      await store.create({ name, profile, location: "sandbox" });
-      recordCurrentProject();
-      setView("editor");
-    } catch (error) {
-      setCenterError(`创建失败：${readableError(error)}`);
-      throw error;
+    const location = backend.mode === "sandbox" ? "sandbox" : selectedLocation;
+    if (location === undefined || location.length === 0) {
+      throw new Error("请选择项目位置");
     }
+    await store.create({ name, profile, location });
+    recordCurrentProject();
+    setView("editor");
   }
 
   async function openProject(path: string) {
@@ -122,48 +170,46 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
       recordCurrentProject();
       setView("editor");
     } catch (error) {
+      if (missingRecentError(error)) {
+        recentRepository.remove(path);
+        setRecentProjects(recentRepository.list());
+      }
       setCenterError(`打开失败：${readableError(error)}`);
     } finally {
       setOpening(false);
     }
   }
 
-  async function returnToCenter() {
+  async function openExistingProject() {
+    setOpening(true);
+    setCenterError(null);
     try {
-      await store.flush();
-      await store.save();
+      const selected = await openFolderDialog({
+        directory: true,
+        multiple: false,
+        title: "打开本地项目",
+      });
+      if (typeof selected !== "string") return;
+      await store.open(selected);
       recordCurrentProject();
-      await store.close();
-      setView("center");
-      setCenterError(null);
+      setView("editor");
     } catch (error) {
-      setCenterError(`关闭失败：${readableError(error)}`);
+      setCenterError(`打开失败：${readableError(error)}`);
+    } finally {
+      setOpening(false);
     }
   }
 
   if (view === "editor" && state.snapshot !== null && state.projectPath !== null) {
-    const snapshot = state.snapshot;
     return (
-      <EditorShell
-        projectName={snapshot.project.name}
-        profile={snapshot.project.profile}
-        saveState={state.saveState}
-        canUndo={state.canUndo}
-        canRedo={state.canRedo}
-        onBack={() => void returnToCenter()}
-        onSave={() => void store.save().catch(() => undefined)}
-        onUndo={() => void store.undo().catch(() => undefined)}
-        onRedo={() => void store.redo().catch(() => undefined)}
-        onClose={() => void returnToCenter()}
-        tree={<ProjectOverviewTree snapshot={snapshot} />}
-        workspace={<ProjectOverviewWorkspace projectPath={state.projectPath} snapshot={snapshot} />}
-        inspector={
-          <ProjectOverviewInspector
-            snapshot={snapshot}
-            onRename={(name) => store.renameProject(name)}
-            onSetTags={(tags) => store.setProjectTags(tags)}
-          />
-        }
+      <ProjectOverview
+        store={store}
+        backendMode={backend.mode}
+        onBeforeClose={recordCurrentProject}
+        onBack={() => {
+          setView("center");
+          setCenterError(null);
+        }}
       />
     );
   }
@@ -171,10 +217,12 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
   return (
     <>
       <ProjectCenter
+        mode={backend.mode}
         error={centerError}
         opening={opening}
         recentProjects={recentProjects}
         onOpen={(path) => void openProject(path)}
+        onOpenExisting={() => void openExistingProject()}
         onStartCreate={(profile) => {
           setCenterError(null);
           setDialogProfile(profile);
@@ -183,10 +231,9 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
       <CreateProjectDialog
         open={dialogProfile !== null}
         profile={dialogProfile ?? "showroom"}
+        mode={backend.mode}
         onOpenChange={(open) => {
-          if (!open) {
-            setDialogProfile(null);
-          }
+          if (!open) setDialogProfile(null);
         }}
         onCreate={createProject}
       />
@@ -194,131 +241,47 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
   );
 }
 
-function ProjectOverviewTree({ snapshot }: { snapshot: ProjectSnapshot }) {
-  return (
-    <div className="studio-project-tree">
-      <h2>楼层</h2>
-      <ul>
-        {snapshot.project.floors.map((floor) => (
-          <li key={floor.id}>{floor.name}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ProjectOverviewWorkspace({
-  projectPath,
-  snapshot,
-}: {
-  projectPath: string;
-  snapshot: ProjectSnapshot;
-}) {
-  return (
-    <Panel className="studio-overview" aria-label="项目概览">
-      <p className="studio-project-center__card-kicker">M0 OVERVIEW</p>
-      <h2>项目概览</h2>
-      <dl>
-        <div><dt>项目名称</dt><dd>{snapshot.project.name}</dd></div>
-        <div><dt>项目档案</dt><dd>{snapshot.project.profile}</dd></div>
-        <div><dt>Schema</dt><dd>{snapshot.schemaVersion}</dd></div>
-        <div><dt>沙盒标识</dt><dd>{projectPath}</dd></div>
-      </dl>
-    </Panel>
-  );
-}
-
-function ProjectOverviewInspector({
-  snapshot,
-  onRename,
-  onSetTags,
-}: {
-  snapshot: ProjectSnapshot;
-  onRename(name: string): Promise<void>;
-  onSetTags(tags: readonly string[]): Promise<void>;
-}) {
-  const [name, setName] = useState(snapshot.project.name);
-  const [tags, setTags] = useState(snapshot.project.tags.join(", "));
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [tagsError, setTagsError] = useState<string | null>(null);
+function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
+  const [backend, setBackend] = useState<ProjectBackend | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    setName(snapshot.project.name);
-    setTags(snapshot.project.tags.join(", "));
-    setNameError(null);
-    setTagsError(null);
-  }, [snapshot]);
+    let active = true;
+    setBackend(null);
+    setError(null);
+    void selectBackend(forceBackend).then(
+      (selected) => {
+        if (active) setBackend(selected);
+      },
+      (reason) => {
+        if (active) setError(reason instanceof Error ? reason : new Error(String(reason)));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [forceBackend]);
 
-  async function commitName() {
-    const validation = validateProjectName(name);
-    if (!validation.ok) {
-      setNameError(validation.error);
-      return;
-    }
-    if (validation.name === snapshot.project.name) {
-      setNameError(null);
-      return;
-    }
-    try {
-      await onRename(validation.name);
-      setNameError(null);
-    } catch (error) {
-      setNameError(readableError(error));
-    }
+  if (error !== null) {
+    return (
+      <main className="studio-bootstrap-state">
+        <StatusNotice tone="error">{error.message}</StatusNotice>
+      </main>
+    );
   }
-
-  async function commitTags() {
-    const nextTags = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
-    if (
-      nextTags.length === snapshot.project.tags.length &&
-      nextTags.every((tag, index) => tag === snapshot.project.tags[index])
-    ) {
-      setTagsError(null);
-      return;
-    }
-    try {
-      await onSetTags(nextTags);
-      setTagsError(null);
-    } catch (error) {
-      setTagsError(readableError(error));
-    }
+  if (backend === null) {
+    return (
+      <main className="studio-bootstrap-state">
+        <StatusNotice>正在连接项目后端…</StatusNotice>
+      </main>
+    );
   }
-
-  const editError = nameError ?? tagsError;
-
-  return (
-    <div className="studio-inspector-form">
-      <h2>检查器</h2>
-      {editError === null ? null : <StatusNotice tone="error">{editError}</StatusNotice>}
-      <Field
-        label="项目名称（检查器）"
-        value={name}
-        error={nameError}
-        onChange={(event) => {
-          setName(event.currentTarget.value);
-          setNameError(null);
-        }}
-        onBlur={() => void commitName()}
-      />
-      <Field
-        label="项目标签"
-        value={tags}
-        error={tagsError}
-        helpText="使用英文逗号分隔标签"
-        onChange={(event) => {
-          setTags(event.currentTarget.value);
-          setTagsError(null);
-        }}
-        onBlur={() => void commitTags()}
-      />
-    </div>
-  );
+  return <StudioApp backend={backend} />;
 }
 
-export function App(props: AppProps) {
+export function App({ backend, forceBackend }: AppProps) {
   const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
-  if (pathname === "/dev/ui-gallery") {
-    return <UiGallery />;
-  }
-  return <StudioApp {...props} />;
+  if (pathname === "/dev/ui-gallery") return <UiGallery />;
+  if (backend !== undefined) return <StudioApp backend={backend} />;
+  return <StudioBootstrap forceBackend={forceBackend} />;
 }

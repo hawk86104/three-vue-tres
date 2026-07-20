@@ -3,10 +3,12 @@ import { Badge, Button, Panel, StatusNotice } from "@aethertwin/design-system";
 import type { RecentProject } from "@aethertwin/project-store";
 
 export interface ProjectCenterProps {
+  mode?: "desktop" | "sandbox";
   error: string | null;
   opening: boolean;
   recentProjects: readonly RecentProject[];
   onOpen(path: string): void;
+  onOpenExisting?(): void;
   onStartCreate(profile: ProjectProfile): void;
 }
 
@@ -16,13 +18,16 @@ const profileLabels: Record<ProjectProfile, string> = {
 };
 
 export function ProjectCenter({
+  mode = "sandbox",
   error,
   opening,
   recentProjects,
   onOpen,
+  onOpenExisting = () => undefined,
   onStartCreate,
 }: ProjectCenterProps) {
   const newestProject = recentProjects[0];
+  const isDesktop = mode === "desktop";
 
   return (
     <main className="studio-project-center">
@@ -31,10 +36,14 @@ export function ProjectCenter({
           <p className="studio-project-center__eyebrow">灵境孪生</p>
           <h1>AetherTwin Studio</h1>
           <p className="studio-project-center__summary">
-            从两个明确的空间档案开始，在浏览器会话中体验真实项目流程。
+            {isDesktop
+              ? "从两个明确的空间档案开始，在本地持久化真实项目。"
+              : "从两个明确的空间档案开始，在浏览器会话中体验真实项目流程。"}
           </p>
         </div>
-        <Badge tone="accent">Web 沙盒 · 不持久保存</Badge>
+        <Badge tone="accent">
+          {isDesktop ? "本地项目 · 持久保存" : "Web 沙盒 · 不持久保存"}
+        </Badge>
       </header>
 
       {error === null ? null : <StatusNotice tone="error">{error}</StatusNotice>}
@@ -53,21 +62,36 @@ export function ProjectCenter({
           <Button onClick={() => onStartCreate("market")}>新建市集导览</Button>
         </Panel>
         <Panel className="studio-project-center__action-card">
-          <p className="studio-project-center__card-kicker">SANDBOX</p>
-          <h2>当前会话</h2>
-          <p>重新打开当前 Web 沙盒会话中最近使用的项目。</p>
-          <Button
-            variant="secondary"
-            busy={opening}
-            disabled={newestProject === undefined}
-            onClick={() => {
-              if (newestProject !== undefined) {
-                onOpen(newestProject.path);
-              }
-            }}
-          >
-            打开沙盒项目
-          </Button>
+          <p className="studio-project-center__card-kicker">
+            {isDesktop ? "OPEN PROJECT" : "SANDBOX"}
+          </p>
+          <h2>{isDesktop ? "本地项目" : "当前会话"}</h2>
+          <p>
+            {isDesktop
+              ? "从本地选择一个现有 AetherTwin 项目并打开。"
+              : "重新打开当前 Web 沙盒会话中最近使用的项目。"}
+          </p>
+          {isDesktop ? (
+            <Button
+              variant="secondary"
+              busy={opening}
+              disabled={opening}
+              onClick={onOpenExisting}
+            >
+              打开本地项目
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              busy={opening}
+              disabled={newestProject === undefined}
+              onClick={() => {
+                if (newestProject !== undefined) onOpen(newestProject.path);
+              }}
+            >
+              打开沙盒项目
+            </Button>
+          )}
         </Panel>
       </section>
 
@@ -81,8 +105,12 @@ export function ProjectCenter({
         </div>
         {recentProjects.length === 0 ? (
           <div className="studio-empty-state">
-            <p>还没有沙盒项目</p>
-            <span>新建的项目会在当前会话中显示在这里。</span>
+            <p>{isDesktop ? "还没有本地项目" : "还没有沙盒项目"}</p>
+            <span>
+              {isDesktop
+                ? "打开或新建的本地项目会显示在这里。"
+                : "新建的项目会在当前会话中显示在这里。"}
+            </span>
           </div>
         ) : (
           <ul className="studio-recent-list">

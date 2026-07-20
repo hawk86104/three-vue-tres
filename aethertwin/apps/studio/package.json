@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx",
+    "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx apps/studio/src/backend/tauri-backend.test.ts apps/studio/src/features/project-overview/project-overview.test.tsx",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "vite build"
   },

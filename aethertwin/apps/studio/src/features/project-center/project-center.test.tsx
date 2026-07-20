@@ -5,16 +5,24 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createInitialSnapshot, createManifest } from "@aethertwin/core-model";
 import { readFileSync } from "node:fs";
 import { StrictMode, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ProjectStore,
   SandboxProjectBackend,
+  type OpenedProject,
   type ProjectBackend,
 } from "@aethertwin/project-store";
+
+const { openFolderDialog } = vi.hoisted(() => ({ openFolderDialog: vi.fn() }));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openFolderDialog }));
+
 import { App } from "../../app";
 import { selectBackend } from "../../backend/select-backend";
+import { ProjectBackendError } from "../../backend/tauri-backend";
 import {
   CreateProjectDialog,
   validateProjectName,
@@ -26,6 +34,10 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  openFolderDialog.mockReset();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
   window.history.replaceState({}, "", HOME_PATH);
 });
 
@@ -228,7 +240,7 @@ describe("create project busy state", () => {
 
 async function openCreateDialog(profile: "showroom" | "market") {
   const name = profile === "showroom" ? "新建店铺展厅" : "新建市集导览";
-  await userEvent.click(screen.getByRole("button", { name }));
+  await userEvent.click(await screen.findByRole("button", { name }));
   return screen.getByRole("dialog", { name: "新建项目" });
 }
 
@@ -239,10 +251,67 @@ async function submitName(name?: string) {
   await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
 }
 
+function createDesktopBackend(projects = new Map<string, OpenedProject>()): ProjectBackend {
+  let nextId = 1;
+  const nextUuid = () => {
+    const suffix = String(nextId).padStart(12, "0");
+    nextId += 1;
+    return `30000000-0000-4000-8000-${suffix}`;
+  };
+  const createProject = vi.fn<ProjectBackend["createProject"]>(async (request) => {
+    const snapshot = createInitialSnapshot({
+      name: request.name,
+      profile: request.profile,
+      uuid: nextUuid,
+    });
+    const projectPath = `${request.location.replace(/[\\\\\/]$/u, "")}\\${request.name}.twinproj`;
+    const opened: OpenedProject = {
+      projectPath,
+      snapshot,
+      manifest: createManifest(snapshot, {
+        appVersion: "0.1.0",
+        now: () => "2026-07-20T00:00:00.000Z",
+      }),
+      recovered: false,
+    };
+    projects.set(projectPath, opened);
+    return opened;
+  });
+  const openProject = vi.fn<ProjectBackend["openProject"]>(async (path) => {
+    const opened = projects.get(path);
+    if (opened === undefined) throw new Error(`Desktop project not found: ${path}`);
+    return opened;
+  });
+  const commit = vi.fn<ProjectBackend["commit"]>(async (path, batch) => {
+    const opened = projects.get(path);
+    if (opened === undefined) throw new Error(`Desktop project not found: ${path}`);
+    projects.set(path, { ...opened, snapshot: batch.after });
+  });
+  const checkpoint = vi.fn<ProjectBackend["checkpoint"]>(async (path, snapshot) => {
+    const opened = projects.get(path);
+    if (opened === undefined) throw new Error(`Desktop project not found: ${path}`);
+    const manifest = createManifest(snapshot, {
+      appVersion: "0.1.0",
+      now: () => "2026-07-20T00:00:01.000Z",
+    });
+    projects.set(path, { ...opened, manifest, snapshot });
+    return manifest;
+  });
+  return {
+    mode: "desktop",
+    createProject,
+    openProject,
+    commit,
+    checkpoint,
+    closeProject: vi.fn<ProjectBackend["closeProject"]>(async () => undefined),
+  };
+}
+
 describe("project center", () => {
-  it("shows exactly the two fixed creation profiles and no deferred entry", () => {
+  it("shows exactly the two fixed creation profiles and no deferred entry", async () => {
     render(<App forceBackend="sandbox" />);
 
+    await screen.findByRole("heading", { name: "AetherTwin Studio" });
     const creationButtons = screen.getAllByRole("button", { name: /^新建/ });
     expect(creationButtons.map((button) => button.textContent)).toEqual([
       "新建店铺展厅",
@@ -267,11 +336,281 @@ describe("project center", () => {
     expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("项目位置")).toHaveValue("sandbox");
     expect(within(dialog).getByLabelText("项目位置")).toBeDisabled();
+    expect(openFolderDialog).not.toHaveBeenCalled();
+  });
+
+  it("uses only the Tauri folder dialog for desktop creation and never creates without a selected absolute directory", async () => {
+    const backend = createDesktopBackend();
+    render(<App backend={backend} />);
+
+    expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
+    expect(screen.queryByText("Web 沙盒 · 不持久保存")).not.toBeInTheDocument();
+    const dialog = await openCreateDialog("showroom");
+    const location = within(dialog).getByLabelText("项目位置");
+    expect(location).toHaveValue("");
+    expect(location).toHaveAttribute("readonly");
+    await userEvent.type(within(dialog).getByLabelText("项目名称"), "桌面展厅");
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+    expect(backend.createProject).not.toHaveBeenCalled();
+    expect(within(dialog).getByText("请选择项目位置")).toBeVisible();
+
+    openFolderDialog.mockResolvedValueOnce(null);
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    expect(openFolderDialog).toHaveBeenCalledWith(expect.objectContaining({ directory: true }));
+    expect(location).toHaveValue("");
+    expect(backend.createProject).not.toHaveBeenCalled();
+
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    expect(location).toHaveValue("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+
+    expect(backend.createProject).toHaveBeenCalledWith({
+      name: "桌面展厅",
+      location: "E:\\Twin Projects",
+      profile: "showroom",
+    });
+    expect(await screen.findByRole("heading", { name: "桌面展厅" })).toBeVisible();
+    expect(screen.getByRole("main")).toHaveTextContent(/desktop/i);
+
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(/Web 沙盒|打开沙盒项目|当前 Web 沙盒会话/);
+    await userEvent.click(screen.getByRole("button", { name: "重新打开 桌面展厅" }));
+    expect(backend.openProject).toHaveBeenCalledWith("E:\\Twin Projects\\桌面展厅.twinproj");
+    expect(await screen.findByRole("heading", { name: "桌面展厅" })).toBeVisible();
+  });
+
+  it("shows a desktop ProjectBackendError message and log reference inside the create dialog", async () => {
+    const backend = createDesktopBackend();
+    vi.mocked(backend.createProject).mockRejectedValueOnce(
+      new ProjectBackendError(
+        "PROJECT_ALREADY_EXISTS",
+        "目标位置已经存在同名项目",
+        { retryable: false, recoveryRequired: false },
+        "native-create-conflict",
+      ),
+    );
+    render(<App backend={backend} />);
+
+    const dialog = await openCreateDialog("showroom");
+    await userEvent.type(within(dialog).getByLabelText("项目名称"), "重复展厅");
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+
+    const message = await within(dialog).findByText("目标位置已经存在同名项目");
+    const alert = message.closest<HTMLElement>('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveTextContent("native-create-conflict");
+    expect(within(dialog).queryByText("创建失败，请重试")).not.toBeInTheDocument();
+    expect(dialog).toBeVisible();
+  });
+
+  it("keeps ordinary desktop create errors generic and never renders their internal message", async () => {
+    const backend = createDesktopBackend();
+    const internalMessage = "sqlite failed at E:\\sensitive\\private.db";
+    vi.mocked(backend.createProject).mockRejectedValueOnce(new Error(internalMessage));
+    render(<App backend={backend} />);
+
+    const dialog = await openCreateDialog("market");
+    await userEvent.type(within(dialog).getByLabelText("项目名称"), "安全错误市集");
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    expect(document.body).not.toHaveTextContent(internalMessage);
+    expect(dialog).toBeVisible();
+  });
+
+  it("does not trust a spoofed ProjectBackendError shape from an ordinary Error", async () => {
+    const backend = createDesktopBackend();
+    const internalMessage = "sqlite failed at E:\\sensitive\\spoofed.db";
+    const spoofedLogRef = "spoofed-native-log-ref";
+    const spoofedError = Object.assign(new Error(internalMessage), {
+      name: "ProjectBackendError",
+      code: "PROJECT_ALREADY_EXISTS",
+      details: { secretPath: "E:\\sensitive\\spoofed.db" },
+      logRef: spoofedLogRef,
+    });
+    vi.mocked(backend.createProject).mockRejectedValueOnce(spoofedError);
+    render(<App backend={backend} />);
+
+    const dialog = await openCreateDialog("showroom");
+    await userEvent.type(within(dialog).getByLabelText("项目名称"), "伪造错误展厅");
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    expect(document.body).not.toHaveTextContent(internalMessage);
+    expect(document.body).not.toHaveTextContent(spoofedLogRef);
+    expect(dialog).toBeVisible();
+  });
+
+  it("opens an existing desktop project through its own folder-dialog entry without requiring a recent project", async () => {
+    const projects = new Map<string, OpenedProject>();
+    const backend = createDesktopBackend(projects);
+    await backend.createProject({
+      name: "Demo",
+      location: "E:\\Existing",
+      profile: "showroom",
+    });
+    vi.mocked(backend.createProject).mockClear();
+    render(<App backend={backend} />);
+
+    const openProject = await screen.findByRole("button", { name: "打开本地项目" });
+    expect(openProject).toBeEnabled();
+    expect(screen.queryByText("Demo")).not.toBeInTheDocument();
+
+    openFolderDialog.mockResolvedValueOnce(null);
+    await userEvent.click(openProject);
+    expect(openFolderDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ directory: true }),
+    );
+    expect(backend.openProject).not.toHaveBeenCalled();
+
+    openFolderDialog.mockResolvedValueOnce("E:\\Existing\\Demo.twinproj");
+    await userEvent.click(openProject);
+    expect(backend.openProject).toHaveBeenCalledOnce();
+    expect(backend.openProject).toHaveBeenCalledWith("E:\\Existing\\Demo.twinproj");
+    expect(await screen.findByRole("heading", { name: "Demo" })).toBeVisible();
+
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(await screen.findByText("Demo")).toBeVisible();
+    expect(window.localStorage.length).toBeGreaterThan(0);
+  });
+
+  it("shows an actionable native open error with its log reference without mounting the overview", async () => {
+    const backend = createDesktopBackend();
+    vi.mocked(backend.openProject).mockRejectedValueOnce(
+      Object.assign(new Error("项目结构无效或不完整"), {
+        code: "INVALID_PROJECT_STRUCTURE",
+        details: { retryable: false, recoveryRequired: false },
+        logRef: "native-open-corrupt",
+      }),
+    );
+    render(<App backend={backend} />);
+    openFolderDialog.mockResolvedValueOnce("E:\\Existing\\Corrupt.twinproj");
+
+    await userEvent.click(await screen.findByRole("button", { name: "打开本地项目" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("项目结构无效或不完整");
+    expect(alert).toHaveTextContent("native-open-corrupt");
+    expect(screen.queryByRole("heading", { name: "项目概览" })).not.toBeInTheDocument();
+  });
+
+  it("persists desktop recent paths in application-local preferences and reopens them after remount", async () => {
+    const projects = new Map<string, OpenedProject>();
+    const firstBackend = createDesktopBackend(projects);
+    const first = render(<App backend={firstBackend} />);
+    await openCreateDialog("market");
+    await userEvent.type(screen.getByLabelText("项目名称"), "持久市集");
+    openFolderDialog.mockResolvedValueOnce("D:\\AetherTwin");
+    await userEvent.click(screen.getByRole("button", { name: "选择项目位置" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
+    await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
+    expect(window.localStorage.length).toBeGreaterThan(0);
+    first.unmount();
+    await Promise.resolve();
+
+    const secondBackend = createDesktopBackend(projects);
+    render(<App backend={secondBackend} />);
+    expect(await screen.findByText("持久市集")).toBeVisible();
+    expect(document.body).not.toHaveTextContent(/沙盒/);
+    await userEvent.click(screen.getByRole("button", { name: "重新打开 持久市集" }));
+
+    expect(secondBackend.openProject).toHaveBeenCalledWith(
+      "D:\\AetherTwin\\持久市集.twinproj",
+    );
+    expect(await screen.findByRole("heading", { name: "持久市集" })).toBeVisible();
+  });
+
+  it.each([
+    ["PROJECT_NOT_FOUND", "项目不存在", "丢失展厅"],
+  ] as const)(
+    "removes a stale desktop recent after %s and persists the removal",
+    async (code, message, projectName) => {
+      const backend = createDesktopBackend();
+      render(<App backend={backend} />);
+      const dialog = await openCreateDialog("showroom");
+      await userEvent.type(within(dialog).getByLabelText("项目名称"), projectName);
+      openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+      await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+      await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+      await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
+
+      const projectPath = `E:\\Twin Projects\\${projectName}.twinproj`;
+      vi.mocked(backend.openProject).mockRejectedValueOnce(
+        new ProjectBackendError(
+          code,
+          message,
+          { retryable: false, recoveryRequired: false },
+          `native-stale-${code.toLowerCase()}`,
+        ),
+      );
+      await userEvent.click(screen.getByRole("button", { name: `重新打开 ${projectName}` }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: `重新打开 ${projectName}` }),
+        ).not.toBeInTheDocument(),
+      );
+      const persisted = JSON.parse(
+        window.localStorage.getItem("aethertwin.recentProjects.v1") ?? "[]",
+      ) as Array<{ path?: string }>;
+      expect(persisted.map((entry) => entry.path)).not.toContain(projectPath);
+    },
+  );
+
+  it("keeps an INVALID_PROJECT_STRUCTURE recent while showing its actionable error", async () => {
+    const backend = createDesktopBackend();
+    render(<App backend={backend} />);
+    const dialog = await openCreateDialog("showroom");
+    await userEvent.type(within(dialog).getByLabelText("项目名称"), "损坏展厅");
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects");
+    await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
+    await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
+
+    const projectPath = "E:\\Twin Projects\\损坏展厅.twinproj";
+    vi.mocked(backend.openProject).mockRejectedValueOnce(
+      new ProjectBackendError(
+        "INVALID_PROJECT_STRUCTURE",
+        "项目结构无效或不完整",
+        { retryable: false, recoveryRequired: false },
+        "native-invalid-recent",
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "重新打开 损坏展厅" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("项目结构无效或不完整");
+    expect(alert).toHaveTextContent("native-invalid-recent");
+    expect(screen.getByRole("button", { name: "重新打开 损坏展厅" })).toBeEnabled();
+    const persisted = JSON.parse(
+      window.localStorage.getItem("aethertwin.recentProjects.v1") ?? "[]",
+    ) as Array<{ path?: string }>;
+    expect(persisted.map((entry) => entry.path)).toContain(projectPath);
+  });
+
+  it("fails safe when desktop application-local preferences are unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("storage blocked", "SecurityError");
+    });
+
+    render(<App backend={createDesktopBackend()} />);
+    expect(await screen.findByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
+    expect(screen.getByText("本地项目 · 持久保存")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("focuses the name through Dialog entry and restores the real creation opener", async () => {
     render(<App forceBackend="sandbox" />);
-    const opener = screen.getByRole("button", { name: "新建店铺展厅" });
+    const opener = await screen.findByRole("button", { name: "新建店铺展厅" });
 
     await userEvent.click(opener);
     let dialog = screen.getByRole("dialog", { name: "新建项目" });
@@ -350,7 +689,7 @@ describe("project center", () => {
     await openCreateDialog("showroom");
     await submitName("初始展厅");
 
-    const nameField = await screen.findByLabelText("项目名称（检查器）");
+    const nameField = await screen.findByLabelText("项目名称");
     await userEvent.clear(nameField);
     await userEvent.type(nameField, "更新展厅");
     await userEvent.tab();
@@ -389,7 +728,7 @@ describe("project center", () => {
     await openCreateDialog("showroom");
     await submitName("旧展厅名");
 
-    const nameField = await screen.findByLabelText("项目名称（检查器）");
+    const nameField = await screen.findByLabelText("项目名称");
     await userEvent.clear(nameField);
     await userEvent.type(nameField, "新展厅名");
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -409,7 +748,7 @@ describe("project center", () => {
     await openCreateDialog("showroom");
     await submitName("可靠展厅");
 
-    const nameField = await screen.findByLabelText("项目名称（检查器）");
+    const nameField = await screen.findByLabelText("项目名称");
     await userEvent.clear(nameField);
     await userEvent.type(nameField, "失败重命名");
     backend.failNextCommit = new Error("rename failed");
@@ -422,7 +761,7 @@ describe("project center", () => {
     expect(inspector).not.toBeNull();
     const inspectorQueries = within(inspector!);
     expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("rename failed");
-    const failedNameField = inspectorQueries.getByLabelText("项目名称（检查器）");
+    const failedNameField = inspectorQueries.getByLabelText("项目名称");
     expect(failedNameField).toHaveValue("失败重命名");
     expect(failedNameField).toHaveAttribute("aria-invalid", "true");
     const descriptionIds = failedNameField.getAttribute("aria-describedby")?.split(" ") ?? [];
@@ -464,7 +803,7 @@ describe("project center", () => {
     });
     const close = vi.spyOn(backend, "closeProject");
 
-    const nameField = screen.getByLabelText("项目名称（检查器）");
+    const nameField = screen.getByLabelText("项目名称");
     vi.useFakeTimers();
     fireEvent.change(nameField, { target: { value: "卸载中的展厅" } });
     fireEvent.blur(nameField);
@@ -485,6 +824,22 @@ describe("project center", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("calls an optional backend dispose exactly once on the final StrictMode unmount", async () => {
+    const backend = Object.assign(createDesktopBackend(), {
+      dispose: vi.fn(async () => undefined),
+    });
+    const rendered = render(
+      <StrictMode>
+        <App backend={backend} />
+      </StrictMode>,
+    );
+    expect(await screen.findByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
+
+    rendered.unmount();
+
+    await waitFor(() => expect(backend.dispose).toHaveBeenCalledOnce());
+  });
+
   it("keeps inspector name and tag errors associated with only their own field", async () => {
     const backend = new SandboxProjectBackend();
     render(<App backend={backend} />);
@@ -494,7 +849,7 @@ describe("project center", () => {
     const inspector = document.querySelector<HTMLElement>('aside[aria-label="检查器"]');
     expect(inspector).not.toBeNull();
     const inspectorQueries = within(inspector!);
-    const nameField = await inspectorQueries.findByLabelText("项目名称（检查器）");
+    const nameField = await inspectorQueries.findByLabelText("项目名称");
     const tagsField = inspectorQueries.getByLabelText("项目标签");
     fireEvent.change(nameField, { target: { value: "CON" } });
     fireEvent.blur(nameField);
@@ -521,13 +876,17 @@ describe("project center", () => {
         (id) => document.getElementById(id)?.textContent === "tag commit failed",
       ),
     ).toBe(true);
-    expect(screen.getByText("保存失败")).toHaveAttribute("role", "alert");
+    expect(
+      screen.getByText("保存失败", { selector: '[data-save-state="error"]' }),
+    ).toHaveAttribute("role", "alert");
 
     fireEvent.change(tagsField, { target: { value: "" } });
     fireEvent.blur(tagsField);
     await waitFor(() => expect(tagsField).not.toHaveAttribute("aria-invalid"));
     expect(inspectorQueries.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("保存失败")).toHaveAttribute("role", "alert");
+    expect(
+      screen.getByText("保存失败", { selector: '[data-save-state="error"]' }),
+    ).toHaveAttribute("role", "alert");
   });
 
   it("clears a stale recent-project open error when starting a new create flow", async () => {
@@ -554,7 +913,7 @@ describe("project center", () => {
     first.unmount();
 
     render(<App forceBackend="sandbox" />);
-    expect(screen.getByText("还没有沙盒项目")).toBeVisible();
+    expect(await screen.findByText("还没有沙盒项目")).toBeVisible();
     expect(screen.queryByText("临时市集")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开沙盒项目" })).toBeDisabled();
   });
@@ -650,44 +1009,37 @@ describe("UI gallery", () => {
 });
 
 describe("Studio entry boundaries", () => {
-  it("accepts only sandbox backend injection and rejects forged desktop mode before I/O", () => {
-    type StudioBackend = NonNullable<ComponentProps<typeof App>["backend"]>;
-    const validSandboxBackend: StudioBackend = new SandboxProjectBackend();
-    expect(validSandboxBackend.mode).toBe("sandbox");
+  it("accepts both ProjectBackend modes at the typed injection seam without starting I/O", async () => {
+    type AppBackend = NonNullable<ComponentProps<typeof App>["backend"]>;
+    const sandboxBackend: AppBackend = new SandboxProjectBackend();
+    const desktopBackend: AppBackend = createDesktopBackend();
 
-    const desktopBackend: ProjectBackend = {
-      mode: "desktop",
-      createProject: vi.fn<ProjectBackend["createProject"]>(),
-      openProject: vi.fn<ProjectBackend["openProject"]>(),
-      commit: vi.fn<ProjectBackend["commit"]>(),
-      checkpoint: vi.fn<ProjectBackend["checkpoint"]>(),
-      closeProject: vi.fn<ProjectBackend["closeProject"]>(),
-    };
-    // @ts-expect-error Studio's injection seam must reject desktop-capable backends.
-    const compileTimeRejectedBackend: StudioBackend = desktopBackend;
-    void compileTimeRejectedBackend;
-
-    let renderError: unknown = null;
-    try {
-      render(<App backend={desktopBackend as unknown as StudioBackend} />);
-    } catch (error) {
-      renderError = error;
-    }
-
+    const sandbox = render(<App backend={sandboxBackend} />);
+    expect(await screen.findByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
+    sandbox.unmount();
+    render(<App backend={desktopBackend} />);
+    expect(await screen.findByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
     expect(desktopBackend.createProject).not.toHaveBeenCalled();
     expect(desktopBackend.openProject).not.toHaveBeenCalled();
     expect(desktopBackend.commit).not.toHaveBeenCalled();
     expect(desktopBackend.checkpoint).not.toHaveBeenCalled();
     expect(desktopBackend.closeProject).not.toHaveBeenCalled();
-    expect(screen.queryByRole("heading", { name: "AetherTwin Studio" })).not.toBeInTheDocument();
-    expect(renderError).toBeInstanceOf(Error);
-    expect((renderError as Error).message).toMatch(/sandbox/i);
   });
 
-  it("selects a sandbox backend for the unforced web entry", () => {
-    const backend = selectBackend();
+  it("selects a sandbox backend asynchronously for the development web entry", async () => {
+    const backend = await selectBackend("sandbox");
     expect(backend).toBeInstanceOf(SandboxProjectBackend);
     expect(backend.mode).toBe("sandbox");
+  });
+
+  it("renders a fail-closed bootstrap error instead of project actions when production sandbox is forced", async () => {
+    vi.stubEnv("DEV", false);
+    render(<App forceBackend="sandbox" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("WEB_SANDBOX_DISABLED");
+    expect(screen.queryByRole("heading", { name: "AetherTwin Studio" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "项目操作" })).not.toBeInTheDocument();
+    expect(openFolderDialog).not.toHaveBeenCalled();
   });
 
   it("uses pathname-independent package and public CSS reads", () => {

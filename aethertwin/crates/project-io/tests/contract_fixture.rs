@@ -86,6 +86,7 @@ fn project_io_errors_expose_stable_codes() {
             ProjectIoError::ProjectAlreadyExists,
             "PROJECT_ALREADY_EXISTS",
         ),
+        (ProjectIoError::ProjectNotFound, "PROJECT_NOT_FOUND"),
         (
             ProjectIoError::InvalidProjectStructure,
             "INVALID_PROJECT_STRUCTURE",
