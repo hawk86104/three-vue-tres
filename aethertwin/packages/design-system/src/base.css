@@ -1,0 +1,305 @@
+@import "./tokens.css";
+
+* {
+  box-sizing: border-box;
+  scrollbar-color: var(--aether-border) var(--aether-surface-1);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--aether-surface-1);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgb(146 164 179 / 36%);
+  border: 2px solid var(--aether-surface-1);
+  border-radius: 999px;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--aether-bg);
+  color: var(--aether-text);
+  font-family: var(--aether-font);
+}
+
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--aether-accent);
+  outline-offset: 2px;
+}
+
+.aether-button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--aether-radius-sm);
+  color: var(--aether-text);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color var(--aether-motion-fast) ease,
+    border-color var(--aether-motion-fast) ease,
+    color var(--aether-motion-fast) ease,
+    opacity var(--aether-motion-fast) ease;
+}
+
+.aether-button--primary {
+  background: var(--aether-accent);
+  color: var(--aether-bg);
+}
+
+.aether-button--secondary {
+  background: var(--aether-surface-2);
+  border-color: var(--aether-border);
+}
+
+.aether-button--ghost {
+  background: transparent;
+  color: var(--aether-text-muted);
+}
+
+.aether-button--danger {
+  background: rgb(217 132 132 / 14%);
+  border-color: rgb(217 132 132 / 34%);
+  color: var(--aether-danger);
+}
+
+.aether-button:hover:not(:disabled) {
+  border-color: rgb(88 184 196 / 52%);
+}
+
+.aether-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.aether-button__busy-icon {
+  width: 16px;
+  height: 16px;
+  animation: aether-spin 900ms linear infinite;
+}
+
+.aether-field {
+  display: grid;
+  gap: 7px;
+  color: var(--aether-text);
+}
+
+.aether-field--disabled {
+  opacity: 0.62;
+}
+
+.aether-field__label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.aether-field__required {
+  margin-inline-start: 4px;
+  color: var(--aether-danger);
+}
+
+.aether-field__input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-sm);
+  background: var(--aether-surface-2);
+  color: var(--aether-text);
+  font: inherit;
+  transition:
+    border-color var(--aether-motion-fast) ease,
+    background-color var(--aether-motion-fast) ease;
+}
+
+.aether-field__input::placeholder {
+  color: var(--aether-text-muted);
+}
+
+.aether-field__input[aria-invalid="true"] {
+  border-color: rgb(217 132 132 / 74%);
+}
+
+.aether-field__help,
+.aether-field__error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.aether-field__help {
+  color: var(--aether-text-muted);
+}
+
+.aether-field__error {
+  color: var(--aether-danger);
+}
+
+.aether-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(3 8 13 / 72%);
+  animation: aether-fade-in var(--aether-motion-base) ease-out;
+}
+
+.aether-dialog__content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 41;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-lg);
+  background: var(--aether-surface-1);
+  color: var(--aether-text);
+  transform: translate(-50%, -50%);
+  animation: aether-dialog-in var(--aether-motion-base) ease-out;
+}
+
+.aether-dialog__title {
+  margin: 0;
+  padding-inline-end: 36px;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.aether-dialog__description {
+  margin: 8px 0 18px;
+  color: var(--aether-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.aether-dialog__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--aether-radius-sm);
+  background: transparent;
+  color: var(--aether-text-muted);
+  cursor: pointer;
+}
+
+.aether-dialog__close:hover {
+  background: var(--aether-accent-soft);
+  color: var(--aether-text);
+}
+
+.aether-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--aether-border);
+  border-radius: 999px;
+  background: var(--aether-surface-2);
+  color: var(--aether-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.aether-badge--accent {
+  border-color: rgb(88 184 196 / 30%);
+  background: var(--aether-accent-soft);
+  color: var(--aether-accent);
+}
+
+.aether-badge--success {
+  border-color: rgb(117 184 149 / 30%);
+  background: rgb(117 184 149 / 12%);
+  color: var(--aether-success);
+}
+
+.aether-badge--danger {
+  border-color: rgb(217 132 132 / 30%);
+  background: rgb(217 132 132 / 12%);
+  color: var(--aether-danger);
+}
+
+.aether-panel {
+  padding: 16px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-md);
+  background: var(--aether-surface-1);
+  color: var(--aether-text);
+}
+
+.aether-status-notice {
+  padding: 10px 12px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-sm);
+  background: var(--aether-surface-2);
+  color: var(--aether-text-muted);
+  line-height: 1.45;
+}
+
+.aether-status-notice--error {
+  border-color: rgb(217 132 132 / 34%);
+  background: rgb(217 132 132 / 10%);
+  color: var(--aether-danger);
+}
+
+.aether-status-notice--saved,
+.aether-status-notice--recovered {
+  border-color: rgb(117 184 149 / 34%);
+  background: rgb(117 184 149 / 10%);
+  color: var(--aether-success);
+}
+
+@keyframes aether-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aether-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes aether-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 6px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

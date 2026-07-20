@@ -1,0 +1,20 @@
+:root {
+  color-scheme: dark;
+  --aether-bg: #0e151d;
+  --aether-surface-1: #151f2a;
+  --aether-surface-2: #1b2733;
+  --aether-border: rgb(191 216 231 / 14%);
+  --aether-text: #e5edf3;
+  --aether-text-muted: #92a4b3;
+  --aether-accent: #58b8c4;
+  --aether-accent-soft: rgb(88 184 196 / 16%);
+  --aether-danger: #d98484;
+  --aether-success: #75b895;
+  --aether-radius-sm: 10px;
+  --aether-radius-md: 12px;
+  --aether-radius-lg: 16px;
+  --aether-motion-fast: 120ms;
+  --aether-motion-base: 180ms;
+  --aether-motion-slow: 220ms;
+  --aether-font: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+}
