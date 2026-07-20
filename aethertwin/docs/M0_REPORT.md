@@ -7,10 +7,10 @@
 - M0 Studio project center and project overview: native desktop adapter plus development-only in-memory sandbox; real name/tag mutation, save/autosave, undo/redo, close, recent preferences, and honest status UI.
 - Native `.twinproj` creation/opening, SQLite v1 migrations/WAL, manifest/database identity checks, atomic command journal persistence, checkpoints, locking, clean close, and explicit recovery.
 - Authoritative checkpoint acknowledgement across Rust, Tauri, ProjectStore, sandbox, and CommandBus. The checkpoint result carries a coherent manifest/snapshot pair; durable checkpoint metadata rebases current and undo/redo snapshots without clearing history.
-- Explicit stale-lock recovery in the desktop project center. Recovery appears only for a structured `STALE_PROJECT_LOCK` response that requires recovery, then sends the native command only after a second confirmation.
-- Coordinated native close lifecycle for window close and process exit. All sessions checkpoint and close without holding the registry lock; failures prevent termination and remain retryable.
+- Explicit stale-lock recovery in the desktop project center. Recovery appears only for a structured `STALE_PROJECT_LOCK` response that requires recovery, sends the native command only after a second confirmation, and requalifies any recovery failure before retaining the action.
+- Coordinated native close lifecycle for window close and process exit. A shared/exclusive lifecycle gate waits for in-flight create/open/recover publication before draining the registry; successful shutdown closes the logical gate against later publication, while failure releases it for normal operation and retry. Sessions checkpoint and close without holding the registry lock, and failures prevent termination.
 - Typed least-privilege Tauri host contract with six commands and safe native error envelope; Player remains a noninteractive M4 placeholder.
-- Aether design-system tokens/components and source-policy gates for offline/no-fake-action behavior, including selector-specific glow restrictions and protocol-relative/string-form remote import fixtures.
+- Aether design-system tokens/components and source-policy gates for offline/no-fake-action behavior, including selector-specific glow restrictions that detect declarations ending in a semicolon or at the CSS body boundary, plus protocol-relative/string-form remote import fixtures.
 
 This is the M0 foundation only; it is not completion of M1–M5 product scope.
 
@@ -25,12 +25,13 @@ This is the M0 foundation only; it is not completion of M1–M5 product scope.
 
 - CommandBus: 18/18 passed.
 - ProjectStore: 41/41 passed.
-- Studio: 166/166 passed.
+- Studio: 167/167 passed.
 - Design System: 19/19 passed.
 - Offline source policy: 4/4 passed.
+- Second-round focused desktop-host `close_all` regressions: 3/3 passed.
 - Affected package typechecks for CommandBus, ProjectStore, Studio, and Design System all exited 0.
-- `cargo test -p project-io -p desktop-host` exited 0: desktop-host 9 unit + 14 command-contract tests; project-io 13 unit + 27 commit/recovery + 4 contract + 20 create/open + 3 path-policy tests; doc-tests completed.
-- `cargo check -p project-io -p desktop-host` exited 0.
+- `cargo test -p project-io -p desktop-host` exited 0: desktop-host 10 unit + 14 command-contract tests; project-io 13 unit + 27 commit/recovery + 4 contract + 20 create/open + 3 path-policy tests; doc-tests completed.
+- `cargo check -p desktop-host` exited 0.
 - Focused TDD evidence and the transient Windows Application Control interruption are recorded in `m0-final-review-fix-report.md`.
 
 ## Exact Commands
@@ -46,7 +47,7 @@ pnpm.cmd --filter @aethertwin/studio typecheck
 pnpm.cmd --filter @aethertwin/design-system typecheck
 node --test tests/offline-source-policy.test.mjs
 cargo test -p project-io -p desktop-host
-cargo check -p project-io -p desktop-host
+cargo check -p desktop-host
 git diff --check
 ```
 

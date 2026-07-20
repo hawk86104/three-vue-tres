@@ -244,6 +244,9 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
       setRecoveryPath(null);
       setView("editor");
     } catch (error) {
+      setRecoveryPath(
+        backend.mode === "desktop" && staleRecoveryRequired(error) ? recoveryPath : null,
+      );
       setCenterError(`恢复失败：${readableError(error)}`);
     } finally {
       setOpening(false);

@@ -20,7 +20,7 @@ function unapprovedGlowSelectors(source: string): string[] {
   const approvedFeedbackSelector =
     /(?:--(?:selected|saved|recovered)\b|\[(?:data-state|aria-selected)=["']?(?:selected|true)["']?\])/i;
   const glowDeclaration =
-    /(?:box-shadow|text-shadow)\s*:[^;]+;|(?:-webkit-)?filter\s*:[^;]*drop-shadow\s*\(/i;
+    /(?:box-shadow|text-shadow)\s*:[^;]*(?:;|$)|(?:-webkit-)?filter\s*:[^;]*drop-shadow\s*\([^;]*(?:;|$)/i;
   return [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter((match) => glowDeclaration.test(match[2] ?? ""))
     .flatMap((match) => (match[1] ?? "").split(","))
@@ -506,11 +506,19 @@ describe("Aether CSS contract", () => {
     const fixture = `
       .ordinary { box-shadow: 0 0 12px cyan; }
       .also-ordinary { filter: drop-shadow(0 0 4px cyan); }
+      .ordinary-no-semicolon { BoX-ShAdOw: 0 0 12px cyan }
       .item[data-state="selected"] { box-shadow: 0 0 12px cyan; }
       .aether-status-notice--saved,
       .aether-status-notice--recovered { text-shadow: 0 0 4px currentColor; }
+      .item[aria-selected="true"],
+      .ordinary-multi { TeXt-ShAdOw: 0 0 4px currentColor }
     `;
-    expect(unapprovedGlowSelectors(fixture)).toEqual([".ordinary", ".also-ordinary"]);
+    expect(unapprovedGlowSelectors(fixture)).toEqual([
+      ".ordinary",
+      ".also-ordinary",
+      ".ordinary-no-semicolon",
+      ".ordinary-multi",
+    ]);
 
     const runtimeCss = [
       "./tokens.css",

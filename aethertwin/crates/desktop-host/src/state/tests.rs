@@ -1,7 +1,7 @@
 use super::{
     AppService, finalize_created_publication, finalize_created_session, validate_session_id,
 };
-use crate::{CreateProjectDto, error::HostError};
+use crate::{CreateProjectDto, OpenProjectDto, error::HostError};
 use project_io::{
     CommitBatch, CreateProjectRequest, JournalOperation, ProjectIoError, ProjectProfile,
     create_project, open_session,
@@ -10,7 +10,8 @@ use rusqlite::Connection;
 use serde_json::json;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::Arc,
+    sync::{Arc, Barrier, mpsc},
+    thread,
 };
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -329,6 +330,70 @@ fn close_all_checkpoints_multiple_sessions_releases_locks_and_is_idempotent() {
 }
 
 #[test]
+fn close_all_waits_for_inflight_session_publication_and_returns_empty() {
+    let root = tempdir().unwrap();
+    let created = create_project(CreateProjectRequest {
+        parent: root.path().to_owned(),
+        name: "Close Publication Race".into(),
+        profile: ProjectProfile::Showroom,
+    })
+    .unwrap();
+    let late = create_project(CreateProjectRequest {
+        parent: root.path().to_owned(),
+        name: "Close Publication Late".into(),
+        profile: ProjectProfile::Market,
+    })
+    .unwrap();
+    let project_path = created.project_path.clone();
+    let session = open_session(&project_path, false).unwrap();
+    let service = Arc::new(AppService::default());
+    let publish_barrier = Arc::new(Barrier::new(2));
+    let (lease_ready_tx, lease_ready_rx) = mpsc::channel();
+
+    let publishing_service = service.clone();
+    let publishing_barrier = publish_barrier.clone();
+    let publisher = thread::spawn(move || {
+        let _lease = publishing_service.session_operation_lease().unwrap();
+        lease_ready_tx.send(()).unwrap();
+        publishing_barrier.wait();
+        publishing_service.track_session(session)
+    });
+    lease_ready_rx.recv().unwrap();
+
+    let closing_service = service.clone();
+    let (close_started_tx, close_started_rx) = mpsc::channel();
+    let closer = thread::spawn(move || {
+        close_started_tx.send(()).unwrap();
+        closing_service.close_all()
+    });
+    close_started_rx.recv().unwrap();
+    assert!(!closer.is_finished());
+
+    publish_barrier.wait();
+    let published = publisher.join().unwrap().unwrap();
+    closer.join().unwrap().unwrap();
+
+    assert_eq!(service.session_count().unwrap(), 0);
+    assert!(
+        !project_path.join(".aethertwin.lock").exists(),
+        "close_all must close the session published by the in-flight operation: {}",
+        published.session_id
+    );
+    let mut reopened = open_session(&project_path, false).unwrap();
+    reopened.close().unwrap();
+
+    let rejected = service
+        .open_project(OpenProjectDto {
+            path: late.project_path.to_string_lossy().into_owned(),
+            recover_stale_lock: false,
+        })
+        .unwrap_err();
+    assert_eq!(rejected.code, "HOST_STATE_UNAVAILABLE");
+    assert_eq!(service.session_count().unwrap(), 0);
+    assert!(!late.project_path.join(".aethertwin.lock").exists());
+}
+
+#[test]
 fn close_all_removes_successes_and_retries_only_remaining_sessions() {
     let root = tempdir().unwrap();
     let service = AppService::default();
@@ -368,6 +433,14 @@ fn close_all_removes_successes_and_retries_only_remaining_sessions() {
             .join(".aethertwin.lock")
             .exists()
     );
+    let published_after_failure = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Retry Publication".into(),
+            profile: "market".into(),
+        })
+        .unwrap();
+    assert_eq!(service.session_count().unwrap(), 2);
 
     database
         .execute_batch("DROP TRIGGER fail_close_all;")
@@ -375,5 +448,10 @@ fn close_all_removes_successes_and_retries_only_remaining_sessions() {
     drop(database);
     service.close_all().unwrap();
     assert_eq!(service.session_count().unwrap(), 0);
+    assert!(
+        !std::path::Path::new(&published_after_failure.project_path)
+            .join(".aethertwin.lock")
+            .exists()
+    );
     service.close_all().unwrap();
 }

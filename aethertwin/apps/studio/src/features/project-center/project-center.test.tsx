@@ -642,6 +642,47 @@ describe("project center", () => {
     expect(screen.getByRole("status")).toHaveTextContent("已恢复");
   });
 
+  it("removes stale recovery eligibility when confirmed recovery returns an active lock", async () => {
+    const projects = new Map<string, OpenedProject>();
+    const backend = createDesktopBackend(projects);
+    const created = await backend.createProject({
+      name: "恢复竞态",
+      location: "E:\\Twin Projects",
+      profile: "showroom",
+    });
+    vi.mocked(backend.openProject).mockRejectedValueOnce(
+      new ProjectBackendError(
+        "STALE_PROJECT_LOCK",
+        "检测到未正常关闭的项目",
+        { retryable: false, recoveryRequired: true },
+        "native-stale-lock",
+      ),
+    );
+    vi.mocked(backend.recoverProject).mockRejectedValueOnce(
+      new ProjectBackendError(
+        "PROJECT_LOCKED",
+        "项目正在被另一个会话使用",
+        { retryable: false, recoveryRequired: false },
+        "native-active-lock",
+      ),
+    );
+    render(<App backend={backend} />);
+    openFolderDialog.mockResolvedValueOnce(created.projectPath);
+
+    await userEvent.click(screen.getByRole("button", { name: "打开本地项目" }));
+    await userEvent.click(await screen.findByRole("button", { name: "恢复项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认恢复" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("native-active-lock");
+    });
+    expect(screen.queryByRole("button", { name: "恢复项目" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: created.snapshot.project.name }),
+    ).not.toBeInTheDocument();
+  });
+
   it.each([
     ["PROJECT_LOCKED", { recoveryRequired: false }],
     ["INVALID_PROJECT_STRUCTURE", { recoveryRequired: false }],

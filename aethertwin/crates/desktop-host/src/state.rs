@@ -15,7 +15,10 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use uuid::Uuid;
 
@@ -33,6 +36,8 @@ pub struct OpenedProjectDto {
 
 pub struct AppService {
     pub(crate) sessions: Mutex<HashMap<Uuid, SessionHandle>>,
+    session_lifecycle_gate: RwLock<()>,
+    session_shutdown_complete: AtomicBool,
     log_sink: Arc<dyn NativeLogSink>,
 }
 
@@ -46,8 +51,27 @@ impl AppService {
     pub fn with_log_sink(log_sink: Arc<dyn NativeLogSink>) -> Self {
         Self {
             sessions: Mutex::new(HashMap::new()),
+            session_lifecycle_gate: RwLock::new(()),
+            session_shutdown_complete: AtomicBool::new(false),
             log_sink,
         }
+    }
+
+    pub(crate) fn session_operation_lease(&self) -> Result<RwLockReadGuard<'_, ()>, HostError> {
+        let lease = self
+            .session_lifecycle_gate
+            .read()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        if self.session_shutdown_complete.load(Ordering::Acquire) {
+            return Err(HostError::HostStateUnavailable);
+        }
+        Ok(lease)
+    }
+
+    fn session_shutdown_lease(&self) -> Result<RwLockWriteGuard<'_, ()>, HostError> {
+        self.session_lifecycle_gate
+            .write()
+            .map_err(|_| HostError::HostStateUnavailable)
     }
 
     pub(crate) fn decode_payload<T: DeserializeOwned>(
@@ -100,6 +124,7 @@ impl AppService {
         request: CreateProjectDto,
     ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
         let result = (|| {
+            let _operation_lease = self.session_operation_lease()?;
             let request = validate_create_request(request)?;
             let created = create_project(request)?;
             let publication = open_session(&created.project_path, false)
@@ -123,6 +148,7 @@ impl AppService {
         request: OpenProjectDto,
     ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
         let result = (|| {
+            let _operation_lease = self.session_operation_lease()?;
             let path = validate_absolute_path(&request.path)?;
             let session = open_session(&path, request.recover_stale_lock)?;
             self.track_session(session)
@@ -143,6 +169,7 @@ impl AppService {
         request: RecoverProjectDto,
     ) -> Result<OpenedProjectDto, crate::NativeErrorDto> {
         let result = (|| {
+            let _operation_lease = self.session_operation_lease()?;
             let path = validate_absolute_path(&request.path)?;
             require_recovery_confirmation(request.confirm)?;
             let session = open_session(&path, true)?;
@@ -226,6 +253,14 @@ impl AppService {
 
     pub fn close_all(&self) -> Result<(), crate::NativeErrorDto> {
         let result = (|| {
+            let _shutdown_lease = self.session_shutdown_lease()?;
+            if self.session_shutdown_complete.load(Ordering::Acquire) {
+                return if self.registry_len()? == 0 {
+                    Ok(())
+                } else {
+                    Err(HostError::HostStateUnavailable)
+                };
+            }
             let sessions = self.registry_snapshot()?;
             let mut first_failure = None;
             for (session_id, session) in sessions {
@@ -246,7 +281,12 @@ impl AppService {
             }
             match first_failure {
                 Some(error) => Err(error),
-                None => Ok(()),
+                None if self.registry_len()? == 0 => {
+                    self.session_shutdown_complete
+                        .store(true, Ordering::Release);
+                    Ok(())
+                }
+                None => Err(HostError::HostStateUnavailable),
             }
         })();
         self.finish("close_all", result)
