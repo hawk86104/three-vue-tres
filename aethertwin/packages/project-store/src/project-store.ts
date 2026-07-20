@@ -28,6 +28,11 @@ export interface ProjectStoreOptions {
 
 type StateListener = () => void;
 type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
+type OperationOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: unknown };
+
+const successfulOperationOutcome: OperationOutcome = Object.freeze({ ok: true });
 
 interface PreparedProject {
   readonly projectPath: string;
@@ -69,6 +74,10 @@ export class ProjectStore {
   private bus: CommandBus<ProjectSnapshot> | null = null;
   private autosaveTimer: TimerHandle | null = null;
   private operationTail: Promise<void> = Promise.resolve();
+  private latestOperationOutcome: Promise<OperationOutcome> = Promise.resolve(
+    successfulOperationOutcome,
+  );
+  private activeCloseAttempt: Promise<void> | null = null;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
 
@@ -86,6 +95,9 @@ export class ProjectStore {
   }
 
   subscribe(listener: StateListener): () => void {
+    if (this.disposed) {
+      return () => undefined;
+    }
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
@@ -130,8 +142,20 @@ export class ProjectStore {
     return this.enqueueOperation(() => this.performSave());
   }
 
+  flush(): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(new Error("ProjectStore is disposed"));
+    }
+    const boundary = this.latestOperationOutcome;
+    return boundary.then((outcome) => {
+      if (!outcome.ok) {
+        throw outcome.error;
+      }
+    });
+  }
+
   close(): Promise<void> {
-    return this.enqueueOperation(() => this.performClose());
+    return this.enqueueOperation(() => this.performTrackedClose());
   }
 
   dispose(): Promise<void> {
@@ -142,16 +166,24 @@ export class ProjectStore {
     this.disposed = true;
     this.clearAutosaveTimer();
     this.listeners.clear();
-    const pending = this.operationTail.then(
-      () => this.performClose(),
-      () => this.performClose(),
-    );
+    const closeAttempt = this.activeCloseAttempt;
+    const pending = this.operationTail.then(() => closeAttempt ?? this.performClose());
     this.operationTail = pending.then(
       () => undefined,
       () => undefined,
     );
     this.disposePromise = pending;
     return pending;
+  }
+
+  private performTrackedClose(): Promise<void> {
+    const closeAttempt = this.performClose();
+    this.activeCloseAttempt = closeAttempt;
+    return closeAttempt.finally(() => {
+      if (this.activeCloseAttempt === closeAttempt) {
+        this.activeCloseAttempt = null;
+      }
+    });
   }
 
   private async performClose(): Promise<void> {
@@ -345,6 +377,10 @@ export class ProjectStore {
     this.operationTail = pending.then(
       () => undefined,
       () => undefined,
+    );
+    this.latestOperationOutcome = pending.then(
+      () => successfulOperationOutcome,
+      (error): OperationOutcome => ({ ok: false, error }),
     );
     return pending;
   }

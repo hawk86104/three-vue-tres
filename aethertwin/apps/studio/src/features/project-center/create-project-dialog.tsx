@@ -1,5 +1,5 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
-import { Badge, Button, Dialog, Field } from "@aethertwin/design-system";
+import { Badge, Button, Dialog, Field, StatusNotice } from "@aethertwin/design-system";
 import { useEffect, useRef, useState } from "react";
 
 const WINDOWS_RESERVED_DEVICE_NAME =
@@ -23,15 +23,21 @@ export type ProjectNameValidation =
   | { readonly ok: true; readonly name: string }
   | { readonly ok: false; readonly error: string };
 
+function trimUnicodeWhiteSpace(value: string): string {
+  return value
+    .replace(/^\p{White_Space}+/u, "")
+    .replace(/\p{White_Space}+$/u, "");
+}
+
 export function validateProjectName(value: string): ProjectNameValidation {
-  const canonicalName = value.trim();
+  const canonicalName = trimUnicodeWhiteSpace(value);
   if (canonicalName.length === 0) {
     return { ok: false, error: "请输入项目名称" };
   }
   if (/[\\/]/u.test(canonicalName)) {
     return { ok: false, error: "项目名称不能包含路径分隔符" };
   }
-  if (/(?:[.]|\s)$/u.test(value)) {
+  if (/(?:[.]|\p{White_Space})$/u.test(value)) {
     return { ok: false, error: "项目名称不能以点或空格结尾" };
   }
   const nameBeforeExtension = canonicalName.split(".", 1)[0] ?? "";
@@ -58,7 +64,8 @@ export function CreateProjectDialog({
   onCreate,
 }: CreateProjectDialogProps) {
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nameFieldRef = useRef<HTMLInputElement>(null);
   const presentation = profilePresentation[profile];
@@ -66,7 +73,8 @@ export function CreateProjectDialog({
   useEffect(() => {
     if (!open) {
       setName("");
-      setError(null);
+      setValidationError(null);
+      setCreateError(null);
       setBusy(false);
     }
   }, [open]);
@@ -74,18 +82,20 @@ export function CreateProjectDialog({
   async function submit() {
     const validation = validateProjectName(name);
     if (!validation.ok) {
-      setError(validation.error);
+      setValidationError(validation.error);
+      setCreateError(null);
       nameFieldRef.current?.focus();
       return;
     }
 
     setBusy(true);
-    setError(null);
+    setValidationError(null);
+    setCreateError(null);
     try {
       await onCreate(validation.name, profile);
       onOpenChange(false);
     } catch {
-      setError("创建失败，请重试");
+      setCreateError("创建失败，请重试");
     } finally {
       setBusy(false);
     }
@@ -115,17 +125,18 @@ export function CreateProjectDialog({
           <Badge tone="accent">{profile}</Badge>
           <p>{presentation.description}</p>
         </div>
+        {createError === null ? null : (
+          <StatusNotice tone="error">{createError}</StatusNotice>
+        )}
         <Field
-          autoFocus
           ref={nameFieldRef}
           label="项目名称"
           value={name}
-          error={error}
+          error={validationError}
           onChange={(event) => {
             setName(event.currentTarget.value);
-            if (error !== null) {
-              setError(null);
-            }
+            setValidationError(null);
+            setCreateError(null);
           }}
         />
         <Field

@@ -175,6 +175,64 @@ describe("ProjectStore", () => {
     expect(store.getState().manifest?.name).toBe("New");
   });
 
+  it("flush waits for an active operation boundary and reports that operation's failure", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Old", location: "sandbox", profile: "market" });
+    const failure = new Error("rename failed at boundary");
+    let markCommitStarted!: () => void;
+    let releaseCommit!: () => void;
+    const commitStarted = new Promise<void>((resolve) => {
+      markCommitStarted = resolve;
+    });
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    vi.spyOn(backend, "commit").mockImplementationOnce(async () => {
+      markCommitStarted();
+      await commitGate;
+      throw failure;
+    });
+
+    const rename = store.renameProject("Rejected");
+    await commitStarted;
+    const flushing = store.flush();
+    releaseCommit();
+
+    await expect(rename).rejects.toBe(failure);
+    await expect(flushing).rejects.toBe(failure);
+    expect(store.getState().snapshot?.project.name).toBe("Old");
+  });
+
+  it("flush reports the latest operation failure even when it already settled", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Old", location: "sandbox", profile: "showroom" });
+    const failure = new Error("settled rename failed");
+    backend.failNextCommit = failure;
+
+    await expect(store.renameProject("Rejected")).rejects.toBe(failure);
+
+    await expect(store.flush()).rejects.toBe(failure);
+    expect(store.getState().snapshot?.project.name).toBe("Old");
+  });
+
+  it("flush forgets a prior failure after a later operation succeeds", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Old", location: "sandbox", profile: "market" });
+    const failure = new Error("transient rename failure");
+    backend.failNextCommit = failure;
+    await expect(store.renameProject("Rejected")).rejects.toBe(failure);
+    await expect(store.flush()).rejects.toBe(failure);
+
+    await store.renameProject("Recovered");
+
+    await expect(store.flush()).resolves.toBeUndefined();
+    expect(store.getState().snapshot?.project.name).toBe("Recovered");
+    await store.close();
+  });
+
   it("opens recovered projects in recovered state and clears recovery after saving", async () => {
     const sandbox = new SandboxProjectBackend();
     const opened = await sandbox.createProject({ name: "Recovered", location: "sandbox", profile: "showroom" });
@@ -289,6 +347,103 @@ describe("ProjectStore", () => {
     expect(commit).toHaveBeenCalledOnce();
     expect(checkpoint).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("adopts an already-running close failure during disposal without retrying it", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Demo", location: "sandbox", profile: "showroom" });
+    const failure = new Error("close failed");
+    let markCloseStarted!: () => void;
+    let releaseClose!: () => void;
+    const closeStarted = new Promise<void>((resolve) => {
+      markCloseStarted = resolve;
+    });
+    const closeGate = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const close = vi.spyOn(backend, "closeProject").mockImplementation(async () => {
+      markCloseStarted();
+      await closeGate;
+      throw failure;
+    });
+
+    const closing = store.close();
+    await closeStarted;
+    const disposing = store.dispose();
+    releaseClose();
+
+    await expect(closing).rejects.toBe(failure);
+    await expect(disposing).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledOnce();
+    await expect(store.dispose()).rejects.toBe(failure);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps normal close retry semantics when the store is not disposed", async () => {
+    const backend = new SandboxProjectBackend();
+    const closeProject = backend.closeProject.bind(backend);
+    const close = vi.spyOn(backend, "closeProject");
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const projectPath = store.getState().projectPath;
+    const failure = new Error("temporary close failure");
+    close.mockRejectedValueOnce(failure).mockImplementation(closeProject);
+
+    await expect(store.close()).rejects.toBe(failure);
+    expect(store.getState().projectPath).toBe(projectPath);
+
+    await expect(store.close()).resolves.toBeUndefined();
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(store.getState().projectPath).toBeNull();
+  });
+
+  it("cancels a queued close so disposal performs the only backend close", async () => {
+    const backend = new SandboxProjectBackend();
+    const commitProject = backend.commit.bind(backend);
+    const close = vi.spyOn(backend, "closeProject");
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Demo", location: "sandbox", profile: "showroom" });
+    let markCommitStarted!: () => void;
+    let releaseCommit!: () => void;
+    const commitStarted = new Promise<void>((resolve) => {
+      markCommitStarted = resolve;
+    });
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    vi.spyOn(backend, "commit").mockImplementationOnce(async (path, batch) => {
+      markCommitStarted();
+      await commitGate;
+      return commitProject(path, batch);
+    });
+
+    const rename = store.renameProject("In flight");
+    await commitStarted;
+    const queuedClose = store.close();
+    const disposing = store.dispose();
+    releaseCommit();
+
+    await expect(rename).resolves.toBeUndefined();
+    await expect(queuedClose).rejects.toThrow("ProjectStore is disposed");
+    await expect(disposing).resolves.toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("returns an inert subscription after disposal and never calls its listener", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    await store.dispose();
+    const listener = vi.fn();
+
+    const unsubscribe = store.subscribe(listener);
+    await expect(store.renameProject("Rejected")).rejects.toThrow("ProjectStore is disposed");
+    await expect(store.dispose()).resolves.toBeUndefined();
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(() => unsubscribe()).not.toThrow();
+    expect(() => unsubscribe()).not.toThrow();
   });
 
   it("cancels the prior project's timer and installs a fresh command bus on replacement", async () => {

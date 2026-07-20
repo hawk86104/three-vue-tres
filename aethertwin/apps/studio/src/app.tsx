@@ -9,7 +9,11 @@ import {
   type RecentProject,
 } from "@aethertwin/project-store";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { selectBackend, type ForcedBackend } from "./backend/select-backend";
+import {
+  selectBackend,
+  type ForcedBackend,
+  type StudioBackend,
+} from "./backend/select-backend";
 import { UiGallery } from "./dev/ui-gallery";
 import {
   CreateProjectDialog,
@@ -44,12 +48,21 @@ function readableError(value: unknown): string {
 }
 
 export interface AppProps {
-  backend?: ProjectBackend;
+  backend?: StudioBackend;
   forceBackend?: ForcedBackend;
 }
 
+function requireSandboxBackend(backend: ProjectBackend): StudioBackend {
+  if (backend.mode !== "sandbox") {
+    throw new Error("AetherTwin Studio requires a sandbox backend");
+  }
+  return backend as StudioBackend;
+}
+
 function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
-  const [backend] = useState(() => injectedBackend ?? selectBackend(forceBackend));
+  const [backend] = useState(() =>
+    requireSandboxBackend(injectedBackend ?? selectBackend(forceBackend)),
+  );
   const [store] = useState(() => new ProjectStore(backend));
   const storeLifecycleGeneration = useRef(0);
   const [recentRepository] = useState(() => new RecentProjects(new SessionStorage()));
@@ -117,6 +130,7 @@ function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
 
   async function returnToCenter() {
     try {
+      await store.flush();
       await store.save();
       recordCurrentProject();
       await store.close();

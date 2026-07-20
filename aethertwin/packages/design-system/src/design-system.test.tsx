@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, useRef, useState } from "react";
 import { readFileSync } from "node:fs";
@@ -250,6 +250,49 @@ describe("Dialog", () => {
     expect(outsideEvents[0]?.defaultPrevented).toBe(true);
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog", { name: "处理中" })).toBeVisible();
+  });
+
+  it("prevents nonmodal focus and interact outside while invoking caller handlers", async () => {
+    const onOpenChange = vi.fn();
+    const focusEvents: Array<{ readonly defaultPrevented: boolean }> = [];
+    const interactEvents: Array<{ readonly defaultPrevented: boolean }> = [];
+
+    function NondismissibleNonmodalHarness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button">外部操作</button>
+          <Dialog
+            open={open}
+            modal={false}
+            dismissible={false}
+            title="非模态处理中"
+            onOpenChange={(nextOpen) => {
+              onOpenChange(nextOpen);
+              setOpen(nextOpen);
+            }}
+            onFocusOutside={(event) => focusEvents.push(event)}
+            onInteractOutside={(event) => interactEvents.push(event)}
+          >
+            <button type="button">内部操作</button>
+          </Dialog>
+        </>
+      );
+    }
+
+    render(<NondismissibleNonmodalHarness />);
+    expect(screen.getByRole("button", { name: "内部操作" })).toHaveFocus();
+
+    const outside = screen.getByRole("button", { name: "外部操作" });
+    act(() => outside.focus());
+    expect(outside).toHaveFocus();
+
+    expect(focusEvents).toHaveLength(1);
+    expect(focusEvents[0]?.defaultPrevented).toBe(true);
+    expect(interactEvents).toHaveLength(1);
+    expect(interactEvents[0]?.defaultPrevented).toBe(true);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "非模态处理中" })).toBeVisible();
   });
 
   it("uses unique accessible title IDs for repeated dialogs", () => {

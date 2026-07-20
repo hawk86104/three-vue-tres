@@ -41,6 +41,8 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
     modal,
     onCloseAutoFocus,
     onEscapeKeyDown,
+    onFocusOutside,
+    onInteractOutside,
     onOpenAutoFocus,
     onOpenChange,
     onPointerDownOutside,
@@ -94,6 +96,18 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
           }}
           onEscapeKeyDown={(event) => {
             onEscapeKeyDown?.(event);
+            if (!dismissible) {
+              event.preventDefault();
+            }
+          }}
+          onFocusOutside={(event) => {
+            onFocusOutside?.(event);
+            if (!dismissible) {
+              event.preventDefault();
+            }
+          }}
+          onInteractOutside={(event) => {
+            onInteractOutside?.(event);
             if (!dismissible) {
               event.preventDefault();
             }

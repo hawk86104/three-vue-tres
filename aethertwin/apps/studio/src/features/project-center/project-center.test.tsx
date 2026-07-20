@@ -6,9 +6,13 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
-import { StrictMode } from "react";
+import { StrictMode, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProjectStore, SandboxProjectBackend } from "@aethertwin/project-store";
+import {
+  ProjectStore,
+  SandboxProjectBackend,
+  type ProjectBackend,
+} from "@aethertwin/project-store";
 import { App } from "../../app";
 import { selectBackend } from "../../backend/select-backend";
 import {
@@ -63,12 +67,23 @@ describe("project name validation", () => {
     },
   );
 
-  it.each(["\t\n\u00a0", "项目 ", "项目\t", "项目\n", "项目\u00a0", "项目.", "项目.\u00a0"])(
+  it.each([
+    ["\t\n\u00a0", EMPTY_NAME_ERROR],
+    ["\u0085", EMPTY_NAME_ERROR],
+    ["项目 ", TRAILING_NAME_ERROR],
+    ["项目\t", TRAILING_NAME_ERROR],
+    ["项目\n", TRAILING_NAME_ERROR],
+    ["项目\u00a0", TRAILING_NAME_ERROR],
+    ["项目\u0085", TRAILING_NAME_ERROR],
+    ["项目.", TRAILING_NAME_ERROR],
+    ["项目.\u00a0", TRAILING_NAME_ERROR],
+    ["项目.\u0085", TRAILING_NAME_ERROR],
+  ])(
     "rejects empty or trailing Unicode whitespace without normalizing to an invalid name: %j",
-    (name) => {
+    (name, error) => {
       expect(validateProjectName(name)).toEqual({
         ok: false,
-        error: name.trim().length === 0 ? EMPTY_NAME_ERROR : TRAILING_NAME_ERROR,
+        error,
       });
     },
   );
@@ -76,6 +91,7 @@ describe("project name validation", () => {
   it("returns the canonical Unicode-aware name and counts Unicode code points", () => {
     const eightyCodePoints = "😀".repeat(80);
     expect(validateProjectName("\t\u00a0  项目")).toEqual({ ok: true, name: "项目" });
+    expect(validateProjectName("\u0085项目")).toEqual({ ok: true, name: "项目" });
     expect(validateProjectName(eightyCodePoints)).toEqual({
       ok: true,
       name: eightyCodePoints,
@@ -172,27 +188,37 @@ describe("create project busy state", () => {
   it("restores validation and dismissal controls after creation rejects", async () => {
     const pendingCreate = deferred<void>();
     const onOpenChange = vi.fn();
+    const onCreate = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => pendingCreate.promise)
+      .mockResolvedValueOnce(undefined);
     render(
       <CreateProjectDialog
         open
         profile="showroom"
-        onCreate={() => pendingCreate.promise}
+        onCreate={onCreate}
         onOpenChange={onOpenChange}
       />,
     );
-    fireEvent.change(screen.getByLabelText("项目名称"), {
+    const nameField = screen.getByLabelText("项目名称");
+    fireEvent.change(nameField, {
       target: { value: "失败展厅" },
     });
     await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
 
     await act(async () => pendingCreate.reject(new Error("create failed")));
-    expect(await screen.findByText("创建失败，请重试")).toBeVisible();
+    expect(await screen.findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    expect(nameField).not.toHaveAttribute("aria-invalid");
+    expect(nameField).not.toHaveAttribute("aria-describedby");
+    expect(nameField).toHaveValue("失败展厅");
     expect(screen.getByRole("button", { name: "创建项目" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "关闭" })).toBeEnabled();
 
-    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
+    expect(onCreate).toHaveBeenCalledTimes(2);
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 
@@ -237,6 +263,31 @@ describe("project center", () => {
     expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("项目位置")).toHaveValue("sandbox");
     expect(within(dialog).getByLabelText("项目位置")).toBeDisabled();
+  });
+
+  it("focuses the name through Dialog entry and restores the real creation opener", async () => {
+    render(<App forceBackend="sandbox" />);
+    const opener = screen.getByRole("button", { name: "新建店铺展厅" });
+
+    await userEvent.click(opener);
+    let dialog = screen.getByRole("dialog", { name: "新建项目" });
+    let nameField = within(dialog).getByLabelText("项目名称");
+    expect(nameField).toHaveFocus();
+    expect(nameField).not.toHaveAttribute("autofocus");
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "新建项目" })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+
+    await userEvent.click(opener);
+    dialog = screen.getByRole("dialog", { name: "新建项目" });
+    nameField = within(dialog).getByLabelText("项目名称");
+    expect(nameField).toHaveFocus();
+    expect(nameField).not.toHaveAttribute("autofocus");
+    await userEvent.click(within(dialog).getByRole("button", { name: "关闭" }));
+
+    expect(screen.queryByRole("dialog", { name: "新建项目" })).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 
   it.each([
@@ -344,6 +395,41 @@ describe("project center", () => {
     expect(checkpoint).toHaveBeenCalledOnce();
     await userEvent.click(screen.getByRole("button", { name: "打开沙盒项目" }));
     expect(await screen.findByRole("heading", { name: "新展厅名" })).toBeVisible();
+  });
+
+  it("keeps the editor open when blur rename fails immediately before Close", async () => {
+    const backend = new SandboxProjectBackend();
+    const checkpoint = vi.spyOn(backend, "checkpoint");
+    const close = vi.spyOn(backend, "closeProject");
+    render(<App backend={backend} />);
+    await openCreateDialog("showroom");
+    await submitName("可靠展厅");
+
+    const nameField = await screen.findByLabelText("项目名称（检查器）");
+    await userEvent.clear(nameField);
+    await userEvent.type(nameField, "失败重命名");
+    backend.failNextCommit = new Error("rename failed");
+
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    expect(screen.getByRole("heading", { name: "项目概览" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "可靠展厅" })).toBeVisible();
+    const inspector = document.querySelector<HTMLElement>('aside[aria-label="检查器"]');
+    expect(inspector).not.toBeNull();
+    const inspectorQueries = within(inspector!);
+    expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("rename failed");
+    const failedNameField = inspectorQueries.getByLabelText("项目名称（检查器）");
+    expect(failedNameField).toHaveValue("失败重命名");
+    expect(failedNameField).toHaveAttribute("aria-invalid", "true");
+    const descriptionIds = failedNameField.getAttribute("aria-describedby")?.split(" ") ?? [];
+    expect(
+      descriptionIds.some(
+        (id) => document.getElementById(id)?.textContent === "rename failed",
+      ),
+    ).toBe(true);
+    expect(checkpoint).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "打开沙盒项目" })).not.toBeInTheDocument();
   });
 
   it("disposes a dirty in-flight Studio store exactly once without a post-unmount autosave", async () => {
@@ -560,6 +646,40 @@ describe("UI gallery", () => {
 });
 
 describe("Studio entry boundaries", () => {
+  it("accepts only sandbox backend injection and rejects forged desktop mode before I/O", () => {
+    type StudioBackend = NonNullable<ComponentProps<typeof App>["backend"]>;
+    const validSandboxBackend: StudioBackend = new SandboxProjectBackend();
+    expect(validSandboxBackend.mode).toBe("sandbox");
+
+    const desktopBackend: ProjectBackend = {
+      mode: "desktop",
+      createProject: vi.fn<ProjectBackend["createProject"]>(),
+      openProject: vi.fn<ProjectBackend["openProject"]>(),
+      commit: vi.fn<ProjectBackend["commit"]>(),
+      checkpoint: vi.fn<ProjectBackend["checkpoint"]>(),
+      closeProject: vi.fn<ProjectBackend["closeProject"]>(),
+    };
+    // @ts-expect-error Studio's injection seam must reject desktop-capable backends.
+    const compileTimeRejectedBackend: StudioBackend = desktopBackend;
+    void compileTimeRejectedBackend;
+
+    let renderError: unknown = null;
+    try {
+      render(<App backend={desktopBackend as unknown as StudioBackend} />);
+    } catch (error) {
+      renderError = error;
+    }
+
+    expect(desktopBackend.createProject).not.toHaveBeenCalled();
+    expect(desktopBackend.openProject).not.toHaveBeenCalled();
+    expect(desktopBackend.commit).not.toHaveBeenCalled();
+    expect(desktopBackend.checkpoint).not.toHaveBeenCalled();
+    expect(desktopBackend.closeProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "AetherTwin Studio" })).not.toBeInTheDocument();
+    expect(renderError).toBeInstanceOf(Error);
+    expect((renderError as Error).message).toMatch(/sandbox/i);
+  });
+
   it("selects a sandbox backend for the unforced web entry", () => {
     const backend = selectBackend();
     expect(backend).toBeInstanceOf(SandboxProjectBackend);
