@@ -220,6 +220,77 @@ describe("ProjectStore", () => {
     });
   });
 
+  it("disposes terminally while suppressing in-flight publication and queued backend work", async () => {
+    vi.useFakeTimers();
+    const backend = new SandboxProjectBackend();
+    const createProject = vi.spyOn(backend, "createProject");
+    const openProject = vi.spyOn(backend, "openProject");
+    const close = vi.spyOn(backend, "closeProject");
+    const checkpoint = vi.spyOn(backend, "checkpoint");
+    const store = new ProjectStore(backend, { autosaveDelayMs: 500 });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    await store.create({ name: "Demo", location: "sandbox", profile: "showroom" });
+    await store.renameProject("Dirty");
+    expect(store.getState().saveState).toBe("dirty");
+
+    const commitProject = backend.commit.bind(backend);
+    let markCommitStarted!: () => void;
+    let releaseCommit!: () => void;
+    const commitStarted = new Promise<void>((resolve) => {
+      markCommitStarted = resolve;
+    });
+    const commitGate = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const commit = vi.spyOn(backend, "commit").mockImplementationOnce(async (path, batch) => {
+      markCommitStarted();
+      await commitGate;
+      return commitProject(path, batch);
+    });
+
+    const inFlightRename = store.renameProject("In flight");
+    await commitStarted;
+    const queuedTags = store.setProjectTags(["must-not-commit"]);
+    listener.mockClear();
+
+    const firstDispose = store.dispose();
+    const secondDispose = store.dispose();
+    releaseCommit();
+
+    await expect(inFlightRename).resolves.toBeUndefined();
+    await expect(queuedTags).rejects.toThrow("ProjectStore is disposed");
+    await Promise.all([firstDispose, secondDispose]);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(checkpoint).not.toHaveBeenCalled();
+    expect(commit).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(createProject).toHaveBeenCalledOnce();
+    expect(openProject).not.toHaveBeenCalled();
+
+    const queuedPublicOperations = [
+      () => store.create({ name: "After dispose", location: "sandbox", profile: "market" }),
+      () => store.open("sandbox://after-dispose"),
+      () => store.renameProject("After dispose"),
+      () => store.setProjectTags(["after-dispose"]),
+      () => store.undo(),
+      () => store.redo(),
+      () => store.save(),
+      () => store.close(),
+    ];
+    for (const operation of queuedPublicOperations) {
+      await expect(operation()).rejects.toThrow("ProjectStore is disposed");
+    }
+
+    expect(createProject).toHaveBeenCalledOnce();
+    expect(openProject).not.toHaveBeenCalled();
+    expect(commit).toHaveBeenCalledOnce();
+    expect(checkpoint).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("cancels the prior project's timer and installs a fresh command bus on replacement", async () => {
     vi.useFakeTimers();
     const backend = new SandboxProjectBackend();

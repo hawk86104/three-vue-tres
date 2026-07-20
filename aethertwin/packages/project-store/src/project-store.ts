@@ -69,6 +69,8 @@ export class ProjectStore {
   private bus: CommandBus<ProjectSnapshot> | null = null;
   private autosaveTimer: TimerHandle | null = null;
   private operationTail: Promise<void> = Promise.resolve();
+  private disposed = false;
+  private disposePromise: Promise<void> | null = null;
 
   constructor(
     private readonly backend: ProjectBackend,
@@ -130,6 +132,26 @@ export class ProjectStore {
 
   close(): Promise<void> {
     return this.enqueueOperation(() => this.performClose());
+  }
+
+  dispose(): Promise<void> {
+    if (this.disposePromise !== null) {
+      return this.disposePromise;
+    }
+
+    this.disposed = true;
+    this.clearAutosaveTimer();
+    this.listeners.clear();
+    const pending = this.operationTail.then(
+      () => this.performClose(),
+      () => this.performClose(),
+    );
+    this.operationTail = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.disposePromise = pending;
+    return pending;
   }
 
   private async performClose(): Promise<void> {
@@ -293,6 +315,9 @@ export class ProjectStore {
   }
 
   private scheduleAutosave(): void {
+    if (this.disposed) {
+      return;
+    }
     this.clearAutosaveTimer();
     this.autosaveTimer = this.scheduleTimeout(() => {
       this.autosaveTimer = null;
@@ -308,7 +333,15 @@ export class ProjectStore {
   }
 
   private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
-    const pending = this.operationTail.then(operation);
+    if (this.disposed) {
+      return Promise.reject(new Error("ProjectStore is disposed"));
+    }
+    const pending = this.operationTail.then(() => {
+      if (this.disposed) {
+        throw new Error("ProjectStore is disposed");
+      }
+      return operation();
+    });
     this.operationTail = pending.then(
       () => undefined,
       () => undefined,
@@ -318,6 +351,9 @@ export class ProjectStore {
 
   private publish(state: ProjectStoreState): void {
     this.state = immutableState(state);
+    if (this.disposed) {
+      return;
+    }
     for (const listener of this.listeners) {
       try {
         listener();

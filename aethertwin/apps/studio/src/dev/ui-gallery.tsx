@@ -2,9 +2,16 @@ import { Badge, Button, Dialog, Field, Panel, StatusNotice } from "@aethertwin/d
 import { useState } from "react";
 
 const saveStates = ["dirty", "saving", "saved", "error", "recovered"] as const;
+const saveStateTones = {
+  dirty: "info",
+  saving: "info",
+  saved: "saved",
+  error: "error",
+  recovered: "recovered",
+} as const;
 
 export function UiGallery() {
-  const [dialogOpen, setDialogOpen] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [lastAction, setLastAction] = useState("尚未操作");
 
   return (
@@ -57,13 +64,14 @@ export function UiGallery() {
         <h2>Save states</h2>
         <div className="studio-gallery-row">
           {saveStates.map((state) => (
-            <span
+            <StatusNotice
               className={`studio-save-state studio-save-state--${state}`}
               data-testid={`save-state-${state}`}
               key={state}
+              tone={saveStateTones[state]}
             >
               {state}
-            </span>
+            </StatusNotice>
           ))}
         </div>
       </Panel>
@@ -71,6 +79,10 @@ export function UiGallery() {
       <Panel aria-label="项目档案徽章">
         <h2>Profile badges</h2>
         <div className="studio-gallery-row">
+          <Badge tone="neutral">neutral</Badge>
+          <Badge tone="accent">accent</Badge>
+          <Badge tone="success">success</Badge>
+          <Badge tone="danger">danger</Badge>
           <Badge tone="accent">showroom</Badge>
           <Badge tone="accent">market</Badge>
         </div>
@@ -81,7 +93,6 @@ export function UiGallery() {
       </Button>
       <Dialog
         open={dialogOpen}
-        modal={false}
         title="示例对话框"
         description="对话框的标题、说明、内容与关闭动作。"
         onOpenChange={setDialogOpen}

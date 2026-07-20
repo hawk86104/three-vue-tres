@@ -1,9 +1,9 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { Badge, Button, Dialog, Field } from "@aethertwin/design-system";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const WINDOWS_RESERVED_DEVICE_NAME =
-  /^(?:CON|PRN|AUX|NUL|COM(?:[1-9]|[¹²³])|LPT(?:[1-9]|[¹²³]))$/iu;
+  /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/iu;
 
 const profilePresentation: Record<
   ProjectProfile,
@@ -19,25 +19,29 @@ const profilePresentation: Record<
   },
 };
 
-export function validateProjectName(value: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return "请输入项目名称";
+export type ProjectNameValidation =
+  | { readonly ok: true; readonly name: string }
+  | { readonly ok: false; readonly error: string };
+
+export function validateProjectName(value: string): ProjectNameValidation {
+  const canonicalName = value.trim();
+  if (canonicalName.length === 0) {
+    return { ok: false, error: "请输入项目名称" };
   }
-  if (/[\\/]/u.test(value)) {
-    return "项目名称不能包含路径分隔符";
+  if (/[\\/]/u.test(canonicalName)) {
+    return { ok: false, error: "项目名称不能包含路径分隔符" };
   }
-  if (/[. ]$/u.test(value)) {
-    return "项目名称不能以点或空格结尾";
+  if (/(?:[.]|\s)$/u.test(value)) {
+    return { ok: false, error: "项目名称不能以点或空格结尾" };
   }
-  const nameBeforeExtension = trimmed.split(".", 1)[0] ?? "";
+  const nameBeforeExtension = canonicalName.split(".", 1)[0] ?? "";
   if (WINDOWS_RESERVED_DEVICE_NAME.test(nameBeforeExtension)) {
-    return "项目名称不能使用 Windows 保留设备名";
+    return { ok: false, error: "项目名称不能使用 Windows 保留设备名" };
   }
-  if (Array.from(trimmed).length > 80) {
-    return "项目名称不能超过 80 个字符";
+  if (Array.from(canonicalName).length > 80) {
+    return { ok: false, error: "项目名称不能超过 80 个字符" };
   }
-  return null;
+  return { ok: true, name: canonicalName };
 }
 
 export interface CreateProjectDialogProps {
@@ -56,6 +60,7 @@ export function CreateProjectDialog({
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const nameFieldRef = useRef<HTMLInputElement>(null);
   const presentation = profilePresentation[profile];
 
   useEffect(() => {
@@ -67,16 +72,17 @@ export function CreateProjectDialog({
   }, [open]);
 
   async function submit() {
-    const validationError = validateProjectName(name);
-    if (validationError !== null) {
-      setError(validationError);
+    const validation = validateProjectName(name);
+    if (!validation.ok) {
+      setError(validation.error);
+      nameFieldRef.current?.focus();
       return;
     }
 
     setBusy(true);
     setError(null);
     try {
-      await onCreate(name.trim(), profile);
+      await onCreate(validation.name, profile);
       onOpenChange(false);
     } catch {
       setError("创建失败，请重试");
@@ -88,6 +94,7 @@ export function CreateProjectDialog({
   return (
     <Dialog
       open={open}
+      dismissible={!busy}
       onOpenChange={(nextOpen) => {
         if (!busy) {
           onOpenChange(nextOpen);
@@ -110,6 +117,7 @@ export function CreateProjectDialog({
         </div>
         <Field
           autoFocus
+          ref={nameFieldRef}
           label="项目名称"
           value={name}
           error={error}

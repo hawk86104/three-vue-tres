@@ -10,6 +10,7 @@ export interface DialogProps extends Omit<DialogContentProps, "title"> {
   closeLabel?: string;
   defaultOpen?: boolean;
   description?: ReactNode;
+  dismissible?: boolean;
   modal?: boolean;
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
@@ -36,10 +37,13 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
     closeLabel = "关闭",
     defaultOpen,
     description,
+    dismissible = true,
     modal,
     onCloseAutoFocus,
+    onEscapeKeyDown,
     onOpenAutoFocus,
     onOpenChange,
+    onPointerDownOutside,
     open,
     overlayClassName,
     overlayProps,
@@ -88,6 +92,18 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
               returnFocusRef.current?.focus();
             }
           }}
+          onEscapeKeyDown={(event) => {
+            onEscapeKeyDown?.(event);
+            if (!dismissible) {
+              event.preventDefault();
+            }
+          }}
+          onPointerDownOutside={(event) => {
+            onPointerDownOutside?.(event);
+            if (!dismissible) {
+              event.preventDefault();
+            }
+          }}
         >
           <DialogPrimitive.Title className="aether-dialog__title">
             {title}
@@ -102,7 +118,12 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
           )}
           {children}
           <DialogPrimitive.Close asChild>
-            <button className="aether-dialog__close" type="button" aria-label={closeLabel}>
+            <button
+              className="aether-dialog__close"
+              type="button"
+              aria-label={closeLabel}
+              disabled={!dismissible}
+            >
               <XIcon aria-hidden="true" focusable="false" size={18} />
             </button>
           </DialogPrimitive.Close>

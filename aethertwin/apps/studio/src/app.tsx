@@ -5,9 +5,10 @@ import {
   ProjectStore,
   RecentProjects,
   type KeyValueStorage,
+  type ProjectBackend,
   type RecentProject,
 } from "@aethertwin/project-store";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { selectBackend, type ForcedBackend } from "./backend/select-backend";
 import { UiGallery } from "./dev/ui-gallery";
 import {
@@ -43,12 +44,14 @@ function readableError(value: unknown): string {
 }
 
 export interface AppProps {
+  backend?: ProjectBackend;
   forceBackend?: ForcedBackend;
 }
 
-function StudioApp({ forceBackend }: AppProps) {
-  const [backend] = useState(() => selectBackend(forceBackend));
+function StudioApp({ backend: injectedBackend, forceBackend }: AppProps) {
+  const [backend] = useState(() => injectedBackend ?? selectBackend(forceBackend));
   const [store] = useState(() => new ProjectStore(backend));
+  const storeLifecycleGeneration = useRef(0);
   const [recentRepository] = useState(() => new RecentProjects(new SessionStorage()));
   const [recentProjects, setRecentProjects] = useState<readonly RecentProject[]>(() =>
     recentRepository.list(),
@@ -58,6 +61,19 @@ function StudioApp({ forceBackend }: AppProps) {
   const [opening, setOpening] = useState(false);
   const [centerError, setCenterError] = useState<string | null>(null);
   const state = useProjectStore(store);
+
+  useEffect(() => {
+    const generation = storeLifecycleGeneration.current + 1;
+    storeLifecycleGeneration.current = generation;
+    return () => {
+      void Promise.resolve().then(() => {
+        if (storeLifecycleGeneration.current === generation) {
+          return store.dispose().catch(() => undefined);
+        }
+        return undefined;
+      });
+    };
+  }, [store]);
 
   const recordCurrentProject = useCallback(() => {
     const current = store.getState();
@@ -101,6 +117,7 @@ function StudioApp({ forceBackend }: AppProps) {
 
   async function returnToCenter() {
     try {
+      await store.save();
       recordCurrentProject();
       await store.close();
       setView("center");
@@ -144,7 +161,10 @@ function StudioApp({ forceBackend }: AppProps) {
         opening={opening}
         recentProjects={recentProjects}
         onOpen={(path) => void openProject(path)}
-        onStartCreate={setDialogProfile}
+        onStartCreate={(profile) => {
+          setCenterError(null);
+          setDialogProfile(profile);
+        }}
       />
       <CreateProjectDialog
         open={dialogProfile !== null}
@@ -205,28 +225,31 @@ function ProjectOverviewInspector({
 }) {
   const [name, setName] = useState(snapshot.project.name);
   const [tags, setTags] = useState(snapshot.project.tags.join(", "));
-  const [editError, setEditError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [tagsError, setTagsError] = useState<string | null>(null);
 
   useEffect(() => {
     setName(snapshot.project.name);
     setTags(snapshot.project.tags.join(", "));
+    setNameError(null);
+    setTagsError(null);
   }, [snapshot]);
 
   async function commitName() {
-    const validationError = validateProjectName(name);
-    if (validationError !== null) {
-      setEditError(validationError);
+    const validation = validateProjectName(name);
+    if (!validation.ok) {
+      setNameError(validation.error);
       return;
     }
-    const normalized = name.trim();
-    if (normalized === snapshot.project.name) {
+    if (validation.name === snapshot.project.name) {
+      setNameError(null);
       return;
     }
     try {
-      await onRename(normalized);
-      setEditError(null);
+      await onRename(validation.name);
+      setNameError(null);
     } catch (error) {
-      setEditError(readableError(error));
+      setNameError(readableError(error));
     }
   }
 
@@ -236,15 +259,18 @@ function ProjectOverviewInspector({
       nextTags.length === snapshot.project.tags.length &&
       nextTags.every((tag, index) => tag === snapshot.project.tags[index])
     ) {
+      setTagsError(null);
       return;
     }
     try {
       await onSetTags(nextTags);
-      setEditError(null);
+      setTagsError(null);
     } catch (error) {
-      setEditError(readableError(error));
+      setTagsError(readableError(error));
     }
   }
+
+  const editError = nameError ?? tagsError;
 
   return (
     <div className="studio-inspector-form">
@@ -253,15 +279,22 @@ function ProjectOverviewInspector({
       <Field
         label="项目名称（检查器）"
         value={name}
-        error={editError}
-        onChange={(event) => setName(event.currentTarget.value)}
+        error={nameError}
+        onChange={(event) => {
+          setName(event.currentTarget.value);
+          setNameError(null);
+        }}
         onBlur={() => void commitName()}
       />
       <Field
         label="项目标签"
         value={tags}
+        error={tagsError}
         helpText="使用英文逗号分隔标签"
-        onChange={(event) => setTags(event.currentTarget.value)}
+        onChange={(event) => {
+          setTags(event.currentTarget.value);
+          setTagsError(null);
+        }}
         onBlur={() => void commitTags()}
       />
     </div>

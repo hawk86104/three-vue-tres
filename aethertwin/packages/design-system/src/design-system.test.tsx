@@ -204,6 +204,54 @@ describe("Dialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("can disable every dismiss action while preserving caller event handlers", async () => {
+    const onOpenChange = vi.fn();
+    const escapeEvents: Array<{ readonly defaultPrevented: boolean }> = [];
+    const outsideEvents: Array<{ readonly defaultPrevented: boolean }> = [];
+
+    function NondismissibleHarness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Dialog
+          open={open}
+          dismissible={false}
+          title="处理中"
+          onOpenChange={(nextOpen) => {
+            onOpenChange(nextOpen);
+            setOpen(nextOpen);
+          }}
+          onEscapeKeyDown={(event) => escapeEvents.push(event)}
+          onPointerDownOutside={(event) => outsideEvents.push(event)}
+          overlayProps={{ title: "blocking-overlay" }}
+        >
+          <button type="button">处理中</button>
+        </Dialog>
+      );
+    }
+
+    render(<NondismissibleHarness />);
+
+    const close = screen.getByRole("button", { name: "关闭" });
+    expect(close).toBeDisabled();
+    await userEvent.click(close);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "处理中" })).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+    expect(escapeEvents).toHaveLength(1);
+    expect(escapeEvents[0]?.defaultPrevented).toBe(true);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "处理中" })).toBeVisible();
+
+    const overlay = screen.getByTitle("blocking-overlay");
+    fireEvent.pointerDown(overlay, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    fireEvent.click(overlay);
+    expect(outsideEvents).toHaveLength(1);
+    expect(outsideEvents[0]?.defaultPrevented).toBe(true);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "处理中" })).toBeVisible();
+  });
+
   it("uses unique accessible title IDs for repeated dialogs", () => {
     render(
       <>
