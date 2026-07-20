@@ -1,13 +1,14 @@
 import {
   parseManifest,
   parseSnapshot,
-  type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
 import type {
+  CheckpointResult,
   CreateProjectRequest,
   OpenedProject,
   ProjectBackend,
+  RecoveryConfirmation,
 } from "@aethertwin/project-store";
 import { invoke } from "@tauri-apps/api/core";
 import { ProjectBackendError } from "./project-backend-error";
@@ -120,6 +121,29 @@ function parseOpenedProject(value: unknown): ParsedOpenedProject {
   });
 }
 
+function parseCheckpointResult(
+  value: unknown,
+  expected: ProjectSnapshot,
+): CheckpointResult {
+  const record = asRecord(value, "native checkpoint response");
+  const manifest = parseManifest(record.manifest);
+  const snapshot = parseSnapshot(record.snapshot);
+  const expectedWithCheckpoint = parseSnapshot({
+    ...expected,
+    checkpointSequence: expected.sequence,
+  });
+  if (
+    JSON.stringify(snapshot) !== JSON.stringify(expectedWithCheckpoint) ||
+    manifest.schemaVersion !== snapshot.schemaVersion ||
+    manifest.projectId !== snapshot.project.id ||
+    manifest.name !== snapshot.project.name ||
+    manifest.profile !== snapshot.project.profile
+  ) {
+    throw new Error("Invalid native checkpoint response: manifest and snapshot must be coherent");
+  }
+  return Object.freeze({ manifest, snapshot });
+}
+
 export class TauriProjectBackend implements ProjectBackend {
   readonly mode = "desktop" as const;
 
@@ -153,6 +177,20 @@ export class TauriProjectBackend implements ProjectBackend {
     });
   }
 
+  recoverProject(
+    projectPath: string,
+    confirmation: RecoveryConfirmation,
+  ): Promise<OpenedProject> {
+    return this.enqueue(async () => {
+      await this.drainPendingCleanup();
+      const response = await invokeNative<unknown>("recover_project", {
+        path: projectPath,
+        confirm: confirmation.confirmed,
+      });
+      return this.acceptOpenedProject(response);
+    });
+  }
+
   commit(
     projectPath: string,
     batch: Parameters<ProjectBackend["commit"]>[1],
@@ -165,12 +203,12 @@ export class TauriProjectBackend implements ProjectBackend {
 
   checkpoint(
     projectPath: string,
-    _snapshot: ProjectSnapshot,
-  ): Promise<ProjectManifest> {
+    snapshot: ProjectSnapshot,
+  ): Promise<CheckpointResult> {
     return this.enqueue(async () => {
       const sessionId = this.requireSession(projectPath);
       const response = await invokeNative<unknown>("checkpoint_project", { sessionId });
-      return parseManifest(response);
+      return parseCheckpointResult(response, snapshot);
     });
   }
 

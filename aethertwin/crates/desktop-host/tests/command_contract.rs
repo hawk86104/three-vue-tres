@@ -116,8 +116,10 @@ fn all_six_service_operations_follow_one_session_lifecycle() {
     service
         .commit_project(&created.session_id, rename_batch(&created.snapshot, &next))
         .unwrap();
-    let manifest = service.checkpoint_project(&created.session_id).unwrap();
-    assert_eq!(manifest.name, "Renamed");
+    let checkpoint = service.checkpoint_project(&created.session_id).unwrap();
+    assert_eq!(checkpoint.manifest.name, "Renamed");
+    assert_eq!(checkpoint.snapshot.sequence, 1);
+    assert_eq!(checkpoint.snapshot.checkpoint_sequence, 1);
     service.close_project(&created.session_id).unwrap();
     assert_eq!(service.session_count().unwrap(), 0);
 
@@ -399,6 +401,20 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     assert!(single_instance < dialog);
     assert!(main.contains("|app, _args, _cwd|"));
     assert!(!main.contains("std::env::args"));
+    for required in [
+        "WindowEvent::CloseRequested",
+        "RunEvent::ExitRequested",
+        "prevent_close",
+        "prevent_exit",
+        "close_all",
+        "dialog()",
+        "日志参考",
+    ] {
+        assert!(
+            main.contains(required),
+            "missing close lifecycle contract: {required}"
+        );
+    }
 }
 
 #[test]

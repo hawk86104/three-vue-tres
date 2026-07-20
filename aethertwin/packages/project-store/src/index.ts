@@ -1,7 +1,9 @@
 export {
+  type CheckpointResult,
   type CreateProjectRequest,
   type OpenedProject,
   type ProjectBackend,
+  type RecoveryConfirmation,
 } from "./backend";
 export { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 export {

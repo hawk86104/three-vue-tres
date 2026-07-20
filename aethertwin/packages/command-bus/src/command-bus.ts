@@ -63,6 +63,11 @@ export class CommandBus<S extends SequencedState> {
     return this.enqueue(() => this.applyRedo());
   }
 
+  acknowledge(rebase: (snapshot: S) => S): Promise<S> {
+    const capturedRebase = rebase;
+    return this.enqueue(() => this.applyAcknowledgement(capturedRebase));
+  }
+
   private async applyTransaction(intents: readonly CommandIntent<S>[]): Promise<S> {
     if (intents.length === 0) {
       return this.state;
@@ -163,6 +168,36 @@ export class CommandBus<S extends SequencedState> {
     this.state = candidate;
     this.redoStack.pop();
     this.undoStack.push(historyEntry);
+    return this.state;
+  }
+
+  private async applyAcknowledgement(rebase: (snapshot: S) => S): Promise<S> {
+    const rebaseSnapshot = (snapshot: S): S => {
+      const rebased = ownedCopy(rebase(snapshot));
+      if (rebased.sequence !== snapshot.sequence) {
+        throw new Error("Acknowledgement cannot change snapshot sequence");
+      }
+      return rebased;
+    };
+    const state = rebaseSnapshot(this.state);
+    const undoStack = this.undoStack.map((entry) =>
+      this.createHistoryEntry(
+        rebaseSnapshot(entry.before),
+        rebaseSnapshot(entry.after),
+        entry.operations,
+      ),
+    );
+    const redoStack = this.redoStack.map((entry) =>
+      this.createHistoryEntry(
+        rebaseSnapshot(entry.before),
+        rebaseSnapshot(entry.after),
+        entry.operations,
+      ),
+    );
+
+    this.state = state;
+    this.undoStack.splice(0, this.undoStack.length, ...undoStack);
+    this.redoStack.splice(0, this.redoStack.length, ...redoStack);
     return this.state;
   }
 

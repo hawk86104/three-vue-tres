@@ -76,6 +76,13 @@ pub struct ProjectSnapshot {
     pub assets: Vec<AssetRecord>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckpointResult {
+    pub manifest: ProjectManifest,
+    pub snapshot: ProjectSnapshot,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JournalOperation {

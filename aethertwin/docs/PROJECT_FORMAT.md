@@ -34,7 +34,7 @@ SQLite is configured with WAL journal mode, foreign keys on, and a 5,000 ms busy
 | `snapshots` | `sequence INTEGER PRIMARY KEY`, `snapshot_json TEXT NOT NULL`, `checksum TEXT NOT NULL`, `created_at TEXT NOT NULL` |
 | `asset_records` | `id TEXT PRIMARY KEY`, `sha256 TEXT NOT NULL`, `relative_path TEXT NOT NULL`, `media_type TEXT NOT NULL`, `size INTEGER NOT NULL CHECK(size >= 0)`, `metadata_json TEXT NOT NULL` |
 
-`schema_migrations` records version 1 and the SHA-256 checksum of the migration SQL. Initial metadata includes schema/identity/version fields plus `lastCommittedSequence`, `lastCheckpointSequence`, and `cleanShutdown`; initial snapshot JSON is checksummed. Command commits update entity/asset records, append journal rows, and update metadata in one transaction. A checkpoint writes/replaces the current snapshot row, updates checkpoint/name/time metadata, then atomically refreshes the manifest cache.
+`schema_migrations` records version 1 and the SHA-256 checksum of the migration SQL. Initial metadata includes schema/identity/version fields plus `lastCommittedSequence`, `lastCheckpointSequence`, and `cleanShutdown`; initial snapshot JSON is checksummed. Command commits update entity/asset records, append journal rows, and update metadata in one transaction. A checkpoint writes/replaces the current snapshot row and checkpoint/name/time metadata in one database transaction, then atomically refreshes the manifest cache. Its public result is the authoritative `{ manifest, snapshot }` pair, where `snapshot.checkpointSequence === snapshot.sequence`; the native session publishes that pair in memory only after both durable steps succeed.
 
 ## Stable native error codes
 

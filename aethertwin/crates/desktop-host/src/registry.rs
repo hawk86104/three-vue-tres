@@ -10,6 +10,14 @@ use std::{
 use uuid::Uuid;
 
 impl AppService {
+    pub(crate) fn registry_snapshot(&self) -> Result<Vec<(Uuid, SessionHandle)>, HostError> {
+        Ok(self
+            .lock_registry()?
+            .iter()
+            .map(|(session_id, session)| (*session_id, session.clone()))
+            .collect())
+    }
+
     pub(crate) fn registry_len(&self) -> Result<usize, HostError> {
         Ok(self.lock_registry()?.len())
     }

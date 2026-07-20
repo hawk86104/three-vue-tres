@@ -565,22 +565,17 @@ fn cleanup_bound_child(
     rename_child_no_replace(parent, parent_path, leaf, &quarantine)?;
     let mut child = match open_child_directory(parent, &quarantine) {
         Ok(child) => child,
-        Err(error) => {
-            let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
-            return Err(error);
-        }
+        Err(error) => return Err(error),
     };
     let actual = match file_identity(&child) {
         Ok(actual) => actual,
         Err(error) => {
             drop(child);
-            let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
             return Err(error);
         }
     };
     if actual != *expected {
         drop(child);
-        let _ = rename_child_no_replace(parent, parent_path, &quarantine, leaf);
         return Err(ProjectIoError::FilesystemError);
     }
     child
@@ -1814,7 +1809,7 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "android"))]
     #[test]
-    fn post_publish_identity_mismatch_restores_without_deleting_the_replacement() {
+    fn post_publish_identity_mismatch_quarantines_the_unverified_replacement() {
         let root = tempdir().unwrap();
         let opened = create_project(CreateProjectRequest {
             parent: root.path().to_owned(),
@@ -1846,6 +1841,19 @@ mod tests {
         assert_eq!(
             fs::read(replacement.path().join("replacement")).unwrap(),
             b"theirs"
+        );
+        assert!(
+            replacement
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".aethertwin-recovery-cleanup-")
+        );
+        assert!(
+            fs::read_dir(&recovery_root)
+                .unwrap()
+                .map(Result::unwrap)
+                .filter(|entry| entry.path() != preserved)
+                .all(|entry| entry.file_name().to_string_lossy().starts_with('.'))
         );
         assert!(preserved.join("manifest.json").is_file());
     }

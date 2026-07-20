@@ -6,7 +6,13 @@ import {
   type ProjectSnapshot,
   type SaveState,
 } from "@aethertwin/core-model";
-import type { CreateProjectRequest, OpenedProject, ProjectBackend } from "./backend";
+import type {
+  CheckpointResult,
+  CreateProjectRequest,
+  OpenedProject,
+  ProjectBackend,
+  RecoveryConfirmation,
+} from "./backend";
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 
 export interface ProjectStoreState {
@@ -65,6 +71,28 @@ function immutableState(state: ProjectStoreState): ProjectStoreState {
   return Object.freeze({ ...state });
 }
 
+function parseCheckpointResult(
+  value: CheckpointResult,
+  expected: ProjectSnapshot,
+): CheckpointResult {
+  const manifest = parseManifest(value.manifest);
+  const snapshot = parseSnapshot(value.snapshot);
+  const expectedWithCheckpoint = parseSnapshot({
+    ...expected,
+    checkpointSequence: expected.sequence,
+  });
+  if (
+    JSON.stringify(snapshot) !== JSON.stringify(expectedWithCheckpoint) ||
+    manifest.schemaVersion !== snapshot.schemaVersion ||
+    manifest.projectId !== snapshot.project.id ||
+    manifest.name !== snapshot.project.name ||
+    manifest.profile !== snapshot.project.profile
+  ) {
+    throw new Error("Invalid checkpoint result: manifest and snapshot must be coherent");
+  }
+  return Object.freeze({ manifest, snapshot });
+}
+
 export class ProjectStore {
   private readonly listeners = new Set<StateListener>();
   private readonly autosaveDelayMs: number;
@@ -114,6 +142,13 @@ export class ProjectStore {
   open(projectPath: string): Promise<void> {
     return this.enqueueMutation(() =>
       this.replaceProject(() => this.backend.openProject(projectPath)),
+    );
+  }
+
+  recover(projectPath: string, confirmation: RecoveryConfirmation): Promise<void> {
+    const ownedConfirmation = Object.freeze({ ...confirmation });
+    return this.enqueueMutation(() =>
+      this.replaceProject(() => this.backend.recoverProject(projectPath, ownedConfirmation)),
     );
   }
 
@@ -312,14 +347,25 @@ export class ProjectStore {
     this.publish({ ...this.state, snapshot: checkpointSnapshot, saveState: "saving", error: null });
 
     try {
-      const manifest = parseManifest(await this.backend.checkpoint(projectPath, checkpointSnapshot));
+      const checkpoint = parseCheckpointResult(
+        await this.backend.checkpoint(projectPath, checkpointSnapshot),
+        checkpointSnapshot,
+      );
       if (this.bus !== bus) {
         return;
       }
+      await bus.acknowledge((snapshot) =>
+        snapshot.sequence === checkpoint.snapshot.sequence
+          ? checkpoint.snapshot
+          : parseSnapshot({
+              ...snapshot,
+              checkpointSequence: checkpoint.snapshot.checkpointSequence,
+            }),
+      );
       const currentSnapshot = bus.getSnapshot();
       this.publish({
         ...this.state,
-        manifest,
+        manifest: checkpoint.manifest,
         snapshot: currentSnapshot,
         recovered: false,
         saveState: currentSnapshot.sequence === checkpointSnapshot.sequence ? "saved" : "dirty",

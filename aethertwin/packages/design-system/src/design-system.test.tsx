@@ -16,6 +16,18 @@ function readTestRelativeFile(relativePath: string): string {
   return readFileSync(new URL(relativePath, testModuleUrl), "utf8");
 }
 
+function unapprovedGlowSelectors(source: string): string[] {
+  const approvedFeedbackSelector =
+    /(?:--(?:selected|saved|recovered)\b|\[(?:data-state|aria-selected)=["']?(?:selected|true)["']?\])/i;
+  const glowDeclaration =
+    /(?:box-shadow|text-shadow)\s*:[^;]+;|(?:-webkit-)?filter\s*:[^;]*drop-shadow\s*\(/i;
+  return [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => glowDeclaration.test(match[2] ?? ""))
+    .flatMap((match) => (match[1] ?? "").split(","))
+    .map((selector) => selector.trim())
+    .filter((selector) => !approvedFeedbackSelector.test(selector));
+}
+
 describe("Button", () => {
   it("uses native keyboard activation and forwards its ref and attributes", async () => {
     const onClick = vi.fn();
@@ -488,5 +500,24 @@ describe("Aether CSS contract", () => {
     expect(publicCss).not.toMatch(
       /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|url\(\s*["']?https?:\/\/|backdrop-filter\s*:/i,
     );
+  });
+
+  it("permits glow-producing declarations only on selected, saved, or recovered feedback selectors", () => {
+    const fixture = `
+      .ordinary { box-shadow: 0 0 12px cyan; }
+      .also-ordinary { filter: drop-shadow(0 0 4px cyan); }
+      .item[data-state="selected"] { box-shadow: 0 0 12px cyan; }
+      .aether-status-notice--saved,
+      .aether-status-notice--recovered { text-shadow: 0 0 4px currentColor; }
+    `;
+    expect(unapprovedGlowSelectors(fixture)).toEqual([".ordinary", ".also-ordinary"]);
+
+    const runtimeCss = [
+      "./tokens.css",
+      "./base.css",
+      "../../editor-shell/src/editor-shell.css",
+      "../../../apps/studio/src/app.css",
+    ].map(readTestRelativeFile).join("\n");
+    expect(unapprovedGlowSelectors(runtimeCss)).toEqual([]);
   });
 });

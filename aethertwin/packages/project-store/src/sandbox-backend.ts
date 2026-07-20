@@ -7,7 +7,13 @@ import {
   type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
-import type { CreateProjectRequest, OpenedProject, ProjectBackend } from "./backend";
+import type {
+  CheckpointResult,
+  CreateProjectRequest,
+  OpenedProject,
+  ProjectBackend,
+  RecoveryConfirmation,
+} from "./backend";
 
 const SANDBOX_APP_VERSION = "0.1.0";
 
@@ -54,6 +60,13 @@ export class SandboxProjectBackend implements ProjectBackend {
     return cloneOpenedProject(this.getProject(projectPath));
   }
 
+  async recoverProject(
+    _projectPath: string,
+    _confirmation: RecoveryConfirmation,
+  ): Promise<OpenedProject> {
+    throw new Error("Stale-lock recovery is unavailable in the Web sandbox");
+  }
+
   async commit(projectPath: string, batch: CommitBatch<ProjectSnapshot>): Promise<void> {
     const failure = this.failNextCommit;
     this.failNextCommit = null;
@@ -62,6 +75,9 @@ export class SandboxProjectBackend implements ProjectBackend {
     }
 
     const current = this.getProject(projectPath);
+    if (JSON.stringify(current.snapshot) !== JSON.stringify(batch.before)) {
+      throw new Error("Sandbox commit does not own the current snapshot");
+    }
     const snapshot = parseSnapshot(batch.after);
     this.projects.set(
       projectPath,
@@ -69,9 +85,16 @@ export class SandboxProjectBackend implements ProjectBackend {
     );
   }
 
-  async checkpoint(projectPath: string, snapshot: ProjectSnapshot): Promise<ProjectManifest> {
+  async checkpoint(projectPath: string, snapshot: ProjectSnapshot): Promise<CheckpointResult> {
     const current = this.getProject(projectPath);
-    const ownedSnapshot = parseSnapshot(snapshot);
+    const requestedSnapshot = parseSnapshot(snapshot);
+    if (JSON.stringify(current.snapshot) !== JSON.stringify(requestedSnapshot)) {
+      throw new Error("Sandbox checkpoint does not own the current snapshot");
+    }
+    const ownedSnapshot = parseSnapshot({
+      ...requestedSnapshot,
+      checkpointSequence: requestedSnapshot.sequence,
+    });
     const manifest = parseManifest({
       ...current.manifest,
       name: ownedSnapshot.project.name,
@@ -83,7 +106,10 @@ export class SandboxProjectBackend implements ProjectBackend {
       projectPath,
       cloneOpenedProject({ ...current, manifest, snapshot: ownedSnapshot, recovered: false }),
     );
-    return parseManifest(manifest);
+    return Object.freeze({
+      manifest: parseManifest(manifest),
+      snapshot: parseSnapshot(ownedSnapshot),
+    });
   }
 
   async closeProject(projectPath: string): Promise<void> {

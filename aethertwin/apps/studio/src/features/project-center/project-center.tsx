@@ -1,14 +1,17 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
-import { Badge, Button, Panel, StatusNotice } from "@aethertwin/design-system";
+import { Badge, Button, Dialog, Panel, StatusNotice } from "@aethertwin/design-system";
 import type { RecentProject } from "@aethertwin/project-store";
+import { useState } from "react";
 
 export interface ProjectCenterProps {
   mode?: "desktop" | "sandbox";
   error: string | null;
   opening: boolean;
+  recoveryAvailable?: boolean;
   recentProjects: readonly RecentProject[];
   onOpen(path: string): void;
   onOpenExisting?(): void;
+  onRecover?(): void;
   onStartCreate(profile: ProjectProfile): void;
 }
 
@@ -21,11 +24,14 @@ export function ProjectCenter({
   mode = "sandbox",
   error,
   opening,
+  recoveryAvailable = false,
   recentProjects,
   onOpen,
   onOpenExisting = () => undefined,
+  onRecover = () => undefined,
   onStartCreate,
 }: ProjectCenterProps) {
+  const [confirmingRecovery, setConfirmingRecovery] = useState(false);
   const newestProject = recentProjects[0];
   const isDesktop = mode === "desktop";
 
@@ -46,7 +52,37 @@ export function ProjectCenter({
         </Badge>
       </header>
 
-      {error === null ? null : <StatusNotice tone="error">{error}</StatusNotice>}
+      {error === null ? null : (
+        <div>
+          <StatusNotice tone="error">{error}</StatusNotice>
+          {isDesktop && recoveryAvailable ? (
+            <Button variant="secondary" onClick={() => setConfirmingRecovery(true)}>
+              恢复项目
+            </Button>
+          ) : null}
+        </div>
+      )}
+
+      <Dialog
+        open={confirmingRecovery}
+        onOpenChange={setConfirmingRecovery}
+        title="确认恢复项目"
+        description="恢复会基于本地检查点和命令日志重建项目。仅在确认该项目未被其他会话使用时继续。"
+      >
+        <div className="aether-dialog__actions">
+          <Button variant="ghost" onClick={() => setConfirmingRecovery(false)}>
+            取消
+          </Button>
+          <Button
+            onClick={() => {
+              setConfirmingRecovery(false);
+              onRecover();
+            }}
+          >
+            确认恢复
+          </Button>
+        </div>
+      </Dialog>
 
       <section className="studio-project-center__actions" aria-label="项目操作">
         <Panel className="studio-project-center__action-card">

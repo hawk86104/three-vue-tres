@@ -13,6 +13,10 @@ interface State {
   sequence: number;
 }
 
+interface CheckpointedState extends State {
+  checkpoint: number;
+}
+
 const rename: CommandDefinition<State, { name: string }> = {
   type: "project.rename",
   prepare: (state, payload) => ({
@@ -34,6 +38,18 @@ const addTag: CommandDefinition<State, { tag: string }> = {
   applyInverse: (state, payload) => ({
     ...state,
     tags: (payload as { tags: string[] }).tags,
+  }),
+};
+
+const checkpointedRename: CommandDefinition<CheckpointedState, { name: string }> = {
+  type: "project.rename",
+  prepare: (state, payload) => ({
+    next: { ...state, name: payload.name },
+    inversePayload: { name: state.name },
+  }),
+  applyInverse: (state, payload) => ({
+    ...state,
+    name: (payload as { name: string }).name,
   }),
 };
 
@@ -373,6 +389,70 @@ describe("CommandBus", () => {
     expect(commit).toHaveBeenCalledTimes(2);
     expect(bus.getSnapshot()).toEqual({ name: "Second", tags: [], sequence: 1 });
     expect(bus.canUndo()).toBe(true);
+  });
+
+  it("acknowledges authoritative metadata across current, undo, and redo snapshots without clearing history", async () => {
+    const batches: CommitBatch<State & { checkpoint: number }>[] = [];
+    const checkpointedInitial = { ...initialState(), checkpoint: 0 };
+    const bus = new CommandBus(checkpointedInitial, {
+      commit: vi.fn(async (batch: CommitBatch<State & { checkpoint: number }>) => {
+        batches.push(batch);
+      }),
+    });
+
+    await bus.execute(checkpointedRename, { name: "First" });
+    await bus.execute(checkpointedRename, { name: "Second" });
+    await bus.undo();
+    await bus.acknowledge((snapshot) => ({ ...snapshot, checkpoint: 3 }));
+
+    expect(bus.getSnapshot()).toEqual({ name: "First", tags: [], sequence: 3, checkpoint: 3 });
+    expect(bus.canUndo()).toBe(true);
+    expect(bus.canRedo()).toBe(true);
+
+    await bus.undo();
+    expect(batches.at(-1)?.before).toEqual({ name: "First", tags: [], sequence: 3, checkpoint: 3 });
+    expect(batches.at(-1)?.after).toEqual({ name: "Old", tags: [], sequence: 4, checkpoint: 3 });
+    await bus.redo();
+    await bus.redo();
+    expect(bus.getSnapshot()).toEqual({ name: "Second", tags: [], sequence: 6, checkpoint: 3 });
+  });
+
+  it("serializes acknowledgement behind queued operations", async () => {
+    let release!: () => void;
+    const commit = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    const bus = new CommandBus({ ...initialState(), checkpoint: 0 }, { commit });
+
+    const pendingRename = bus.execute(checkpointedRename, { name: "Queued" });
+    const pendingAcknowledgement = bus.acknowledge((snapshot) => ({
+      ...snapshot,
+      checkpoint: snapshot.sequence,
+    }));
+
+    expect(bus.getSnapshot()).toEqual({ ...initialState(), checkpoint: 0 });
+    release();
+    await pendingRename;
+    await pendingAcknowledgement;
+    expect(bus.getSnapshot()).toEqual({ name: "Queued", tags: [], sequence: 1, checkpoint: 1 });
+  });
+
+  it("applies acknowledgement atomically when rebasing history throws", async () => {
+    const bus = new CommandBus({ ...initialState(), checkpoint: 0 }, {
+      commit: vi.fn().mockResolvedValue(undefined),
+    });
+    await bus.execute(checkpointedRename, { name: "New" });
+    const before = bus.getSnapshot();
+    let calls = 0;
+
+    await expect(bus.acknowledge((snapshot) => {
+      calls += 1;
+      if (calls === 2) throw new Error("invalid authoritative rebase");
+      return { ...snapshot, checkpoint: 1 };
+    })).rejects.toThrow("invalid authoritative rebase");
+
+    expect(bus.getSnapshot()).toBe(before);
+    expect(bus.canUndo()).toBe(true);
+    await bus.undo();
+    expect(bus.getSnapshot()).toEqual({ ...initialState(), sequence: 2, checkpoint: 0 });
   });
 
   it("keeps state and history unchanged when redo persistence fails", async () => {

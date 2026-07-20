@@ -5,7 +5,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createInitialSnapshot, createManifest } from "@aethertwin/core-model";
+import { createInitialSnapshot, createManifest, parseSnapshot } from "@aethertwin/core-model";
 import { readFileSync } from "node:fs";
 import { StrictMode, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -290,17 +290,28 @@ function createDesktopBackend(projects = new Map<string, OpenedProject>()): Proj
   const checkpoint = vi.fn<ProjectBackend["checkpoint"]>(async (path, snapshot) => {
     const opened = projects.get(path);
     if (opened === undefined) throw new Error(`Desktop project not found: ${path}`);
-    const manifest = createManifest(snapshot, {
+    const checkpointSnapshot = parseSnapshot({
+      ...snapshot,
+      checkpointSequence: snapshot.sequence,
+    });
+    const manifest = createManifest(checkpointSnapshot, {
       appVersion: "0.1.0",
       now: () => "2026-07-20T00:00:01.000Z",
     });
-    projects.set(path, { ...opened, manifest, snapshot });
-    return manifest;
+    projects.set(path, { ...opened, manifest, snapshot: checkpointSnapshot });
+    return { manifest, snapshot: checkpointSnapshot };
+  });
+  const recoverProject = vi.fn<ProjectBackend["recoverProject"]>(async (path, confirmation) => {
+    if (!confirmation.confirmed) throw new Error("Recovery confirmation is required");
+    const opened = projects.get(path);
+    if (opened === undefined) throw new Error(`Desktop project not found: ${path}`);
+    return { ...opened, recovered: true };
   });
   return {
     mode: "desktop",
     createProject,
     openProject,
+    recoverProject,
     commit,
     checkpoint,
     closeProject: vi.fn<ProjectBackend["closeProject"]>(async () => undefined),
@@ -595,6 +606,59 @@ describe("project center", () => {
       window.localStorage.getItem("aethertwin.recentProjects.v1") ?? "[]",
     ) as Array<{ path?: string }>;
     expect(persisted.map((entry) => entry.path)).toContain(projectPath);
+  });
+
+  it("offers only stale-lock recovery, requires confirmation, and enters the recovered editor", async () => {
+    const projects = new Map<string, OpenedProject>();
+    const backend = createDesktopBackend(projects);
+    const created = await backend.createProject({
+      name: "可恢复展厅",
+      location: "E:\\Twin Projects",
+      profile: "showroom",
+    });
+    vi.mocked(backend.openProject).mockRejectedValueOnce(
+      new ProjectBackendError(
+        "STALE_PROJECT_LOCK",
+        "检测到未正常关闭的项目",
+        { retryable: false, recoveryRequired: true },
+        "native-stale-lock",
+      ),
+    );
+    render(<App backend={backend} />);
+    openFolderDialog.mockResolvedValueOnce(created.projectPath);
+
+    await userEvent.click(screen.getByRole("button", { name: "打开本地项目" }));
+    expect(await screen.findByRole("button", { name: "恢复项目" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("native-stale-lock");
+
+    await userEvent.click(screen.getByRole("button", { name: "恢复项目" }));
+    expect(screen.getByRole("dialog", { name: "确认恢复项目" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "确认恢复" }));
+
+    expect(backend.recoverProject).toHaveBeenCalledWith(created.projectPath, {
+      confirmed: true,
+    });
+    expect(await screen.findByRole("heading", { name: "可恢复展厅" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("已恢复");
+  });
+
+  it.each([
+    ["PROJECT_LOCKED", { recoveryRequired: false }],
+    ["INVALID_PROJECT_STRUCTURE", { recoveryRequired: false }],
+    ["UNSUPPORTED_SCHEMA_VERSION", { recoveryRequired: false }],
+    ["PROJECT_NOT_FOUND", { recoveryRequired: false }],
+    ["STALE_PROJECT_LOCK", { recoveryRequired: false }],
+  ] as const)("does not offer recovery for ineligible %s errors", async (code, details) => {
+    const backend = createDesktopBackend();
+    vi.mocked(backend.openProject).mockRejectedValueOnce(
+      new ProjectBackendError(code, "无法打开项目", details, "native-ineligible"),
+    );
+    render(<App backend={backend} />);
+    openFolderDialog.mockResolvedValueOnce("E:\\Twin Projects\\Ineligible.twinproj");
+
+    await userEvent.click(screen.getByRole("button", { name: "打开本地项目" }));
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "恢复项目" })).not.toBeInTheDocument();
   });
 
   it("fails safe when desktop application-local preferences are unavailable", async () => {

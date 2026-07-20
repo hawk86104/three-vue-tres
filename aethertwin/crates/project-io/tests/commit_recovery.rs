@@ -526,8 +526,13 @@ fn checkpoint_writes_a_checksum_snapshot_and_manifest_cache() {
     let next = renamed(original.clone(), "Checkpoint Name", 1);
     session.commit(rename_batch(&original, &next)).unwrap();
 
-    let manifest = session.checkpoint().unwrap();
-    assert_eq!(manifest.name, "Checkpoint Name");
+    let checkpoint = session.checkpoint().unwrap();
+    assert_eq!(checkpoint.manifest.name, "Checkpoint Name");
+    assert_eq!(checkpoint.snapshot, *session.snapshot());
+    assert_eq!(
+        checkpoint.snapshot.checkpoint_sequence,
+        checkpoint.snapshot.sequence
+    );
     assert_eq!(session.save_state(), SaveState::Saved);
     assert_eq!(session.snapshot().checkpoint_sequence, 1);
     let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
@@ -539,6 +544,46 @@ fn checkpoint_writes_a_checksum_snapshot_and_manifest_cache() {
         )
         .unwrap();
     assert_eq!(checksum, project_io::snapshot_checksum(&json));
+}
+
+#[test]
+fn post_checkpoint_snapshot_can_commit_and_manifest_failure_does_not_publish_it() {
+    let opened = create("Checkpoint Publication", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let original = session.snapshot().clone();
+    let first = renamed(original.clone(), "First", 1);
+    session.commit(rename_batch(&original, &first)).unwrap();
+    let checkpoint = session.checkpoint().unwrap();
+    let second = renamed(checkpoint.snapshot.clone(), "Second", 2);
+    let second_batch = CommitBatch {
+        before: checkpoint.snapshot.clone(),
+        after: second.clone(),
+        journal: vec![rename_operation(
+            second.sequence,
+            "00000000-0000-4000-8000-000000000222",
+            &checkpoint.snapshot.project.name,
+            &second.project.name,
+            JournalAction::Apply,
+        )],
+    };
+    assert_eq!(session.snapshot(), &second_batch.before);
+    project_io::validate_commit_batch(&second_batch).unwrap();
+    session.commit(second_batch).unwrap();
+    assert_eq!(session.snapshot(), &second);
+
+    let manifest_path = opened.project_path.join("manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).unwrap();
+    fs::remove_file(&manifest_path).unwrap();
+    fs::create_dir(&manifest_path).unwrap();
+    let before_failure = session.snapshot().clone();
+
+    assert!(session.checkpoint().is_err());
+    assert_eq!(session.snapshot(), &before_failure);
+
+    fs::remove_dir(&manifest_path).unwrap();
+    fs::write(&manifest_path, manifest_bytes).unwrap();
+    let retry = session.checkpoint().unwrap();
+    assert_eq!(retry.snapshot.checkpoint_sequence, retry.snapshot.sequence);
 }
 
 #[test]

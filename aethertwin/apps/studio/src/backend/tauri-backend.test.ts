@@ -94,7 +94,7 @@ describe("TauriProjectBackend", () => {
       .mockResolvedValueOnce(created)
       .mockResolvedValueOnce(opened)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(opened.manifest)
+      .mockResolvedValueOnce({ manifest: opened.manifest, snapshot: opened.snapshot })
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined);
 
@@ -120,7 +120,7 @@ describe("TauriProjectBackend", () => {
       recovered: false,
     });
     expect(createdProject).not.toHaveProperty("sessionId");
-    expect(checkpoint).toEqual(opened.manifest);
+    expect(checkpoint).toEqual({ manifest: opened.manifest, snapshot: opened.snapshot });
     expect(invoke.mock.calls).toEqual([
       [
         "create_project",
@@ -138,6 +138,27 @@ describe("TauriProjectBackend", () => {
       ["checkpoint_project", { payload: { sessionId: SESSION_B } }],
       ["close_project", { payload: { sessionId: SESSION_A } }],
       ["close_project", { payload: { sessionId: SESSION_B } }],
+    ]);
+  });
+
+  it("maps explicitly confirmed recovery to the exact native payload and tracks the recovered session", async () => {
+    const recovered = { ...fixture(), recovered: true };
+    invoke.mockResolvedValueOnce(recovered).mockResolvedValueOnce(undefined);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+
+    const opened = await backend.recoverProject(PROJECT_A, { confirmed: true });
+    expect(opened).toEqual({
+      projectPath: PROJECT_A,
+      manifest: recovered.manifest,
+      snapshot: recovered.snapshot,
+      recovered: true,
+    });
+    await backend.closeProject(PROJECT_A);
+
+    expect(invoke.mock.calls).toEqual([
+      ["recover_project", { payload: { path: PROJECT_A, confirm: true } }],
+      ["close_project", { payload: { sessionId: SESSION_A } }],
     ]);
   });
 
@@ -625,20 +646,29 @@ describe("TauriProjectBackend", () => {
     });
   });
 
-  it("runtime-parses checkpoint manifests and keeps the session available after a malformed checkpoint response", async () => {
+  it("runtime-parses authoritative checkpoints, rejects malformed or incoherent results, and keeps the session available", async () => {
     const opened = fixture();
     const invalidManifest = { ...opened.manifest, schemaVersion: 2 };
+    const incoherentSnapshot = parseSnapshot({
+      ...opened.snapshot,
+      project: { ...opened.snapshot.project, name: "Different" },
+    });
     invoke
       .mockResolvedValueOnce(opened)
-      .mockResolvedValueOnce(invalidManifest)
-      .mockResolvedValueOnce(opened.manifest);
+      .mockResolvedValueOnce({ manifest: invalidManifest, snapshot: opened.snapshot })
+      .mockResolvedValueOnce({ manifest: opened.manifest, snapshot: incoherentSnapshot })
+      .mockResolvedValueOnce({ manifest: opened.manifest, snapshot: opened.snapshot });
     const { TauriProjectBackend } = await import("./tauri-backend");
     const backend = new TauriProjectBackend();
     await backend.openProject(PROJECT_A);
 
     await expect(backend.checkpoint(PROJECT_A, opened.snapshot)).rejects.toThrow(/schemaVersion/i);
-    await expect(backend.checkpoint(PROJECT_A, opened.snapshot)).resolves.toEqual(opened.manifest);
-    expect(invoke).toHaveBeenNthCalledWith(3, "checkpoint_project", {
+    await expect(backend.checkpoint(PROJECT_A, opened.snapshot)).rejects.toThrow(/coherent/i);
+    await expect(backend.checkpoint(PROJECT_A, opened.snapshot)).resolves.toEqual({
+      manifest: opened.manifest,
+      snapshot: opened.snapshot,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(4, "checkpoint_project", {
       payload: { sessionId: SESSION_A },
     });
   });

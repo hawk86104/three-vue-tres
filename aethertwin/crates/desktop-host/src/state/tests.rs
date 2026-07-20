@@ -3,7 +3,8 @@ use super::{
 };
 use crate::{CreateProjectDto, error::HostError};
 use project_io::{
-    CreateProjectRequest, ProjectIoError, ProjectProfile, create_project, open_session,
+    CommitBatch, CreateProjectRequest, JournalOperation, ProjectIoError, ProjectProfile,
+    create_project, open_session,
 };
 use rusqlite::Connection;
 use serde_json::json;
@@ -12,6 +13,23 @@ use std::{
     sync::Arc,
 };
 use tempfile::tempdir;
+use uuid::Uuid;
+
+fn rename_batch(before: &project_io::ProjectSnapshot, name: &str) -> CommitBatch {
+    let mut after = before.clone();
+    after.sequence += 1;
+    after.project.name = name.into();
+    CommitBatch {
+        before: before.clone(),
+        after: after.clone(),
+        journal: vec![JournalOperation::rename(
+            after.sequence,
+            &Uuid::new_v4().to_string(),
+            &before.project.name,
+            name,
+        )],
+    }
+}
 
 #[test]
 fn poisoned_session_registry_returns_a_safe_error_instead_of_panicking() {
@@ -249,4 +267,113 @@ fn failed_publication_cleanup_requires_confirmed_recovery() {
     let mut recovered = open_session(&project_path, true).unwrap();
     assert_eq!(recovered.save_state(), project_io::SaveState::Recovered);
     recovered.close().unwrap();
+}
+
+#[test]
+fn close_all_checkpoints_multiple_sessions_releases_locks_and_is_idempotent() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let first = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All First".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let second = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Second".into(),
+            profile: "market".into(),
+        })
+        .unwrap();
+    service
+        .commit_project(
+            &first.session_id,
+            rename_batch(&first.snapshot, "First Saved"),
+        )
+        .unwrap();
+    service
+        .commit_project(
+            &second.session_id,
+            rename_batch(&second.snapshot, "Second Saved"),
+        )
+        .unwrap();
+
+    service.close_all().unwrap();
+    assert_eq!(service.session_count().unwrap(), 0);
+    assert!(
+        !std::path::Path::new(&first.project_path)
+            .join(".aethertwin.lock")
+            .exists()
+    );
+    assert!(
+        !std::path::Path::new(&second.project_path)
+            .join(".aethertwin.lock")
+            .exists()
+    );
+    service.close_all().unwrap();
+
+    for (path, expected_name) in [
+        (&first.project_path, "First Saved"),
+        (&second.project_path, "Second Saved"),
+    ] {
+        let mut reopened = open_session(std::path::Path::new(path), false).unwrap();
+        assert_eq!(reopened.snapshot().project.name, expected_name);
+        assert_eq!(
+            reopened.snapshot().checkpoint_sequence,
+            reopened.snapshot().sequence
+        );
+        reopened.close().unwrap();
+    }
+}
+
+#[test]
+fn close_all_removes_successes_and_retries_only_remaining_sessions() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let failing = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Failing".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let successful = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Successful".into(),
+            profile: "market".into(),
+        })
+        .unwrap();
+    let database =
+        Connection::open(std::path::Path::new(&failing.project_path).join("project.db")).unwrap();
+    database
+        .execute_batch(
+            "CREATE TRIGGER fail_close_all BEFORE INSERT ON snapshots \
+             BEGIN SELECT RAISE(ABORT, 'close all failure'); END;",
+        )
+        .unwrap();
+
+    let error = service.close_all().unwrap_err();
+    assert_eq!(error.code, "DATABASE_ERROR");
+    assert_eq!(service.session_count().unwrap(), 1);
+    assert!(
+        std::path::Path::new(&failing.project_path)
+            .join(".aethertwin.lock")
+            .exists()
+    );
+    assert!(
+        !std::path::Path::new(&successful.project_path)
+            .join(".aethertwin.lock")
+            .exists()
+    );
+
+    database
+        .execute_batch("DROP TRIGGER fail_close_all;")
+        .unwrap();
+    drop(database);
+    service.close_all().unwrap();
+    assert_eq!(service.session_count().unwrap(), 0);
+    service.close_all().unwrap();
 }

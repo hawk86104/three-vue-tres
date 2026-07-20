@@ -175,6 +175,41 @@ describe("ProjectStore", () => {
     expect(store.getState().manifest?.name).toBe("New");
   });
 
+  it("rebases checkpoint metadata through later mutation, undo, redo, close, and reopen", async () => {
+    vi.useFakeTimers();
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Initial", location: "sandbox", profile: "showroom" });
+    const path = store.getState().projectPath!;
+
+    await store.renameProject("Checkpointed");
+    await store.save();
+    expect(store.getState().snapshot).toMatchObject({ sequence: 1, checkpointSequence: 1 });
+    expect(store.getState()).toMatchObject({ canUndo: true, canRedo: false });
+
+    await store.renameProject("After checkpoint");
+    await store.undo();
+    await store.redo();
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: 4,
+      checkpointSequence: 1,
+      project: { name: "After checkpoint" },
+    });
+    expect(store.getState()).toMatchObject({ canUndo: true, canRedo: false });
+
+    await store.save();
+    await store.close();
+    await store.open(path);
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: 4,
+      checkpointSequence: 4,
+      project: { name: "After checkpoint" },
+    });
+    expect(store.getState().snapshot?.checkpointSequence).toBe(
+      store.getState().snapshot?.sequence,
+    );
+  });
+
   it("flush waits for an active operation boundary and reports that operation's failure", async () => {
     const backend = new SandboxProjectBackend();
     const store = new ProjectStore(backend);
@@ -272,6 +307,7 @@ describe("ProjectStore", () => {
       mode: "sandbox",
       createProject: (request) => sandbox.createProject(request),
       openProject: async () => ({ ...opened, recovered: true }),
+      recoverProject: (path, confirmation) => sandbox.recoverProject(path, confirmation),
       commit: (path, batch) => sandbox.commit(path, batch),
       checkpoint: (path, snapshot) => sandbox.checkpoint(path, snapshot),
       closeProject: (path) => sandbox.closeProject(path),
@@ -282,6 +318,57 @@ describe("ProjectStore", () => {
     expect(store.getState()).toMatchObject({ recovered: true, saveState: "recovered" });
     await store.save();
     expect(store.getState()).toMatchObject({ recovered: false, saveState: "saved" });
+  });
+
+  it("requires explicit confirmation for recovery, installs recovered state, and preserves the current project on failure", async () => {
+    const sandbox = new SandboxProjectBackend();
+    const current = await sandbox.createProject({
+      name: "Current",
+      location: "sandbox",
+      profile: "market",
+    });
+    const recovered = {
+      ...(await sandbox.createProject({
+        name: "Recovered",
+        location: "sandbox",
+        profile: "showroom",
+      })),
+      recovered: true,
+    };
+    const recoveryFailure = new Error("recovery failed");
+    const recoverProject = vi
+      .fn<ProjectBackend["recoverProject"]>()
+      .mockResolvedValueOnce(recovered)
+      .mockRejectedValueOnce(recoveryFailure);
+    const backend: ProjectBackend = {
+      mode: "desktop",
+      createProject: (request) => sandbox.createProject(request),
+      openProject: async () => current,
+      recoverProject,
+      commit: (path, batch) => sandbox.commit(path, batch),
+      checkpoint: (path, snapshot) => sandbox.checkpoint(path, snapshot),
+      closeProject: (path) => sandbox.closeProject(path),
+    };
+    const store = new ProjectStore(backend);
+
+    await store.open(current.projectPath);
+    await store.recover(recovered.projectPath, { confirmed: true });
+    expect(recoverProject).toHaveBeenCalledWith(recovered.projectPath, { confirmed: true });
+    expect(store.getState()).toMatchObject({
+      projectPath: recovered.projectPath,
+      recovered: true,
+      saveState: "recovered",
+    });
+
+    await expect(
+      store.recover("E:\\Projects\\Failed.twinproj", { confirmed: true }),
+    ).rejects.toBe(recoveryFailure);
+    expect(store.getState()).toMatchObject({
+      projectPath: recovered.projectPath,
+      recovered: true,
+      saveState: "error",
+      error: recoveryFailure,
+    });
   });
 
   it("closes the backend project, resets state, and cancels pending timers", async () => {
@@ -593,6 +680,7 @@ describe("ProjectStore", () => {
           snapshot: { ...valid.snapshot, schemaVersion: 99 } as never,
         };
       },
+      recoverProject: (path, confirmation) => sandbox.recoverProject(path, confirmation),
       commit: (path, batch) => sandbox.commit(path, batch),
       checkpoint: (path, snapshot) => sandbox.checkpoint(path, snapshot),
       closeProject,
@@ -675,6 +763,7 @@ describe("ProjectStore", () => {
         return sandbox.createProject(request);
       },
       openProject: (path) => sandbox.openProject(path),
+      recoverProject: (path, confirmation) => sandbox.recoverProject(path, confirmation),
       commit: (path, batch) => sandbox.commit(path, batch),
       checkpoint: (path, snapshot) => sandbox.checkpoint(path, snapshot),
       closeProject: (path) => sandbox.closeProject(path),

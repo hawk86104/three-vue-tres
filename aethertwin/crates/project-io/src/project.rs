@@ -12,8 +12,8 @@ use crate::schema::{
     timestamp_now, upsert_meta,
 };
 use crate::{
-    CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest, ProjectProfile,
-    ProjectSnapshot, SpatialProject,
+    CheckpointResult, CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest,
+    ProjectProfile, ProjectSnapshot, SpatialProject,
 };
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, params};
@@ -348,7 +348,7 @@ impl ProjectSession {
         Ok(())
     }
 
-    pub fn checkpoint(&mut self) -> Result<ProjectManifest, ProjectIoError> {
+    pub fn checkpoint(&mut self) -> Result<CheckpointResult, ProjectIoError> {
         self.save_state = SaveState::Saving;
         let result = self.checkpoint_inner();
         if result.is_err() {
@@ -357,7 +357,7 @@ impl ProjectSession {
         result
     }
 
-    fn checkpoint_inner(&mut self) -> Result<ProjectManifest, ProjectIoError> {
+    fn checkpoint_inner(&mut self) -> Result<CheckpointResult, ProjectIoError> {
         if self.closed {
             return Err(ProjectIoError::DatabaseError);
         }
@@ -393,9 +393,8 @@ impl ProjectSession {
         upsert_meta(&transaction, "cleanShutdown", &false)?;
         transaction.commit()?;
 
-        self.snapshot = checkpoint;
         let mut manifest = self.manifest.clone();
-        manifest.name = self.snapshot.project.name.clone();
+        manifest.name = checkpoint.project.name.clone();
         manifest.updated_at = updated_at;
         manifest.validate()?;
         let io_path = self
@@ -404,9 +403,13 @@ impl ProjectSession {
             .ok_or(ProjectIoError::FilesystemError)?
             .bound_path();
         write_manifest_atomically(io_path, &manifest)?;
+        self.snapshot = checkpoint.clone();
         self.manifest = manifest.clone();
         self.save_state = SaveState::Saved;
-        Ok(manifest)
+        Ok(CheckpointResult {
+            manifest,
+            snapshot: checkpoint,
+        })
     }
 
     pub fn close(&mut self) -> Result<(), ProjectIoError> {

@@ -2,7 +2,7 @@ use crate::{
     AppService, CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto,
     NativeErrorDto, OpenProjectDto, OpenedProjectDto, RecoverProjectDto,
 };
-use project_io::ProjectManifest;
+use project_io::CheckpointResult;
 use serde_json::Value;
 
 const CREATE_PROJECT: &str = "create_project";
@@ -43,7 +43,7 @@ pub fn commit_project(
 pub fn checkpoint_project(
     state: tauri::State<'_, AppService>,
     payload: Option<Value>,
-) -> Result<ProjectManifest, NativeErrorDto> {
+) -> Result<CheckpointResult, NativeErrorDto> {
     let request: CheckpointProjectDto = state.decode_payload(CHECKPOINT_PROJECT, payload)?;
     state.checkpoint_request(CHECKPOINT_PROJECT, request)
 }

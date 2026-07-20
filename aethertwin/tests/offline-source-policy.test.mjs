@@ -55,6 +55,19 @@ test("remoteUrls blocks remote WebSockets and permits loopback WebSockets", () =
   );
 });
 
+test("remoteUrls explicitly blocks protocol-relative URLs and string-form remote CSS imports", () => {
+  assert.deepEqual(
+    remoteUrls('src="//cdn.example/asset.png" background: url(//tiles.example/map.png)').map(
+      ([url]) => url,
+    ),
+    ["//cdn.example/asset.png", "//tiles.example/map.png"],
+  );
+  assert.deepEqual(
+    remoteUrls('@import "https://fonts.example/theme.css";').map(([url]) => url),
+    ["https://fonts.example/theme.css"],
+  );
+});
+
 test("Playwright blocks remote HTTP and WebSocket connections", () => {
   assert.match(acceptanceSpec, /await page\.route\(/);
   assert.match(

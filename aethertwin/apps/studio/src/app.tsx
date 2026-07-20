@@ -10,6 +10,7 @@ import {
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { selectBackend, type ForcedBackend } from "./backend/select-backend";
+import { ProjectBackendError } from "./backend/project-backend-error";
 import { UiGallery } from "./dev/ui-gallery";
 import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
@@ -94,6 +95,16 @@ function missingRecentError(value: unknown): boolean {
   return value.code === "PROJECT_NOT_FOUND";
 }
 
+function staleRecoveryRequired(value: unknown): boolean {
+  if (!(value instanceof ProjectBackendError) || value.code !== "STALE_PROJECT_LOCK") {
+    return false;
+  }
+  if (value.details === null || typeof value.details !== "object" || Array.isArray(value.details)) {
+    return false;
+  }
+  return (value.details as Record<string, unknown>).recoveryRequired === true;
+}
+
 async function disposeBackend(backend: ProjectBackend): Promise<void> {
   const disposable = backend as ProjectBackend & { dispose?(): Promise<void> };
   if (disposable.dispose === undefined) {
@@ -124,6 +135,7 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
   const [view, setView] = useState<"center" | "editor">("center");
   const [opening, setOpening] = useState(false);
   const [centerError, setCenterError] = useState<string | null>(null);
+  const [recoveryPath, setRecoveryPath] = useState<string | null>(null);
   const state = useProjectStore(store);
 
   useEffect(() => {
@@ -160,6 +172,7 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
     selectedLocation?: string,
   ) {
     setCenterError(null);
+    setRecoveryPath(null);
     const location = backend.mode === "sandbox" ? "sandbox" : selectedLocation;
     if (location === undefined || location.length === 0) {
       throw new Error("请选择项目位置");
@@ -172,6 +185,7 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
   async function openProject(path: string) {
     setOpening(true);
     setCenterError(null);
+    setRecoveryPath(null);
     try {
       await store.open(path);
       recordCurrentProject();
@@ -180,6 +194,9 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
       if (missingRecentError(error)) {
         recentRepository.remove(path);
         setRecentProjects(recentRepository.list());
+      }
+      if (backend.mode === "desktop" && staleRecoveryRequired(error)) {
+        setRecoveryPath(path);
       }
       setCenterError(`打开失败：${readableError(error)}`);
     } finally {
@@ -190,6 +207,8 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
   async function openExistingProject() {
     setOpening(true);
     setCenterError(null);
+    setRecoveryPath(null);
+    let selectedPath: string | null = null;
     try {
       const selected = await openFolderDialog({
         directory: true,
@@ -197,11 +216,35 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
         title: "打开本地项目",
       });
       if (typeof selected !== "string") return;
-      await store.open(selected);
+      selectedPath = selected;
+      await store.open(selectedPath);
       recordCurrentProject();
       setView("editor");
     } catch (error) {
+      if (
+        backend.mode === "desktop" &&
+        selectedPath !== null &&
+        staleRecoveryRequired(error)
+      ) {
+        setRecoveryPath(selectedPath);
+      }
       setCenterError(`打开失败：${readableError(error)}`);
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  async function recoverProject() {
+    if (recoveryPath === null) return;
+    setOpening(true);
+    setCenterError(null);
+    try {
+      await store.recover(recoveryPath, { confirmed: true });
+      recordCurrentProject();
+      setRecoveryPath(null);
+      setView("editor");
+    } catch (error) {
+      setCenterError(`恢复失败：${readableError(error)}`);
     } finally {
       setOpening(false);
     }
@@ -227,11 +270,14 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
         mode={backend.mode}
         error={centerError}
         opening={opening}
+        recoveryAvailable={recoveryPath !== null}
         recentProjects={recentProjects}
         onOpen={(path) => void openProject(path)}
         onOpenExisting={() => void openExistingProject()}
+        onRecover={() => void recoverProject()}
         onStartCreate={(profile) => {
           setCenterError(null);
+          setRecoveryPath(null);
           setDialogProfile(profile);
         }}
       />

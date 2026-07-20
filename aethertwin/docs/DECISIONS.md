@@ -16,7 +16,13 @@ The web sandbox is deliberately in-memory and Vite-development-only. Production 
 
 ## Recovery is explicit and non-destructive
 
-The lock marks dirty sessions; a clean close writes `cleanShutdown=true`, checkpoints/WAL-truncates, closes SQLite, and removes the lock. Stale/crash state requires explicit confirmation. Recovery uses verified copies and detects post-publish replacement mismatch. The Task 6 Linux/Android cleanup edge case can still restore a substituted payload under a completed-looking name; hardening that outcome is pending rather than claimed complete.
+The lock marks dirty sessions; a clean close writes `cleanShutdown=true`, checkpoints/WAL-truncates, closes SQLite, and removes the lock. Stale/crash state requires a structured native `STALE_PROJECT_LOCK` response and explicit UI confirmation; sandbox and unstructured errors never expose recovery. Recovery uses verified copies and detects post-publish replacement mismatch. On Linux/Android an unverified replacement stays under a hidden quarantine leaf, so cleanup cannot make it look like a completed recovery artifact.
+
+## Checkpoint acknowledgement and shutdown
+
+Native checkpoint returns one authoritative manifest/snapshot envelope. ProjectStore rejects an incoherent envelope, then CommandBus rebases the current state and every undo/redo endpoint with the durable checkpoint metadata while preserving sequence and history. The Rust session does not publish its new in-memory manifest/snapshot until the database checkpoint and manifest rewrite have both succeeded.
+
+Desktop window close and process exit both attempt `close_all`. Each native session is closed without holding the registry lock; successful entries are removed, failures remain retryable, and any failure prevents the requested close/exit while exposing only a sanitized message and log reference.
 
 ## Honest M0 UI boundary
 

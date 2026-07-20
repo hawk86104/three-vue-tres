@@ -8,8 +8,8 @@ use crate::{
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
 use project_io::{
-    CommitBatch, OpenedProject, ProjectManifest, ProjectSession, ProjectSnapshot, SaveState,
-    create_project, open_session, validate_commit_batch,
+    CheckpointResult, CommitBatch, OpenedProject, ProjectManifest, ProjectSession, ProjectSnapshot,
+    SaveState, create_project, open_session, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -192,7 +192,7 @@ impl AppService {
     pub fn checkpoint_project(
         &self,
         session_id: &str,
-    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+    ) -> Result<CheckpointResult, crate::NativeErrorDto> {
         self.checkpoint_project_for("checkpoint_project", session_id)
     }
 
@@ -200,7 +200,7 @@ impl AppService {
         &self,
         operation: &'static str,
         request: CheckpointProjectDto,
-    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+    ) -> Result<CheckpointResult, crate::NativeErrorDto> {
         self.checkpoint_project_for(operation, &request.into_session_id())
     }
 
@@ -208,20 +208,48 @@ impl AppService {
         &self,
         operation: &'static str,
         session_id: &str,
-    ) -> Result<ProjectManifest, crate::NativeErrorDto> {
+    ) -> Result<CheckpointResult, crate::NativeErrorDto> {
         let result = (|| {
             let session = self.lookup_session(validate_session_id(session_id)?)?;
-            let manifest = session
+            let checkpoint = session
                 .lock()
                 .map_err(|_| HostError::SessionStateUnavailable)?
                 .checkpoint()?;
-            Ok(manifest)
+            Ok(checkpoint)
         })();
         self.finish(operation, result)
     }
 
     pub fn close_project(&self, session_id: &str) -> Result<(), crate::NativeErrorDto> {
         self.close_project_for("close_project", session_id)
+    }
+
+    pub fn close_all(&self) -> Result<(), crate::NativeErrorDto> {
+        let result = (|| {
+            let sessions = self.registry_snapshot()?;
+            let mut first_failure = None;
+            for (session_id, session) in sessions {
+                let close_result = session
+                    .lock()
+                    .map_err(|_| HostError::SessionStateUnavailable)
+                    .and_then(|mut session| session.close().map_err(HostError::from));
+                match close_result {
+                    Ok(()) => {
+                        if let Err(error) = self.remove_if_same(session_id, &session) {
+                            first_failure.get_or_insert(error);
+                        }
+                    }
+                    Err(error) => {
+                        first_failure.get_or_insert(error);
+                    }
+                }
+            }
+            match first_failure {
+                Some(error) => Err(error),
+                None => Ok(()),
+            }
+        })();
+        self.finish("close_all", result)
     }
 
     pub(crate) fn close_request(

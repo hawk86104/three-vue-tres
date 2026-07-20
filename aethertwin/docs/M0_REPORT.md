@@ -6,55 +6,57 @@
 - Exactly two immutable profile values: `showroom` and `market`; manifest/snapshot validation, cross-language fixture parity, project-relative asset paths, and SHA-256 metadata.
 - M0 Studio project center and project overview: native desktop adapter plus development-only in-memory sandbox; real name/tag mutation, save/autosave, undo/redo, close, recent preferences, and honest status UI.
 - Native `.twinproj` creation/opening, SQLite v1 migrations/WAL, manifest/database identity checks, atomic command journal persistence, checkpoints, locking, clean close, and explicit recovery.
+- Authoritative checkpoint acknowledgement across Rust, Tauri, ProjectStore, sandbox, and CommandBus. The checkpoint result carries a coherent manifest/snapshot pair; durable checkpoint metadata rebases current and undo/redo snapshots without clearing history.
+- Explicit stale-lock recovery in the desktop project center. Recovery appears only for a structured `STALE_PROJECT_LOCK` response that requires recovery, then sends the native command only after a second confirmation.
+- Coordinated native close lifecycle for window close and process exit. All sessions checkpoint and close without holding the registry lock; failures prevent termination and remain retryable.
 - Typed least-privilege Tauri host contract with six commands and safe native error envelope; Player remains a noninteractive M4 placeholder.
-- Aether design-system tokens/components and source-policy gates for offline/no-fake-action behavior.
+- Aether design-system tokens/components and source-policy gates for offline/no-fake-action behavior, including selector-specific glow restrictions and protocol-relative/string-form remote import fixtures.
 
-Evidence is in the implementation source and Tasks 1–13 reports. This is the M0 foundation only; it is not completion of M1–M5 product scope.
+This is the M0 foundation only; it is not completion of M1–M5 product scope.
 
 ## Incomplete
 
-- Task 13 Chromium/Playwright browser acceptance was not authorized: Chromium was not installed and `pnpm.cmd exec playwright test apps/studio/e2e/m0.spec.ts` was not run.
-- Task 14 fresh milestone commands were not run because current authorization did not include package scripts, Cargo validation, local servers, debug/browser control, or screenshots.
-- Consequently fresh build, runtime, desktop smoke, and browser evidence is missing. M1 unified authoring, M2 showroom workflow, M3 market workflow, M4 Player/media, and M5 hardening are roadmap, not M0 implementation claims.
+- Build, dev, debug, local-server, browser, Playwright, packaged-runtime, and screenshot validation were prohibited for this final-review fix wave and were not run.
+- The Linux/Android hidden-quarantine regression is target-gated and could not execute on Windows. The common Rust code compiled, but Windows evidence does not prove that runtime branch.
+- Tauri close/exit behavior has Rust unit, source-contract, and compile coverage; packaged desktop event handling remains unexecuted.
+- M1 unified authoring, M2 showroom workflow, M3 market workflow, M4 Player/media, and M5 hardening remain roadmap work.
 
-## Test Results
+## Fresh Final-Review Verification
 
-These are prior, locatable Task 1–13 results; they are not fresh M0 milestone verification by Task 14.
-
-- Task 13: `node --test` source-policy suite reported 13 passed, 0 failed; its WebSocket correction targeted suite reported 3 passed, 0 failed.
-- Task 12: Player focused test reported 1 passed and Player typecheck exit 0.
-- Task 11: reported focused package tests of project-store 39/39, design-system 18/18, Studio 159/159; Rust contract fixture 4/4, create/open 20/20, and desktop-host command contract 14/14. These reported results were supplied by the prior task context, not rerun here.
-- Task 10 final report recorded project-store 37/37, Studio 106/106, and design-system 18/18 focused tests, with package typechecks exiting 0.
-- Task 7 final host evidence recorded 13/13 command-contract tests, 6/6 state regressions, and a focused `cargo check -p desktop-host` exit 0. Task 6 earlier reported 64 Windows-executed Rust tests passed.
+- CommandBus: 18/18 passed.
+- ProjectStore: 41/41 passed.
+- Studio: 166/166 passed.
+- Design System: 19/19 passed.
+- Offline source policy: 4/4 passed.
+- Affected package typechecks for CommandBus, ProjectStore, Studio, and Design System all exited 0.
+- `cargo test -p project-io -p desktop-host` exited 0: desktop-host 9 unit + 14 command-contract tests; project-io 13 unit + 27 commit/recovery + 4 contract + 20 create/open + 3 path-policy tests; doc-tests completed.
+- `cargo check -p project-io -p desktop-host` exited 0.
+- Focused TDD evidence and the transient Windows Application Control interruption are recorded in `m0-final-review-fix-report.md`.
 
 ## Exact Commands
 
-Task 14 ran only the allowed static integrity commands:
-
 ```powershell
-git diff --check -- aethertwin
-rg -n "IMPLEMENTATION_PENDING|FILL_ME_IN|localhost-only-exception" aethertwin
+pnpm.cmd --filter @aethertwin/command-bus test
+pnpm.cmd --filter @aethertwin/project-store test
+pnpm.cmd --filter @aethertwin/studio test
+pnpm.cmd --filter @aethertwin/design-system test
+pnpm.cmd --filter @aethertwin/command-bus typecheck
+pnpm.cmd --filter @aethertwin/project-store typecheck
+pnpm.cmd --filter @aethertwin/studio typecheck
+pnpm.cmd --filter @aethertwin/design-system typecheck
+node --test tests/offline-source-policy.test.mjs
+cargo test -p project-io -p desktop-host
+cargo check -p project-io -p desktop-host
+git diff --check
 ```
 
-The scan returned two self-referential documentation hits: this exact-command transcript and the same command text in `docs/superpowers/plans/2026-07-17-aethertwin-m0-foundation.md`. No implementation marker was reported.
-
-The required fresh milestone commands below were deliberately not run under the current restriction, so no passing result is claimed:
-
-```powershell
-pnpm.cmd lint
-pnpm.cmd typecheck
-pnpm.cmd test
-pnpm.cmd build
-cargo check --workspace
-pnpm.cmd exec playwright test apps/studio/e2e/m0.spec.ts
-```
+No build, dev server, browser, Playwright, packaged runtime, or screenshot command was run.
 
 ## Known Issues
 
-- Task 1 ledger finding: `glob@10.5.0` remains a deprecated transitive development dependency; defer removal to an upstream-compatible tooling refresh.
-- Task 6 ledger finding: Linux/Android recovery publication has a reviewed edge case around source-name substitution/mismatch cleanup; final hardening should continue to quarantine unverified replacements under a hidden leaf.
-- Task 8 ledger finding: its CSS contract test permits glow/shadow on all selectors and does not itself catch protocol-relative URLs or string-form remote `@import`. Task 13's broader runtime source gate now covers those remote URL forms; selector-specific glow restrictions remain for final hardening.
-- Task 13 source policy was corrected to classify remote WebSocket URLs and to close them in the Playwright source, but real Chromium/Playwright browser acceptance has not run.
+- `glob@10.5.0` remains a deprecated transitive development dependency. Removing it requires an upstream-compatible tooling refresh; broad dependency churn was outside this focused fix.
+- The Linux/Android post-publication identity-mismatch path now quarantines an unverified replacement under a hidden leaf, but its cfg-specific runtime test was not executable on Windows.
+- Real packaged Tauri close/exit and Chromium/Playwright acceptance remain unverified because runtime/browser validation was prohibited.
 
 ## Next Milestone
 
