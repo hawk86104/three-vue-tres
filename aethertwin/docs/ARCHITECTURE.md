@@ -4,10 +4,11 @@
 
 ```text
 apps/studio (React)
-  -> packages/editor-shell -> packages/design-system
+  -> packages/core-model + packages/design-system + packages/editor-shell + packages/project-store
+  -> packages/editor-shell -> packages/core-model + packages/design-system
   -> packages/project-store -> packages/command-bus + packages/core-model
-  -> desktop: apps/studio/backend/tauri-backend -> crates/desktop-host -> crates/project-io
-  -> web development only: packages/project-store/SandboxProjectBackend
+  -> desktop: apps/studio/src/backend/tauri-backend -> crates/desktop-host -> crates/project-io
+  -> web: packages/project-store/src/sandbox-backend (development only)
 
 apps/player -> packages/design-system
 ```
