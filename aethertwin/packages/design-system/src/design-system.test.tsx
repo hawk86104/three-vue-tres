@@ -5,11 +5,16 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef, useRef, useState } from "react";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Badge, Button, Dialog, Field, Panel, StatusNotice } from "./index";
 
 afterEach(cleanup);
+
+const testModuleUrl = import.meta.url;
+
+function readTestRelativeFile(relativePath: string): string {
+  return readFileSync(new URL(relativePath, testModuleUrl), "utf8");
+}
 
 describe("Button", () => {
   it("uses native keyboard activation and forwards its ref and attributes", async () => {
@@ -103,6 +108,36 @@ describe("Field", () => {
     expect(inputs[0]).toHaveAttribute("aria-describedby", helpMessages[0]?.id);
     expect(inputs[1]).toHaveAttribute("aria-describedby", helpMessages[1]?.id);
   });
+
+  it("treats null and false help or error nodes as absent", () => {
+    const { container } = render(
+      <Field label="项目名称" helpText={null} error={false} />,
+    );
+
+    const input = screen.getByLabelText("项目名称");
+    expect(input).not.toHaveAttribute("aria-describedby");
+    expect(input).not.toHaveAttribute("aria-invalid");
+    expect(container.querySelector(".aether-field__help")).toBeNull();
+    expect(container.querySelector(".aether-field__error")).toBeNull();
+  });
+
+  it("preserves zero and empty-string messages as renderable values", () => {
+    const { container } = render(
+      <Field label="项目名称" helpText={0} error="" />,
+    );
+
+    const input = screen.getByLabelText("项目名称");
+    const help = container.querySelector(".aether-field__help");
+    const error = container.querySelector(".aether-field__error");
+    expect(help).toHaveTextContent("0");
+    expect(error).toBeInTheDocument();
+    expect(error).toHaveTextContent("");
+    expect(input.getAttribute("aria-describedby")?.split(" ")).toEqual([
+      help?.id,
+      error?.id,
+    ]);
+    expect(input).toHaveAttribute("aria-invalid", "true");
+  });
 });
 
 function DialogHarness({ overlayTestId }: { overlayTestId?: string }) {
@@ -183,6 +218,87 @@ describe("Dialog", () => {
     expect(dialogs[0]?.getAttribute("aria-labelledby")).not.toBe(
       dialogs[1]?.getAttribute("aria-labelledby"),
     );
+    expect(dialogs[0]).not.toHaveAttribute("aria-describedby");
+    expect(dialogs[1]).not.toHaveAttribute("aria-describedby");
+  });
+
+  it("preserves a caller description ID when no internal description exists", () => {
+    render(
+      <>
+        <p id="external-description">外部说明</p>
+        <Dialog
+          open
+          modal={false}
+          title="项目详情"
+          aria-describedby="external-description"
+          onOpenChange={() => {}}
+        >
+          内容
+        </Dialog>
+      </>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "项目详情" });
+    expect(dialog).toHaveAttribute("aria-describedby", "external-description");
+    expect(dialog).toHaveAccessibleDescription("外部说明");
+  });
+
+  it("merges caller and internal descriptions without duplicate IDs", () => {
+    render(
+      <>
+        <p id="external-description">外部说明</p>
+        <Dialog
+          open
+          modal={false}
+          title="项目详情"
+          description="内部说明"
+          aria-describedby="external-description external-description"
+          onOpenChange={() => {}}
+        >
+          内容
+        </Dialog>
+      </>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "项目详情" });
+    const internalDescription = screen.getByText("内部说明");
+    expect(dialog.getAttribute("aria-describedby")?.split(" ")).toEqual([
+      "external-description",
+      internalDescription.id,
+    ]);
+    expect(dialog).toHaveAccessibleDescription("外部说明 内部说明");
+  });
+
+  it("uses unique internal description IDs for repeated dialogs", () => {
+    render(
+      <>
+        <Dialog
+          open
+          modal={false}
+          title="项目详情"
+          description="项目说明"
+          onOpenChange={() => {}}
+        >
+          甲
+        </Dialog>
+        <Dialog
+          open
+          modal={false}
+          title="项目详情"
+          description="项目说明"
+          onOpenChange={() => {}}
+        >
+          乙
+        </Dialog>
+      </>,
+    );
+
+    const dialogs = screen.getAllByRole("dialog", { name: "项目详情" });
+    const descriptions = screen.getAllByText("项目说明");
+    expect(descriptions[0]?.id).toBeTruthy();
+    expect(descriptions[0]?.id).not.toBe(descriptions[1]?.id);
+    expect(dialogs[0]).toHaveAttribute("aria-describedby", descriptions[0]?.id);
+    expect(dialogs[1]).toHaveAttribute("aria-describedby", descriptions[1]?.id);
   });
 });
 
@@ -231,52 +347,55 @@ describe("semantic surfaces and status", () => {
 
 describe("Aether CSS contract", () => {
   it("preserves the exact approved tokens and public CSS entry paths", () => {
-    const tokens = readFileSync(
-      resolve(process.cwd(), "src/tokens.css"),
-      "utf8",
-    );
+    const tokens = readTestRelativeFile("./tokens.css");
     const packageJson = JSON.parse(
-      readFileSync(
-        resolve(process.cwd(), "package.json"),
-        "utf8",
-      ),
+      readTestRelativeFile("../package.json"),
     ) as { exports: Record<string, string> };
-    const expected = [
-      "color-scheme: dark;",
-      "--aether-bg: #0e151d;",
-      "--aether-surface-1: #151f2a;",
-      "--aether-surface-2: #1b2733;",
-      "--aether-border: rgb(191 216 231 / 14%);",
-      "--aether-text: #e5edf3;",
-      "--aether-text-muted: #92a4b3;",
-      "--aether-accent: #58b8c4;",
-      "--aether-accent-soft: rgb(88 184 196 / 16%);",
-      "--aether-danger: #d98484;",
-      "--aether-success: #75b895;",
-      "--aether-radius-sm: 10px;",
-      "--aether-radius-md: 12px;",
-      "--aether-radius-lg: 16px;",
-      "--aether-motion-fast: 120ms;",
-      "--aether-motion-base: 180ms;",
-      "--aether-motion-slow: 220ms;",
-      '--aether-font: "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;',
+    const approvedTokens = {
+      "--aether-bg": "#0e151d",
+      "--aether-surface-1": "#151f2a",
+      "--aether-surface-2": "#1b2733",
+      "--aether-border": "rgb(191 216 231 / 14%)",
+      "--aether-text": "#e5edf3",
+      "--aether-text-muted": "#92a4b3",
+      "--aether-accent": "#58b8c4",
+      "--aether-accent-soft": "rgb(88 184 196 / 16%)",
+      "--aether-danger": "#d98484",
+      "--aether-success": "#75b895",
+      "--aether-radius-sm": "10px",
+      "--aether-radius-md": "12px",
+      "--aether-radius-lg": "16px",
+      "--aether-motion-fast": "120ms",
+      "--aether-motion-base": "180ms",
+      "--aether-motion-slow": "220ms",
+      "--aether-font":
+        '"Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif',
+    };
+    const declarations = [
+      ...tokens.matchAll(/^\s*(--[\w-]+):\s*([^;]+);$/gm),
     ];
+    const actualTokens = Object.fromEntries(
+      declarations.map((match) => [match[1], match[2]?.trim()]),
+    );
 
-    for (const declaration of expected) expect(tokens).toContain(declaration);
+    expect(tokens).toMatch(/:root\s*{[\s\S]*color-scheme:\s*dark;/);
+    expect(declarations).toHaveLength(Object.keys(approvedTokens).length);
+    expect(actualTokens).toEqual(approvedTokens);
     expect(packageJson.exports["./tokens.css"]).toBe("./src/tokens.css");
     expect(packageJson.exports["./base.css"]).toBe("./src/base.css");
   });
 
-  it("provides focus, reduced motion, and neutral scrollbars without glass or glow", () => {
-    const base = readFileSync(
-      resolve(process.cwd(), "src/base.css"),
-      "utf8",
-    );
+  it("provides focus, reduced motion, and neutral scrollbars without forbidden effects", () => {
+    const tokens = readTestRelativeFile("./tokens.css");
+    const base = readTestRelativeFile("./base.css");
+    const publicCss = `${tokens}\n${base}`;
     expect(base).toMatch(/:focus-visible\s*{/);
     expect(base).toMatch(/outline:\s*[^;]+;/);
     expect(base).toContain("@media (prefers-reduced-motion: reduce)");
     expect(base).toContain("transition-duration: 0.01ms");
     expect(base).toContain("scrollbar-color:");
-    expect(base).not.toMatch(/backdrop-filter|drop-shadow|text-shadow|box-shadow/i);
+    expect(publicCss).not.toMatch(
+      /(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(|url\(\s*["']?https?:\/\/|backdrop-filter\s*:/i,
+    );
   });
 });

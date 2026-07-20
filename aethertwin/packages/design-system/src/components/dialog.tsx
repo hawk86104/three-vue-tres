@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X as XIcon } from "lucide-react";
-import { forwardRef, useRef } from "react";
+import { forwardRef, useId, useRef } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 type DialogContentProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Content>;
@@ -20,6 +20,12 @@ export interface DialogProps extends Omit<DialogContentProps, "title"> {
 
 function classes(...values: Array<string | undefined>): string {
   return values.filter(Boolean).join(" ");
+}
+
+function mergeIds(...values: Array<string | undefined>): string | undefined {
+  const ids = values.flatMap((value) => value?.split(/\s+/).filter(Boolean) ?? []);
+  const merged = [...new Set(ids)].join(" ");
+  return merged || undefined;
 }
 
 export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
@@ -43,19 +49,15 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
   ref,
 ) {
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const generatedDescriptionId = `aether-dialog-description-${useId().replaceAll(":", "")}`;
+  const descriptionId = description === undefined ? undefined : generatedDescriptionId;
+  const mergedDescriptionIds = mergeIds(ariaDescribedBy, descriptionId);
   const optionalRootProps = {
     ...(open === undefined ? {} : { open }),
     ...(defaultOpen === undefined ? {} : { defaultOpen }),
     ...(modal === undefined ? {} : { modal }),
     ...(onOpenChange === undefined ? {} : { onOpenChange }),
   };
-  const descriptionProps =
-    description === undefined
-      ? { "aria-describedby": undefined }
-      : ariaDescribedBy === undefined
-        ? {}
-        : { "aria-describedby": ariaDescribedBy };
-
   return (
     <DialogPrimitive.Root {...optionalRootProps}>
       <DialogPrimitive.Portal>
@@ -69,9 +71,9 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
         />
         <DialogPrimitive.Content
           {...contentProps}
-          {...descriptionProps}
           ref={ref}
           className={classes("aether-dialog__content", className)}
+          aria-describedby={mergedDescriptionIds}
           onOpenAutoFocus={(event) => {
             returnFocusRef.current =
               document.activeElement instanceof HTMLElement
@@ -91,7 +93,10 @@ export const Dialog = forwardRef<HTMLDivElement, DialogProps>(function Dialog(
             {title}
           </DialogPrimitive.Title>
           {description === undefined ? null : (
-            <DialogPrimitive.Description className="aether-dialog__description">
+            <DialogPrimitive.Description
+              className="aether-dialog__description"
+              id={descriptionId}
+            >
               {description}
             </DialogPrimitive.Description>
           )}

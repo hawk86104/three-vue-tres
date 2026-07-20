@@ -11,6 +11,10 @@ function classes(...values: Array<string | undefined | false>): string {
   return values.filter(Boolean).join(" ");
 }
 
+function isRenderableMessage(value: ReactNode): boolean {
+  return value !== null && value !== undefined && typeof value !== "boolean";
+}
+
 export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   {
     "aria-describedby": describedBy,
@@ -28,8 +32,10 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
 ) {
   const generatedId = useId().replaceAll(":", "");
   const inputId = id ?? `aether-field-${generatedId}`;
-  const helpId = helpText === undefined ? undefined : `${inputId}-help`;
-  const errorId = error === undefined ? undefined : `${inputId}-error`;
+  const hasHelp = isRenderableMessage(helpText);
+  const hasError = isRenderableMessage(error);
+  const helpId = hasHelp ? `${inputId}-help` : undefined;
+  const errorId = hasError ? `${inputId}-error` : undefined;
   const descriptionIds = [describedBy, helpId, errorId].filter(Boolean).join(" ");
 
   return (
@@ -48,20 +54,20 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
         id={inputId}
         className={classes("aether-field__input", className)}
         aria-describedby={descriptionIds || undefined}
-        aria-invalid={error === undefined ? ariaInvalid : true}
+        aria-invalid={hasError ? true : ariaInvalid}
         disabled={disabled}
         required={required}
       />
-      {helpText === undefined ? null : (
+      {hasHelp ? (
         <p className="aether-field__help" id={helpId}>
           {helpText}
         </p>
-      )}
-      {error === undefined ? null : (
+      ) : null}
+      {hasError ? (
         <p className="aether-field__error" id={errorId}>
           {error}
         </p>
-      )}
+      ) : null}
     </div>
   );
 });
