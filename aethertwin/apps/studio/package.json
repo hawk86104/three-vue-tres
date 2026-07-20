@@ -4,8 +4,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --root .",
+    "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "vite build"
+  },
+  "dependencies": {
+    "@aethertwin/core-model": "workspace:*",
+    "@aethertwin/design-system": "workspace:*",
+    "@aethertwin/editor-shell": "workspace:*",
+    "@aethertwin/project-store": "workspace:*",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.2",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "jsdom": "29.1.1"
   }
 }
