@@ -64,9 +64,18 @@ test("active Rust workspace member is executable and locked", () => {
     join(root, "crates/project-io/Cargo.toml"),
     "utf8",
   );
+  const desktopHost = readFileSync(
+    join(root, "crates/desktop-host/Cargo.toml"),
+    "utf8",
+  );
 
-  assert.match(workspace, /members\s*=\s*\["crates\/project-io"\]/);
-  assert.match(projectIo, /name\s*=\s*"aethertwin-project-io"/);
+  assert.match(
+    workspace,
+    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host"\]/,
+  );
+  assert.match(projectIo, /name\s*=\s*"project-io"/);
+  assert.match(desktopHost, /name\s*=\s*"desktop-host"/);
+  assert.match(desktopHost, /name\s*=\s*"aethertwin-studio"/);
 });
 
 test("root tooling pins a TypeScript 6.0 stable release", () => {
