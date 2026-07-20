@@ -1,14 +1,20 @@
 import { expect, test } from "@playwright/test";
 
+const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
-    if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname)) {
+    if (!localHosts.has(url.hostname)) {
       await route.abort("blockedbyclient");
       return;
     }
     await route.continue();
   });
+  await page.routeWebSocket(
+    (url) => !localHosts.has(url.hostname),
+    (ws) => ws.close({ code: 1008, reason: "blockedbyclient" }),
+  );
 });
 
 for (const [button, profile] of [

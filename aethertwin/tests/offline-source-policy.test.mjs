@@ -19,8 +19,9 @@ const runtimeFiles = globSync(
   },
 );
 
-const urlPattern = /https?:\/\/[^\s"'`)}\]]+|(?<![:\w])\/\/[^\s"'`)}\]]+/gi;
+const urlPattern = /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w])\/\/[^\s"'`)}]+/gi;
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const acceptanceSpec = readFileSync("apps/studio/e2e/m0.spec.ts", "utf8");
 
 function remoteUrls(source) {
   return [...source.matchAll(urlPattern)].filter(([candidate]) => {
@@ -35,4 +36,29 @@ test("runtime source contains no remote URL or remote CSS import", () => {
     const remotes = remoteUrls(source).map(([url]) => url);
     assert.deepEqual(remotes, [], `remote runtime URL in ${file}: ${remotes.join(", ")}`);
   }
+});
+
+test("remoteUrls blocks remote WebSockets and permits loopback WebSockets", () => {
+  assert.deepEqual(
+    remoteUrls("ws://remote.example/socket wss://remote.example/socket").map(([url]) => url),
+    ["ws://remote.example/socket", "wss://remote.example/socket"],
+  );
+
+  for (const host of ["localhost", "127.0.0.1", "[::1]", "::1"]) {
+    assert.ok(localHosts.has(host), host + " must be treated as local");
+  }
+  assert.deepEqual(
+    remoteUrls(
+      "ws://localhost/socket wss://localhost/socket ws://127.0.0.1/socket wss://127.0.0.1/socket ws://[::1]/socket wss://[::1]/socket",
+    ),
+    [],
+  );
+});
+
+test("Playwright blocks remote HTTP and WebSocket connections", () => {
+  assert.match(acceptanceSpec, /await page\.route\(/);
+  assert.match(
+    acceptanceSpec,
+    /await page\.routeWebSocket\(\s*\(url\) => !localHosts\.has\(url\.hostname\),\s*\(ws\) => ws\.close\(\{ code: 1008, reason: "blockedbyclient" \}\),\s*\);/s,
+  );
 });
