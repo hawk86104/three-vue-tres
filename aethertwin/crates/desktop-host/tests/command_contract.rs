@@ -597,3 +597,301 @@ fn build_overlay_uses_checked_utf8_and_structured_json_on_every_platform() {
     assert!(!build.contains("to_string_lossy"));
     assert!(!build.contains("TAURI_CONFIG={\\\"bundle\\\""));
 }
+fn plan_fixture(snapshot: &ProjectSnapshot, id: &str, name: &str) -> Value {
+    let floor = &snapshot.project.floors[0];
+    json!({
+        "type": "fixture",
+        "id": id,
+        "name": name,
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "locked": false,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "kind": "generic",
+        "size": { "width": 1000, "height": 500 }
+    })
+}
+
+fn plan_batch(
+    before: &ProjectSnapshot,
+    after: &ProjectSnapshot,
+    command_type: &str,
+    payload: Value,
+    inverse_payload: Value,
+) -> CommitBatch {
+    CommitBatch {
+        before: before.clone(),
+        after: after.clone(),
+        journal: vec![JournalOperation {
+            sequence: after.sequence,
+            transaction_id: Uuid::new_v4().to_string(),
+            command_type: command_type.into(),
+            payload,
+            inverse_payload,
+            action: project_io::JournalAction::Apply,
+            timestamp: "2026-07-21T00:00:00.000Z".into(),
+        }],
+    }
+}
+
+fn reversed_entity_payload(payload: &Value) -> Value {
+    let changes = payload["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .rev()
+        .map(|change| {
+            let mut reversed = json!({
+                "id": change["id"],
+                "before": change["after"],
+                "after": change["before"]
+            });
+            if let Some(index) = change.get("index") {
+                reversed["index"] = index.clone();
+            }
+            reversed
+        })
+        .collect::<Vec<_>>();
+    json!({ "reason": payload["reason"], "changes": changes })
+}
+
+fn reversed_floor_payload(payload: &Value) -> Value {
+    json!({
+        "floorId": payload["floorId"],
+        "before": payload["after"],
+        "after": payload["before"]
+    })
+}
+
+#[test]
+fn plan_entity_patch_dto_accepts_exact_entity_and_floor_payloads_and_rejects_variants() {
+    let root = tempdir().unwrap();
+    let app = with_invoke_handler(tauri::test::mock_builder().manage(AppService::default()))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Plan DTO",
+                "profile": "market"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+
+    let fixture = plan_fixture(
+        &opened.snapshot,
+        "00000000-0000-4000-8000-000000000010",
+        "Fixture",
+    );
+    let entity_payload = json!({
+        "reason": "create",
+        "changes": [{
+            "id": fixture["id"],
+            "before": null,
+            "after": fixture,
+            "index": 0
+        }]
+    });
+    let entity_inverse = json!({
+        "reason": "create",
+        "changes": [{
+            "id": fixture["id"],
+            "before": fixture,
+            "after": null,
+            "index": 0
+        }]
+    });
+    let mut entity_after = opened.snapshot.clone();
+    entity_after.project.entities = vec![fixture.clone()];
+    entity_after.sequence = 1;
+    let entity_batch = plan_batch(
+        &opened.snapshot,
+        &entity_after,
+        "plan.entities.patch",
+        entity_payload,
+        entity_inverse,
+    );
+    invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id,
+                "batch": entity_batch
+            }
+        }),
+    )
+    .unwrap();
+
+    let floor_before = entity_after.project.floors[0].clone();
+    let mut floor_after = floor_before.clone();
+    floor_after.layers[0].visible = false;
+    let floor_payload = json!({
+        "floorId": floor_before.id,
+        "before": floor_before,
+        "after": floor_after
+    });
+    let floor_inverse = json!({
+        "floorId": floor_before.id,
+        "before": floor_after,
+        "after": floor_before
+    });
+    let mut floor_snapshot = entity_after.clone();
+    floor_snapshot.project.floors[0] = floor_after.clone();
+    floor_snapshot.sequence = 2;
+    let floor_batch = plan_batch(
+        &entity_after,
+        &floor_snapshot,
+        "plan.floor.patch",
+        floor_payload.clone(),
+        floor_inverse,
+    );
+    invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id,
+                "batch": floor_batch
+            }
+        }),
+    )
+    .unwrap();
+
+    let changed = plan_fixture(
+        &floor_snapshot,
+        "00000000-0000-4000-8000-000000000010",
+        "Changed",
+    );
+    let valid_payload = json!({
+        "reason": "properties",
+        "changes": [{
+            "id": fixture["id"],
+            "before": fixture,
+            "after": changed,
+            "index": 0
+        }]
+    });
+    let mut invalid_payloads = Vec::new();
+    let mut invalid_reason = valid_payload.clone();
+    invalid_reason["reason"] = json!("unknown");
+    invalid_payloads.push(invalid_reason);
+    let mut unknown_root = valid_payload.clone();
+    unknown_root["extra"] = json!(true);
+    invalid_payloads.push(unknown_root);
+    let mut unknown_change = valid_payload.clone();
+    unknown_change["changes"][0]["extra"] = json!(true);
+    invalid_payloads.push(unknown_change);
+    for index in [json!(-1), json!(0.5), json!(9_007_199_254_740_992_u64), json!(u64::MAX), json!("0")] {
+        let mut invalid_index = valid_payload.clone();
+        invalid_index["changes"][0]["index"] = index;
+        invalid_payloads.push(invalid_index);
+    }
+    let mut wrong_replay_index = valid_payload.clone();
+    wrong_replay_index["changes"][0]["index"] = json!(1);
+    invalid_payloads.push(wrong_replay_index);
+    invalid_payloads.push(json!({
+        "reason": "properties",
+        "changes": [{
+            "id": fixture["id"],
+            "before": null,
+            "after": null,
+            "index": 0
+        }]
+    }));
+    let mut noncanonical = valid_payload.clone();
+    let noncanonical_id = json!("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
+    noncanonical["changes"][0]["id"] = noncanonical_id.clone();
+    noncanonical["changes"][0]["before"]["id"] = noncanonical_id.clone();
+    noncanonical["changes"][0]["after"]["id"] = noncanonical_id;
+    invalid_payloads.push(noncanonical);
+    let mut mismatched = valid_payload.clone();
+    mismatched["changes"][0]["after"]["id"] =
+        json!("00000000-0000-4000-8000-000000000099");
+    invalid_payloads.push(mismatched);
+    let mut duplicate = valid_payload;
+    let repeated = duplicate["changes"][0].clone();
+    duplicate["changes"].as_array_mut().unwrap().push(repeated);
+    invalid_payloads.push(duplicate);
+
+    for payload in invalid_payloads {
+        let inverse = reversed_entity_payload(&payload);
+        let mut claimed_after = floor_snapshot.clone();
+        claimed_after.project.entities = vec![changed.clone()];
+        claimed_after.sequence = 3;
+        let invalid_batch = serde_json::to_value(plan_batch(
+            &floor_snapshot,
+            &claimed_after,
+            "plan.entities.patch",
+            payload,
+            inverse,
+        ))
+        .unwrap();
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "commit_project",
+                json!({
+                    "payload": {
+                        "sessionId": opened.session_id,
+                        "batch": invalid_batch
+                    }
+                }),
+            )
+            .unwrap_err(),
+        );
+    }
+
+    let current_floor = floor_snapshot.project.floors[0].clone();
+    let mut next_floor = current_floor.clone();
+    next_floor.layers[0].visible = true;
+    let valid_floor_payload = json!({
+        "floorId": current_floor.id,
+        "before": current_floor,
+        "after": next_floor
+    });
+    let mut invalid_floor_payloads = Vec::new();
+    let mut unknown_floor = valid_floor_payload.clone();
+    unknown_floor["before"]["extra"] = json!(true);
+    invalid_floor_payloads.push(unknown_floor);
+    let mut unknown_layer = valid_floor_payload;
+    unknown_layer["before"]["layers"][0]["extra"] = json!(true);
+    invalid_floor_payloads.push(unknown_layer);
+
+    for payload in invalid_floor_payloads {
+        let inverse = reversed_floor_payload(&payload);
+        let mut claimed_after = floor_snapshot.clone();
+        claimed_after.project.floors[0] = next_floor.clone();
+        claimed_after.sequence = 3;
+        let invalid_floor_batch = plan_batch(
+            &floor_snapshot,
+            &claimed_after,
+            "plan.floor.patch",
+            payload,
+            inverse,
+        );
+        assert_invalid_ipc(&invoke(
+            &webview,
+            "commit_project",
+            json!({
+                "payload": {
+                    "sessionId": opened.session_id,
+                    "batch": invalid_floor_batch
+                }
+            }),
+        ).unwrap_err());
+    }
+}

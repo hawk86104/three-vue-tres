@@ -8,6 +8,12 @@ export {
   type DimensionLineSegment,
   type ResolvedDimensionAnchors,
 } from "./dimensions";
+export type {
+  EntityChange,
+  FloorChange,
+  PlanEditIntent,
+  PlanEditReason,
+} from "./intents";
 export type { PlanIssue, PlanResult } from "./result";
 export { boxSelect, hitTest, type BoxSelectOptions, type HitTestOptions } from "./selection";
 export {

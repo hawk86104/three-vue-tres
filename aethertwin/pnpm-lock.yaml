@@ -199,6 +199,9 @@ importers:
       '@aethertwin/core-model':
         specifier: workspace:*
         version: link:../core-model
+      '@aethertwin/plan-engine':
+        specifier: workspace:*
+        version: link:../plan-engine
 
 packages:
 

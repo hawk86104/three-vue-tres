@@ -17,7 +17,7 @@ use crate::{
 };
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, params};
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -622,10 +622,284 @@ fn valid_journal_timestamp(value: &str) -> bool {
     chrono::DateTime::parse_from_rfc3339(value).is_ok()
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum PlanEditReason {
+    Create,
+    Delete,
+    Transform,
+    Properties,
+    Duplicate,
+    Array,
+    Align,
+    Distribute,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntityPatchPayload {
+    reason: PlanEditReason,
+    changes: Vec<EntityPatchChange>,
+}
+
+fn deserialize_present_entity_index<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u64::deserialize(deserializer).map(Some)
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EntityPatchChange {
+    id: String,
+    before: Value,
+    after: Value,
+    #[serde(default, deserialize_with = "deserialize_present_entity_index")]
+    index: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FloorPatchPayload {
+    floor_id: String,
+    before: ReplayFloor,
+    after: ReplayFloor,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReplayFloor {
+    id: String,
+    name: String,
+    tags: Vec<String>,
+    layers: Vec<ReplayPlanLayer>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReplayPlanLayer {
+    id: String,
+    name: String,
+    tags: Vec<String>,
+    visible: bool,
+    locked: bool,
+}
+
+impl ReplayFloor {
+    fn into_native(self) -> Result<Floor, ProjectIoError> {
+        Ok(Floor {
+            id: canonical_patch_id(&self.id)?,
+            name: self.name,
+            tags: self.tags,
+            layers: self
+                .layers
+                .into_iter()
+                .map(|layer| {
+                    Ok(PlanLayer {
+                        id: canonical_patch_id(&layer.id)?,
+                        name: layer.name,
+                        tags: layer.tags,
+                        visible: layer.visible,
+                        locked: layer.locked,
+                    })
+                })
+                .collect::<Result<_, ProjectIoError>>()?,
+        })
+    }
+}
+
+fn canonical_patch_id(value: &str) -> Result<Uuid, ProjectIoError> {
+    let id = parse_contract_uuid(value).map_err(|_| ProjectIoError::DatabaseError)?;
+    if id.hyphenated().to_string() != value {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    Ok(id)
+}
+
+fn entity_patch(value: &Value) -> Result<EntityPatchPayload, ProjectIoError> {
+    const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+    let payload: EntityPatchPayload =
+        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    let mut ids = BTreeSet::new();
+    for change in &payload.changes {
+        canonical_patch_id(&change.id)?;
+        if !ids.insert(change.id.as_str()) || (change.before.is_null() && change.after.is_null()) {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        if change.index.is_some_and(|index| index > MAX_JSON_SAFE_INTEGER) {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        for side in [&change.before, &change.after] {
+            if side.is_null() {
+                continue;
+            }
+            let id = side
+                .as_object()
+                .and_then(|source| source.get("id"))
+                .and_then(Value::as_str)
+                .ok_or(ProjectIoError::DatabaseError)?;
+            canonical_patch_id(id)?;
+            if id != change.id {
+                return Err(ProjectIoError::DatabaseError);
+            }
+        }
+    }
+    Ok(payload)
+}
+
+fn exact_entity_inverse(payload: &EntityPatchPayload, inverse: &EntityPatchPayload) -> bool {
+    payload.reason == inverse.reason
+        && payload.changes.len() == inverse.changes.len()
+        && payload
+            .changes
+            .iter()
+            .rev()
+            .zip(&inverse.changes)
+            .all(|(change, reversed)| {
+                change.id == reversed.id
+                    && change.before == reversed.after
+                    && change.after == reversed.before
+                    && change.index == reversed.index
+            })
+}
+
+fn apply_entity_patch(
+    snapshot: &mut ProjectSnapshot,
+    payload: &EntityPatchPayload,
+) -> Result<EntityPatchPayload, ProjectIoError> {
+    let mut entities = snapshot.project.entities.clone();
+    let mut changes = Vec::with_capacity(payload.changes.len());
+    for change in &payload.changes {
+        let position = entities.iter().position(|entity| {
+            entity
+                .as_object()
+                .and_then(|source| source.get("id"))
+                .and_then(Value::as_str)
+                == Some(change.id.as_str())
+        });
+        let supplied_index = change
+            .index
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| ProjectIoError::DatabaseError)?;
+        if change.before.is_null() {
+            if position.is_some() {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            let index = supplied_index.unwrap_or(entities.len());
+            if index > entities.len() {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            entities.insert(index, change.after.clone());
+            changes.push(EntityPatchChange {
+                id: change.id.clone(),
+                before: change.before.clone(),
+                after: change.after.clone(),
+                index: Some(index as u64),
+            });
+        } else {
+            let index = position.ok_or(ProjectIoError::DatabaseError)?;
+            if entities[index] != change.before
+                || supplied_index.is_some_and(|supplied| supplied != index)
+            {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            changes.push(EntityPatchChange {
+                id: change.id.clone(),
+                before: change.before.clone(),
+                after: change.after.clone(),
+                index: Some(index as u64),
+            });
+            if change.after.is_null() {
+                entities.remove(index);
+            } else {
+                entities[index] = change.after.clone();
+            }
+        }
+    }
+    snapshot.project.entities = entities;
+    Ok(EntityPatchPayload {
+        reason: payload.reason.clone(),
+        changes,
+    })
+}
+
+fn floor_patch(value: &Value) -> Result<FloorPatchPayload, ProjectIoError> {
+    let payload: FloorPatchPayload =
+        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    let floor_id = canonical_patch_id(&payload.floor_id)?;
+    if canonical_patch_id(&payload.before.id)? != floor_id
+        || canonical_patch_id(&payload.after.id)? != floor_id
+    {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    Ok(payload)
+}
+
+fn exact_floor_inverse(payload: &FloorPatchPayload, inverse: &FloorPatchPayload) -> bool {
+    payload.floor_id == inverse.floor_id
+        && payload.before == inverse.after
+        && payload.after == inverse.before
+}
+
+fn apply_floor_patch(
+    snapshot: &mut ProjectSnapshot,
+    payload: FloorPatchPayload,
+) -> Result<(), ProjectIoError> {
+    let floor_id = canonical_patch_id(&payload.floor_id)?;
+    let before = payload.before.into_native()?;
+    let after = payload.after.into_native()?;
+    let positions = snapshot
+        .project
+        .floors
+        .iter()
+        .enumerate()
+        .filter_map(|(index, floor)| (floor.id == floor_id).then_some(index))
+        .collect::<Vec<_>>();
+    if positions.len() != 1 || snapshot.project.floors[positions[0]] != before {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    snapshot.project.floors[positions[0]] = after;
+    Ok(())
+}
+
+fn validate_entity_floor_layer_references(
+    snapshot: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    for entity in &snapshot.project.entities {
+        let source = entity
+            .as_object()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let floor_id = source
+            .get("floorId")
+            .and_then(Value::as_str)
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let layer_id = source
+            .get("layerId")
+            .and_then(Value::as_str)
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let floor_id = canonical_patch_id(floor_id)?;
+        let layer_id = canonical_patch_id(layer_id)?;
+        let floor = snapshot
+            .project
+            .floors
+            .iter()
+            .find(|floor| floor.id == floor_id)
+            .ok_or(ProjectIoError::DatabaseError)?;
+        if !floor.layers.iter().any(|layer| layer.id == layer_id) {
+            return Err(ProjectIoError::DatabaseError);
+        }
+    }
+    Ok(())
+}
+
 fn apply_operation(
     snapshot: &mut ProjectSnapshot,
     operation: &JournalOperation,
 ) -> Result<(), ProjectIoError> {
+    let mut candidate = snapshot.clone();
     match operation.command_type.as_str() {
         "project.rename" => {
             let payload = operation
@@ -644,10 +918,10 @@ fn apply_operation(
                 JournalAction::Undo => (payload, inverse),
                 JournalAction::Apply | JournalAction::Redo => (inverse, payload),
             };
-            if snapshot.project.name != expected_before {
+            if candidate.project.name != expected_before {
                 return Err(ProjectIoError::DatabaseError);
             }
-            snapshot.project.name = next.to_owned();
+            candidate.project.name = next.to_owned();
         }
         "project.tags.set" => {
             let payload = string_array(&operation.payload, "tags")?;
@@ -656,15 +930,64 @@ fn apply_operation(
                 JournalAction::Undo => (&payload, &inverse),
                 JournalAction::Apply | JournalAction::Redo => (&inverse, &payload),
             };
-            if &snapshot.project.tags != expected_before {
+            if &candidate.project.tags != expected_before {
                 return Err(ProjectIoError::DatabaseError);
             }
-            snapshot.project.tags = next.clone();
+            candidate.project.tags = next.clone();
+        }
+        "plan.entities.patch" => {
+            let payload = entity_patch(&operation.payload)?;
+            let inverse = entity_patch(&operation.inverse_payload)?;
+            let matching_values = payload.reason == inverse.reason
+                && payload.changes.len() == inverse.changes.len()
+                && payload
+                    .changes
+                    .iter()
+                    .rev()
+                    .zip(&inverse.changes)
+                    .all(|(change, reversed)| {
+                        change.id == reversed.id
+                            && change.before == reversed.after
+                            && change.after == reversed.before
+                    });
+            if !matching_values {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            match operation.action {
+                JournalAction::Apply | JournalAction::Redo => {
+                    let normalized = apply_entity_patch(&mut candidate, &payload)?;
+                    if !exact_entity_inverse(&normalized, &inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+                JournalAction::Undo => {
+                    let normalized_inverse = apply_entity_patch(&mut candidate, &inverse)?;
+                    let mut replayed = candidate.clone();
+                    let normalized_payload = apply_entity_patch(&mut replayed, &payload)?;
+                    if !exact_entity_inverse(&normalized_payload, &normalized_inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+            }
+        }
+        "plan.floor.patch" => {
+            let payload = floor_patch(&operation.payload)?;
+            let inverse = floor_patch(&operation.inverse_payload)?;
+            if !exact_floor_inverse(&payload, &inverse) {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            let selected = match operation.action {
+                JournalAction::Undo => inverse,
+                JournalAction::Apply | JournalAction::Redo => payload,
+            };
+            apply_floor_patch(&mut candidate, selected)?;
         }
         _ => return Err(ProjectIoError::DatabaseError),
     }
-    snapshot.sequence = operation.sequence;
-    snapshot.validate()?;
+    candidate.sequence = operation.sequence;
+    candidate.validate()?;
+    validate_entity_floor_layer_references(&candidate)?;
+    *snapshot = candidate;
     Ok(())
 }
 

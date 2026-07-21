@@ -1,5 +1,6 @@
 import type { ProjectBackend } from "./backend";
-import { createInitialSnapshot, parseSnapshot } from "@aethertwin/core-model";
+import { createInitialSnapshot, identityTransform2D, parseSnapshot, type Fixture, type ProjectSnapshot } from "@aethertwin/core-model";
+import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ProjectStore,
@@ -29,6 +30,22 @@ class MemoryStorage implements KeyValueStorage {
   removeItem(key: string): void {
     this.values.delete(key);
   }
+}
+
+function fixtureFor(snapshot: ProjectSnapshot, id = "00000000-0000-4000-8000-000000000010", name = "Fixture"): Fixture {
+  const floor = snapshot.project.floors[0]!;
+  return {
+    type: "fixture",
+    id,
+    name,
+    tags: [],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    locked: false,
+    transform: identityTransform2D,
+    kind: "generic",
+    size: { width: 1000, height: 500 },
+  };
 }
 
 describe("ProjectStore", () => {
@@ -777,6 +794,108 @@ describe("ProjectStore", () => {
     await pending;
 
     expect(store.getState().snapshot?.project.name).toBe("Owned");
+  });
+
+  it("publishes a multi-entity patch only after one durable commit and reverses it", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const fixture = fixtureFor(store.getState().snapshot!);
+    const commit = vi.spyOn(backend, "commit");
+    await store.applyPlanEdit({
+      reason: "create", changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![1].journal).toHaveLength(1);
+    expect(commit.mock.calls[0]![1].journal[0]!.commandType).toBe("plan.entities.patch");
+    expect(store.getState().snapshot?.project.entities).toContainEqual(fixture);
+    await store.undo();
+    expect(store.getState().snapshot?.project.entities).toEqual([]);
+  });
+
+  it("durably preserves middle entity order across delete undo and redo", async () => {
+    const backend = new SandboxProjectBackend();
+    const commit = vi.spyOn(backend, "commit");
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const snapshot = store.getState().snapshot!;
+    const first = fixtureFor(snapshot, "00000000-0000-4000-8000-000000000010", "First");
+    const middle = fixtureFor(snapshot, "00000000-0000-4000-8000-000000000011", "Middle");
+    const last = fixtureFor(snapshot, "00000000-0000-4000-8000-000000000012", "Last");
+
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [
+        { id: first.id, before: null, after: first },
+        { id: middle.id, before: null, after: middle },
+        { id: last.id, before: null, after: last },
+      ],
+    });
+    await store.applyPlanEdit({
+      reason: "delete",
+      changes: [{ id: middle.id, before: middle, after: null }],
+    });
+    expect(store.getState().snapshot?.project.entities).toEqual([first, last]);
+
+    await store.undo();
+    expect(store.getState().snapshot?.project.entities).toEqual([first, middle, last]);
+
+    await store.redo();
+    expect(store.getState().snapshot?.project.entities).toEqual([first, last]);
+    expect(commit).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not publish or advance history for a rejected plan patch", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const fixture = fixtureFor(store.getState().snapshot!);
+    const beforeSequence = store.getState().snapshot!.sequence;
+    backend.failNextCommit = new Error("disk full");
+    await expect(store.applyPlanEdit({
+      reason: "create", changes: [{ id: fixture.id, before: null, after: fixture }],
+    })).rejects.toThrow("disk full");
+    expect(store.getState().snapshot?.project.entities).toEqual([]);
+    expect(store.getState().snapshot?.sequence).toBe(beforeSequence);
+    expect(store.getState().canUndo).toBe(false);
+    expect(store.getState().canRedo).toBe(false);
+  });
+
+  it("persists layer visibility as one reversible floor patch", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const before = store.getState().snapshot!.project.floors[0]!;
+    const after = { ...before, layers: before.layers.map((layer) => ({ ...layer, visible: false })) };
+    const commit = vi.spyOn(backend, "commit");
+    await store.applyFloorPatch({ floorId: before.id, before, after });
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![1].journal[0]!.commandType).toBe("plan.floor.patch");
+    expect(store.getState().snapshot!.project.floors[0]!.layers[0]!.visible).toBe(false);
+    await store.undo();
+    expect(store.getState().snapshot!.project.floors[0]!.layers[0]!.visible).toBe(true);
+  });
+
+  it("owns plan and floor patch inputs before their queued mutations start", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const fixture = fixtureFor(store.getState().snapshot!);
+    const intent: PlanEditIntent = {
+      reason: "create", changes: [{ id: fixture.id, before: null, after: fixture }],
+    };
+    const pendingIntent = store.applyPlanEdit(intent);
+    (intent.changes[0]!.after as { name: string }).name = "Caller mutation";
+    await pendingIntent;
+    expect(store.getState().snapshot!.project.entities[0]!.name).toBe("Fixture");
+
+    const before = store.getState().snapshot!.project.floors[0]!;
+    const after = { ...before, layers: before.layers.map((layer) => ({ ...layer, visible: false })) };
+    const change: FloorChange = { floorId: before.id, before, after };
+    const pendingFloor = store.applyFloorPatch(change);
+    (change.after.layers[0] as { visible: boolean }).visible = true;
+    await pendingFloor;
+    expect(store.getState().snapshot!.project.floors[0]!.layers[0]!.visible).toBe(false);
   });
 });
 

@@ -1061,3 +1061,539 @@ fn journal_contract_serializes_camel_case_and_lowercase_actions() {
     assert_eq!(value["inversePayload"], json!({ "name": "Before" }));
     assert_eq!(value["action"], json!("redo"));
 }
+fn plan_fixture(snapshot: &ProjectSnapshot, id: &str, name: &str) -> Value {
+    let floor = &snapshot.project.floors[0];
+    json!({
+        "type": "fixture",
+        "id": id,
+        "name": name,
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "locked": false,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "kind": "generic",
+        "size": { "width": 1000, "height": 500 }
+    })
+}
+
+fn plan_operation(
+    sequence: u64,
+    transaction_id: &str,
+    command_type: &str,
+    payload: Value,
+    inverse_payload: Value,
+    action: JournalAction,
+) -> JournalOperation {
+    JournalOperation {
+        sequence,
+        transaction_id: transaction_id.into(),
+        command_type: command_type.into(),
+        payload,
+        inverse_payload,
+        action,
+        timestamp: "2026-07-21T00:00:00.000Z".into(),
+    }
+}
+
+fn patch_batch(
+    before: &ProjectSnapshot,
+    after: &ProjectSnapshot,
+    operation: JournalOperation,
+) -> CommitBatch {
+    CommitBatch {
+        before: before.clone(),
+        after: after.clone(),
+        journal: vec![operation],
+    }
+}
+
+fn entity_patch_payload(reason: &str, changes: Vec<Value>) -> Value {
+    json!({ "reason": reason, "changes": changes })
+}
+
+fn inverse_entity_changes(changes: &[Value]) -> Vec<Value> {
+    changes
+        .iter()
+        .rev()
+        .map(|change| {
+            let mut inverse = json!({
+                "id": change["id"],
+                "before": change["after"],
+                "after": change["before"]
+            });
+            if let Some(index) = change.get("index") {
+                inverse["index"] = index.clone();
+            }
+            inverse
+        })
+        .collect()
+}
+
+#[test]
+fn plan_entity_patch_replays_entity_and_floor_apply_undo_redo_checkpoint_reopen_and_recovery() {
+    let opened = create("Plan Replay", ProjectProfile::Market);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let first = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "First",
+    );
+    let second = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000011",
+        "Second",
+    );
+    let entity_changes = vec![
+        json!({ "id": first["id"], "before": null, "after": first, "index": 0 }),
+        json!({ "id": second["id"], "before": null, "after": second, "index": 1 }),
+    ];
+    let entity_payload = entity_patch_payload("create", entity_changes.clone());
+    let entity_inverse =
+        entity_patch_payload("create", inverse_entity_changes(&entity_changes));
+    let mut entities_applied = initial.clone();
+    entities_applied.project.entities = vec![first.clone(), second.clone()];
+    entities_applied.sequence = 1;
+    session
+        .commit(patch_batch(
+            &initial,
+            &entities_applied,
+            plan_operation(
+                1,
+                "00000000-0000-4000-8000-000000000601",
+                "plan.entities.patch",
+                entity_payload.clone(),
+                entity_inverse.clone(),
+                JournalAction::Apply,
+            ),
+        ))
+        .unwrap();
+    session.checkpoint(session.snapshot().clone()).unwrap();
+    session.close().unwrap();
+
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), second.clone()]
+    );
+    let floor_before = session.snapshot().project.floors[0].clone();
+    let mut floor_after = floor_before.clone();
+    floor_after.layers[0].visible = false;
+    let floor_payload = json!({
+        "floorId": floor_before.id,
+        "before": floor_before,
+        "after": floor_after
+    });
+    let floor_inverse = json!({
+        "floorId": floor_before.id,
+        "before": floor_after,
+        "after": floor_before
+    });
+    let before_floor_patch = session.snapshot().clone();
+    let mut after_floor_patch = before_floor_patch.clone();
+    after_floor_patch.project.floors[0] = floor_after.clone();
+    after_floor_patch.sequence = 2;
+    session
+        .commit(patch_batch(
+            &before_floor_patch,
+            &after_floor_patch,
+            plan_operation(
+                2,
+                "00000000-0000-4000-8000-000000000602",
+                "plan.floor.patch",
+                floor_payload.clone(),
+                floor_inverse.clone(),
+                JournalAction::Apply,
+            ),
+        ))
+        .unwrap();
+
+    let mut floor_undone = after_floor_patch.clone();
+    floor_undone.project.floors[0] = floor_before.clone();
+    floor_undone.sequence = 3;
+    session
+        .commit(patch_batch(
+            &after_floor_patch,
+            &floor_undone,
+            plan_operation(
+                3,
+                "00000000-0000-4000-8000-000000000603",
+                "plan.floor.patch",
+                floor_payload.clone(),
+                floor_inverse.clone(),
+                JournalAction::Undo,
+            ),
+        ))
+        .unwrap();
+    let mut floor_redone = floor_undone.clone();
+    floor_redone.project.floors[0] = floor_after.clone();
+    floor_redone.sequence = 4;
+    session
+        .commit(patch_batch(
+            &floor_undone,
+            &floor_redone,
+            plan_operation(
+                4,
+                "00000000-0000-4000-8000-000000000604",
+                "plan.floor.patch",
+                floor_payload,
+                floor_inverse,
+                JournalAction::Redo,
+            ),
+        ))
+        .unwrap();
+
+    let mut entities_undone = floor_redone.clone();
+    entities_undone.project.entities.clear();
+    entities_undone.sequence = 5;
+    session
+        .commit(patch_batch(
+            &floor_redone,
+            &entities_undone,
+            plan_operation(
+                5,
+                "00000000-0000-4000-8000-000000000605",
+                "plan.entities.patch",
+                entity_payload.clone(),
+                entity_inverse.clone(),
+                JournalAction::Undo,
+            ),
+        ))
+        .unwrap();
+    let mut entities_redone = entities_undone.clone();
+    entities_redone.project.entities = vec![first.clone(), second.clone()];
+    entities_redone.sequence = 6;
+    session
+        .commit(patch_batch(
+            &entities_undone,
+            &entities_redone,
+            plan_operation(
+                6,
+                "00000000-0000-4000-8000-000000000606",
+                "plan.entities.patch",
+                entity_payload,
+                entity_inverse,
+                JournalAction::Redo,
+            ),
+        ))
+        .unwrap();
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), second.clone()]
+    );
+    assert!(!session.snapshot().project.floors[0].layers[0].visible);
+    drop(session);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert_eq!(recovered.snapshot.project.entities, vec![first, second]);
+    assert!(!recovered.snapshot.project.floors[0].layers[0].visible);
+    assert_eq!(recovered.snapshot.sequence, 6);
+    assert!(recovered.recovered);
+}
+
+#[test]
+fn plan_entity_patch_rejects_explicit_null_index_without_publication() {
+    let opened = create("Null Index Rejection", ProjectProfile::Market);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let fixture = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "Fixture",
+    );
+    let payload = entity_patch_payload(
+        "create",
+        vec![json!({
+            "id": fixture["id"],
+            "before": null,
+            "after": fixture,
+            "index": null
+        })],
+    );
+    let inverse = entity_patch_payload(
+        "create",
+        vec![json!({
+            "id": fixture["id"],
+            "before": fixture,
+            "after": null,
+            "index": 0
+        })],
+    );
+    let mut claimed_after = initial.clone();
+    claimed_after.project.entities = vec![fixture];
+    claimed_after.sequence = 1;
+
+    assert_code(
+        session
+            .commit(patch_batch(
+                &initial,
+                &claimed_after,
+                plan_operation(
+                    1,
+                    "00000000-0000-4000-8000-000000000616",
+                    "plan.entities.patch",
+                    payload,
+                    inverse,
+                    JournalAction::Apply,
+                ),
+            ))
+            .unwrap_err(),
+        "DATABASE_ERROR",
+    );
+    assert_eq!(session.snapshot(), &initial);
+    let journal_count: i64 = Connection::open(opened.project_path.join("project.db"))
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM command_journal", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(journal_count, 0);
+}
+
+#[test]
+fn plan_entity_patch_preserves_middle_order_through_undo_redo_and_dirty_recovery() {
+    let opened = create("Indexed Plan Replay", ProjectProfile::Market);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let first = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "First",
+    );
+    let middle = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000011",
+        "Middle",
+    );
+    let last = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000012",
+        "Last",
+    );
+    let create_changes = vec![
+        json!({ "id": first["id"], "before": null, "after": first }),
+        json!({ "id": middle["id"], "before": null, "after": middle }),
+        json!({ "id": last["id"], "before": null, "after": last }),
+    ];
+    let create_payload = entity_patch_payload("create", create_changes);
+    let create_inverse = entity_patch_payload(
+        "create",
+        vec![
+            json!({ "id": last["id"], "before": last, "after": null, "index": 2 }),
+            json!({ "id": middle["id"], "before": middle, "after": null, "index": 1 }),
+            json!({ "id": first["id"], "before": first, "after": null, "index": 0 }),
+        ],
+    );
+    let mut created = initial.clone();
+    created.project.entities = vec![first.clone(), middle.clone(), last.clone()];
+    created.sequence = 1;
+    session
+        .commit(patch_batch(
+            &initial,
+            &created,
+            plan_operation(
+                1,
+                "00000000-0000-4000-8000-000000000611",
+                "plan.entities.patch",
+                create_payload,
+                create_inverse,
+                JournalAction::Apply,
+            ),
+        ))
+        .unwrap();
+    session.checkpoint(session.snapshot().clone()).unwrap();
+    let created = session.snapshot().clone();
+
+    let delete_payload = entity_patch_payload(
+        "delete",
+        vec![json!({ "id": middle["id"], "before": middle, "after": null })],
+    );
+    let delete_inverse = entity_patch_payload(
+        "delete",
+        vec![json!({ "id": middle["id"], "before": null, "after": middle, "index": 1 })],
+    );
+    let mut deleted = created.clone();
+    deleted.project.entities = vec![first.clone(), last.clone()];
+    deleted.sequence = 2;
+    session
+        .commit(patch_batch(
+            &created,
+            &deleted,
+            plan_operation(
+                2,
+                "00000000-0000-4000-8000-000000000612",
+                "plan.entities.patch",
+                delete_payload.clone(),
+                delete_inverse.clone(),
+                JournalAction::Apply,
+            ),
+        ))
+        .unwrap();
+    assert_eq!(session.snapshot().project.entities, vec![first.clone(), last.clone()]);
+
+    let mut undone = deleted.clone();
+    undone.project.entities = vec![first.clone(), middle.clone(), last.clone()];
+    undone.sequence = 3;
+    session
+        .commit(patch_batch(
+            &deleted,
+            &undone,
+            plan_operation(
+                3,
+                "00000000-0000-4000-8000-000000000613",
+                "plan.entities.patch",
+                delete_payload.clone(),
+                delete_inverse.clone(),
+                JournalAction::Undo,
+            ),
+        ))
+        .unwrap();
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), middle.clone(), last.clone()]
+    );
+
+    let mut redone = undone.clone();
+    redone.project.entities = vec![first.clone(), last.clone()];
+    redone.sequence = 4;
+    session
+        .commit(patch_batch(
+            &undone,
+            &redone,
+            plan_operation(
+                4,
+                "00000000-0000-4000-8000-000000000614",
+                "plan.entities.patch",
+                delete_payload.clone(),
+                delete_inverse.clone(),
+                JournalAction::Redo,
+            ),
+        ))
+        .unwrap();
+    assert_eq!(session.snapshot().project.entities, vec![first.clone(), last.clone()]);
+
+    let mut restored = redone.clone();
+    restored.project.entities = vec![first.clone(), middle.clone(), last.clone()];
+    restored.sequence = 5;
+    session
+        .commit(patch_batch(
+            &redone,
+            &restored,
+            plan_operation(
+                5,
+                "00000000-0000-4000-8000-000000000615",
+                "plan.entities.patch",
+                delete_payload,
+                delete_inverse,
+                JournalAction::Undo,
+            ),
+        ))
+        .unwrap();
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), middle.clone(), last.clone()]
+    );
+    assert_eq!(session.save_state(), SaveState::Dirty);
+    drop(session);
+    let source_manifest = fs::read(opened.project_path.join("manifest.json")).unwrap();
+    let source_sqlite = sqlite_source_fingerprint(&opened.project_path);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert_eq!(fs::read(opened.project_path.join("manifest.json")).unwrap(), source_manifest);
+    assert_eq!(sqlite_source_fingerprint(&opened.project_path), source_sqlite);
+    assert_eq!(
+        recovered.snapshot.project.entities,
+        vec![first, middle, last]
+    );
+    assert_eq!(recovered.snapshot.sequence, 5);
+    assert_eq!(recovered.snapshot.checkpoint_sequence, 1);
+    assert!(recovered.recovered);
+}
+
+#[test]
+fn plan_entity_patch_rejects_stale_before_and_unknown_layer_without_publication() {
+    let opened = create("Plan Rejection", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let current = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "Current",
+    );
+    let stale = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "Stale",
+    );
+    let next = plan_fixture(
+        &initial,
+        "00000000-0000-4000-8000-000000000010",
+        "Next",
+    );
+    let stale_changes = vec![json!({
+        "id": current["id"],
+        "before": stale,
+        "after": next,
+        "index": 0
+    })];
+    let stale_payload = entity_patch_payload("properties", stale_changes.clone());
+    let stale_inverse =
+        entity_patch_payload("properties", inverse_entity_changes(&stale_changes));
+    let mut claimed_after = initial.clone();
+    claimed_after.project.entities = vec![next];
+    claimed_after.sequence = 1;
+    assert_code(
+        session
+            .commit(patch_batch(
+                &initial,
+                &claimed_after,
+                plan_operation(
+                    1,
+                    "00000000-0000-4000-8000-000000000607",
+                    "plan.entities.patch",
+                    stale_payload,
+                    stale_inverse,
+                    JournalAction::Apply,
+                ),
+            ))
+            .unwrap_err(),
+        "DATABASE_ERROR",
+    );
+    assert_eq!(session.snapshot(), &initial);
+
+    let mut invalid_layer = current;
+    invalid_layer["layerId"] = json!("00000000-0000-4000-8000-000000000099");
+    let invalid_changes = vec![json!({
+        "id": invalid_layer["id"],
+        "before": null,
+        "after": invalid_layer,
+        "index": 0
+    })];
+    let invalid_payload = entity_patch_payload("create", invalid_changes.clone());
+    let invalid_inverse =
+        entity_patch_payload("create", inverse_entity_changes(&invalid_changes));
+    let mut invalid_after = initial.clone();
+    invalid_after.project.entities = vec![invalid_layer];
+    invalid_after.sequence = 1;
+    assert_code(
+        session
+            .commit(patch_batch(
+                &initial,
+                &invalid_after,
+                plan_operation(
+                    1,
+                    "00000000-0000-4000-8000-000000000608",
+                    "plan.entities.patch",
+                    invalid_payload,
+                    invalid_inverse,
+                    JournalAction::Apply,
+                ),
+            ))
+            .unwrap_err(),
+        "DATABASE_ERROR",
+    );
+    assert_eq!(session.snapshot(), &initial);
+}

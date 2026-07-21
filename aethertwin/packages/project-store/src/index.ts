@@ -6,6 +6,13 @@ export {
   type RecoveryConfirmation,
 } from "./backend";
 export { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
+export { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
+export type {
+  EntityChange,
+  FloorChange,
+  PlanEditIntent,
+  PlanEditReason,
+} from "@aethertwin/plan-engine";
 export {
   ProjectStore,
   type ProjectStoreOptions,

@@ -6,6 +6,7 @@ import {
   type ProjectSnapshot,
   type SaveState,
 } from "@aethertwin/core-model";
+import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
 import type {
   CheckpointResult,
   CreateProjectRequest,
@@ -14,6 +15,7 @@ import type {
   RecoveryConfirmation,
 } from "./backend";
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
+import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
 
 export interface ProjectStoreState {
   readonly projectPath: string | null;
@@ -162,6 +164,20 @@ export class ProjectStore {
     const ownedTags = Object.freeze([...tags]);
     return this.enqueueMutation(() =>
       this.mutate((bus) => bus.execute(setProjectTagsCommand, { tags: ownedTags })),
+    );
+  }
+
+  applyPlanEdit(intent: PlanEditIntent): Promise<void> {
+    const ownedIntent = structuredClone(intent);
+    return this.enqueueMutation(() =>
+      this.mutate((bus) => bus.execute(patchPlanEntitiesCommand, ownedIntent)),
+    );
+  }
+
+  applyFloorPatch(change: FloorChange): Promise<void> {
+    const ownedChange = structuredClone(change);
+    return this.enqueueMutation(() =>
+      this.mutate((bus) => bus.execute(patchFloorCommand, ownedChange)),
     );
   }
 

@@ -290,6 +290,12 @@ fn validate_payload_shapes(batch: &CommitBatch) -> Result<(), HostError> {
                 exact_strings(&operation.payload, "tags")
                     && exact_strings(&operation.inverse_payload, "tags")
             }
+            "plan.entities.patch" => {
+                exact_entity_patch_pair(&operation.payload, &operation.inverse_payload)
+            }
+            "plan.floor.patch" => {
+                exact_floor_patch_pair(&operation.payload, &operation.inverse_payload)
+            }
             _ => false,
         };
         if !valid {
@@ -297,6 +303,140 @@ fn validate_payload_shapes(batch: &CommitBatch) -> Result<(), HostError> {
         }
     }
     Ok(())
+}
+
+fn exact_object(value: &Value, keys: &[&str]) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.len() == keys.len() && keys.iter().all(|key| object.contains_key(*key))
+    })
+}
+
+fn plan_reason(value: &Value) -> bool {
+    value.as_str().is_some_and(|reason| {
+        matches!(
+            reason,
+            "create"
+                | "delete"
+                | "transform"
+                | "properties"
+                | "duplicate"
+                | "array"
+                | "align"
+                | "distribute"
+        )
+    })
+}
+
+fn exact_entity_side(value: &Value, id: &str) -> bool {
+    value.is_null()
+        || value
+            .as_object()
+            .and_then(|source| source.get("id"))
+            .and_then(Value::as_str)
+            .is_some_and(|side_id| side_id == id && canonical_uuid(side_id).is_ok())
+}
+
+fn entity_patch_parts(value: &Value) -> Option<(&str, &[Value])> {
+    if !exact_object(value, &["reason", "changes"]) || !plan_reason(&value["reason"]) {
+        return None;
+    }
+    Some((
+        value["reason"].as_str()?,
+        value["changes"].as_array()?.as_slice(),
+    ))
+}
+
+fn exact_entity_change(value: &Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    let required = ["id", "before", "after"];
+    (object.len() == required.len() || object.len() == required.len() + 1)
+        && required.iter().all(|key| object.contains_key(*key))
+        && object.keys().all(|key| required.contains(&key.as_str()) || key == "index")
+        && object.get("index").is_none_or(|index| {
+            index
+                .as_u64()
+                .is_some_and(|index| index <= 9_007_199_254_740_991)
+        })
+}
+
+fn exact_entity_patch(value: &Value) -> bool {
+    let Some((_, changes)) = entity_patch_parts(value) else {
+        return false;
+    };
+    let mut ids = std::collections::BTreeSet::new();
+    changes.iter().all(|change| {
+        if !exact_entity_change(change) {
+            return false;
+        }
+        let Some(id) = change["id"].as_str() else {
+            return false;
+        };
+        canonical_uuid(id).is_ok()
+            && ids.insert(id)
+            && !(change["before"].is_null() && change["after"].is_null())
+            && exact_entity_side(&change["before"], id)
+            && exact_entity_side(&change["after"], id)
+    })
+}
+
+fn exact_entity_patch_pair(payload: &Value, inverse: &Value) -> bool {
+    if !exact_entity_patch(payload) || !exact_entity_patch(inverse) {
+        return false;
+    }
+    let Some((reason, changes)) = entity_patch_parts(payload) else {
+        return false;
+    };
+    let Some((inverse_reason, inverse_changes)) = entity_patch_parts(inverse) else {
+        return false;
+    };
+    reason == inverse_reason
+        && changes.len() == inverse_changes.len()
+        && changes
+            .iter()
+            .rev()
+            .zip(inverse_changes)
+            .all(|(change, reversed)| {
+                change["id"] == reversed["id"]
+                    && change["before"] == reversed["after"]
+                    && change["after"] == reversed["before"]
+                    && change
+                        .get("index")
+                        .is_none_or(|index| reversed.get("index") == Some(index))
+            })
+}
+
+fn strict_floor(value: &Value) -> Option<Floor> {
+    serde_json::from_value::<FloorDto>(value.clone())
+        .ok()?
+        .into_native()
+        .ok()
+}
+
+fn exact_floor_patch(value: &Value) -> bool {
+    if !exact_object(value, &["floorId", "before", "after"]) {
+        return false;
+    }
+    let Some(floor_id) = value["floorId"].as_str() else {
+        return false;
+    };
+    let Some(before) = strict_floor(&value["before"]) else {
+        return false;
+    };
+    let Some(after) = strict_floor(&value["after"]) else {
+        return false;
+    };
+    canonical_uuid(floor_id)
+        .is_ok_and(|id| before.id == id && after.id == id)
+}
+
+fn exact_floor_patch_pair(payload: &Value, inverse: &Value) -> bool {
+    exact_floor_patch(payload)
+        && exact_floor_patch(inverse)
+        && payload["floorId"] == inverse["floorId"]
+        && payload["before"] == inverse["after"]
+        && payload["after"] == inverse["before"]
 }
 
 fn exact_string(value: &Value, key: &str) -> bool {
