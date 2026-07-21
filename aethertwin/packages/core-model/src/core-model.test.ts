@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
+import snapshotV2Fixture from "../../../fixtures/contracts/snapshot.v2.json";
 import {
   CURRENT_SCHEMA_VERSION,
   createManifest,
   createInitialSnapshot,
+  identityTransform2D,
   migrateSnapshot,
+  ModelValidationError,
   parseManifest,
   parseSnapshot,
+  parseSnapshotV2,
+  type ModelIssueCode,
 } from "./index";
 
 const validManifest = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   projectId: "00000000-0000-4000-8000-000000000001",
   name: "Demo",
   profile: "showroom",
@@ -19,11 +24,111 @@ const validManifest = {
   minCompatibleAppVersion: "0.1.0",
 };
 
+function contractId(value: number): string {
+  return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+}
+
+function cloneFixture(): any {
+  return JSON.parse(JSON.stringify(snapshotV2Fixture));
+}
+
+function completeSnapshotInput(): any {
+  const snapshot = cloneFixture();
+  const floorId = contractId(2);
+  const layerId = contractId(3);
+  const transform = JSON.parse(JSON.stringify(identityTransform2D));
+
+  snapshot.assets = [{
+    id: contractId(20),
+    sha256: "a".repeat(64),
+    relativePath: "assets/display.png",
+    mediaType: "image/png",
+    size: 42,
+  }];
+  snapshot.project.entities = [
+    {
+      type: "dimension", id: contractId(5), name: "Width", tags: [], floorId, layerId,
+      transform, locked: false,
+      start: { kind: "point", point: { x: 0, y: 0 } },
+      end: { kind: "entity", entityId: contractId(6), locator: { vertex: 1 } },
+      offset: 50, displayUnit: "mm",
+    },
+    {
+      type: "boundary", id: contractId(6), name: "Boundary", tags: [], floorId, layerId,
+      transform, locked: false,
+      polygon: [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }, { x: 0, y: 3000 }],
+    },
+    {
+      type: "wall", id: contractId(7), name: "Wall", tags: [], floorId, layerId,
+      transform, spatial3D: { elevation: 0, height: 2800 }, locked: false,
+      centerLine: [{ x: 0, y: 0 }, { x: 4000, y: 0 }], thickness: 120,
+    },
+    {
+      type: "zone", id: contractId(8), name: "Zone", tags: [], floorId, layerId,
+      transform, locked: false,
+      polygon: [{ x: 0, y: 0 }, { x: 2000, y: 0 }, { x: 2000, y: 1000 }, { x: 0, y: 1000 }],
+      purpose: "display", color: "#5f8f96",
+    },
+    {
+      type: "space-unit", id: contractId(9), name: "Shop", tags: [], floorId, layerId,
+      transform, locked: false, kind: "shop",
+      footprint: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 1000 }, { x: 0, y: 1000 }],
+    },
+    snapshot.project.entities[0],
+    {
+      type: "poi", id: contractId(10), name: "Entrance", tags: [], floorId, layerId,
+      transform, locked: false, kind: "entrance", radius: 250,
+    },
+  ];
+  snapshot.project.vendors = [{
+    id: contractId(11), name: "Vendor", tags: [], spaceUnitId: contractId(9),
+    externalId: "vendor-1", category: "retail", status: "active",
+  }];
+  snapshot.project.productContents = [{
+    id: contractId(12), name: "Product", tags: [], targetEntityId: contractId(4),
+    description: "Featured product", mediaAssetIds: [contractId(13)],
+  }];
+  snapshot.project.mediaAssets = [{
+    id: contractId(13), name: "Display image", tags: [], assetId: contractId(20), kind: "image",
+  }];
+  snapshot.project.routeNetworks = [{
+    id: contractId(14), name: "Public route", tags: [],
+    nodes: [
+      { id: contractId(15), name: "A", tags: [], position: { x: 0, y: 0 }, floorId, kind: "entrance" },
+      { id: contractId(16), name: "B", tags: [], position: { x: 1000, y: 0 }, floorId, kind: "aisle" },
+    ],
+    edges: [{
+      id: contractId(17), name: "A-B", tags: [], from: contractId(15), to: contractId(16),
+      distance: 1000, bidirectional: true, accessible: true, enabled: true, width: 1200, weight: 1,
+    }],
+  }];
+  snapshot.project.themes = [{
+    id: contractId(18), name: "Theme", tags: [], profile: "market",
+    values: { accent: "#5f8f96", gridSize: 100, showLabels: true },
+  }];
+  snapshot.project.cameraShots = [{
+    id: contractId(19), name: "Overview", tags: [], position: [0, 2000, 3000],
+    target: [0, 0, 0], fieldOfView: 45,
+  }];
+  snapshot.project.storySequences = [{
+    id: contractId(21), name: "Tour", tags: [], cameraShotIds: [contractId(19)], duration: 5,
+  }];
+  return snapshot;
+}
+
+function expectModelIssue(action: () => unknown, code: ModelIssueCode, path: string): void {
+  let thrown: unknown;
+  try { action(); } catch (error) { thrown = error; }
+  expect(thrown).toBeInstanceOf(ModelValidationError);
+  expect(thrown).toMatchObject({ code, path });
+}
+
 describe("core model", () => {
   it.each(["showroom", "market"] as const)("creates a %s project", (profile) => {
     const ids = [
       "00000000-0000-4000-8000-000000000001",
       "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
     ];
     const snapshot = createInitialSnapshot({
       name: "Demo",
@@ -108,7 +213,7 @@ describe("core model", () => {
   it("migrates the current snapshot and rejects newer schema versions", () => {
     const snapshot = createInitialSnapshot({ name: "Demo", profile: "showroom" });
     expect(migrateSnapshot(snapshot)).toEqual(snapshot);
-    expect(() => migrateSnapshot({ ...snapshot, schemaVersion: 2 })).toThrow(
+    expect(() => migrateSnapshot({ ...snapshot, schemaVersion: 3 })).toThrow(
       "UNSUPPORTED_SCHEMA_VERSION",
     );
   });
@@ -202,5 +307,119 @@ describe("core model", () => {
         { now: () => "2026-07-17T00:00:00.000Z", appVersion: "0.1.0" },
       ),
     ).toThrow(/project.id/i);
+  });
+});
+describe("schema v2 validation", () => {
+  it("creates a complete schema-v2 project with one editable default layer", () => {
+    const ids = [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003",
+    ];
+    const snapshot = createInitialSnapshot({ name: "Demo", profile: "showroom", uuid: () => ids.shift()! });
+
+    expect(snapshot).toMatchObject({
+      schemaVersion: 2,
+      project: {
+        floors: [{ layers: [{ id: "00000000-0000-4000-8000-000000000003", visible: true, locked: false }] }],
+        entities: [], vendors: [], productContents: [], mediaAssets: [], routeNetworks: [],
+        themes: [], cameraShots: [], storySequences: [],
+      },
+    });
+    expect(Object.isFrozen(snapshot.project.floors[0]?.layers)).toBe(true);
+  });
+
+  it("reports self-intersecting entity geometry with a stable code and path", () => {
+    const snapshot = createInitialSnapshot({ name: "Demo", profile: "market" });
+    const floor = snapshot.project.floors[0]!;
+    const layer = floor.layers[0]!;
+
+    expectModelIssue(() => parseSnapshotV2({
+      schemaVersion: 2, sequence: 0, checkpointSequence: 0, assets: [],
+      project: {
+        id: "00000000-0000-4000-8000-000000000001", name: "Demo", tags: [], profile: "market",
+        floors: [{ id: floor.id, name: "Floor", tags: [], layers: [{ id: layer.id, name: "Default", tags: [], visible: true, locked: false }] }],
+        entities: [{
+          type: "zone", id: "00000000-0000-4000-8000-000000000010", name: "Crossed", tags: [],
+          floorId: floor.id, layerId: layer.id, locked: false,
+          transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } },
+          polygon: [{ x: 0, y: 0 }, { x: 1000, y: 1000 }, { x: 0, y: 1000 }, { x: 1000, y: 0 }],
+          purpose: "test", color: "#5f8f96",
+        }],
+        vendors: [], productContents: [], mediaAssets: [], routeNetworks: [], themes: [], cameraShots: [], storySequences: [],
+      },
+    }), "SELF_INTERSECTING_POLYGON", "project.entities[0].polygon");
+  });
+
+  it("rejects duplicate UUIDs and invalid entity layer references", () => {
+    const snapshot = createInitialSnapshot({ name: "Demo", profile: "market" });
+    const floor = snapshot.project.floors[0]!;
+    expectModelIssue(() => parseSnapshotV2({ ...snapshot, assets: [{
+      id: floor.id, sha256: "a".repeat(64), relativePath: "assets/x.png", mediaType: "image/png", size: 1,
+    }] }), "DUPLICATE_UUID", "assets[0].id");
+    expectModelIssue(() => parseSnapshotV2({
+      ...snapshot,
+      project: {
+        ...snapshot.project,
+        entities: [{
+          type: "fixture", id: "00000000-0000-4000-8000-000000000010", name: "Display", tags: [],
+          floorId: floor.id, layerId: "00000000-0000-4000-8000-000000000011", locked: false,
+          transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } },
+          kind: "display-case", size: { width: 1000, height: 500 },
+        }],
+      },
+    }), "INVALID_REFERENCE", "project.entities[0].layerId");
+  });
+
+  it("parses and deeply freezes every schema-v2 collection without declaration-order limits", () => {
+    const input = completeSnapshotInput();
+    const parsed = parseSnapshotV2(input);
+
+    expect(parsed).toEqual(input);
+    expect(Object.isFrozen(parsed.project.entities[0]?.transform.translation)).toBe(true);
+    expect(Object.isFrozen(parsed.project.routeNetworks[0]?.edges[0])).toBe(true);
+    expect(Object.isFrozen(parsed.project.themes[0]?.values)).toBe(true);
+    expect(Object.isFrozen(parsed.project.storySequences[0]?.cameraShotIds)).toBe(true);
+  });
+
+  it("round-trips the shared schema-v2 fixture", () => {
+    expect(parseSnapshotV2(snapshotV2Fixture)).toEqual(snapshotV2Fixture);
+  });
+
+  it.each([
+    ["dimension entity", (value: any) => { value.project.entities[0].end.entityId = contractId(99); }, "project.entities[0].end.entityId"],
+    ["vendor space", (value: any) => { value.project.vendors[0].spaceUnitId = contractId(99); }, "project.vendors[0].spaceUnitId"],
+    ["product target", (value: any) => { value.project.productContents[0].targetEntityId = contractId(99); }, "project.productContents[0].targetEntityId"],
+    ["product media", (value: any) => { value.project.productContents[0].mediaAssetIds[0] = contractId(99); }, "project.productContents[0].mediaAssetIds[0]"],
+    ["media asset", (value: any) => { value.project.mediaAssets[0].assetId = contractId(99); }, "project.mediaAssets[0].assetId"],
+    ["route floor", (value: any) => { value.project.routeNetworks[0].nodes[0].floorId = contractId(99); }, "project.routeNetworks[0].nodes[0].floorId"],
+    ["route edge", (value: any) => { value.project.routeNetworks[0].edges[0].to = contractId(99); }, "project.routeNetworks[0].edges[0].to"],
+    ["story shot", (value: any) => { value.project.storySequences[0].cameraShotIds[0] = contractId(99); }, "project.storySequences[0].cameraShotIds[0]"],
+  ])("rejects an invalid %s reference", (_name, mutate, path) => {
+    const input = completeSnapshotInput();
+    mutate(input);
+    expectModelIssue(() => parseSnapshotV2(input), "INVALID_REFERENCE", path);
+  });
+
+  it.each([
+    ["wall thickness", (value: any) => { value.project.entities[2].thickness = 0; }, "project.entities[2].thickness"],
+    ["fixture width", (value: any) => { value.project.entities[5].size.width = 0; }, "project.entities[5].size.width"],
+    ["poi radius", (value: any) => { value.project.entities[6].radius = 0; }, "project.entities[6].radius"],
+    ["route width", (value: any) => { value.project.routeNetworks[0].edges[0].width = 0; }, "project.routeNetworks[0].edges[0].width"],
+    ["story duration", (value: any) => { value.project.storySequences[0].duration = 0; }, "project.storySequences[0].duration"],
+  ])("rejects non-positive %s", (_name, mutate, path) => {
+    const input = completeSnapshotInput();
+    mutate(input);
+    expectModelIssue(() => parseSnapshotV2(input), "INVALID_VALUE", path);
+  });
+
+  it("rejects non-primitive theme values", () => {
+    const input = completeSnapshotInput();
+    input.project.themes[0].values.bad = { executable: true };
+    expectModelIssue(
+      () => parseSnapshotV2(input),
+      "INVALID_TYPE",
+      "project.themes[0].values.bad",
+    );
   });
 });

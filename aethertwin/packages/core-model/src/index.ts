@@ -3,7 +3,6 @@ export {
   createInitialSnapshot,
   createManifest,
   type AssetRecord,
-  type Floor,
   type InitialProjectInput,
   type ProjectManifest,
   type ProjectProfile,
@@ -11,6 +10,52 @@ export {
   type SaveState,
   type SpatialProject,
 } from "./model";
-export { migrateSnapshot, snapshotMigrationRegistry } from "./migrations";
-export { parseManifest } from "./validation";
-export { migrateSnapshot as parseSnapshot } from "./migrations";
+export {
+  identityTransform2D,
+  type Bounds2,
+  type Point2,
+  type Size2,
+  type Spatial3D,
+  type Transform2D,
+} from "./geometry";
+export type {
+  Boundary,
+  DimensionAnchor,
+  DimensionAnnotation,
+  Fixture,
+  FixtureKind,
+  Floor,
+  PlanLayer,
+  PointOfInterest,
+  PointOfInterestKind,
+  ProjectRecordBase,
+  SpaceUnit,
+  SpaceUnitKind,
+  SpatialEntity,
+  SpatialEntityBase,
+  Wall,
+  Zone,
+} from "./spatial-entities";
+export type {
+  CameraShot,
+  MediaAsset,
+  Opening,
+  ProductContent,
+  RouteEdge,
+  RouteNetwork,
+  RouteNode,
+  StorySequence,
+  ThemeConfig,
+  Vendor,
+} from "./content-model";
+export {
+  ModelValidationError,
+  parseManifest,
+  parseSnapshotV2,
+  type ModelIssueCode,
+} from "./validation";
+export {
+  migrateSnapshot,
+  migrateSnapshot as parseSnapshot,
+  snapshotMigrationRegistry,
+} from "./migrations";

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "sequence": 0,
+  "checkpointSequence": 0,
+  "project": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Demo",
+    "tags": [],
+    "profile": "market",
+    "floors": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "Ground Floor",
+        "tags": [],
+        "layers": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "Default",
+            "tags": [],
+            "visible": true,
+            "locked": false
+          }
+        ]
+      }
+    ],
+    "entities": [
+      {
+        "type": "fixture",
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Display Case",
+        "tags": [],
+        "floorId": "00000000-0000-4000-8000-000000000002",
+        "layerId": "00000000-0000-4000-8000-000000000003",
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        },
+        "locked": false,
+        "kind": "display-case",
+        "size": { "width": 1200, "height": 600 }
+      }
+    ],
+    "vendors": [],
+    "productContents": [],
+    "mediaAssets": [],
+    "routeNetworks": [],
+    "themes": [],
+    "cameraShots": [],
+    "storySequences": []
+  },
+  "assets": []
+}
