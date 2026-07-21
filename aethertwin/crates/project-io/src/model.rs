@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const MIN_SUPPORTED_SCHEMA_VERSION: u32 = 1;
 const TYPESCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+const MAX_COLLECTION_JSON_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -42,6 +44,19 @@ pub struct Floor {
     pub id: Uuid,
     pub name: String,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub layers: Vec<PlanLayer>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanLayer {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub visible: bool,
+    pub locked: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -53,6 +68,22 @@ pub struct SpatialProject {
     pub tags: Vec<String>,
     pub profile: ProjectProfile,
     pub floors: Vec<Floor>,
+    #[serde(default)]
+    pub entities: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub vendors: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub product_contents: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub media_assets: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub route_networks: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub themes: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub camera_shots: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub story_sequences: Vec<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -134,7 +165,7 @@ impl ProjectManifest {
         if self.schema_version > CURRENT_SCHEMA_VERSION {
             return Err(ProjectIoError::UnsupportedSchemaVersion);
         }
-        if self.schema_version != CURRENT_SCHEMA_VERSION
+        if self.schema_version < MIN_SUPPORTED_SCHEMA_VERSION
             || !valid_uuid(&self.project_id)
             || self.name.trim().is_empty()
             || self.app_version.trim().is_empty()
@@ -167,7 +198,7 @@ impl ProjectSnapshot {
         if self.schema_version > CURRENT_SCHEMA_VERSION {
             return Err(ProjectIoError::UnsupportedSchemaVersion);
         }
-        if self.schema_version != CURRENT_SCHEMA_VERSION
+        if self.schema_version < MIN_SUPPORTED_SCHEMA_VERSION
             || self.sequence > TYPESCRIPT_MAX_SAFE_INTEGER
             || self.checkpoint_sequence > TYPESCRIPT_MAX_SAFE_INTEGER
             || !valid_uuid(&self.project.id)
@@ -175,9 +206,25 @@ impl ProjectSnapshot {
         {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
+        let mut identities = std::collections::BTreeSet::from([self.project.id]);
+        let mut floor_ids = std::collections::BTreeSet::new();
         for floor in &self.project.floors {
             if !valid_uuid(&floor.id) || floor.name.trim().is_empty() {
                 return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            if !identities.insert(floor.id) || !floor_ids.insert(floor.id) {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            if self.schema_version == 1 && !floor.layers.is_empty() {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            for layer in &floor.layers {
+                if !valid_uuid(&layer.id)
+                    || layer.name.trim().is_empty()
+                    || !identities.insert(layer.id)
+                {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
             }
         }
         for asset in &self.assets {
@@ -190,11 +237,153 @@ impl ProjectSnapshot {
                 || asset.media_type.trim().is_empty()
                 || asset.size > TYPESCRIPT_MAX_SAFE_INTEGER
                 || validate_relative_resource_path(&asset.relative_path).is_err()
+                || !identities.insert(asset.id)
+            {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        let collections = [
+            &self.project.entities,
+            &self.project.vendors,
+            &self.project.product_contents,
+            &self.project.media_assets,
+            &self.project.route_networks,
+            &self.project.themes,
+            &self.project.camera_shots,
+            &self.project.story_sequences,
+        ];
+        if self.schema_version == 1 && collections.iter().any(|collection| !collection.is_empty()) {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        for collection in collections {
+            validate_json_collection(collection)?;
+        }
+        for entity in &self.project.entities {
+            let source = entity
+                .as_object()
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let id_text = source
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let id = parse_contract_uuid(id_text)?;
+            let entity_type = source
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let floor_id_text = source
+                .get("floorId")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let floor_id = parse_contract_uuid(floor_id_text)?;
+            if id.hyphenated().to_string() != id_text
+                || floor_id.hyphenated().to_string() != floor_id_text
+                || entity_type.trim().is_empty()
+                || !floor_ids.contains(&floor_id)
+                || !identities.insert(id)
             {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
         }
         Ok(())
+    }
+}
+
+fn validate_json_collection(values: &[serde_json::Value]) -> Result<(), ProjectIoError> {
+    let mut size = 2usize;
+    for value in values {
+        if !value.is_object() {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        validate_json_value(value)?;
+        size = size
+            .checked_add(
+                serde_json::to_vec(value)
+                    .map_err(|_| ProjectIoError::InvalidProjectStructure)?
+                    .len(),
+            )
+            .and_then(|size| size.checked_add(1))
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        if size > MAX_COLLECTION_JSON_BYTES {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    Ok(())
+}
+
+fn validate_json_value(value: &serde_json::Value) -> Result<(), ProjectIoError> {
+    match value {
+        serde_json::Value::Number(number) => {
+            let max = TYPESCRIPT_MAX_SAFE_INTEGER as i64;
+            let outside_safe_integer_range = if let Some(value) = number.as_i64() {
+                value < -max || value > max
+            } else if let Some(value) = number.as_u64() {
+                value > TYPESCRIPT_MAX_SAFE_INTEGER
+            } else if let Some(value) = number.as_f64() {
+                value.fract() == 0.0 && value.abs() > TYPESCRIPT_MAX_SAFE_INTEGER as f64
+            } else {
+                true
+            };
+            if outside_safe_integer_range {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                validate_json_value(value)?;
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values() {
+                validate_json_value(value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod collection_validation_tests {
+    use super::validate_json_collection;
+    use serde_json::json;
+
+    #[test]
+    fn recursively_accepts_javascript_safe_integer_boundaries() {
+        let values = vec![
+            json!({
+                "nested": {
+                    "values": [
+                        9_007_199_254_740_991_i64,
+                        -9_007_199_254_740_991_i64
+                    ]
+                }
+            }),
+            serde_json::from_str::<serde_json::Value>(
+                r#"{ "positive": 9007199254740991.0, "negative": -9007199254740991.0 }"#,
+            )
+            .unwrap(),
+            serde_json::from_str::<serde_json::Value>(
+                r#"{ "positiveExponent": 9.007199254740991e15, "negativeExponent": -9.007199254740991e15 }"#,
+            )
+            .unwrap(),
+        ];
+
+        validate_json_collection(&values).unwrap();
+    }
+
+    #[test]
+    fn recursively_rejects_integral_numbers_outside_javascript_safe_range() {
+        for value in [
+            json!({ "nested": [{ "value": 9_007_199_254_740_992_u64 }] }),
+            json!({ "nested": [{ "value": -9_007_199_254_740_992_i64 }] }),
+            serde_json::from_str(r#"{ "nested": { "value": 9007199254740992.0 } }"#)
+                .unwrap(),
+        ] {
+            let error = validate_json_collection(&[value]).unwrap_err();
+            assert_eq!(error.code(), "INVALID_PROJECT_STRUCTURE");
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::error::HostError;
 use project_io::{
     AssetRecord, CommitBatch, Floor, JournalAction, JournalOperation, ProjectProfile,
-    ProjectSnapshot, SpatialProject, validate_commit_batch,
+    PlanLayer, ProjectSnapshot, SpatialProject, validate_commit_batch,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -40,6 +40,7 @@ pub struct CommitProjectDto {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CheckpointProjectDto {
     session_id: String,
+    snapshot: ProjectSnapshotDto,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,8 +59,8 @@ impl CommitProjectDto {
 }
 
 impl CheckpointProjectDto {
-    pub(crate) fn into_session_id(self) -> String {
-        self.session_id
+    pub(crate) fn into_native(self) -> Result<(String, ProjectSnapshot), HostError> {
+        Ok((self.session_id, self.snapshot.into_native()?))
     }
 }
 
@@ -125,6 +126,14 @@ struct SpatialProjectDto {
     tags: Vec<String>,
     profile: String,
     floors: Vec<FloorDto>,
+    entities: Vec<Value>,
+    vendors: Vec<Value>,
+    product_contents: Vec<Value>,
+    media_assets: Vec<Value>,
+    route_networks: Vec<Value>,
+    themes: Vec<Value>,
+    camera_shots: Vec<Value>,
+    story_sequences: Vec<Value>,
 }
 
 impl SpatialProjectDto {
@@ -139,6 +148,14 @@ impl SpatialProjectDto {
                 .into_iter()
                 .map(FloorDto::into_native)
                 .collect::<Result<_, _>>()?,
+            entities: self.entities,
+            vendors: self.vendors,
+            product_contents: self.product_contents,
+            media_assets: self.media_assets,
+            route_networks: self.route_networks,
+            themes: self.themes,
+            camera_shots: self.camera_shots,
+            story_sequences: self.story_sequences,
         })
     }
 }
@@ -149,6 +166,7 @@ struct FloorDto {
     id: String,
     name: String,
     tags: Vec<String>,
+    layers: Vec<PlanLayerDto>,
 }
 
 impl FloorDto {
@@ -157,6 +175,33 @@ impl FloorDto {
             id: canonical_uuid(&self.id)?,
             name: self.name,
             tags: self.tags,
+            layers: self
+                .layers
+                .into_iter()
+                .map(PlanLayerDto::into_native)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlanLayerDto {
+    id: String,
+    name: String,
+    tags: Vec<String>,
+    visible: bool,
+    locked: bool,
+}
+
+impl PlanLayerDto {
+    fn into_native(self) -> Result<PlanLayer, HostError> {
+        Ok(PlanLayer {
+            id: canonical_uuid(&self.id)?,
+            name: self.name,
+            tags: self.tags,
+            visible: self.visible,
+            locked: self.locked,
         })
     }
 }

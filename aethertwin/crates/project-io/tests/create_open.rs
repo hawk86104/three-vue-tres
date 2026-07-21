@@ -1,5 +1,6 @@
 use project_io::{
     CreateProjectRequest, ProjectIoError, ProjectProfile, create_project, open_project,
+    snapshot_checksum,
 };
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
@@ -43,6 +44,9 @@ fn creates_and_reopens_both_profiles() {
         assert_eq!(opened.snapshot, reopened.snapshot);
         assert_eq!(opened.manifest.project_id, opened.snapshot.project.id);
         assert_eq!(opened.manifest.profile, opened.snapshot.project.profile);
+        assert_eq!(opened.snapshot.schema_version, 2);
+        assert_eq!(opened.snapshot.project.floors[0].layers.len(), 1);
+        assert!(opened.snapshot.project.entities.is_empty());
         assert!(!reopened.recovered);
     }
 }
@@ -268,12 +272,56 @@ fn rejects_invalid_manifest_fields_and_unsupported_schema() {
     }
 
     let mut newer = original;
-    newer["schemaVersion"] = json!(2);
+    newer["schemaVersion"] = json!(3);
     fs::write(&manifest_path, serde_json::to_vec_pretty(&newer).unwrap()).unwrap();
     assert_code(
         open_project(&opened.project_path).unwrap_err(),
         "UNSUPPORTED_SCHEMA_VERSION",
     );
+}
+
+#[test]
+fn opens_a_coherent_schema_v1_project_for_pre_editor_upgrade() {
+    let root = tempdir().unwrap();
+    let opened = create_project(request(root.path(), "Legacy", ProjectProfile::Market)).unwrap();
+    let manifest_path = opened.project_path.join("manifest.json");
+    let database_path = opened.project_path.join("project.db");
+
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["schemaVersion"] = json!(1);
+    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+
+    let mut snapshot = serde_json::to_value(&opened.snapshot).unwrap();
+    snapshot["schemaVersion"] = json!(1);
+    for floor in snapshot["project"]["floors"].as_array_mut().unwrap() {
+        floor.as_object_mut().unwrap().remove("layers");
+    }
+    for collection in [
+        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
+        "cameraShots", "storySequences",
+    ] {
+        snapshot["project"].as_object_mut().unwrap().remove(collection);
+    }
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let connection = Connection::open(database_path).unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = '1' WHERE key = 'schemaVersion'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2",
+            params![snapshot_json, snapshot_checksum(&snapshot_json)],
+        )
+        .unwrap();
+    drop(connection);
+
+    let legacy = open_project(&opened.project_path).unwrap();
+    assert_eq!(legacy.manifest.schema_version, 1);
+    assert_eq!(legacy.snapshot.schema_version, 1);
+    assert!(legacy.snapshot.project.floors[0].layers.is_empty());
 }
 
 #[test]

@@ -9,7 +9,7 @@ use crate::{
 };
 use project_io::{
     CheckpointResult, CommitBatch, OpenedProject, ProjectManifest, ProjectSession, ProjectSnapshot,
-    SaveState, create_project, open_session, validate_commit_batch,
+    ProjectIoError, SaveState, create_project, open_session, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -220,7 +220,19 @@ impl AppService {
         &self,
         session_id: &str,
     ) -> Result<CheckpointResult, crate::NativeErrorDto> {
-        self.checkpoint_project_for("checkpoint_project", session_id)
+        let snapshot = match (|| {
+            let session = self.lookup_session(validate_session_id(session_id)?)?;
+            let snapshot = session
+                .lock()
+                .map_err(|_| HostError::SessionStateUnavailable)?
+                .snapshot()
+                .clone();
+            Ok::<_, HostError>(snapshot)
+        })() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err(self.render_error("checkpoint_project", error)),
+        };
+        self.checkpoint_project_for("checkpoint_project", session_id, snapshot)
     }
 
     pub(crate) fn checkpoint_request(
@@ -228,20 +240,30 @@ impl AppService {
         operation: &'static str,
         request: CheckpointProjectDto,
     ) -> Result<CheckpointResult, crate::NativeErrorDto> {
-        self.checkpoint_project_for(operation, &request.into_session_id())
+        match request.into_native() {
+            Ok((session_id, snapshot)) => {
+                self.checkpoint_project_for(operation, &session_id, snapshot)
+            }
+            Err(error) => Err(self.render_error(operation, error)),
+        }
     }
 
     fn checkpoint_project_for(
         &self,
         operation: &'static str,
         session_id: &str,
+        snapshot: ProjectSnapshot,
     ) -> Result<CheckpointResult, crate::NativeErrorDto> {
         let result = (|| {
             let session = self.lookup_session(validate_session_id(session_id)?)?;
             let checkpoint = session
                 .lock()
                 .map_err(|_| HostError::SessionStateUnavailable)?
-                .checkpoint()?;
+                .checkpoint(snapshot)
+                .map_err(|error| match error {
+                    ProjectIoError::RecoveryFailed => HostError::SessionRecoveryRequired,
+                    other => HostError::from(other),
+                })?;
             Ok(checkpoint)
         })();
         self.finish(operation, result)

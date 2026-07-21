@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "sequence": 4,
+  "checkpointSequence": 3,
+  "project": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Legacy Demo",
+    "tags": ["quiet"],
+    "profile": "market",
+    "floors": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "Ground Floor",
+        "tags": ["legacy"]
+      }
+    ]
+  },
+  "assets": [
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "relativePath": "assets/legacy.png",
+      "mediaType": "image/png",
+      "size": 12
+    }
+  ]
+}

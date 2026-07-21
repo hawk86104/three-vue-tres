@@ -5,6 +5,7 @@ import {
   type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
+import snapshotV1Fixture from "../../../../fixtures/contracts/snapshot.v1.json";
 import type { ProjectBackend } from "@aethertwin/project-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -135,7 +136,7 @@ describe("TauriProjectBackend", () => {
         },
       ],
       ["commit_project", { payload: { sessionId: SESSION_A, batch } }],
-      ["checkpoint_project", { payload: { sessionId: SESSION_B } }],
+      ["checkpoint_project", { payload: { sessionId: SESSION_B, snapshot: opened.snapshot } }],
       ["close_project", { payload: { sessionId: SESSION_A } }],
       ["close_project", { payload: { sessionId: SESSION_B } }],
     ]);
@@ -159,6 +160,100 @@ describe("TauriProjectBackend", () => {
     expect(invoke.mock.calls).toEqual([
       ["recover_project", { payload: { path: PROJECT_A, confirm: true } }],
       ["close_project", { payload: { sessionId: SESSION_A } }],
+    ]);
+  });
+
+  it("checkpoints a migrated v1 snapshot before exposing the editor session", async () => {
+    const current = fixture();
+    const legacy = {
+      ...current,
+      manifest: {
+        ...current.manifest,
+        schemaVersion: 1,
+        name: snapshotV1Fixture.project.name,
+        profile: snapshotV1Fixture.project.profile,
+      },
+      snapshot: snapshotV1Fixture,
+    };
+    const upgradedManifest = {
+      ...current.manifest,
+      name: snapshotV1Fixture.project.name,
+      profile: snapshotV1Fixture.project.profile,
+    };
+    invoke
+      .mockResolvedValueOnce(legacy)
+      .mockResolvedValueOnce({
+        manifest: upgradedManifest,
+        snapshot: {
+          ...current.snapshot,
+          sequence: snapshotV1Fixture.sequence,
+          checkpointSequence: snapshotV1Fixture.sequence,
+          project: {
+            ...current.snapshot.project,
+            id: snapshotV1Fixture.project.id,
+            name: snapshotV1Fixture.project.name,
+            tags: snapshotV1Fixture.project.tags,
+            profile: snapshotV1Fixture.project.profile,
+            floors: [{
+              ...snapshotV1Fixture.project.floors[0],
+              layers: [{
+                id: "00000000-0000-5000-8000-0000000000a5",
+                name: "默认图层",
+                tags: [],
+                visible: true,
+                locked: false,
+              }],
+            }],
+          },
+          assets: snapshotV1Fixture.assets,
+        },
+      });
+
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    const opened = await backend.openProject(PROJECT_A);
+
+    expect(opened.snapshot.schemaVersion).toBe(2);
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "open_project",
+      "checkpoint_project",
+    ]);
+    expect(invoke.mock.calls[1]?.[1]).toMatchObject({
+      payload: {
+        sessionId: SESSION_A,
+        snapshot: {
+          schemaVersion: 2,
+          sequence: snapshotV1Fixture.sequence,
+          checkpointSequence: snapshotV1Fixture.checkpointSequence,
+        },
+      },
+    });
+  });
+
+  it("closes a v1 session when its upgrade checkpoint fails", async () => {
+    const current = fixture();
+    invoke
+      .mockResolvedValueOnce({
+        ...current,
+        manifest: {
+          ...current.manifest,
+          schemaVersion: 1,
+          name: snapshotV1Fixture.project.name,
+          profile: snapshotV1Fixture.project.profile,
+        },
+        snapshot: snapshotV1Fixture,
+      })
+      .mockRejectedValueOnce(new Error("upgrade failed"))
+      .mockResolvedValueOnce(undefined);
+
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await expect(backend.openProject(PROJECT_A)).rejects.toThrow();
+
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "open_project",
+      "checkpoint_project",
+      "close_project",
     ]);
   });
 
@@ -648,7 +743,7 @@ describe("TauriProjectBackend", () => {
 
   it("runtime-parses authoritative checkpoints, rejects malformed or incoherent results, and keeps the session available", async () => {
     const opened = fixture();
-    const invalidManifest = { ...opened.manifest, schemaVersion: 2 };
+    const invalidManifest = { ...opened.manifest, schemaVersion: 3 };
     const incoherentSnapshot = parseSnapshot({
       ...opened.snapshot,
       project: { ...opened.snapshot.project, name: "Different" },
@@ -669,7 +764,50 @@ describe("TauriProjectBackend", () => {
       snapshot: opened.snapshot,
     });
     expect(invoke).toHaveBeenNthCalledWith(4, "checkpoint_project", {
-      payload: { sessionId: SESSION_A },
+      payload: { sessionId: SESSION_A, snapshot: opened.snapshot },
+    });
+  });
+
+  it("rejects a coherent schema-v1 checkpoint response without losing the active session", async () => {
+    const snapshot = parseSnapshot(snapshotV1Fixture);
+    const manifest = createManifest(snapshot, {
+      appVersion: "0.1.0",
+      now: () => "2026-07-20T00:00:00.000Z",
+    });
+    const opened = {
+      ...fixture(),
+      manifest,
+      snapshot,
+    };
+    const checkpointedSnapshot = parseSnapshot({
+      ...snapshot,
+      checkpointSequence: snapshot.sequence,
+    });
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockResolvedValueOnce({
+        manifest: { ...manifest, schemaVersion: 1 },
+        snapshot: {
+          ...snapshotV1Fixture,
+          checkpointSequence: snapshotV1Fixture.sequence,
+        },
+      })
+      .mockResolvedValueOnce({
+        manifest,
+        snapshot: checkpointedSnapshot,
+      });
+
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    await expect(backend.checkpoint(PROJECT_A, snapshot)).rejects.toThrow(/schemaVersion/i);
+    await expect(backend.checkpoint(PROJECT_A, snapshot)).resolves.toEqual({
+      manifest,
+      snapshot: checkpointedSnapshot,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "checkpoint_project", {
+      payload: { sessionId: SESSION_A, snapshot },
     });
   });
 });

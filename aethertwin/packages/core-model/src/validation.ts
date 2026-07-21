@@ -96,6 +96,16 @@ function schemaVersion(value: unknown, path: string): typeof SCHEMA_VERSION {
   return SCHEMA_VERSION;
 }
 
+function storedManifestSchemaVersion(value: unknown): typeof SCHEMA_VERSION {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    fail("INVALID_VALUE", "schemaVersion", "expected a positive safe integer");
+  }
+  if ((value as number) > SCHEMA_VERSION) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", `expected at most ${SCHEMA_VERSION}`);
+  }
+  return SCHEMA_VERSION;
+}
+
 function parseRecordBase(source: UnknownRecord, path: string, registerId: RegisterId): ProjectRecordBase {
   const id = uuid(source.id, `${path}.id`);
   registerId(id, `${path}.id`);
@@ -541,7 +551,7 @@ function validateReferences(snapshot: ProjectSnapshot): void {
 export function parseManifest(value: unknown): ProjectManifest {
   const source = record(value, "manifest");
   return deepFreeze({
-    schemaVersion: schemaVersion(source.schemaVersion, "schemaVersion"),
+    schemaVersion: storedManifestSchemaVersion(source.schemaVersion),
     projectId: uuid(source.projectId, "projectId"),
     name: nonEmpty(source.name, "name"),
     profile: assertProfile(source.profile, "profile"),

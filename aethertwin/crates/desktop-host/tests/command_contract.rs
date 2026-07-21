@@ -507,6 +507,42 @@ fn real_tauri_invoke_handler_rejects_wrong_unknown_and_invalid_nested_values() {
     )
     .unwrap();
     let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+
+    assert_invalid_ipc(
+        &invoke(
+            &webview,
+            "checkpoint_project",
+            json!({ "payload": { "sessionId": opened.session_id.clone() } }),
+        )
+        .unwrap_err(),
+    );
+    let mut unrelated = opened.snapshot.clone();
+    unrelated.project.id = Uuid::new_v4();
+    let rejected = invoke(
+        &webview,
+        "checkpoint_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id.clone(),
+                "snapshot": unrelated
+            }
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(rejected["code"], "DATABASE_ERROR");
+    let checkpoint = invoke(
+        &webview,
+        "checkpoint_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id.clone(),
+                "snapshot": opened.snapshot.clone()
+            }
+        }),
+    )
+    .unwrap();
+    assert_eq!(checkpoint["snapshot"]["schemaVersion"], 2);
+
     let next = renamed(opened.snapshot.clone(), "Never Applied", 1);
     let batch = rename_batch(&opened.snapshot, &next);
 

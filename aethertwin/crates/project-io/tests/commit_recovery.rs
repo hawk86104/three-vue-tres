@@ -1,10 +1,10 @@
 use project_io::{
     AssetRecord, CommitBatch, CreateProjectRequest, JournalAction, JournalOperation,
-    ProjectIoError, ProjectProfile, ProjectSnapshot, SaveState, create_project, open_session,
-    recover_project,
+    PlanLayer, ProjectIoError, ProjectProfile, ProjectSnapshot, SaveState, create_project,
+    open_session, recover_project,
 };
 use rusqlite::Connection;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::fs;
 use tempfile::tempdir;
 
@@ -67,6 +67,66 @@ fn rename_batch(before: &ProjectSnapshot, after: &ProjectSnapshot) -> CommitBatc
     }
 }
 
+fn deterministic_layer_id(floor_id: uuid::Uuid) -> uuid::Uuid {
+    let mut bytes = *floor_id.as_bytes();
+    bytes[15] ^= 0xa7;
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    uuid::Uuid::from_bytes(bytes)
+}
+
+fn migrate_v1_snapshot(mut snapshot: ProjectSnapshot) -> ProjectSnapshot {
+    snapshot.schema_version = 2;
+    for floor in &mut snapshot.project.floors {
+        floor.layers = vec![PlanLayer {
+            id: deterministic_layer_id(floor.id),
+            name: "默认图层".into(),
+            tags: Vec::new(),
+            visible: true,
+            locked: false,
+        }];
+    }
+    snapshot
+}
+
+fn downgrade_to_v1(opened: &project_io::OpenedProject) -> Vec<u8> {
+    let manifest_path = opened.project_path.join("manifest.json");
+    let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    manifest["schemaVersion"] = json!(1);
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+    fs::write(&manifest_path, &manifest_bytes).unwrap();
+
+    let mut snapshot = serde_json::to_value(&opened.snapshot).unwrap();
+    snapshot["schemaVersion"] = json!(1);
+    for floor in snapshot["project"]["floors"].as_array_mut().unwrap() {
+        floor.as_object_mut().unwrap().remove("layers");
+    }
+    for collection in [
+        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
+        "cameraShots", "storySequences",
+    ] {
+        snapshot["project"].as_object_mut().unwrap().remove(collection);
+    }
+    let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute(
+            "UPDATE project_meta SET value_json = '1' WHERE key = 'schemaVersion'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2",
+            (
+                &snapshot_json,
+                project_io::snapshot_checksum(&snapshot_json),
+            ),
+        )
+        .unwrap();
+    manifest_bytes
+}
+
 #[test]
 fn session_exposes_bound_manifest_and_project_path() {
     let root = tempdir().unwrap();
@@ -101,7 +161,7 @@ fn checkpoint_then_commit(opened: &project_io::OpenedProject) -> ProjectSnapshot
     let initial = session.snapshot().clone();
     let checkpoint = renamed(initial.clone(), "Checkpoint", 1);
     session.commit(rename_batch(&initial, &checkpoint)).unwrap();
-    session.checkpoint().unwrap();
+    session.checkpoint(session.snapshot().clone()).unwrap();
     let checkpoint = session.snapshot().clone();
     let final_snapshot = renamed(checkpoint.clone(), "Final", 2);
     let mut final_batch = rename_batch(&checkpoint, &final_snapshot);
@@ -526,7 +586,7 @@ fn checkpoint_writes_a_checksum_snapshot_and_manifest_cache() {
     let next = renamed(original.clone(), "Checkpoint Name", 1);
     session.commit(rename_batch(&original, &next)).unwrap();
 
-    let checkpoint = session.checkpoint().unwrap();
+    let checkpoint = session.checkpoint(session.snapshot().clone()).unwrap();
     assert_eq!(checkpoint.manifest.name, "Checkpoint Name");
     assert_eq!(checkpoint.snapshot, *session.snapshot());
     assert_eq!(
@@ -553,7 +613,7 @@ fn post_checkpoint_snapshot_can_commit_and_manifest_failure_does_not_publish_it(
     let original = session.snapshot().clone();
     let first = renamed(original.clone(), "First", 1);
     session.commit(rename_batch(&original, &first)).unwrap();
-    let checkpoint = session.checkpoint().unwrap();
+    let checkpoint = session.checkpoint(session.snapshot().clone()).unwrap();
     let second = renamed(checkpoint.snapshot.clone(), "Second", 2);
     let second_batch = CommitBatch {
         before: checkpoint.snapshot.clone(),
@@ -577,12 +637,12 @@ fn post_checkpoint_snapshot_can_commit_and_manifest_failure_does_not_publish_it(
     fs::create_dir(&manifest_path).unwrap();
     let before_failure = session.snapshot().clone();
 
-    assert!(session.checkpoint().is_err());
+    assert!(session.checkpoint(session.snapshot().clone()).is_err());
     assert_eq!(session.snapshot(), &before_failure);
 
     fs::remove_dir(&manifest_path).unwrap();
     fs::write(&manifest_path, manifest_bytes).unwrap();
-    let retry = session.checkpoint().unwrap();
+    let retry = session.checkpoint(session.snapshot().clone()).unwrap();
     assert_eq!(retry.snapshot.checkpoint_sequence, retry.snapshot.sequence);
 }
 
@@ -601,7 +661,7 @@ fn failed_checkpoint_sets_error_and_can_be_retried_after_the_cause_is_removed() 
         )
         .unwrap();
 
-    assert!(session.checkpoint().is_err());
+    assert!(session.checkpoint(session.snapshot().clone()).is_err());
     assert_eq!(session.save_state(), SaveState::Error);
     assert_eq!(session.snapshot().checkpoint_sequence, 0);
     connection
@@ -609,9 +669,132 @@ fn failed_checkpoint_sets_error_and_can_be_retried_after_the_cause_is_removed() 
         .unwrap();
     drop(connection);
 
-    session.checkpoint().unwrap();
+    session.checkpoint(session.snapshot().clone()).unwrap();
     assert_eq!(session.save_state(), SaveState::Saved);
     assert_eq!(session.snapshot().checkpoint_sequence, 1);
+}
+
+#[test]
+fn v1_to_v1_checkpoint_is_rejected_without_changing_durable_or_session_state() {
+    let opened = create("Legacy Same-Version Rejection", ProjectProfile::Market);
+    downgrade_to_v1(&opened);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let snapshot_before = session.snapshot().clone();
+    let manifest_before = session.manifest().clone();
+    let manifest_bytes_before = fs::read(opened.project_path.join("manifest.json")).unwrap();
+    let database_before = sqlite_source_fingerprint(&opened.project_path);
+
+    let error = session.checkpoint(snapshot_before.clone()).unwrap_err();
+
+    assert_code(error, "DATABASE_ERROR");
+    assert_eq!(session.snapshot(), &snapshot_before);
+    assert_eq!(session.manifest(), &manifest_before);
+    assert_eq!(fs::read(opened.project_path.join("manifest.json")).unwrap(), manifest_bytes_before);
+    assert_eq!(sqlite_source_fingerprint(&opened.project_path), database_before);
+}
+
+#[test]
+fn v1_upgrade_publishes_one_coherent_v2_manifest_and_database_pair() {
+    let opened = create("Legacy Upgrade", ProjectProfile::Showroom);
+    downgrade_to_v1(&opened);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let requested = migrate_v1_snapshot(session.snapshot().clone());
+
+    let checkpoint = session.checkpoint(requested).unwrap();
+    assert_eq!(checkpoint.manifest.schema_version, 2);
+    assert_eq!(checkpoint.snapshot.schema_version, 2);
+    assert_eq!(checkpoint.snapshot.checkpoint_sequence, checkpoint.snapshot.sequence);
+    assert_eq!(session.snapshot(), &checkpoint.snapshot);
+    session.close().unwrap();
+
+    let mut reopened = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(reopened.manifest().schema_version, 2);
+    assert_eq!(reopened.snapshot(), &checkpoint.snapshot);
+    reopened.close().unwrap();
+}
+
+#[test]
+fn v1_upgrade_manifest_failure_rolls_back_database_and_keeps_session_on_v1() {
+    let opened = create("Legacy Manifest Failure", ProjectProfile::Showroom);
+    let original_manifest = downgrade_to_v1(&opened);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let requested = migrate_v1_snapshot(session.snapshot().clone());
+    let manifest_path = opened.project_path.join("manifest.json");
+    let preserved = opened.project_path.join("manifest.v1.saved");
+    fs::rename(&manifest_path, &preserved).unwrap();
+    fs::create_dir(&manifest_path).unwrap();
+
+    assert!(session.checkpoint(requested).is_err());
+    assert_eq!(session.snapshot().schema_version, 1);
+
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let database_schema: String = connection
+        .query_row(
+            "SELECT value_json FROM project_meta WHERE key = 'schemaVersion'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let snapshot_json: String = connection
+        .query_row(
+            "SELECT snapshot_json FROM snapshots ORDER BY sequence DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(database_schema, "1");
+    assert_eq!(serde_json::from_str::<Value>(&snapshot_json).unwrap()["schemaVersion"], 1);
+    drop(connection);
+
+    fs::remove_dir(&manifest_path).unwrap();
+    fs::rename(preserved, &manifest_path).unwrap();
+    assert_eq!(fs::read(manifest_path).unwrap(), original_manifest);
+}
+
+#[test]
+fn v1_upgrade_commit_failure_restores_exact_manifest_and_keeps_session_on_v1() {
+    let opened = create("Legacy Commit Failure", ProjectProfile::Market);
+    let original_manifest = downgrade_to_v1(&opened);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE checkpoint_parent(id INTEGER PRIMARY KEY);
+             CREATE TABLE checkpoint_child(
+               parent_id INTEGER REFERENCES checkpoint_parent(id) DEFERRABLE INITIALLY DEFERRED
+             );
+             CREATE TRIGGER fail_checkpoint_commit AFTER UPDATE ON snapshots
+             BEGIN INSERT INTO checkpoint_child(parent_id) VALUES (1); END;",
+        )
+        .unwrap();
+    drop(connection);
+
+    let requested = migrate_v1_snapshot(session.snapshot().clone());
+    assert!(session.checkpoint(requested).is_err());
+    assert_eq!(session.snapshot().schema_version, 1);
+    assert_eq!(
+        fs::read(opened.project_path.join("manifest.json")).unwrap(),
+        original_manifest
+    );
+
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let database_schema: String = connection
+        .query_row(
+            "SELECT value_json FROM project_meta WHERE key = 'schemaVersion'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let snapshot_json: String = connection
+        .query_row(
+            "SELECT snapshot_json FROM snapshots ORDER BY sequence DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(database_schema, "1");
+    assert_eq!(serde_json::from_str::<Value>(&snapshot_json).unwrap()["schemaVersion"], 1);
 }
 
 #[test]

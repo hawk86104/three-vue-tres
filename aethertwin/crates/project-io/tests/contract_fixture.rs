@@ -1,6 +1,6 @@
 use project_io::{
-    AssetRecord, Floor, ProjectIoError, ProjectManifest, ProjectProfile, ProjectSnapshot,
-    SpatialProject,
+    AssetRecord, Floor, PlanLayer, ProjectIoError, ProjectManifest, ProjectProfile,
+    ProjectSnapshot, SpatialProject,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -25,7 +25,7 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
     let floor_id = Uuid::parse_str("00000000-0000-4000-8000-000000000002").unwrap();
     let asset_id = Uuid::parse_str("00000000-0000-4000-8000-000000000003").unwrap();
     let snapshot = ProjectSnapshot {
-        schema_version: 1,
+        schema_version: 2,
         sequence: 4,
         checkpoint_sequence: 3,
         project: SpatialProject {
@@ -37,7 +37,22 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
                 id: floor_id,
                 name: "Floor".into(),
                 tags: Vec::new(),
+                layers: vec![PlanLayer {
+                    id: Uuid::parse_str("00000000-0000-4000-8000-000000000005").unwrap(),
+                    name: "Default".into(),
+                    tags: Vec::new(),
+                    visible: true,
+                    locked: false,
+                }],
             }],
+            entities: Vec::new(),
+            vendors: Vec::new(),
+            product_contents: Vec::new(),
+            media_assets: Vec::new(),
+            route_networks: Vec::new(),
+            themes: Vec::new(),
+            camera_shots: Vec::new(),
+            story_sequences: Vec::new(),
         },
         assets: vec![AssetRecord {
             id: asset_id,
@@ -48,7 +63,7 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
         }],
     };
     let expected = json!({
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "sequence": 4,
         "checkpointSequence": 3,
         "project": {
@@ -59,8 +74,23 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
             "floors": [{
                 "id": "00000000-0000-4000-8000-000000000002",
                 "name": "Floor",
-                "tags": []
-            }]
+                "tags": [],
+                "layers": [{
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "name": "Default",
+                    "tags": [],
+                    "visible": true,
+                    "locked": false
+                }]
+            }],
+            "entities": [],
+            "vendors": [],
+            "productContents": [],
+            "mediaAssets": [],
+            "routeNetworks": [],
+            "themes": [],
+            "cameraShots": [],
+            "storySequences": []
         },
         "assets": [{
             "id": "00000000-0000-4000-8000-000000000003",
@@ -76,6 +106,22 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
         serde_json::from_value::<ProjectSnapshot>(expected).unwrap(),
         snapshot
     );
+}
+
+#[test]
+fn snapshot_fixtures_deserialize_and_v2_preserves_every_collection() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/contracts");
+    let v1: ProjectSnapshot =
+        serde_json::from_slice(&fs::read(fixtures.join("snapshot.v1.json")).unwrap()).unwrap();
+    assert_eq!(v1.schema_version, 1);
+    assert!(v1.project.floors[0].layers.is_empty());
+
+    let source = fs::read(fixtures.join("snapshot.v2.json")).unwrap();
+    let expected: Value = serde_json::from_slice(&source).unwrap();
+    let v2: ProjectSnapshot = serde_json::from_slice(&source).unwrap();
+    assert_eq!(v2.schema_version, 2);
+    assert_eq!(serde_json::to_value(v2).unwrap(), expected);
 }
 
 #[test]

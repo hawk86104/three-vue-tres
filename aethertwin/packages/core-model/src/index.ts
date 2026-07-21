@@ -55,6 +55,7 @@ export {
   type ModelIssueCode,
 } from "./validation";
 export {
+  defaultLayerIdForFloor,
   migrateSnapshot,
   migrateSnapshot as parseSnapshot,
   snapshotMigrationRegistry,

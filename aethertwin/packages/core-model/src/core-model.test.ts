@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import snapshotV1Fixture from "../../../fixtures/contracts/snapshot.v1.json";
 import snapshotV2Fixture from "../../../fixtures/contracts/snapshot.v2.json";
 import {
   CURRENT_SCHEMA_VERSION,
   createManifest,
   createInitialSnapshot,
+  defaultLayerIdForFloor,
   identityTransform2D,
   migrateSnapshot,
   ModelValidationError,
@@ -216,6 +218,30 @@ describe("core model", () => {
     expect(() => migrateSnapshot({ ...snapshot, schemaVersion: 3 })).toThrow(
       "UNSUPPORTED_SCHEMA_VERSION",
     );
+  });
+
+  it("parses a stored v1 manifest as current without changing timestamps", () => {
+    const parsed = parseManifest({ ...validManifest, schemaVersion: 1 });
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.createdAt).toBe(validManifest.createdAt);
+    expect(parsed.updatedAt).toBe(validManifest.updatedAt);
+    expect(() => parseManifest({ ...validManifest, schemaVersion: 3 })).toThrow(
+      /schemaVersion|unsupported/i,
+    );
+  });
+
+  it("migrates a v1 snapshot without inventing authoring content", () => {
+    const v1 = snapshotV1Fixture;
+    const migrated = migrateSnapshot(v1);
+    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.sequence).toBe(v1.sequence);
+    expect(migrated.checkpointSequence).toBe(v1.checkpointSequence);
+    expect(migrated.project.id).toBe(v1.project.id);
+    expect(migrated.project.floors[0]!.layers).toEqual([{
+      id: defaultLayerIdForFloor(v1.project.floors[0]!.id),
+      name: "默认图层", tags: [], visible: true, locked: false,
+    }]);
+    expect(migrated.project.entities).toEqual([]);
   });
 
   it("returns deeply immutable snapshots and manifests from creators and parsers", () => {

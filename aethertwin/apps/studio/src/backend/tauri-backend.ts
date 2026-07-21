@@ -1,6 +1,7 @@
 import {
+  migrateSnapshot,
   parseManifest,
-  parseSnapshot,
+  parseSnapshotV2,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
 import type {
@@ -100,6 +101,15 @@ async function invokeNative<T>(command: string, payload: UnknownRecord): Promise
 
 interface ParsedOpenedProject extends OpenedProject {
   readonly sessionId: string;
+  readonly storedSchemaVersion: number;
+}
+
+function storedSchemaVersion(value: unknown, label: string): number {
+  const source = asRecord(value, label);
+  if (!Number.isSafeInteger(source.schemaVersion)) {
+    throw new Error(`Invalid ${label}.schemaVersion: expected a safe integer`);
+  }
+  return source.schemaVersion as number;
 }
 
 function parseOpenedProject(value: unknown): ParsedOpenedProject {
@@ -112,11 +122,17 @@ function parseOpenedProject(value: unknown): ParsedOpenedProject {
   if (typeof record.recovered !== "boolean") {
     throw new Error("Invalid native opened project response.recovered: expected a boolean");
   }
+  const manifestSchemaVersion = storedSchemaVersion(record.manifest, "native manifest");
+  const snapshotSchemaVersion = storedSchemaVersion(record.snapshot, "native snapshot");
+  if (manifestSchemaVersion !== snapshotSchemaVersion) {
+    throw new Error("Invalid native opened project response: schema versions must match");
+  }
   return Object.freeze({
     sessionId,
+    storedSchemaVersion: snapshotSchemaVersion,
     projectPath,
     manifest: parseManifest(record.manifest),
-    snapshot: parseSnapshot(record.snapshot),
+    snapshot: migrateSnapshot(record.snapshot),
     recovered: record.recovered,
   });
 }
@@ -126,9 +142,22 @@ function parseCheckpointResult(
   expected: ProjectSnapshot,
 ): CheckpointResult {
   const record = asRecord(value, "native checkpoint response");
+  const manifestSchemaVersion = storedSchemaVersion(
+    record.manifest,
+    "native checkpoint manifest",
+  );
+  const snapshotSchemaVersion = storedSchemaVersion(
+    record.snapshot,
+    "native checkpoint snapshot",
+  );
+  if (manifestSchemaVersion !== 2 || snapshotSchemaVersion !== 2) {
+    throw new Error(
+      "Invalid native checkpoint response.schemaVersion: expected manifest and snapshot schemaVersion 2",
+    );
+  }
   const manifest = parseManifest(record.manifest);
-  const snapshot = parseSnapshot(record.snapshot);
-  const expectedWithCheckpoint = parseSnapshot({
+  const snapshot = parseSnapshotV2(record.snapshot);
+  const expectedWithCheckpoint = parseSnapshotV2({
     ...expected,
     checkpointSequence: expected.sequence,
   });
@@ -207,7 +236,7 @@ export class TauriProjectBackend implements ProjectBackend {
   ): Promise<CheckpointResult> {
     return this.enqueue(async () => {
       const sessionId = this.requireSession(projectPath);
-      const response = await invokeNative<unknown>("checkpoint_project", { sessionId });
+      const response = await invokeNative<unknown>("checkpoint_project", { sessionId, snapshot });
       return parseCheckpointResult(response, snapshot);
     });
   }
@@ -238,9 +267,31 @@ export class TauriProjectBackend implements ProjectBackend {
   }
 
   private async acceptOpenedProject(value: unknown): Promise<OpenedProject> {
-    let parsed: ParsedOpenedProject;
     try {
-      parsed = parseOpenedProject(value);
+      let parsed = parseOpenedProject(value);
+      if (parsed.storedSchemaVersion === 1) {
+        const upgraded = parseCheckpointResult(
+          await invokeNative<unknown>("checkpoint_project", {
+            sessionId: parsed.sessionId,
+            snapshot: parsed.snapshot,
+          }),
+          parsed.snapshot,
+        );
+        parsed = Object.freeze({
+          ...parsed,
+          manifest: upgraded.manifest,
+          snapshot: upgraded.snapshot,
+          storedSchemaVersion: upgraded.snapshot.schemaVersion,
+        });
+      }
+
+      this.sessions.set(parsed.projectPath, parsed.sessionId);
+      return Object.freeze({
+        projectPath: parsed.projectPath,
+        manifest: parsed.manifest,
+        snapshot: parsed.snapshot,
+        recovered: parsed.recovered,
+      });
     } catch (error) {
       const sessionId = trustedSessionId(value);
       if (sessionId !== null) {
@@ -252,14 +303,6 @@ export class TauriProjectBackend implements ProjectBackend {
       }
       throw error;
     }
-
-    this.sessions.set(parsed.projectPath, parsed.sessionId);
-    return Object.freeze({
-      projectPath: parsed.projectPath,
-      manifest: parsed.manifest,
-      snapshot: parsed.snapshot,
-      recovered: parsed.recovered,
-    });
   }
 
   private requireSession(projectPath: string): string {

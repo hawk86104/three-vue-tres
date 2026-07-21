@@ -1,7 +1,7 @@
 use crate::lock::ProjectLock;
 use crate::model::{
-    CURRENT_SCHEMA_VERSION, CommitBatch, Floor, JournalAction, JournalOperation, SaveState,
-    parse_contract_uuid,
+    CURRENT_SCHEMA_VERSION, CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer,
+    SaveState, parse_contract_uuid,
 };
 use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
@@ -141,6 +141,7 @@ pub struct ProjectSession {
     project_path: std::path::PathBuf,
     snapshot: ProjectSnapshot,
     manifest: ProjectManifest,
+    manifest_bytes: Vec<u8>,
     save_state: SaveState,
     connection: Option<Connection>,
     lock: Option<ProjectLock>,
@@ -246,10 +247,21 @@ pub fn open_session(
     } else {
         SaveState::Dirty
     };
+    let manifest_bytes = match fs::read(lock.bound_path().join("manifest.json")) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            drop(connection);
+            if !lock.stale_recovered() {
+                let _ = lock.clean_close();
+            }
+            return Err(error.into());
+        }
+    };
     Ok(ProjectSession {
         project_path: opened_result.project_path,
         snapshot: opened_result.snapshot,
         manifest: opened_result.manifest,
+        manifest_bytes,
         save_state,
         connection: Some(connection),
         lock: Some(lock),
@@ -348,31 +360,53 @@ impl ProjectSession {
         Ok(())
     }
 
-    pub fn checkpoint(&mut self) -> Result<CheckpointResult, ProjectIoError> {
+    pub fn checkpoint(
+        &mut self,
+        requested: ProjectSnapshot,
+    ) -> Result<CheckpointResult, ProjectIoError> {
         self.save_state = SaveState::Saving;
-        let result = self.checkpoint_inner();
+        let result = validate_checkpoint_request(&self.snapshot, &requested)
+            .and_then(|()| self.checkpoint_inner(requested));
         if result.is_err() {
             self.save_state = SaveState::Error;
         }
         result
     }
 
-    fn checkpoint_inner(&mut self) -> Result<CheckpointResult, ProjectIoError> {
+    fn checkpoint_inner(
+        &mut self,
+        requested: ProjectSnapshot,
+    ) -> Result<CheckpointResult, ProjectIoError> {
         if self.closed {
             return Err(ProjectIoError::DatabaseError);
         }
         self.ensure_connection()?;
-        let mut checkpoint = self.snapshot.clone();
+        let mut checkpoint = requested;
         checkpoint.checkpoint_sequence = checkpoint.sequence;
         checkpoint.validate()?;
         let snapshot_json =
             serde_json::to_string(&checkpoint).map_err(|_| ProjectIoError::DatabaseError)?;
         let updated_at = timestamp_now();
+        let mut manifest = self.manifest.clone();
+        manifest.schema_version = checkpoint.schema_version;
+        manifest.name = checkpoint.project.name.clone();
+        manifest.updated_at = updated_at.clone();
+        manifest.validate()?;
+        let published_manifest = serialize_manifest(&manifest)?;
+        let io_path = self
+            .lock
+            .as_ref()
+            .ok_or(ProjectIoError::FilesystemError)?
+            .bound_path()
+            .to_owned();
+        let previous_manifest = self.manifest_bytes.clone();
         let connection = self
             .connection
             .as_mut()
             .ok_or(ProjectIoError::DatabaseError)?;
         let transaction = connection.transaction()?;
+        write_entity_records(&transaction, &checkpoint)?;
+        write_asset_records(&transaction, &checkpoint)?;
         transaction.execute(
             "INSERT INTO snapshots(sequence, snapshot_json, checksum, created_at)
              VALUES (?1, ?2, ?3, ?4)
@@ -388,23 +422,24 @@ impl ProjectSession {
             ],
         )?;
         upsert_meta(&transaction, "lastCheckpointSequence", &checkpoint.sequence)?;
+        upsert_meta(&transaction, "schemaVersion", &checkpoint.schema_version)?;
         upsert_meta(&transaction, "name", &checkpoint.project.name)?;
         upsert_meta(&transaction, "updatedAt", &updated_at)?;
         upsert_meta(&transaction, "cleanShutdown", &false)?;
-        transaction.commit()?;
-
-        let mut manifest = self.manifest.clone();
-        manifest.name = checkpoint.project.name.clone();
-        manifest.updated_at = updated_at;
-        manifest.validate()?;
-        let io_path = self
-            .lock
-            .as_ref()
-            .ok_or(ProjectIoError::FilesystemError)?
-            .bound_path();
-        write_manifest_atomically(io_path, &manifest)?;
+        publish_manifest_with_restore(
+            &io_path,
+            &published_manifest,
+            &previous_manifest,
+        )?;
+        if transaction.commit().is_err() {
+            if write_manifest_bytes_atomically(&io_path, &previous_manifest).is_err() {
+                return Err(ProjectIoError::RecoveryFailed);
+            }
+            return Err(ProjectIoError::DatabaseError);
+        }
         self.snapshot = checkpoint.clone();
         self.manifest = manifest.clone();
+        self.manifest_bytes = published_manifest;
         self.save_state = SaveState::Saved;
         Ok(CheckpointResult {
             manifest,
@@ -426,7 +461,9 @@ impl ProjectSession {
     }
 
     fn close_inner(&mut self) -> Result<(), ProjectIoError> {
-        self.checkpoint_inner()?;
+        if self.snapshot.schema_version == CURRENT_SCHEMA_VERSION {
+            self.checkpoint_inner(self.snapshot.clone())?;
+        }
         let connection = self
             .connection
             .as_ref()
@@ -468,6 +505,70 @@ impl Drop for ProjectSession {
         self.connection.take();
         // ProjectLock::drop releases only the OS lock; crash metadata is intentionally retained.
     }
+}
+
+fn validate_checkpoint_request(
+    current: &ProjectSnapshot,
+    requested: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    current.validate()?;
+    requested.validate()?;
+    if current == requested && current.schema_version == CURRENT_SCHEMA_VERSION {
+        return Ok(());
+    }
+    if current.schema_version != 1
+        || requested.schema_version != 2
+        || current.sequence != requested.sequence
+        || current.checkpoint_sequence != requested.checkpoint_sequence
+        || current.project.id != requested.project.id
+        || current.project.name != requested.project.name
+        || current.project.tags != requested.project.tags
+        || current.project.profile != requested.project.profile
+        || current.assets != requested.assets
+        || current.project.floors.len() != requested.project.floors.len()
+        || !requested.project.entities.is_empty()
+        || !requested.project.vendors.is_empty()
+        || !requested.project.product_contents.is_empty()
+        || !requested.project.media_assets.is_empty()
+        || !requested.project.route_networks.is_empty()
+        || !requested.project.themes.is_empty()
+        || !requested.project.camera_shots.is_empty()
+        || !requested.project.story_sequences.is_empty()
+    {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    for (before, after) in current
+        .project
+        .floors
+        .iter()
+        .zip(&requested.project.floors)
+    {
+        let expected_layer = PlanLayer {
+            id: default_layer_id_for_floor(before.id),
+            name: "默认图层".into(),
+            tags: Vec::new(),
+            visible: true,
+            locked: false,
+        };
+        if before.id != after.id
+            || before.name != after.name
+            || before.tags != after.tags
+            || !before.layers.is_empty()
+            || after.layers.len() != 1
+            || after.layers.first() != Some(&expected_layer)
+        {
+            return Err(ProjectIoError::DatabaseError);
+        }
+    }
+    Ok(())
+}
+
+fn default_layer_id_for_floor(floor_id: Uuid) -> Uuid {
+    let mut bytes = *floor_id.as_bytes();
+    bytes[15] ^= 0xa7;
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
 }
 
 pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> {
@@ -605,6 +706,42 @@ fn write_entity_records(
                 snapshot.project.id.hyphenated().to_string(),
                 sequence_i64(snapshot.sequence)?,
                 serde_json::to_string(floor).map_err(|_| ProjectIoError::DatabaseError)?,
+            ],
+        )?;
+    }
+    let mut entity_ids = BTreeSet::new();
+    for entity in &snapshot.project.entities {
+        let source = entity
+            .as_object()
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let id = source
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let entity_type = source
+            .get("type")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(ProjectIoError::DatabaseError)?;
+        let floor_id = source
+            .get("floorId")
+            .and_then(Value::as_str)
+            .ok_or(ProjectIoError::DatabaseError)?;
+        if parse_contract_uuid(id).is_err()
+            || parse_contract_uuid(floor_id).is_err()
+            || !entity_ids.insert(id)
+        {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        connection.execute(
+            "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                id,
+                entity_type,
+                floor_id,
+                sequence_i64(snapshot.sequence)?,
+                serde_json::to_string(entity).map_err(|_| ProjectIoError::DatabaseError)?,
             ],
         )?;
     }
@@ -929,6 +1066,33 @@ fn validate_entity_invariants(
                 ),
             );
         }
+        for entity in &snapshot.project.entities {
+            let source = entity
+                .as_object()
+                .ok_or(ProjectIoError::RecoveryFailed)?;
+            let id = source
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or(ProjectIoError::RecoveryFailed)?;
+            let entity_type = source
+                .get("type")
+                .and_then(Value::as_str)
+                .ok_or(ProjectIoError::RecoveryFailed)?;
+            let floor_id = source
+                .get("floorId")
+                .and_then(Value::as_str)
+                .ok_or(ProjectIoError::RecoveryFailed)?;
+            expected.insert(
+                id.to_owned(),
+                (
+                    entity_type.to_owned(),
+                    Some(floor_id.to_owned()),
+                    sequence_i64(snapshot.sequence)?,
+                    serde_json::to_string(entity)
+                        .map_err(|_| ProjectIoError::RecoveryFailed)?,
+                ),
+            );
+        }
         if actual_entities != expected {
             return Err(ProjectIoError::RecoveryFailed);
         }
@@ -995,7 +1159,22 @@ fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSna
                 id: Uuid::new_v4(),
                 name: "一层".into(),
                 tags: Vec::new(),
+                layers: vec![PlanLayer {
+                    id: Uuid::new_v4(),
+                    name: "默认图层".into(),
+                    tags: Vec::new(),
+                    visible: true,
+                    locked: false,
+                }],
             }],
+            entities: Vec::new(),
+            vendors: Vec::new(),
+            product_contents: Vec::new(),
+            media_assets: Vec::new(),
+            route_networks: Vec::new(),
+            themes: Vec::new(),
+            camera_shots: Vec::new(),
+            story_sequences: Vec::new(),
         },
         assets: Vec::new(),
     }
@@ -1030,26 +1209,96 @@ pub(crate) fn write_manifest_atomically(
     project_path: &Path,
     manifest: &ProjectManifest,
 ) -> Result<(), ProjectIoError> {
+    write_manifest_bytes_atomically(project_path, &serialize_manifest(manifest)?)
+}
+
+fn serialize_manifest(manifest: &ProjectManifest) -> Result<Vec<u8>, ProjectIoError> {
+    let mut bytes = serde_json::to_vec_pretty(manifest)
+        .map_err(|_| ProjectIoError::FilesystemError)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+fn write_manifest_bytes_atomically(
+    project_path: &Path,
+    bytes: &[u8],
+) -> Result<(), ProjectIoError> {
+    write_manifest_bytes_with_state(project_path, bytes).map_err(|failure| failure.error)
+}
+
+struct ManifestPublicationFailure {
+    error: ProjectIoError,
+    replaced: bool,
+}
+
+fn write_manifest_bytes_with_state(
+    project_path: &Path,
+    bytes: &[u8],
+) -> Result<(), ManifestPublicationFailure> {
     let temporary = project_path.join(format!("manifest.json.tmp-{}", Uuid::new_v4()));
     let destination = project_path.join("manifest.json");
+    let mut replaced = false;
     let result = (|| {
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary)?;
-        serde_json::to_writer_pretty(&mut file, manifest)
-            .map_err(|_| ProjectIoError::FilesystemError)?;
-        file.write_all(b"\n")?;
+        file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
-        let replace_existing = path_entry_exists(&destination);
-        replace_file_atomically(&temporary, &destination, replace_existing)?;
+        replace_file_atomically(&temporary, &destination, path_entry_exists(&destination))?;
+        replaced = true;
+        fail_after_manifest_replace_for_test()?;
         sync_directory(project_path)
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temporary);
     }
-    result
+    result.map_err(|error| ManifestPublicationFailure { error, replaced })
+}
+
+fn publish_manifest_with_restore(
+    project_path: &Path,
+    published: &[u8],
+    previous: &[u8],
+) -> Result<(), ProjectIoError> {
+    match write_manifest_bytes_with_state(project_path, published) {
+        Ok(()) => Ok(()),
+        Err(publication_failure) => {
+            if publication_failure.replaced
+                && write_manifest_bytes_atomically(project_path, previous).is_err()
+            {
+                return Err(ProjectIoError::RecoveryFailed);
+            }
+            Err(publication_failure.error)
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static FAIL_AFTER_MANIFEST_REPLACE: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
+#[cfg(test)]
+fn fail_next_manifest_directory_sync() {
+    FAIL_AFTER_MANIFEST_REPLACE.with(|fail| fail.set(true));
+}
+
+#[cfg(test)]
+fn fail_after_manifest_replace_for_test() -> Result<(), ProjectIoError> {
+    FAIL_AFTER_MANIFEST_REPLACE.with(|fail| {
+        if fail.replace(false) {
+            Err(ProjectIoError::FilesystemError)
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[cfg(not(test))]
+fn fail_after_manifest_replace_for_test() -> Result<(), ProjectIoError> {
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1110,4 +1359,111 @@ fn replace_file_atomically(
         return Err(ProjectIoError::FilesystemError);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod checkpoint_publication_tests {
+    use super::{
+        default_layer_id_for_floor, fail_next_manifest_directory_sync, open_session,
+    };
+    use crate::{
+        CreateProjectRequest, PlanLayer, ProjectProfile, create_project, snapshot_checksum,
+    };
+    use rusqlite::{Connection, params};
+    use serde_json::{Value, json};
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn post_replace_directory_sync_failure_restores_v1_manifest_and_rolls_back_database() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_path_buf(),
+            name: "Post Replace Failure".into(),
+            profile: ProjectProfile::Showroom,
+        })
+        .unwrap();
+        let manifest_path = opened.project_path.join("manifest.json");
+        let mut manifest: Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["schemaVersion"] = json!(1);
+        let previous_manifest = serde_json::to_vec_pretty(&manifest).unwrap();
+        fs::write(&manifest_path, &previous_manifest).unwrap();
+
+        let mut snapshot = serde_json::to_value(&opened.snapshot).unwrap();
+        snapshot["schemaVersion"] = json!(1);
+        for floor in snapshot["project"]["floors"].as_array_mut().unwrap() {
+            floor.as_object_mut().unwrap().remove("layers");
+        }
+        for collection in [
+            "entities",
+            "vendors",
+            "productContents",
+            "mediaAssets",
+            "routeNetworks",
+            "themes",
+            "cameraShots",
+            "storySequences",
+        ] {
+            snapshot["project"].as_object_mut().unwrap().remove(collection);
+        }
+        let snapshot_json = serde_json::to_string(&snapshot).unwrap();
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        connection
+            .execute(
+                "UPDATE project_meta SET value_json = '1' WHERE key = 'schemaVersion'",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2",
+                params![snapshot_json, snapshot_checksum(&snapshot_json)],
+            )
+            .unwrap();
+        drop(connection);
+
+        let mut session = open_session(&opened.project_path, false).unwrap();
+        let mut requested = session.snapshot().clone();
+        requested.schema_version = 2;
+        for floor in &mut requested.project.floors {
+            floor.layers = vec![PlanLayer {
+                id: default_layer_id_for_floor(floor.id),
+                name: "默认图层".into(),
+                tags: Vec::new(),
+                visible: true,
+                locked: false,
+            }];
+        }
+
+        fail_next_manifest_directory_sync();
+        let error = session.checkpoint(requested).unwrap_err();
+
+        assert_eq!(error.code(), "FILESYSTEM_ERROR");
+        assert_eq!(session.snapshot().schema_version, 1);
+        assert_eq!(
+            fs::read(&manifest_path).unwrap(),
+            previous_manifest
+        );
+        let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+        let database_schema: String = connection
+            .query_row(
+                "SELECT value_json FROM project_meta WHERE key = 'schemaVersion'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let stored_snapshot: String = connection
+            .query_row(
+                "SELECT snapshot_json FROM snapshots ORDER BY sequence DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(database_schema, "1");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_snapshot).unwrap()["schemaVersion"],
+            1
+        );
+    }
 }
