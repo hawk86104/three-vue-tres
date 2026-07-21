@@ -1,0 +1,17 @@
+{
+  "name": "@aethertwin/plan-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. packages/plan-engine/src/units.test.ts packages/plan-engine/src/coordinates.test.ts packages/plan-engine/src/transforms.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aethertwin/core-model": "workspace:*"
+  }
+}

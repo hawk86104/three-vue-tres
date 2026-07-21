@@ -185,6 +185,12 @@ importers:
         specifier: 29.1.1
         version: 29.1.1
 
+  packages/plan-engine:
+    dependencies:
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
+
   packages/project-store:
     dependencies:
       '@aethertwin/command-bus':
