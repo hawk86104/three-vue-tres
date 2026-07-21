@@ -362,10 +362,12 @@ function parseThemeValue(value: unknown, path: string): string | number | boolea
 function parseTheme(value: unknown, path: string, registerId: RegisterId): ThemeConfig {
   const source = record(value, path);
   const valueSource = record(source.values, `${path}.values`);
-  const values: Record<string, string | number | boolean> = {};
-  for (const [key, item] of Object.entries(valueSource)) {
-    values[key] = parseThemeValue(item, `${path}.values.${key}`);
-  }
+  const values = Object.fromEntries(
+    Object.entries(valueSource).map(([key, item]) => [
+      key,
+      parseThemeValue(item, `${path}.values.${key}`),
+    ]),
+  );
   return {
     ...parseRecordBase(source, path, registerId),
     profile: assertProfile(source.profile, `${path}.profile`),
@@ -434,9 +436,52 @@ function requireReference(ids: ReadonlySet<string>, id: string, path: string, de
   if (!ids.has(id)) fail("INVALID_REFERENCE", path, detail);
 }
 
-function validateAnchorReference(anchor: DimensionAnchor, path: string, entityIds: ReadonlySet<string>): void {
-  if (anchor.kind === "entity") {
-    requireReference(entityIds, anchor.entityId, `${path}.entityId`, "unknown entity");
+function validateAnchorReference(
+  anchor: DimensionAnchor,
+  path: string,
+  entitiesById: ReadonlyMap<string, SpatialEntity>,
+): void {
+  if (anchor.kind !== "entity") return;
+
+  const entity = entitiesById.get(anchor.entityId);
+  if (entity === undefined) {
+    fail("INVALID_REFERENCE", `${path}.entityId`, "unknown entity");
+  }
+  if (anchor.locator === "origin") return;
+
+  const locatorPath = "vertex" in anchor.locator
+    ? `${path}.locator.vertex`
+    : `${path}.locator.segment`;
+  let points: readonly Point2[];
+  let closed: boolean;
+  switch (entity.type) {
+    case "boundary":
+    case "zone":
+      points = entity.polygon;
+      closed = true;
+      break;
+    case "space-unit":
+      points = entity.footprint;
+      closed = true;
+      break;
+    case "wall":
+      points = entity.centerLine;
+      closed = false;
+      break;
+    default:
+      fail("INVALID_REFERENCE", locatorPath, `${entity.type} entities only support origin locators`);
+  }
+
+  if ("vertex" in anchor.locator) {
+    if (anchor.locator.vertex >= points.length) {
+      fail("INVALID_REFERENCE", locatorPath, "vertex index is out of range");
+    }
+    return;
+  }
+
+  const segmentCount = closed ? points.length : points.length - 1;
+  if (anchor.locator.segment >= segmentCount) {
+    fail("INVALID_REFERENCE", locatorPath, "segment index is out of range");
   }
 }
 
@@ -446,7 +491,8 @@ function validateReferences(snapshot: ProjectSnapshot): void {
     floor.id,
     new Set(floor.layers.map((layer) => layer.id)),
   ]));
-  const entityIds = new Set(snapshot.project.entities.map((entity) => entity.id));
+  const entitiesById = new Map(snapshot.project.entities.map((entity) => [entity.id, entity]));
+  const entityIds = new Set(entitiesById.keys());
   const spaceUnitIds = new Set(snapshot.project.entities.filter((entity) => entity.type === "space-unit").map((entity) => entity.id));
   const mediaAssetIds = new Set(snapshot.project.mediaAssets.map((asset) => asset.id));
   const assetIds = new Set(snapshot.assets.map((asset) => asset.id));
@@ -460,8 +506,8 @@ function validateReferences(snapshot: ProjectSnapshot): void {
       fail("INVALID_REFERENCE", `${path}.layerId`, "layer does not belong to floor");
     }
     if (entity.type === "dimension") {
-      validateAnchorReference(entity.start, `${path}.start`, entityIds);
-      validateAnchorReference(entity.end, `${path}.end`, entityIds);
+      validateAnchorReference(entity.start, `${path}.start`, entitiesById);
+      validateAnchorReference(entity.end, `${path}.end`, entitiesById);
     }
   });
 

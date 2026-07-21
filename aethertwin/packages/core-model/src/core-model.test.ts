@@ -422,4 +422,26 @@ describe("schema v2 validation", () => {
       "project.themes[0].values.bad",
     );
   });
+
+  it.each([
+    ["out-of-range vertex", (value: any) => { value.project.entities[0].end.locator = { vertex: 4 }; }, "project.entities[0].end.locator.vertex"],
+    ["out-of-range segment", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(7), locator: { segment: 1, t: 0.5 } }; }, "project.entities[0].end.locator.segment"],
+    ["fixture vertex", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(4), locator: { vertex: 0 } }; }, "project.entities[0].end.locator.vertex"],
+    ["poi segment", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(10), locator: { segment: 0, t: 0.5 } }; }, "project.entities[0].end.locator.segment"],
+  ])("rejects an invalid %s dimension locator", (_name, mutate, path) => {
+    const input = completeSnapshotInput();
+    mutate(input);
+    expectModelIssue(() => parseSnapshotV2(input), "INVALID_REFERENCE", path);
+  });
+
+  it("preserves an own __proto__ theme key losslessly", () => {
+    const input = completeSnapshotInput();
+    input.project.themes[0].values = JSON.parse('{"__proto__":"preserved","enabled":true}');
+    const parsed = parseSnapshotV2(input);
+
+    const values = parsed.project.themes[0]!.values;
+    expect(Object.prototype.hasOwnProperty.call(values, "__proto__")).toBe(true);
+    expect(values.__proto__).toBe("preserved");
+    expect(Object.isFrozen(values)).toBe(true);
+  });
 });
