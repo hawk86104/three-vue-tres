@@ -26,6 +26,7 @@ import {
   type InspectorContext,
 } from "./plan-inspector";
 import { PlanToolbar } from "./plan-toolbar";
+import { PlanCanvas } from "./plan-canvas";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -292,10 +293,13 @@ export function PlanEditor({
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
           {dependencies?.workspace?.(workspaceContext) ?? (
-            <div className="studio-plan-workspace__empty">
-              <h2>平面编辑区</h2>
-              <p>使用选择工具检查对象，或从上方选择边界、墙体和空间工具开始绘制。</p>
-            </div>
+            <PlanCanvas
+              snapshot={snapshot}
+              activeFloorId={sessionState.activeFloorId}
+              sessionStore={sessionStore}
+              controller={controller}
+              onError={(error) => setActionError(errorValue(error))}
+            />
           )}
         </div>
       }

@@ -443,6 +443,54 @@ describe("plan editor interaction controller", () => {
     expect([...harness.store.getState().selectedIds]).toEqual([]);
   });
 
+  it.each(["entity-locked", "hidden-layer", "locked-layer"] as const)(
+    "keeps mixed selection atomic when Delete includes an ineligible %s entity",
+    async (kind) => {
+      const base = createPlanEditorTestHarness();
+      const restrictedLayer = {
+        ...base.floorA.layers[0]!,
+        id: "00000000-0000-4000-8000-000000000006",
+        name: "Restricted",
+        visible: kind !== "hidden-layer",
+        locked: kind === "locked-layer",
+      };
+      const ineligible = {
+        ...base.fixture,
+        id: "00000000-0000-4000-8000-000000000011",
+        name: "Ineligible Fixture",
+        layerId: kind === "entity-locked"
+          ? base.fixture.layerId
+          : restrictedLayer.id,
+        locked: kind === "entity-locked",
+        transform: {
+          ...base.fixture.transform,
+          translation: { x: 400, y: 0 },
+        },
+      };
+      const snapshot = parseSnapshotV2({
+        ...base.snapshot,
+        project: {
+          ...base.snapshot.project,
+          floors: base.snapshot.project.floors.map((floor) => (
+            floor.id === base.floorA.id
+              ? { ...floor, layers: [...floor.layers, restrictedLayer] }
+              : floor
+          )),
+          entities: [base.fixture, ineligible],
+        },
+      });
+      const harness = createSnapshotController(snapshot);
+      const selection = [base.fixture.id, ineligible.id];
+      harness.store.getState().setSelection(selection);
+
+      await harness.controller.keyDown("Delete");
+
+      expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+      expect([...harness.store.getState().selectedIds]).toEqual(selection);
+      expect(harness.errors).toEqual([]);
+    },
+  );
+
   it("clears rejected durable previews, preserves selection, and reports once", async () => {
     const harness = createPlanEditorTestHarness();
     const rejection = new Error("persistence rejected");
@@ -923,4 +971,71 @@ describe("plan editor interaction controller", () => {
       }],
     });
   });
+});
+
+describe("InteractionController keyboard grid movement", () => {
+  it.each([
+    ["ArrowLeft", { x: -100, y: 0 }],
+    ["ArrowRight", { x: 100, y: 0 }],
+    ["ArrowUp", { x: 0, y: 100 }],
+    ["ArrowDown", { x: 0, y: -100 }],
+  ] as const)("moves one exact grid step for %s", async (key, delta) => {
+    const harness = createPlanEditorTestHarness();
+    harness.store.getState().setSelection([harness.fixture.id]);
+    await harness.controller.keyDown(key);
+    expect(harness.applyPlanEdit).toHaveBeenCalledOnce();
+    expect(harness.applyPlanEdit).toHaveBeenCalledWith({
+      reason: "transform",
+      changes: [{
+        id: harness.fixture.id,
+        before: harness.fixture,
+        after: {
+          ...harness.fixture,
+          transform: {
+            ...harness.fixture.transform,
+            translation: {
+              x: harness.fixture.transform.translation.x + delta.x,
+              y: harness.fixture.transform.translation.y + delta.y,
+            },
+          },
+        },
+      }],
+    });
+  });
+
+  it.each(["entity-locked", "hidden-layer", "locked-layer"] as const)(
+    "does not move an ineligible %s selection",
+    async (kind) => {
+      const base = createPlanEditorTestHarness();
+      const layer = base.floorA.layers[0]!;
+      const snapshot = parseSnapshotV2({
+        ...base.snapshot,
+        project: {
+          ...base.snapshot.project,
+          floors: base.snapshot.project.floors.map((floor) => (
+            floor.id !== base.floorA.id ? floor : {
+              ...floor,
+              layers: floor.layers.map((candidate) => (
+                candidate.id !== layer.id ? candidate : {
+                  ...candidate,
+                  visible: kind === "hidden-layer" ? false : candidate.visible,
+                  locked: kind === "locked-layer" ? true : candidate.locked,
+                }
+              )),
+            }
+          )),
+          entities: base.snapshot.project.entities.map((entity) => (
+            entity.id === base.fixture.id && kind === "entity-locked"
+              ? { ...entity, locked: true }
+              : entity
+          )),
+        },
+      });
+      const harness = createSnapshotController(snapshot);
+      harness.store.getState().setSelection([base.fixture.id]);
+      await harness.controller.keyDown("ArrowRight");
+      expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+      expect(harness.errors).toEqual([]);
+    },
+  );
 });

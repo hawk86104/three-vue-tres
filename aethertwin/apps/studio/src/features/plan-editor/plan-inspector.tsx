@@ -10,9 +10,11 @@ import {
   alignEntities,
   distributeEntities,
   linearArray,
+  parseLength,
   rectangularArray,
   type FloorChange,
   type PlanEditIntent,
+  type PlanIssue,
   type PlanResult,
 } from "@aethertwin/plan-engine";
 import type { ProjectBackend } from "@aethertwin/project-store";
@@ -57,6 +59,26 @@ function parsedTags(value: string): readonly string[] {
         .filter((tag) => tag.length > 0),
     ),
   ];
+}
+
+function positiveLength(value: string): number | null {
+  const parsed = parseLength(value, "mm");
+  return parsed.ok && parsed.value > 0 ? parsed.value : null;
+}
+
+function signedLength(value: string): number | null {
+  const normalized = value.trim();
+  const sign = normalized.startsWith("-")
+    ? -1
+    : 1;
+  const magnitude = normalized.startsWith("-") || normalized.startsWith("+")
+    ? normalized.slice(1)
+    : normalized;
+  if (magnitude.trim().length === 0) return null;
+  const parsed = parseLength(magnitude, "mm");
+  if (!parsed.ok) return null;
+  const result = sign * parsed.value;
+  return Number.isFinite(result) ? result : null;
 }
 
 interface ProjectInspectorProps {
@@ -371,6 +393,21 @@ interface EntityInspectorProps {
   readonly onError: (error: unknown) => void;
 }
 
+type EntityIssueField =
+  | "x"
+  | "y"
+  | "rotation"
+  | "width"
+  | "height"
+  | "thickness"
+  | "radius"
+  | "offset";
+
+interface EntityFieldIssue {
+  readonly field: EntityIssueField;
+  readonly issue: PlanIssue;
+}
+
 function EntityInspector({
   entity,
   floor,
@@ -410,7 +447,27 @@ function EntityInspector({
     && !currentLayer.locked
   );
   const propertiesDisabled = entity.locked || !layerAllowsEdits;
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<EntityFieldIssue | null>(null);
+  const localErrorId = `plan-inspector-entity-error-${useId().replaceAll(":", "")}`;
+
+  function reportFieldIssue(
+    field: EntityIssueField,
+    code: string,
+    message: string,
+  ): void {
+    setLocalError({
+      field,
+      issue: { code, message, entityId: entity.id },
+    });
+  }
+
+  function fieldIssueProps(field: EntityIssueField) {
+    const invalid = localError?.field === field;
+    return {
+      "aria-describedby": invalid ? localErrorId : undefined,
+      "aria-invalid": invalid ? true : undefined,
+    };
+  }
 
   useEffect(() => {
     setName(committedName);
@@ -463,11 +520,20 @@ function EntityInspector({
       return;
     }
 
-    const nextX = Number(x);
-    const nextY = Number(y);
-    const nextRotation = Number(rotation);
-    if (![nextX, nextY, nextRotation].every(Number.isFinite)) {
-      setLocalError("位置和角度必须是有限数字");
+    const nextX = signedLength(x);
+    const nextY = signedLength(y);
+    const normalizedRotation = rotation.trim();
+    const nextRotation = normalizedRotation.length === 0 ? Number.NaN : Number(normalizedRotation);
+    if (nextX === null) {
+      reportFieldIssue("x", "INVALID_LENGTH", "位置和角度必须是有限数字");
+      return;
+    }
+    if (nextY === null) {
+      reportFieldIssue("y", "INVALID_LENGTH", "位置和角度必须是有限数字");
+      return;
+    }
+    if (!Number.isFinite(nextRotation)) {
+      reportFieldIssue("rotation", "INVALID_ROTATION", "位置和角度必须是有限数字");
       return;
     }
 
@@ -485,15 +551,14 @@ function EntityInspector({
     } as SpatialEntity;
 
     if (after.type === "fixture") {
-      const nextWidth = Number(width);
-      const nextHeight = Number(height);
-      if (
-        !Number.isFinite(nextWidth)
-        || !Number.isFinite(nextHeight)
-        || nextWidth <= 0
-        || nextHeight <= 0
-      ) {
-        setLocalError("宽度和高度必须是正数");
+      const nextWidth = positiveLength(width);
+      const nextHeight = positiveLength(height);
+      if (nextWidth === null) {
+        reportFieldIssue("width", "INVALID_LENGTH", "宽度和高度必须是正数");
+        return;
+      }
+      if (nextHeight === null) {
+        reportFieldIssue("height", "INVALID_LENGTH", "宽度和高度必须是正数");
         return;
       }
       after = {
@@ -503,9 +568,9 @@ function EntityInspector({
     }
 
     if (after.type === "wall") {
-      const nextThickness = Number(thickness);
-      if (!Number.isFinite(nextThickness) || nextThickness <= 0) {
-        setLocalError("墙体厚度必须是正数");
+      const nextThickness = positiveLength(thickness);
+      if (nextThickness === null) {
+        reportFieldIssue("thickness", "INVALID_LENGTH", "墙体厚度必须是正数");
         return;
       }
       after = {
@@ -521,9 +586,9 @@ function EntityInspector({
         delete withoutRadius.radius;
         after = withoutRadius;
       } else {
-        const nextRadius = Number(normalizedRadius);
-        if (!Number.isFinite(nextRadius) || nextRadius <= 0) {
-          setLocalError("兴趣点半径必须是正数");
+        const nextRadius = positiveLength(normalizedRadius);
+        if (nextRadius === null) {
+          reportFieldIssue("radius", "INVALID_LENGTH", "兴趣点半径必须是正数");
           return;
         }
         after = {
@@ -534,9 +599,9 @@ function EntityInspector({
     }
 
     if (after.type === "dimension") {
-      const nextOffset = Number(offset);
-      if (!Number.isFinite(nextOffset)) {
-        setLocalError("尺寸偏移必须是有限数字");
+      const nextOffset = signedLength(offset);
+      if (nextOffset === null) {
+        reportFieldIssue("offset", "INVALID_LENGTH", "尺寸偏移必须是有限数字");
         return;
       }
       after = {
@@ -601,7 +666,11 @@ function EntityInspector({
         <div><dt>类型</dt><dd>{entity.type}</dd></div>
       </dl>
       {localError === null ? null : (
-        <StatusNotice tone="error">{localError}</StatusNotice>
+        <StatusNotice
+          id={localErrorId}
+          tone="error"
+          data-issue-code={localError.issue.code}
+        >{localError.issue.message}</StatusNotice>
       )}
       <Field
         label="对象名称"
@@ -613,18 +682,21 @@ function EntityInspector({
         label="对象 X (mm)"
         value={x}
         disabled={propertiesDisabled}
+        {...fieldIssueProps("x")}
         onChange={(event) => setX(event.currentTarget.value)}
       />
       <Field
         label="对象 Y (mm)"
         value={y}
         disabled={propertiesDisabled}
+        {...fieldIssueProps("y")}
         onChange={(event) => setY(event.currentTarget.value)}
       />
       <Field
         label="对象旋转 (°)"
         value={rotation}
         disabled={propertiesDisabled}
+        {...fieldIssueProps("rotation")}
         onChange={(event) => setRotation(event.currentTarget.value)}
       />
       <label className="studio-plan-inspector__select">
@@ -661,12 +733,14 @@ function EntityInspector({
             label="对象宽度 (mm)"
             value={width}
             disabled={propertiesDisabled}
+            {...fieldIssueProps("width")}
             onChange={(event) => setWidth(event.currentTarget.value)}
           />
           <Field
             label="对象高度 (mm)"
             value={height}
             disabled={propertiesDisabled}
+            {...fieldIssueProps("height")}
             onChange={(event) => setHeight(event.currentTarget.value)}
           />
         </>
@@ -676,6 +750,7 @@ function EntityInspector({
           label="墙体厚度 (mm)"
           value={thickness}
           disabled={propertiesDisabled}
+          {...fieldIssueProps("thickness")}
           onChange={(event) => setThickness(event.currentTarget.value)}
         />
       ) : null}
@@ -684,6 +759,7 @@ function EntityInspector({
           label="兴趣点半径 (mm)"
           value={radius}
           disabled={propertiesDisabled}
+          {...fieldIssueProps("radius")}
           onChange={(event) => setRadius(event.currentTarget.value)}
         />
       ) : null}
@@ -692,6 +768,7 @@ function EntityInspector({
           label="尺寸偏移 (mm)"
           value={offset}
           disabled={propertiesDisabled}
+          {...fieldIssueProps("offset")}
           onChange={(event) => setOffset(event.currentTarget.value)}
         />
       ) : null}

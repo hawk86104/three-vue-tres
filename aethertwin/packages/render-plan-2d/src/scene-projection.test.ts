@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import {
   createInitialSnapshot,
   parseSnapshotV2,
@@ -19,9 +21,19 @@ import {
   entityWorldBounds,
   worldToScreen,
 } from "@aethertwin/plan-engine";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { projectScene } from "@aethertwin/render-plan-2d/scene-projection";
 import type { PlanRendererInput } from "./types";
+import { createPlanEditorTestHarness } from "../../../apps/studio/src/features/plan-editor/plan-editor.test-support";
+
+vi.mock("@aethertwin/render-plan-2d", () => ({
+  PixiPlanRenderer: class {
+    async init(): Promise<void> {}
+    update(): void {}
+    resize(): void {}
+    destroy(): void {}
+  },
+}));
 
 const uuid = (value: number): string => (
   `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`
@@ -347,5 +359,86 @@ describe("projectScene", () => {
         point.x >= 0 && point.x <= viewport.width && point.y >= 0 && point.y <= viewport.height
       ))
     ))).toBe(true);
+  });
+});
+
+describe("projectScene 2,000-entity culling fixture", () => {
+  it("projects only intersecting visible active-floor fixture IDs", () => {
+    const harness = createPlanEditorTestHarness();
+    const hiddenLayer: PlanLayer = {
+      id: "00000000-0000-4000-8000-000000000006",
+      name: "Hidden",
+      tags: [],
+      visible: false,
+      locked: false,
+    };
+    const floorA: Floor = {
+      ...harness.floorA,
+      layers: [...harness.floorA.layers, hiddenLayer],
+    };
+    const entities = Array.from({ length: 2_000 }, (_, index) => ({
+      ...harness.fixture,
+      id: `00000000-0000-4000-8001-${index.toString().padStart(12, "0")}`,
+      transform: {
+        ...harness.fixture.transform,
+        translation: {
+          x: (index % 50) * 120,
+          y: Math.floor(index / 50) * 120,
+        },
+      },
+    }));
+    const otherFloor = {
+      ...harness.fixture,
+      id: "00000000-0000-4000-8002-000000000001",
+      name: "Other floor",
+      floorId: harness.floorB.id,
+      layerId: harness.floorB.layers[0]!.id,
+    };
+    const hidden = {
+      ...harness.fixture,
+      id: "00000000-0000-4000-8002-000000000002",
+      name: "Hidden layer",
+      layerId: hiddenLayer.id,
+    };
+    const snapshot = parseSnapshotV2({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project,
+        floors: [floorA, harness.floorB],
+        entities: [...entities, otherFloor, hidden],
+      },
+    });
+    const cullingViewport = {
+      width: 500,
+      height: 500,
+      center: { x: 240, y: 240 },
+      pixelsPerMillimetre: 1,
+    };
+    const expectedIds = entities
+      .filter((entity) => (
+        entity.transform.translation.x - 50 <= 490
+        && entity.transform.translation.x + 50 >= -10
+        && entity.transform.translation.y - 50 <= 490
+        && entity.transform.translation.y + 50 >= -10
+      ))
+      .map((entity) => entity.id)
+      .sort();
+
+    const scene = projectScene({
+      snapshot,
+      activeFloorId: floorA.id,
+      viewport: cullingViewport,
+      selectedIds: new Set<string>(),
+      draft: null,
+    });
+    const actualIds = scene.nodes
+      .filter((node) => node.layer === "content")
+      .map((node) => node.entityId)
+      .sort();
+
+    expect(expectedIds).toHaveLength(25);
+    expect(actualIds).toEqual(expectedIds);
+    expect(actualIds).not.toContain(otherFloor.id);
+    expect(actualIds).not.toContain(hidden.id);
   });
 });

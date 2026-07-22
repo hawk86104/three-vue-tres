@@ -10,12 +10,18 @@ import {
 } from "@aethertwin/core-model";
 import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
 import { ProjectStore, type ProjectStoreState } from "@aethertwin/project-store";
-import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
+import type {
+  PlanPointerEvent,
+  PlanRenderer,
+  PlanRendererEventSink,
+  PlanRendererInput,
+} from "@aethertwin/render-plan-2d";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
 import { createInteractionController } from "./interaction-controller";
 import { PlanEditor, type PlanEditorDependencies } from "./plan-editor";
+import type { PlanCanvasProps } from "./plan-canvas";
 
 export function createPlanEditorTestHarness() {
   const initialIds = [1, 2, 3].map(
@@ -79,6 +85,54 @@ export const pointerAt = (
   type, pointerId: 1, screen: { x, y }, buttons,
   shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
 });
+
+export class FakePlanRenderer implements PlanRenderer {
+  readonly updateInputs: PlanRendererInput[] = [];
+  readonly resizeInputs: Array<readonly [number, number, number]> = [];
+  initCount = 0;
+  destroyCount = 0;
+  initResult: Promise<void> = Promise.resolve();
+  host: HTMLElement | null = null;
+  sink: PlanRendererEventSink | null = null;
+
+  async init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void> {
+    this.initCount += 1;
+    this.host = host;
+    this.sink = sink;
+    await this.initResult;
+  }
+
+  update(input: PlanRendererInput): void {
+    this.updateInputs.push(input);
+  }
+
+  resize(width: number, height: number, resolution: number): void {
+    this.resizeInputs.push([width, height, resolution]);
+  }
+
+  destroy(): void {
+    this.destroyCount += 1;
+  }
+
+  emit(event: PlanPointerEvent): void {
+    if (this.sink === null) throw new Error("Renderer has not initialized");
+    this.sink.handle(event);
+  }
+}
+
+export function createPlanCanvasProps(
+  harness: ReturnType<typeof createPlanEditorTestHarness>,
+  renderer: FakePlanRenderer,
+): PlanCanvasProps {
+  return {
+    snapshot: harness.snapshot,
+    activeFloorId: harness.floorA.id,
+    sessionStore: harness.store,
+    controller: harness.controller,
+    rendererFactory: () => renderer,
+    onError: vi.fn(),
+  };
+}
 
 
 export type InvalidSelectionKind =

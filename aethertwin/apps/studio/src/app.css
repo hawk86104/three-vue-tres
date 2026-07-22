@@ -538,3 +538,59 @@ input {
   grid-template-columns: 1fr 1fr;
   gap: 7px;
 }
+
+.studio-plan-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+}
+
+.studio-plan-canvas:focus-visible {
+  outline: 2px solid var(--aether-accent);
+  outline-offset: -2px;
+}
+
+.studio-plan-canvas > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.studio-plan-accessibility {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 8px;
+  max-width: min(320px, calc(100% - 16px));
+  max-height: min(180px, calc(100% - 16px));
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-sm);
+  background: var(--aether-surface-2);
+  color: var(--aether-text);
+  font-size: 11px;
+}
+
+.studio-plan-accessibility h2,
+.studio-plan-accessibility p,
+.studio-plan-accessibility ul {
+  margin: 0;
+}
+
+.studio-plan-accessibility ul {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.studio-plan-accessibility li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

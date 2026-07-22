@@ -37,7 +37,14 @@ export interface InteractionControllerDeps {
 export interface InteractionController {
   handle(event: PlanPointerEvent): Promise<void>;
   keyDown(
-    key: "Enter" | "Escape" | "Delete",
+    key:
+      | "Enter"
+      | "Escape"
+      | "Delete"
+      | "ArrowLeft"
+      | "ArrowRight"
+      | "ArrowUp"
+      | "ArrowDown",
     modifiers?: { shiftKey?: boolean },
   ): Promise<void>;
   copy(): void;
@@ -969,7 +976,9 @@ export function createInteractionController(
     const context = contextNow();
     const selectionBefore = [...deps.store.getState().selectedIds];
     const entities = selectableEntities(context, new Set(selectionBefore));
-    if (entities.length === 0) return;
+    if (entities.length === 0 || entities.length !== selectionBefore.length) {
+      return;
+    }
     const intent: PlanEditIntent = {
       reason: "delete",
       changes: entities.map((entity) => ({
@@ -1020,6 +1029,33 @@ export function createInteractionController(
         }
         if (key === "Delete") {
           await deleteSelection();
+          return;
+        }
+        if (
+          key === "ArrowLeft"
+          || key === "ArrowRight"
+          || key === "ArrowUp"
+          || key === "ArrowDown"
+        ) {
+          const context = contextNow();
+          const selected = selectableEntities(
+            context,
+            deps.store.getState().selectedIds,
+          );
+          if (selected.length === 0 || selected.length !== selectionBefore.length) return;
+          const delta = key === "ArrowLeft"
+            ? { x: -GRID_SIZE_MILLIMETRES, y: 0 }
+            : key === "ArrowRight"
+              ? { x: GRID_SIZE_MILLIMETRES, y: 0 }
+              : key === "ArrowUp"
+                ? { x: 0, y: GRID_SIZE_MILLIMETRES }
+                : { x: 0, y: -GRID_SIZE_MILLIMETRES };
+          const result = translateEntities(selected, delta);
+          if (!result.ok) {
+            fail(result.issue, selectionBefore);
+            return;
+          }
+          await commit(result.value, selectionBefore);
           return;
         }
         if (

@@ -10,12 +10,30 @@ import {
   type OpenedProject,
 } from "@aethertwin/project-store";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
 import { PlanEditor } from "./plan-editor";
 import { renderPlanEditorFixture } from "./plan-editor.test-support";
 
+vi.mock("@aethertwin/render-plan-2d", () => ({
+  PixiPlanRenderer: class {
+    async init(): Promise<void> {}
+    update(): void {}
+    resize(): void {}
+    destroy(): void {}
+  },
+}));
+
+class PlanEditorResizeObserver {
+  observe(): void {}
+  disconnect(): void {}
+}
+
 const stores: ProjectStore[] = [];
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", PlanEditorResizeObserver);
+});
 
 function track(store: ProjectStore): ProjectStore {
   stores.push(store);
@@ -43,6 +61,7 @@ afterEach(async () => {
   await Promise.allSettled(stores.splice(0).map((store) => store.dispose()));
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("PlanEditor M0 behavior contract", () => {
@@ -1262,5 +1281,127 @@ describe("PlanEditor Inspector draft synchronization", () => {
     });
 
     expect(x).toHaveValue("240");
+  });
+});
+
+describe("PlanEditor exact unit editing", () => {
+  it("parses signed coordinates and fixture dimensions through plan-engine units", async () => {
+    const user = userEvent.setup();
+    const { entities, applyPlanEdit } = renderPlanEditorFixture();
+    const entity = entities[0]!;
+    await user.click(rowByData("data-entity-id", entity.id));
+    for (const [label, value] of [
+      ["对象 X (mm)", "-1.25m"],
+      ["对象 Y (mm)", "+20cm"],
+      ["对象宽度 (mm)", "1.2m"],
+      ["对象高度 (mm)", "35cm"],
+    ] as const) {
+      const field = screen.getByLabelText(label);
+      await user.clear(field);
+      await user.type(field, value);
+    }
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit.mock.calls[0]?.[0]).toEqual({
+      reason: "properties",
+      changes: [{
+        id: entity.id,
+        before: entity,
+        after: expect.objectContaining({
+          transform: expect.objectContaining({ translation: { x: -1250, y: 200 } }),
+          size: { width: 1200, height: 350 },
+        }),
+      }],
+    });
+  });
+
+  it.each([
+    ["wall", "墙体厚度 (mm)", "2.5cm", "thickness", 25],
+    ["poi", "兴趣点半径 (mm)", "0.3m", "radius", 300],
+    ["dimension", "尺寸偏移 (mm)", "-2.5cm", "offset", -25],
+  ] as const)(
+    "parses an exact %s length and emits one properties intent",
+    async (primaryEntityType, label, value, property, expected) => {
+      const user = userEvent.setup();
+      const { entities, applyPlanEdit } = renderPlanEditorFixture({ primaryEntityType });
+      const entity = entities[0]!;
+      await user.click(rowByData("data-entity-id", entity.id));
+      const field = screen.getByLabelText(label);
+      await user.clear(field);
+      await user.type(field, value);
+      await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+      await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+      expect(applyPlanEdit.mock.calls[0]?.[0]).toEqual({
+        reason: "properties",
+        changes: [{
+          id: entity.id,
+          before: entity,
+          after: expect.objectContaining({ [property]: expected }),
+        }],
+      });
+    },
+  );
+
+  it("shows one field-local issue and publishes nothing for an invalid unit", async () => {
+    const user = userEvent.setup();
+    const { entities, applyPlanEdit } = renderPlanEditorFixture();
+    await user.click(rowByData("data-entity-id", entities[0]!.id));
+    const field = screen.getByLabelText("对象 X (mm)");
+    await user.clear(field);
+    await user.type(field, "12px");
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+    const alert = screen.getByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(alert).toHaveTextContent("位置和角度必须是有限数字");
+    expect(alert).toHaveAttribute("data-issue-code", "INVALID_LENGTH");
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveAttribute("aria-describedby", alert.id);
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", "   "],
+  ] as const)(
+    "rejects an %s rotation as a field-local INVALID_ROTATION issue",
+    async (_kind, invalidRotation) => {
+      const user = userEvent.setup();
+      const { entities, applyPlanEdit } = renderPlanEditorFixture();
+      await user.click(rowByData("data-entity-id", entities[0]!.id));
+      const field = screen.getByLabelText("对象旋转 (°)");
+      const apply = screen.getByRole("button", { name: "应用对象属性" });
+
+      await user.clear(field);
+      await user.type(field, "45");
+      await user.click(apply);
+      await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+      await waitFor(() => expect(field).toHaveValue("45"));
+      applyPlanEdit.mockClear();
+
+      fireEvent.change(field, { target: { value: invalidRotation } });
+      await user.click(apply);
+
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent("位置和角度必须是有限数字");
+      expect(alert).toHaveAttribute("data-issue-code", "INVALID_ROTATION");
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveAttribute("aria-describedby", alert.id);
+      expect(applyPlanEdit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps degrees in the form and commits radians in the model", async () => {
+    const user = userEvent.setup();
+    const { entities, applyPlanEdit } = renderPlanEditorFixture();
+    const entity = entities[0]!;
+    await user.click(rowByData("data-entity-id", entity.id));
+    const field = screen.getByLabelText("对象旋转 (°)");
+    await user.clear(field);
+    await user.type(field, "90");
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    const after = applyPlanEdit.mock.calls[0]?.[0].changes[0]?.after;
+    expect(after?.transform.rotation).toBeCloseTo(Math.PI / 2, 12);
+    expect(applyPlanEdit.mock.calls[0]?.[0].reason).toBe("transform");
   });
 });
