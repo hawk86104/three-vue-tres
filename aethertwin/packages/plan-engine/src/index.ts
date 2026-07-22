@@ -15,6 +15,18 @@ export type {
   PlanEditReason,
 } from "./intents";
 export type { PlanIssue, PlanResult } from "./result";
+export {
+  alignEntities,
+  distributeEntities,
+  duplicateEntities,
+  linearArray,
+  rectangularArray,
+  resizeEntities,
+  rotateEntities,
+  translateEntities,
+  type LinearArrayInput,
+  type RectangularArrayInput,
+} from "./operations";
 export { boxSelect, hitTest, type BoxSelectOptions, type HitTestOptions } from "./selection";
 export {
   alignmentGuides,

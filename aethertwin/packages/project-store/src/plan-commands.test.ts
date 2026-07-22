@@ -9,9 +9,11 @@ import {
   type ProductContent,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
-import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
+import { rectangularArray, type FloorChange, type PlanEditIntent } from "@aethertwin/plan-engine";
 import { describe, expect, it } from "vitest";
 import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
+import { ProjectStore } from "./project-store";
+import { SandboxProjectBackend } from "./sandbox-backend";
 
 function fixtureFor(snapshot: ProjectSnapshot, id: string, name = "Fixture"): Fixture {
   const floor = snapshot.project.floors[0]!;
@@ -68,6 +70,51 @@ describe("plan entity patch command", () => {
       ],
     });
     expect(edited.next.project.entities).toEqual([replacement, third]);
+  });
+
+  it("applies a six-object array as one ProjectStore undo unit", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Demo", location: "sandbox", profile: "market" });
+    const source = fixtureFor(
+      store.getState().snapshot!,
+      "00000000-0000-4000-8000-000000000010",
+      "Source",
+    );
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: source.id, before: null, after: source }],
+    });
+    const beforeArray = store.getState().snapshot!;
+    const originalEntitiesJson = JSON.stringify(beforeArray.project.entities);
+    const beforeSequence = beforeArray.sequence;
+    const generatedIds = [11, 12, 13, 14, 15].map(
+      (value) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`,
+    );
+    const queue = [...generatedIds];
+    const array = rectangularArray(
+      [source],
+      { rows: 2, columns: 3, rowGap: 200, columnGap: 300 },
+      () => queue.shift()!,
+    );
+    if (!array.ok) throw new Error(array.issue.message);
+
+    await store.applyPlanEdit(array.value);
+
+    const afterArray = store.getState().snapshot!;
+    expect(afterArray.sequence).toBe(beforeSequence + 1);
+    expect(afterArray.project.entities).toHaveLength(6);
+    const arrayEntitiesJson = JSON.stringify(afterArray.project.entities);
+
+    await store.undo();
+    expect(JSON.stringify(store.getState().snapshot!.project.entities)).toBe(
+      originalEntitiesJson,
+    );
+
+    await store.redo();
+    expect(JSON.stringify(store.getState().snapshot!.project.entities)).toBe(
+      arrayEntitiesJson,
+    );
   });
 
   it("captures a zero-based index and restores an exact middle deletion order", () => {
