@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx apps/studio/src/backend/tauri-backend.test.ts apps/studio/src/features/project-overview/project-overview.test.tsx",
+    "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx apps/studio/src/backend/tauri-backend.test.ts apps/studio/src/features/project-overview/project-overview.test.tsx apps/studio/src/features/plan-editor/editor-session.test.ts apps/studio/src/features/plan-editor/interaction-controller.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "vite build"
   },
@@ -12,7 +12,9 @@
     "@aethertwin/core-model": "workspace:*",
     "@aethertwin/design-system": "workspace:*",
     "@aethertwin/editor-shell": "workspace:*",
+    "@aethertwin/plan-engine": "workspace:*",
     "@aethertwin/project-store": "workspace:*",
+    "@aethertwin/render-plan-2d": "workspace:*",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.2",
     "react": "19.2.7",

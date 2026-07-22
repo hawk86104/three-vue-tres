@@ -81,9 +81,15 @@ importers:
       '@aethertwin/editor-shell':
         specifier: workspace:*
         version: link:../../packages/editor-shell
+      '@aethertwin/plan-engine':
+        specifier: workspace:*
+        version: link:../../packages/plan-engine
       '@aethertwin/project-store':
         specifier: workspace:*
         version: link:../../packages/project-store
+      '@aethertwin/render-plan-2d':
+        specifier: workspace:*
+        version: link:../../packages/render-plan-2d
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1
