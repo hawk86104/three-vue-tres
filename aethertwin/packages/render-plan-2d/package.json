@@ -1,0 +1,20 @@
+{
+  "name": "@aethertwin/render-plan-2d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./scene-projection": "./src/scene-projection.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. packages/render-plan-2d/src/scene-projection.test.ts packages/render-plan-2d/src/pixi-plan-renderer.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aethertwin/core-model": "workspace:*",
+    "@aethertwin/plan-engine": "workspace:*",
+    "pixi.js": "8.19.0"
+  }
+}

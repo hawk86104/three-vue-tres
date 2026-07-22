@@ -12,6 +12,7 @@ This is the M0 direct runtime and build dependency baseline. Package names and p
 | `@tauri-apps/plugin-dialog` | 2.7.2 | MIT OR Apache-2.0 |
 | `@radix-ui/react-dialog` | 1.1.19 | MIT |
 | `lucide-react` | 1.25.0 | ISC |
+| `pixi.js` | 8.19.0 | MIT |
 | `react` | 19.2.7 | MIT |
 | `react-dom` | 19.2.7 | MIT |
 | `zustand` | 5.0.14 | MIT |
