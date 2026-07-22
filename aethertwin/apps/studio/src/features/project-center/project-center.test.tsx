@@ -382,7 +382,9 @@ describe("project center", () => {
       profile: "showroom",
     });
     expect(await screen.findByRole("heading", { name: "桌面展厅" })).toBeVisible();
-    expect(screen.getByRole("main")).toHaveTextContent(/desktop/i);
+    expect(
+      screen.getByRole("complementary", { name: "检查器" }),
+    ).toHaveTextContent(/desktop/i);
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
@@ -510,7 +512,7 @@ describe("project center", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("项目结构无效或不完整");
     expect(alert).toHaveTextContent("native-open-corrupt");
-    expect(screen.queryByRole("heading", { name: "项目概览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("main", { name: "二维平面编辑器" })).not.toBeInTheDocument();
   });
 
   it("persists desktop recent paths in application-local preferences and reopens them after remount", async () => {
@@ -764,7 +766,7 @@ describe("project center", () => {
     await openCreateDialog("showroom");
     await submitName("𠮷".repeat(80));
 
-    expect(await screen.findByRole("heading", { name: "项目概览" })).toBeVisible();
+    expect(await screen.findByRole("main", { name: "二维平面编辑器" })).toBeVisible();
     expect(screen.queryByText("项目名称不能超过 80 个字符")).not.toBeInTheDocument();
   });
 
@@ -776,20 +778,20 @@ describe("project center", () => {
     expect(await screen.findByText("项目名称不能超过 80 个字符")).toBeVisible();
   });
 
-  it("creates a market project through ProjectStore and enters the real EditorShell overview", async () => {
+  it("creates a market project through ProjectStore and enters the real 2D PlanEditor", async () => {
     render(<App forceBackend="sandbox" />);
     await openCreateDialog("market");
     await submitName("夏日市集");
 
     expect(await screen.findByRole("heading", { name: "夏日市集" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "项目概览" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
     expect(within(screen.getByRole("banner")).getByText("market")).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: "项目树" })).getByText("一层")).toBeVisible();
-    expect(within(screen.getByRole("main")).getByText("sandbox://00000000-0000-4000-8000-000000000001")).toBeVisible();
+    expect(within(screen.getByRole("complementary", { name: "检查器" })).getByText("sandbox://00000000-0000-4000-8000-000000000001")).toBeVisible();
     expect(screen.queryByText(/BIM|IoT|3DGS|点云|三维场景/)).not.toBeInTheDocument();
   });
 
-  it("wires overview editing, undo, redo, and save to the real ProjectStore", async () => {
+  it("wires PlanEditor editing, undo, redo, and save to the real ProjectStore", async () => {
     render(<App forceBackend="sandbox" />);
     await openCreateDialog("showroom");
     await submitName("初始展厅");
@@ -860,7 +862,7 @@ describe("project center", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(screen.getByRole("heading", { name: "项目概览" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "可靠展厅" })).toBeVisible();
     const inspector = document.querySelector<HTMLElement>('aside[aria-label="检查器"]');
     expect(inspector).not.toBeNull();

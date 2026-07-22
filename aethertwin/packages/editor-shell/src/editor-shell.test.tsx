@@ -27,6 +27,7 @@ function createProps(
     onSave: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
+    toolbar: <button type="button">选择</button>,
     onClose: vi.fn(),
     tree: <div>一层</div>,
     workspace: <div>项目概览</div>,
@@ -41,10 +42,13 @@ describe("EditorShell", () => {
     (profile) => {
       render(<EditorShell {...createProps({ profile })} />);
 
+      const banner = screen.getByRole("banner");
+      const topbar = banner.querySelector<HTMLElement>(".aether-editor-shell__topbar");
+      expect(topbar).not.toBeNull();
       expect(screen.getByRole("heading", { name: "Demo" })).toBeVisible();
       expect(screen.getByText(profile)).toBeVisible();
       expect(
-        screen.getAllByRole("button").map((button) => button.textContent),
+        within(topbar!).getAllByRole("button").map((button) => button.textContent),
       ).toEqual(["返回", "保存", "撤销", "重做", "关闭"]);
       expect(screen.queryByText("摊位")).not.toBeInTheDocument();
       expect(screen.queryByText("展具")).not.toBeInTheDocument();
@@ -63,6 +67,20 @@ describe("EditorShell", () => {
     expect(within(tree).getByText("一层")).toBeVisible();
     expect(within(workspace).getByText("项目概览")).toBeVisible();
     expect(within(inspector).getByText("检查器内容")).toBeVisible();
+  });
+
+  it("renders the required plan toolbar in a named second header row", () => {
+    render(<EditorShell {...createProps()} />);
+
+    const toolbar = screen.getByRole("toolbar", { name: "平面工具" });
+    expect(within(toolbar).getByRole("button", { name: "选择" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
+    expect(screen.getAllByRole("banner")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "返回" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "保存" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "撤销" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重做" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "关闭" })).toBeVisible();
   });
 
   it("wires every working action callback", () => {

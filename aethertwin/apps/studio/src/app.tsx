@@ -14,7 +14,7 @@ import { ProjectBackendError } from "./backend/project-backend-error";
 import { UiGallery } from "./dev/ui-gallery";
 import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
-import { ProjectOverview } from "./features/project-overview/project-overview";
+import { PlanEditor } from "./features/plan-editor/plan-editor";
 
 class SessionStorage implements KeyValueStorage {
   private readonly values = new Map<string, string>();
@@ -255,7 +255,7 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
 
   if (view === "editor" && state.snapshot !== null && state.projectPath !== null) {
     return (
-      <ProjectOverview
+      <PlanEditor
         store={store}
         backendMode={backend.mode}
         onBeforeClose={recordCurrentProject}

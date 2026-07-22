@@ -1,0 +1,283 @@
+import type {
+  Floor,
+  PlanLayer,
+  ProjectSnapshot,
+  SpatialEntity,
+} from "@aethertwin/core-model";
+import { Button, Field } from "@aethertwin/design-system";
+import type { FloorChange } from "@aethertwin/plan-engine";
+import { useEffect, useState } from "react";
+
+interface LayerTreeItemProps {
+  readonly floor: Floor;
+  readonly layer: PlanLayer;
+  readonly index: number;
+  readonly activeFloor: boolean;
+  readonly entities: readonly SpatialEntity[];
+  readonly selectedIds: ReadonlySet<string>;
+  readonly onSelect: () => void;
+  readonly onEntitySelect: (entityId: string, additive: boolean) => void;
+  readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
+}
+
+function stopPropagation(event: { stopPropagation(): void }) {
+  event.stopPropagation();
+}
+
+function LayerTreeItem({
+  floor,
+  layer,
+  index,
+  activeFloor,
+  entities,
+  selectedIds,
+  onSelect,
+  onEntitySelect,
+  onApplyFloorPatch,
+}: LayerTreeItemProps) {
+  const [name, setName] = useState(layer.name);
+
+  useEffect(() => {
+    setName(layer.name);
+  }, [layer.name]);
+
+  async function changeLayer(nextLayer: PlanLayer) {
+    const layers = [...floor.layers];
+    layers[index] = nextLayer;
+    await onApplyFloorPatch({
+      floorId: floor.id,
+      before: floor,
+      after: { ...floor, layers },
+    });
+  }
+
+  async function move(offset: -1 | 1) {
+    const destination = index + offset;
+    if (destination < 0 || destination >= floor.layers.length) return;
+    const layers = [...floor.layers];
+    const [moved] = layers.splice(index, 1);
+    if (moved === undefined) return;
+    layers.splice(destination, 0, moved);
+    await onApplyFloorPatch({
+      floorId: floor.id,
+      before: floor,
+      after: { ...floor, layers },
+    });
+  }
+
+  async function commitName() {
+    const normalized = name.trim();
+    if (normalized.length === 0 || normalized === layer.name) {
+      setName(layer.name);
+      return;
+    }
+    await changeLayer({ ...layer, name: normalized });
+  }
+
+  return (
+    <li
+      className="studio-floor-tree__layer"
+      role="treeitem"
+      aria-label={layer.name}
+      aria-selected={false}
+      data-layer-id={layer.id}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect();
+      }}
+    >
+      <div className="studio-floor-tree__row studio-floor-tree__layer-row">
+        <button
+          type="button"
+          className="studio-floor-tree__selection studio-floor-tree__layer-selection"
+          aria-label={`选择图层：${layer.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+        >
+          <span className="studio-floor-tree__row-label">{layer.name}</span>
+        </button>
+        <label className="studio-floor-tree__toggle" onClick={stopPropagation}>
+          <input
+            type="checkbox"
+            checked={layer.visible}
+            aria-label={`图层可见：${layer.name}`}
+            onChange={(event) => void changeLayer({
+              ...layer,
+              visible: event.currentTarget.checked,
+            })}
+          />
+          显
+        </label>
+        <label className="studio-floor-tree__toggle" onClick={stopPropagation}>
+          <input
+            type="checkbox"
+            checked={layer.locked}
+            aria-label={`图层锁定：${layer.name}`}
+            onChange={(event) => void changeLayer({
+              ...layer,
+              locked: event.currentTarget.checked,
+            })}
+          />
+          锁
+        </label>
+      </div>
+      <div
+        className="studio-floor-tree__layer-actions"
+        onClick={stopPropagation}
+      >
+        <Field
+          label={`图层名称：${layer.name}`}
+          value={name}
+          onChange={(event) => setName(event.currentTarget.value)}
+          onBlur={() => void commitName()}
+        />
+        <Button
+          variant="ghost"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void commitName()}
+        >
+          {"应用图层名称：" + layer.name}
+        </Button>
+        <div className="studio-floor-tree__order-actions">
+          <Button
+            variant="ghost"
+            disabled={index === 0}
+            onClick={() => void move(-1)}
+          >
+            {"上移图层：" + layer.name}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={index === floor.layers.length - 1}
+            onClick={() => void move(1)}
+          >
+            {"下移图层：" + layer.name}
+          </Button>
+        </div>
+      </div>
+      {activeFloor && layer.visible && entities.length > 0 ? (
+        <ul role="group" className="studio-floor-tree__entities">
+          {entities.map((entity) => (
+            <li
+              key={entity.id}
+              role="treeitem"
+              aria-label={entity.name}
+              aria-selected={selectedIds.has(entity.id)}
+              className={
+                selectedIds.has(entity.id)
+                  ? "studio-floor-tree__entity studio-floor-tree__entity--selected"
+                  : "studio-floor-tree__entity"
+              }
+              data-entity-id={entity.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEntitySelect(entity.id, event.shiftKey);
+              }}
+            >
+              <button
+                type="button"
+                className="studio-floor-tree__selection studio-floor-tree__entity-selection"
+                aria-label={`选择对象：${entity.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEntitySelect(entity.id, event.shiftKey);
+                }}
+              >
+                <span>{entity.name}</span>
+                <small>{entity.type}</small>
+                {entity.locked ? <small>已锁定</small> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+export interface FloorTreeProps {
+  readonly snapshot: ProjectSnapshot;
+  readonly activeFloorId: string;
+  readonly selectedIds: ReadonlySet<string>;
+  readonly onFloorSelect: (floorId: string) => void;
+  readonly onLayerSelect: (floorId: string, layerId: string) => void;
+  readonly onEntitySelect: (entityId: string, additive: boolean) => void;
+  readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
+}
+
+export function FloorTree({
+  snapshot,
+  activeFloorId,
+  selectedIds,
+  onFloorSelect,
+  onLayerSelect,
+  onEntitySelect,
+  onApplyFloorPatch,
+}: FloorTreeProps) {
+  const activeEntities = snapshot.project.entities.filter(
+    (entity) => entity.floorId === activeFloorId,
+  );
+
+  return (
+    <div className="studio-floor-tree">
+      <div className="studio-floor-tree__heading">
+        <h2>楼层和空间</h2>
+        <p>{snapshot.project.name}</p>
+      </div>
+      <ul role="tree" aria-label="楼层和空间" className="studio-floor-tree__root">
+        {snapshot.project.floors.map((floor) => {
+          const active = floor.id === activeFloorId;
+          return (
+            <li
+              key={floor.id}
+              role="treeitem"
+              aria-expanded="true"
+              aria-label={floor.name}
+              aria-selected={active}
+              data-floor-id={floor.id}
+              className={
+                active
+                  ? "studio-floor-tree__floor studio-floor-tree__floor--active"
+                  : "studio-floor-tree__floor"
+              }
+              onClick={() => onFloorSelect(floor.id)}
+            >
+              <button
+                type="button"
+                className="studio-floor-tree__row studio-floor-tree__selection"
+                aria-label={`选择楼层：${floor.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onFloorSelect(floor.id);
+                }}
+              >
+                <span className="studio-floor-tree__row-label">{floor.name}</span>
+                {active ? <small>当前</small> : null}
+              </button>
+              <ul role="group" className="studio-floor-tree__layers">
+                {floor.layers.map((layer, index) => (
+                  <LayerTreeItem
+                    key={layer.id}
+                    floor={floor}
+                    layer={layer}
+                    index={index}
+                    activeFloor={active}
+                    entities={activeEntities.filter(
+                      (entity) => entity.layerId === layer.id,
+                    )}
+                    selectedIds={selectedIds}
+                    onSelect={() => onLayerSelect(floor.id, layer.id)}
+                    onEntitySelect={onEntitySelect}
+                    onApplyFloorPatch={onApplyFloorPatch}
+                  />
+                ))}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}

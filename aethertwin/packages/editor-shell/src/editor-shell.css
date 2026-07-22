@@ -1,7 +1,11 @@
 @import "@aethertwin/design-system/base.css";
 
 .aether-editor-shell {
-  --aether-editor-header-height: 64px;
+  --aether-editor-topbar-height: 64px;
+  --aether-editor-toolbar-height: 54px;
+  --aether-editor-header-height: calc(
+    var(--aether-editor-topbar-height) + var(--aether-editor-toolbar-height)
+  );
   --aether-editor-tree-width: 260px;
   --aether-editor-inspector-width: 320px;
   --aether-editor-region-padding: 16px;
@@ -17,14 +21,29 @@
 }
 
 .aether-editor-shell__header {
-  display: grid;
   height: var(--aether-editor-header-height);
+  border-bottom: 1px solid var(--aether-border);
+  background: var(--aether-surface-1);
+}
+
+.aether-editor-shell__topbar {
+  display: grid;
+  height: var(--aether-editor-topbar-height);
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--aether-border);
-  background: var(--aether-surface-1);
+}
+
+.aether-editor-shell__toolbar {
+  display: flex;
+  min-width: 0;
+  height: var(--aether-editor-toolbar-height);
+  align-items: center;
+  overflow-x: auto;
+  padding: 7px 12px;
+  border-top: 1px solid var(--aether-border);
+  background: var(--aether-surface-2);
 }
 
 .aether-editor-shell__identity,
@@ -66,11 +85,12 @@
 .aether-editor-shell__inspector {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: var(--aether-editor-region-padding);
 }
 
 .aether-editor-shell__tree {
+  overflow: auto;
   border-right: 1px solid var(--aether-border);
   background: var(--aether-surface-1);
 }
@@ -80,6 +100,7 @@
 }
 
 .aether-editor-shell__inspector {
+  overflow: auto;
   border-left: 1px solid var(--aether-border);
   background: var(--aether-surface-1);
 }
