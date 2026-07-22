@@ -1,10 +1,13 @@
 # Architecture
 
-## Implemented M0 graph
+## Implemented M1 graph
 
 ```text
 apps/studio (React)
-  -> packages/core-model + packages/design-system + packages/editor-shell + packages/project-store
+  -> packages/core-model + packages/design-system + packages/editor-shell
+  -> packages/plan-engine + packages/render-plan-2d + packages/project-store
+  -> PlanEditor -> editor session/controller -> plan-engine operations
+  -> PlanCanvas -> render-plan-2d -> PixiJS
   -> packages/editor-shell -> packages/core-model + packages/design-system
   -> packages/project-store -> packages/command-bus + packages/core-model
   -> desktop: apps/studio/src/backend/tauri-backend -> crates/desktop-host -> crates/project-io
@@ -13,7 +16,15 @@ apps/studio (React)
 apps/player -> packages/design-system
 ```
 
-`core-model` owns versioned manifest/snapshot parsing and immutable profile contracts. `command-bus` is the serialized mutation path: a command batch's entity delta, journal rows, and metadata commit together; the next immutable snapshot is published only after that persistence commit. After a durable checkpoint, its queued acknowledgement rebases the current snapshot plus every undo/redo history endpoint to the authoritative checkpoint metadata without changing any sequence or history availability. `project-store` coordinates save, autosave, undo/redo, close, recovery, and app-local recents. Zustand is present in Studio dependencies for transient UI state, not as the project database.
+`core-model` owns schema-v2 manifest/snapshot parsing, deterministic v1-to-v2 migration, immutable profile contracts, floors/layers, six business spatial entities, dimension annotations, and the deferred content records. Plan coordinates are millimetres; stored rotations are radians.
+
+`command-bus` is the serialized mutation path. A command batch's entity delta, generic `plan.entities.patch` journal row, inverse payload, and metadata commit in the same SQLite transaction; the next immutable snapshot is published only after persistence commits. After a durable checkpoint, its queued acknowledgement rebases the current snapshot plus every undo/redo history endpoint to authoritative checkpoint metadata without changing sequence or history availability. `project-store` coordinates save, autosave, undo/redo, close, recovery, and app-local recents. Zustand stores transient UI state only; it is not the project database.
+
+## Unified 2D authoring path
+
+`PlanEditor` publishes one active floor to both the role-based tree/Inspector surface and `PlanCanvas`. The controller normalizes select, pan, boundary, wall, zone, space-unit, fixture, POI, dimension, transform, delete, and rectangular-array intents before they reach ProjectStore. Selection and tool state remain transient in the vanilla Zustand session store.
+
+`render-plan-2d` projects only visible entities owned by the active floor. `PixiPlanRenderer` owns five ordered containers: `grid`, `content`, `annotation`, `overlay`, and `interaction`. Graphics are updated by stable entity keys and explicit renderer lifecycle calls. The canvas also exposes an accessible DOM mirror for selectable entities; it is not a second source of model state. PixiJS is pinned to 8.19.0 and is covered by its MIT notice in `THIRD_PARTY_NOTICES.md`.
 
 The native chain is intentionally narrow. `desktop-host` exposes six typed commands (`create_project`, `open_project`, `commit_project`, `checkpoint_project`, `close_project`, `recover_project`) and returns a safe `{ code, message, details, logRef }` envelope. It keeps a per-session `ProjectSession`; `project-io` is the only layer that creates/opens project directories, owns SQLite, or manages locks and recovery.
 
@@ -31,4 +42,8 @@ Opening a session acquires `.aethertwin.lock`, records `cleanShutdown=false`, an
 
 A clean close checkpoints, writes `cleanShutdown=true`, truncates WAL, closes SQLite, then removes the held lock. Session-producing create/open/recover operations hold a shared lifecycle lease from before disk work through registry publication. Desktop window-close and process-exit events call `close_all` under the exclusive lifecycle lease, which waits for in-flight producers, blocks publication while draining the registry, and confirms the registry is empty before success. Successful shutdown marks the lifecycle closed before releasing the exclusive lease, so waiting or later producers cannot publish; failed shutdown leaves it open after lease release so the user can retry. Registry locks are not held while individual sessions close, successful sessions are removed, failed sessions remain available for retry, and a close failure prevents exit while showing only the sanitized native message and log reference.
 
-M1–M5 work remains future roadmap: unified authoring/2D tools, showroom and market workflows, real Player/media, and hardening must consume these contracts without bypassing CommandBus or duplicating the model.
+## Current boundary
+
+M1 is the implemented unified authoring core. Opening, product content, vendor, route network, theme, camera shot, and story sequence types remain contract-only or deferred. There is no 3D preview, route authoring, data import, export/publish, real Player/media workflow, or browser/GPU performance claim.
+
+M2 is the next milestone. Later workflow, Player/media, and hardening work must consume these contracts without bypassing CommandBus or duplicating the model.

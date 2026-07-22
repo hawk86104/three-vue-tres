@@ -1,7 +1,9 @@
 import {
   createInitialSnapshot,
   createManifest,
+  identityTransform2D,
   parseSnapshot,
+  type Fixture,
   type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
@@ -79,6 +81,61 @@ function renameBatch(
   };
 }
 
+function entityPatchBatch(before: ProjectSnapshot): {
+  readonly batch: Parameters<ProjectBackend["commit"]>[1];
+  readonly entity: Fixture;
+} {
+  const floor = before.project.floors[0]!;
+  const entity: Fixture = {
+    type: "fixture",
+    id: "00000000-0000-4000-8000-000000000010",
+    name: "Native fixture",
+    tags: [],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    locked: false,
+    transform: identityTransform2D,
+    kind: "generic",
+    size: { width: 1_000, height: 500 },
+  };
+  const after = parseSnapshot({
+    ...before,
+    sequence: before.sequence + 1,
+    project: {
+      ...before.project,
+      entities: [...before.project.entities, entity],
+    },
+  });
+  const payload = {
+    reason: "create" as const,
+    changes: [{ id: entity.id, before: null, after: entity }],
+  };
+  return {
+    entity,
+    batch: {
+      before,
+      after,
+      journal: [{
+        sequence: after.sequence,
+        transactionId: "20000000-0000-4000-8000-000000000002",
+        commandType: "plan.entities.patch",
+        payload,
+        inversePayload: {
+          reason: "create",
+          changes: [{
+            id: entity.id,
+            before: entity,
+            after: null,
+            index: before.project.entities.length,
+          }],
+        },
+        action: "apply",
+        timestamp: "2026-07-20T00:00:02.000Z",
+      }],
+    },
+  };
+}
+
 afterEach(() => {
   invoke.mockReset();
   vi.unstubAllEnvs();
@@ -139,6 +196,48 @@ describe("TauriProjectBackend", () => {
       ["checkpoint_project", { payload: { sessionId: SESSION_B, snapshot: opened.snapshot } }],
       ["close_project", { payload: { sessionId: SESSION_A } }],
       ["close_project", { payload: { sessionId: SESSION_B } }],
+    ]);
+  });
+
+  it("passes exact schema-v2 snapshots and generic entity patches through the native command boundary", async () => {
+    const opened = fixture();
+    const { batch, entity } = entityPatchBatch(opened.snapshot);
+    const checkpointed = parseSnapshot({
+      ...batch.after,
+      checkpointSequence: batch.after.sequence,
+    });
+    const checkpointManifest = createManifest(checkpointed, {
+      appVersion: "0.1.0",
+      now: () => "2026-07-20T00:00:03.000Z",
+    });
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ manifest: checkpointManifest, snapshot: checkpointed })
+      .mockResolvedValueOnce(undefined);
+
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    await backend.commit(PROJECT_A, batch);
+    const checkpoint = await backend.checkpoint(PROJECT_A, batch.after);
+    await backend.closeProject(PROJECT_A);
+
+    expect(batch.before.schemaVersion).toBe(2);
+    expect(batch.after.schemaVersion).toBe(2);
+    expect(batch.journal[0]).toMatchObject({
+      commandType: "plan.entities.patch",
+      payload: {
+        reason: "create",
+        changes: [{ id: entity.id, before: null, after: entity }],
+      },
+    });
+    expect(checkpoint).toEqual({ manifest: checkpointManifest, snapshot: checkpointed });
+    expect(invoke.mock.calls).toEqual([
+      ["open_project", { payload: { path: PROJECT_A, recoverStaleLock: false } }],
+      ["commit_project", { payload: { sessionId: SESSION_A, batch } }],
+      ["checkpoint_project", { payload: { sessionId: SESSION_A, snapshot: batch.after } }],
+      ["close_project", { payload: { sessionId: SESSION_A } }],
     ]);
   });
 

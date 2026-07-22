@@ -2,8 +2,13 @@ import { globSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+const runtimePatterns = [
+  "apps/**/*.{ts,tsx,css,html}",
+  "packages/**/*.{ts,tsx,css,html}",
+  "crates/**/src/**/*.rs",
+];
 const runtimeFiles = globSync(
-  ["apps/**/*.{ts,tsx,css,html}", "packages/**/*.{ts,tsx,css,html}"],
+  runtimePatterns,
   {
     exclude: [
       "**/*.test.*",
@@ -19,16 +24,34 @@ const runtimeFiles = globSync(
   },
 );
 
-const urlPattern = /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w])\/\/[^\s"'`)}]+/gi;
+const urlPattern =
+  /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w])\/\/(?:[\p{L}\p{N}]|\[)[^\s"'`)}]*/giu;
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const acceptanceSpec = readFileSync("apps/studio/e2e/m0.spec.ts", "utf8");
 
 function remoteUrls(source) {
   return [...source.matchAll(urlPattern)].filter(([candidate]) => {
-    const url = new URL(candidate.startsWith("//") ? `http:${candidate}` : candidate);
-    return !localHosts.has(url.hostname);
+    try {
+      const url = new URL(candidate.startsWith("//") ? `http:${candidate}` : candidate);
+      return !localHosts.has(url.hostname);
+    } catch {
+      return false;
+    }
   });
 }
+
+test("offline scanning covers every M1 runtime source boundary", () => {
+  const normalized = runtimeFiles.map((file) => file.replaceAll("\\", "/"));
+  for (const prefix of [
+    "apps/studio/src/features/plan-editor/",
+    "packages/plan-engine/src/",
+    "packages/render-plan-2d/src/",
+    "crates/project-io/src/",
+    "crates/desktop-host/src/",
+  ]) {
+    assert.ok(normalized.some((file) => file.startsWith(prefix)), `missing ${prefix}`);
+  }
+});
 
 test("runtime source contains no remote URL or remote CSS import", () => {
   for (const file of runtimeFiles) {
@@ -63,9 +86,16 @@ test("remoteUrls explicitly blocks protocol-relative URLs and string-form remote
     ["//cdn.example/asset.png", "//tiles.example/map.png"],
   );
   assert.deepEqual(
+    remoteUrls(
+      'src="//cdn/assets/x.png" src="//192.0.2.1/assets/x.png" src="//[2001:db8::1]/assets/x.png"',
+    ).map(([url]) => url),
+    ["//cdn/assets/x.png", "//192.0.2.1/assets/x.png", "//[2001:db8::1]/assets/x.png"],
+  );
+  assert.deepEqual(
     remoteUrls('@import "https://fonts.example/theme.css";').map(([url]) => url),
     ["https://fonts.example/theme.css"],
   );
+  assert.deepEqual(remoteUrls("// comment\n//! inner docs\n/// outer docs"), []);
 });
 
 test("Playwright blocks remote HTTP and WebSocket connections", () => {

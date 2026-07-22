@@ -45,9 +45,35 @@ const required = [
   "THIRD_PARTY_NOTICES.md",
 ];
 
-test("required M0 workspace boundaries exist", () => {
+test("required workspace boundaries exist", () => {
   for (const relative of required) {
     assert.ok(existsSync(join(root, relative)), `missing ${relative}`);
+  }
+});
+
+test("M1 plan packages have real manifests and production implementations", () => {
+  for (const entry of [
+    {
+      relative: "packages/plan-engine",
+      implementation: "src/operations.ts",
+    },
+    {
+      relative: "packages/render-plan-2d",
+      implementation: "src/pixi-plan-renderer.ts",
+    },
+  ]) {
+    const manifest = JSON.parse(
+      readFileSync(join(root, entry.relative, "package.json"), "utf8"),
+    );
+    assert.equal(manifest.exports["."], "./src/index.ts");
+    assert.ok(existsSync(join(root, entry.relative, "src/index.ts")));
+    const implementation = readFileSync(
+      join(root, entry.relative, entry.implementation),
+      "utf8",
+    );
+    assert.ok(implementation.trim().length > 0, `${entry.relative} implementation is empty`);
+    assert.equal(existsSync(join(root, entry.relative, ".gitkeep")), false);
+    assert.equal(existsSync(join(root, entry.relative, "src/.gitkeep")), false);
   }
 });
 
@@ -90,9 +116,11 @@ test("architecture preserves transactional and UI-state boundaries", () => {
   assert.match(architecture, /Zustand stores transient UI state only/i);
 });
 
-test("product scope requires the real 2D-first M0 overview", () => {
+test("product scope describes the implemented M1 2D editor", () => {
   const spec = readFileSync(join(root, "docs/PRODUCT_SPEC.md"), "utf8");
 
-  assert.match(spec, /real project overview/i);
   assert.match(spec, /2D-first editor/i);
+  assert.match(spec, /one active floor/i);
+  assert.match(spec, /six editable business entity kinds/i);
+  assert.doesNotMatch(spec, /Until M1 plan editing exists/i);
 });

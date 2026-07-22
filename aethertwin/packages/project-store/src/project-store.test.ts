@@ -1,6 +1,13 @@
 import type { ProjectBackend } from "./backend";
-import { createInitialSnapshot, identityTransform2D, parseSnapshot, type Fixture, type ProjectSnapshot } from "@aethertwin/core-model";
-import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
+import {
+  createInitialSnapshot,
+  identityTransform2D,
+  parseSnapshot,
+  type Boundary,
+  type Fixture,
+  type ProjectSnapshot,
+} from "@aethertwin/core-model";
+import { rectangularArray, type FloorChange, type PlanEditIntent } from "@aethertwin/plan-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ProjectStore,
@@ -811,6 +818,106 @@ describe("ProjectStore", () => {
     expect(store.getState().snapshot?.project.entities).toContainEqual(fixture);
     await store.undo();
     expect(store.getState().snapshot?.project.entities).toEqual([]);
+  });
+
+  it("reopens the exact edited schema-v2 plan after array, undo, redo, and save", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "M1 Demo", location: "sandbox", profile: "market" });
+    const initial = store.getState().snapshot!;
+    const floor = initial.project.floors[0]!;
+    const layer = floor.layers[0]!;
+    const boundary: Boundary = {
+      type: "boundary",
+      id: "00000000-0000-4000-8000-000000000010",
+      name: "Boundary",
+      tags: [],
+      floorId: floor.id,
+      layerId: layer.id,
+      locked: false,
+      transform: identityTransform2D,
+      polygon: [{ x: 0, y: 0 }, { x: 6000, y: 0 }, { x: 6000, y: 4000 }, { x: 0, y: 4000 }],
+    };
+    const fixture: Fixture = {
+      ...fixtureFor(initial, "00000000-0000-4000-8000-000000000011"),
+      transform: {
+        translation: { x: 500, y: 500 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    };
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [
+        { id: boundary.id, before: null, after: boundary },
+        { id: fixture.id, before: null, after: fixture },
+      ],
+    });
+
+    const beforeArray = store.getState().snapshot!;
+    expect(beforeArray.sequence).toBe(initial.sequence + 1);
+    expect(beforeArray.project.entities).toEqual([boundary, fixture]);
+
+    const generatedIds = [12, 13, 14, 15, 16].map(
+      (value) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`,
+    );
+    const cloneTranslations = [
+      { x: 1000, y: 500 },
+      { x: 1500, y: 500 },
+      { x: 500, y: 1000 },
+      { x: 1000, y: 1000 },
+      { x: 1500, y: 1000 },
+    ];
+    const expectedArrayEntities = [
+      boundary,
+      fixture,
+      ...generatedIds.map((id, index) => ({
+        ...fixture,
+        id,
+        transform: {
+          ...fixture.transform,
+          translation: cloneTranslations[index]!,
+        },
+      })),
+    ];
+    const idQueue = [...generatedIds];
+    const result = rectangularArray(
+      [fixture],
+      { rows: 2, columns: 3, rowGap: 500, columnGap: 500 },
+      () => idQueue.shift()!,
+    );
+    if (!result.ok) throw new Error(result.issue.message);
+    expect(idQueue).toEqual([]);
+    await store.applyPlanEdit(result.value);
+
+    const afterArray = store.getState().snapshot!;
+    expect(afterArray.sequence).toBe(beforeArray.sequence + 1);
+    expect(afterArray.checkpointSequence).toBe(beforeArray.checkpointSequence);
+    expect(afterArray.project.entities).toEqual(expectedArrayEntities);
+
+    await store.undo();
+    const undone = store.getState().snapshot!;
+    expect(undone.sequence).toBe(afterArray.sequence + 1);
+    expect(undone.checkpointSequence).toBe(beforeArray.checkpointSequence);
+    expect(undone.project.entities).toEqual([boundary, fixture]);
+    expect(store.getState().canRedo).toBe(true);
+
+    await store.redo();
+
+    const projectPath = store.getState().projectPath!;
+    const expected = store.getState().snapshot!;
+    expect(expected.schemaVersion).toBe(2);
+    expect(expected.sequence).toBe(undone.sequence + 1);
+    expect(expected.checkpointSequence).toBe(beforeArray.checkpointSequence);
+    expect(expected.project.entities).toEqual(expectedArrayEntities);
+    await store.save();
+    await store.close();
+    await store.open(projectPath);
+
+    expect(store.getState().snapshot).toEqual({
+      ...expected,
+      checkpointSequence: expected.sequence,
+    });
   });
 
   it("durably preserves middle entity order across delete undo and redo", async () => {

@@ -1,6 +1,17 @@
 # Roadmap
 
-All milestones M0 through M5 are required stages of the product plan:
+## Current status
+
+- M0 foundation: complete.
+- M1 unified authoring core: complete, with evidence in `M1_REPORT.md`.
+- M2 showroom workflow: next milestone.
+- M3 market workflow: deferred until after M2.
+- M4 Player and media: deferred.
+- M5 hardening and performance profiling: deferred; no M5 performance claim is made by M1.
+
+## Milestone definitions
+
+All milestones M0 through M5 remain required stages of the product plan:
 
 - M0 — Foundation: isolated workspace, shells, project center, persistence, CommandBus, saving, and recovery.
 - M1 — Unified authoring core: model, plan engine, 2D rendering, transforms, snapping, dimensions, arrays, indexing, and undo/redo.

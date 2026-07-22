@@ -2,11 +2,11 @@
 
 ## Isolated workspace
 
-AetherTwin is implemented in the isolated `aethertwin/` workspace because the parent repository contains unrelated applications and uncommitted work. The active M0 workspace contains two apps (`studio`, `player`), five TypeScript packages, and two Rust crates (`project-io`, `desktop-host`).
+AetherTwin is implemented in the isolated `aethertwin/` workspace because the parent repository contains unrelated applications and uncommitted work. The active M1 workspace contains two apps (`studio`, `player`), seven implemented TypeScript packages, and two Rust crates (`project-io`, `desktop-host`). Other named package/crate directories remain explicit future boundaries rather than implementation evidence.
 
 ## Two fixed profiles
 
-M0 accepts only `showroom` and `market`. Profile is validated in both TypeScript and Rust contracts and cannot be changed after creation. Conversion is future migration work, not an M0 action.
+The product accepts only `showroom` and `market`. Profile is validated in both TypeScript and Rust contracts and cannot be changed after creation. Conversion is a future explicit migration workflow, not a hidden profile mutation.
 
 ## Local-first, desktop-first persistence
 
@@ -24,6 +24,18 @@ Native checkpoint returns one authoritative manifest/snapshot envelope. ProjectS
 
 Desktop window close and process exit both attempt `close_all`. Create/open/recover hold a shared lifecycle lease through session publication; `close_all` takes the exclusive lease, waits for those producers, drains the registry, and verifies it is empty before returning success. It records successful shutdown while still exclusive, causing waiting and later producers to fail instead of publishing after the drain. A failed shutdown does not set that closed state and releases the lease for normal production and retry. Each native session is closed without holding the registry lock; successful entries are removed, failures remain retryable, and any failure prevents the requested close/exit while exposing only a sanitized message and log reference.
 
-## Honest M0 UI boundary
+## Schema v2 and deterministic migration
 
-M0 shows project center and overview fields that actually work (name, tags, profile/schema/location/save status, save/undo/redo/close). It does not display deferred authoring, BIM, IoT, point-cloud, 3DGS, export, publish, route, or theme controls. M1–M5 remain roadmap work.
+Schema v2 is the only newly created project format. A schema-v1 project is upgraded deterministically by deriving one default layer per floor and initializing new collections empty. The native checkpoint must persist that exact transition before Studio publishes an editor session. This preserves one migration contract across TypeScript, Tauri, and Rust.
+
+## One model and one durable 2D editing path
+
+The plan tree, canvas, accessible DOM mirror, and Inspector are projections of the same schema-v2 snapshot and transient editor session. They do not own duplicate business models. Studio renders one active floor at a time through the five Pixi layers (`grid`, `content`, `annotation`, `overlay`, `interaction`).
+
+All durable plan changes use generic `plan.entities.patch` or exact floor patches through ProjectStore and CommandBus. Millimetres and radians are the storage contract; explicit input units are normalized at the editor boundary. Undo, redo, arrays, transforms, save, and reopen therefore share the same journal and checkpoint path.
+
+## Honest M1 UI boundary
+
+M1 exposes only working project actions and the nine working 2D tools. The editor does not display BIM, IoT, point-cloud, 3DGS, export, publish, route, import, or 3D-preview controls.
+
+Opening, content, vendor, route, theme, camera, and story records remain contract-only or deferred. Real Player/media, browser/GPU profiling, and M5 performance work are not claimed. M2 is next.

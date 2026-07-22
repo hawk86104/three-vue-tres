@@ -1,6 +1,6 @@
 # Project format
 
-Every editable M0 project is a directory:
+Every editable project is a directory:
 
 ```text
 ProjectName.twinproj/
@@ -13,15 +13,19 @@ ProjectName.twinproj/
   exports/
 ```
 
-The mutable source of truth is `project.db`; `manifest.json` is a lightweight compatibility/identity cache. M0 validates the manifest, database metadata, and latest snapshot together. Identity/schema/profile disagreement returns `MANIFEST_DATABASE_MISMATCH`; a newer manifest version returns `UNSUPPORTED_SCHEMA_VERSION`.
+The mutable source of truth is `project.db`; `manifest.json` is a lightweight compatibility/identity cache. The runtime validates the manifest, database metadata, and latest snapshot together. Identity/schema/profile disagreement returns `MANIFEST_DATABASE_MISMATCH`; a newer manifest version returns `UNSUPPORTED_SCHEMA_VERSION`.
 
 ## Manifest and path rules
 
-The current schema version is 1. A manifest contains `schemaVersion`, UUID `projectId`, `name`, immutable `profile` (`showroom` or `market`), RFC 3339 `createdAt`/`updatedAt`, `appVersion`, and `minCompatibleAppVersion`. The snapshot repeats schema/project/profile identity and carries `sequence` and `checkpointSequence`.
+The current schema version is 2. A manifest contains `schemaVersion`, UUID `projectId`, `name`, immutable `profile` (`showroom` or `market`), RFC 3339 `createdAt`/`updatedAt`, `appVersion`, and `minCompatibleAppVersion`. The snapshot repeats schema/project/profile identity and carries `sequence` and `checkpointSequence`.
 
-Assets use a SHA-256 digest, media type, byte size, metadata JSON, and a normalized project-relative path. Absolute paths, drive-qualified paths, UNC paths, backslashes, and parent traversal are rejected. M0 stores no media BLOB column in SQLite.
+Schema v2 stores floors with explicit layers; six business spatial entity kinds; dimension annotations; and contract collections for vendors, product content, media assets, route networks, themes, camera shots, and story sequences. Spatial coordinates and dimensions are millimetres. Entity transform rotation is radians.
 
-## Exact SQLite v1 schema
+The deterministic schema v1 to schema v2 migration derives one default layer ID from each floor UUID and initializes the new collections empty. TypeScript migrates before parsing the current model. Native project I/O accepts the exact v1-to-v2 checkpoint transition, and the Tauri adapter checkpoints the migrated snapshot before publishing the editor session. A failed upgrade checkpoint closes or retains cleanup ownership of the native session instead of exposing a partially upgraded project.
+
+Assets use a SHA-256 digest, media type, byte size, metadata JSON, and a normalized project-relative path. Absolute paths, drive-qualified paths, UNC paths, backslashes, and parent traversal are rejected. SQLite stores no media BLOB column.
+
+## SQLite storage migration 1 used by project schema v2
 
 SQLite is configured with WAL journal mode, foreign keys on, and a 5,000 ms busy timeout. Migration 1 creates exactly these tables; runtime validation compares the live schema objects with that migration.
 
@@ -34,7 +38,9 @@ SQLite is configured with WAL journal mode, foreign keys on, and a 5,000 ms busy
 | `snapshots` | `sequence INTEGER PRIMARY KEY`, `snapshot_json TEXT NOT NULL`, `checksum TEXT NOT NULL`, `created_at TEXT NOT NULL` |
 | `asset_records` | `id TEXT PRIMARY KEY`, `sha256 TEXT NOT NULL`, `relative_path TEXT NOT NULL`, `media_type TEXT NOT NULL`, `size INTEGER NOT NULL CHECK(size >= 0)`, `metadata_json TEXT NOT NULL` |
 
-`schema_migrations` records version 1 and the SHA-256 checksum of the migration SQL. Initial metadata includes schema/identity/version fields plus `lastCommittedSequence`, `lastCheckpointSequence`, and `cleanShutdown`; initial snapshot JSON is checksummed. Command commits update entity/asset records, append journal rows, and update metadata in one transaction. A checkpoint writes/replaces the current snapshot row and checkpoint/name/time metadata in one database transaction, then atomically refreshes the manifest cache. Its public result is the authoritative `{ manifest, snapshot }` pair, where `snapshot.checkpointSequence === snapshot.sequence`; the native session publishes that pair in memory only after both durable steps succeed.
+`schema_migrations` records storage migration 1 and the SHA-256 checksum of the migration SQL. This storage migration number is independent from the project snapshot schema version. Initial metadata includes schema/identity/version fields plus `lastCommittedSequence`, `lastCheckpointSequence`, and `cleanShutdown`; initial snapshot JSON is checksummed.
+
+The generic `plan.entities.patch` command stores full JSON `before`/`after` entity changes plus the exact inverse payload in `command_journal`; the entity payload remains in `entity_records.payload_json`. Command commits update entity/asset records, append journal rows, and update metadata in one transaction. A checkpoint writes/replaces the current snapshot row and checkpoint/name/time metadata in one database transaction, then atomically refreshes the manifest cache. Its public result is the authoritative `{ manifest, snapshot }` pair, where `snapshot.checkpointSequence === snapshot.sequence`; the native session publishes that pair in memory only after both durable steps succeed.
 
 ## Stable native error codes
 
@@ -44,7 +50,7 @@ SQLite is configured with WAL journal mode, foreign keys on, and a 5,000 ms busy
 | `PROJECT_ALREADY_EXISTS` | Destination already exists and is never overwritten. |
 | `PROJECT_NOT_FOUND` | Requested project root is absent/moved. |
 | `INVALID_PROJECT_STRUCTURE` | Existing project directory, required files, or validated data is invalid. |
-| `UNSUPPORTED_SCHEMA_VERSION` | Project schema is newer than this M0 implementation supports. |
+| `UNSUPPORTED_SCHEMA_VERSION` | Project schema is newer than the current implementation supports. |
 | `MANIFEST_DATABASE_MISMATCH` | Manifest/database/snapshot identity does not agree. |
 | `DATABASE_ERROR` | SQLite operation or invariant failed. |
 | `PROJECT_LOCKED` | Another live session owns the project lock. |

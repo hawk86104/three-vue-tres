@@ -21,7 +21,7 @@ import { vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
 import { createInteractionController } from "./interaction-controller";
 import { PlanEditor, type PlanEditorDependencies } from "./plan-editor";
-import type { PlanCanvasProps } from "./plan-canvas";
+import { PlanCanvas, type PlanCanvasProps } from "./plan-canvas";
 
 export function createPlanEditorTestHarness() {
   const initialIds = [1, 2, 3].map(
@@ -149,6 +149,7 @@ export interface RenderPlanEditorFixtureOptions {
   readonly invalidGeneratedIds?: boolean;
   readonly primaryEntityType?: "fixture" | "wall" | "poi" | "dimension";
   readonly workspace?: PlanEditorDependencies["workspace"];
+  readonly renderer?: FakePlanRenderer;
 }
 
 function fixtureEntity(
@@ -272,8 +273,13 @@ export function renderPlanEditorFixture(
   });
   const listeners = new Set<() => void>();
 
+  function publishState(nextState: ProjectStoreState) {
+    projectState = Object.freeze(nextState);
+    for (const listener of listeners) listener();
+  }
+
   function publish(nextSnapshot: ProjectSnapshot) {
-    projectState = Object.freeze({
+    publishState({
       ...projectState,
       snapshot: nextSnapshot,
       saveState: "dirty",
@@ -281,7 +287,6 @@ export function renderPlanEditorFixture(
       canUndo: true,
       canRedo: false,
     });
-    for (const listener of listeners) listener();
   }
 
   const applyPlanEdit = vi.fn(async (intent: PlanEditIntent) => {
@@ -326,7 +331,10 @@ export function renderPlanEditorFixture(
     applyFloorPatch,
     renameProject: vi.fn(async () => undefined),
     setProjectTags: vi.fn(async () => undefined),
-    save: vi.fn(async () => undefined),
+    save: vi.fn(async () => publishState({
+      ...projectState,
+      saveState: "saved",
+    })),
     undo: vi.fn(async () => undefined),
     redo: vi.fn(async () => undefined),
     flush: vi.fn(async () => undefined),
@@ -363,8 +371,23 @@ export function renderPlanEditorFixture(
     )),
     cancel: baseController.cancel,
   };
+  const renderer = options.renderer;
+  const rendererFactory = renderer === undefined ? undefined : () => renderer;
   const workspaceOverride: NonNullable<PlanEditorDependencies["workspace"]> =
     () => <div data-testid="plan-workspace-override">Renderer override</div>;
+  const workspace: PlanEditorDependencies["workspace"] =
+    rendererFactory === undefined
+      ? options.workspace
+      : ({ snapshot: current, activeFloorId, sessionStore: currentStore, controller: currentController }) => (
+        <PlanCanvas
+          snapshot={current}
+          activeFloorId={activeFloorId}
+          sessionStore={currentStore}
+          controller={currentController}
+          rendererFactory={rendererFactory}
+          onError={(error) => errors.push(error)}
+        />
+      );
   const renderResult = render(
     <PlanEditor
       store={projectStore}
@@ -373,9 +396,9 @@ export function renderPlanEditorFixture(
         sessionStore,
         controller,
         makeId,
-        ...(options.workspace === undefined
+        ...(workspace === undefined
           ? {}
-          : { workspace: options.workspace }),
+          : { workspace }),
       }}
     />,
   );
@@ -397,5 +420,6 @@ export function renderPlanEditorFixture(
     errors,
     makeId,
     workspaceOverride,
+    renderer,
   };
 }
