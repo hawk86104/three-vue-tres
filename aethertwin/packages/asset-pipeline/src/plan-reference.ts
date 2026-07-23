@@ -1,5 +1,5 @@
 import type { PlanReference } from "@aethertwin/core-model";
-import { AssetPolicyError, assertRoleAllowsMedia } from "./media-policy";
+import { AssetPolicyError, assertImageMediaFacts, assertRoleAllowsMedia } from "./media-policy";
 import type { ComposeInitialPlanReferenceInput } from "./types";
 
 export function composeInitialPlanReference(input: ComposeInitialPlanReferenceInput): PlanReference {
@@ -7,10 +7,7 @@ export function composeInitialPlanReference(input: ComposeInitialPlanReferenceIn
   if (input.facts.kind !== "image") {
     throw new AssetPolicyError("ASSET_FACTS_MEDIA_MISMATCH", "Plan references require intrinsic image dimensions.");
   }
-  if (!Number.isInteger(input.facts.width) || !Number.isInteger(input.facts.height)
-    || input.facts.width < 1 || input.facts.height < 1) {
-    throw new AssetPolicyError("INVALID_ASSET_IMAGE_DIMENSIONS", "Plan-reference dimensions must be positive integers.");
-  }
+  assertImageMediaFacts(input.facts);
   return {
     id: input.id,
     name: input.name,

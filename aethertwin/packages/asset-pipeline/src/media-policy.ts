@@ -27,6 +27,7 @@ const EXTENSIONS: Readonly<Record<AssetMediaType, ClassifiedAssetMedia["canonica
 });
 
 const IMAGE_MEDIA: ReadonlySet<AssetMediaType> = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const IMPORT_ROLES: ReadonlySet<AssetImportRole> = new Set(["plan-reference", "content-image", "content-video"]);
 const VIDEO_MEDIA: ReadonlySet<AssetMediaType> = new Set(["video/mp4", "video/webm"]);
 
 export class AssetPolicyError extends Error {
@@ -62,6 +63,7 @@ export function assertAssetImportRequest(
   if (!UUID_PATTERN.test(input.operationId)) {
     throw new AssetPolicyError("INVALID_ASSET_IMPORT_OPERATION", "The import operation id must be a UUID.");
   }
+  assertImportRole(input.role);
   assertSource(input.source);
   if (input.media !== undefined) {
     const media = classifyAssetMedia(input.media);
@@ -71,11 +73,21 @@ export function assertAssetImportRequest(
 }
 
 export function assertRoleAllowsMedia(role: AssetImportRole, mediaType: AssetMediaType): void {
+  assertImportRole(role);
   const allowed = role === "content-video"
     ? VIDEO_MEDIA.has(mediaType)
     : IMAGE_MEDIA.has(mediaType);
   if (!allowed) {
     throw new AssetPolicyError("ASSET_ROLE_MEDIA_MISMATCH", "This import role does not accept the media type.");
+  }
+}
+
+export function assertImageMediaFacts(facts: AssetMediaFacts): asserts facts is Extract<AssetMediaFacts, { readonly kind: "image" }> {
+  if (facts.kind !== "image" || !Number.isSafeInteger(facts.width) || !Number.isSafeInteger(facts.height)
+    || facts.width < 1 || facts.height < 1
+    || facts.width > MAX_IMAGE_AXIS || facts.height > MAX_IMAGE_AXIS
+    || facts.width * facts.height > MAX_DECODED_PIXELS) {
+    throw new AssetPolicyError("INVALID_ASSET_IMAGE_DIMENSIONS", "Image dimensions are outside the safe limits.");
   }
 }
 
@@ -106,6 +118,12 @@ function assertSource(source: AssetImportSource): void {
   }
 }
 
+function assertImportRole(role: AssetImportRole): void {
+  if (!IMPORT_ROLES.has(role)) {
+    throw new AssetPolicyError("INVALID_ASSET_IMPORT_ROLE", "The import role is not supported.");
+  }
+}
+
 function assertSafeByteLength(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new AssetPolicyError("INVALID_ASSET_BYTE_LENGTH", "Asset byte length must be a non-negative safe integer.");
@@ -126,12 +144,7 @@ function assertMediaFacts(mediaType: AssetMediaType, facts: AssetMediaFacts): vo
     if (facts.kind !== "image") {
       throw new AssetPolicyError("ASSET_FACTS_MEDIA_MISMATCH", "Image media requires intrinsic image dimensions.");
     }
-    if (!Number.isInteger(facts.width) || !Number.isInteger(facts.height)
-      || facts.width < 1 || facts.height < 1
-      || facts.width > MAX_IMAGE_AXIS || facts.height > MAX_IMAGE_AXIS
-      || facts.width * facts.height > MAX_DECODED_PIXELS) {
-      throw new AssetPolicyError("INVALID_ASSET_IMAGE_DIMENSIONS", "Image dimensions are outside the safe limits.");
-    }
+    assertImageMediaFacts(facts);
     return;
   }
   if (facts.kind !== "video") {
@@ -148,6 +161,9 @@ function extensionOf(displayName: string): string {
 function assertProgress(value: AssetImportProgress): void {
   if (!UUID_PATTERN.test(value.operationId)) {
     throw new AssetPolicyError("INVALID_ASSET_IMPORT_OPERATION", "The import operation id must be a UUID.");
+  }
+  if (!ASSET_IMPORT_STAGES.includes(value.stage)) {
+    throw new AssetPolicyError("INVALID_ASSET_IMPORT_STAGE", "The import stage is not supported.");
   }
   assertSafeByteLength(value.completedBytes);
   assertSafeByteLength(value.totalBytes);

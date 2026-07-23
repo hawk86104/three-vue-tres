@@ -89,6 +89,17 @@ describe("asset media policy", () => {
     })).toThrow(AssetPolicyError);
   });
 
+  it("rejects an unknown runtime role before it can use image policy", () => {
+    const untypedRequest = {
+      operationId: uuid,
+      role: "unknown-role",
+      source: { kind: "native-path", path: "C:\\picked\\image.png", displayName: "image.png" },
+      media: { displayName: "image.png", signature: "image/png", byteLength: 1, facts: { kind: "image", width: 1, height: 1 } },
+    };
+
+    expect(() => assertAssetImportRequest(untypedRequest as unknown as Parameters<typeof assertAssetImportRequest>[0])).toThrow(AssetPolicyError);
+  });
+
   it("sanitizes a display name to a basename without path or control characters", () => {
     expect(sanitizeAssetDisplayName("  C:\\private\\nested/plan\u0000 final.png  ")).toBe("plan final.png");
   });
@@ -113,6 +124,13 @@ describe("asset import contracts", () => {
     const next: AssetImportProgress = { operationId: uuid, stage: "hash", completedBytes: 4, totalBytes: 10 };
     expect(() => assertAssetImportProgressTransition(first, next)).not.toThrow();
     expect(() => assertAssetImportProgressTransition(next, first)).toThrow(AssetPolicyError);
+    const unknownStage = "unknown-stage" as unknown as AssetImportProgress["stage"];
+    expect(() => assertAssetImportProgressTransition(null, {
+      operationId: uuid, stage: unknownStage, completedBytes: 0, totalBytes: 10,
+    })).toThrow(AssetPolicyError);
+    expect(() => assertAssetImportProgressTransition(first, {
+      operationId: uuid, stage: unknownStage, completedBytes: 4, totalBytes: 10,
+    })).toThrow(AssetPolicyError);
   });
 
   it("uses stable, redacted issue codes", () => {
@@ -160,6 +178,23 @@ describe("initial plan-reference composition", () => {
       layerId,
       asset: asset("video/mp4"),
       facts: { kind: "video" },
+    })).toThrow(AssetPolicyError);
+  });
+
+  it.each([
+    ["axis above the safe limit", { kind: "image", width: 16_385, height: 1 }],
+    ["decoded pixels above the safe limit", { kind: "image", width: 16_384, height: 16_385 }],
+    ["a non-integer axis", { kind: "image", width: 1.5, height: 1 }],
+    ["an unsafe integer axis", { kind: "image", width: Number.MAX_SAFE_INTEGER + 1, height: 1 }],
+  ] as const)("rejects %s passed directly to composition", (_name, facts) => {
+    expect(() => composeInitialPlanReference({
+      id: referenceId,
+      name: "Unsafe facts",
+      tags: [],
+      floorId,
+      layerId,
+      asset: asset("image/png"),
+      facts,
     })).toThrow(AssetPolicyError);
   });
 });
