@@ -149,6 +149,167 @@ fn snapshot_fixtures_deserialize_and_preserve_every_version_exactly() {
     assert_eq!(serde_json::to_value(v3).unwrap(), expected);
 }
 
+fn complete_v3_reference_snapshot() -> Value {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/contracts/snapshot.v3.json");
+    let mut snapshot: Value = serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+    let floor_id = "00000000-0000-4000-8000-000000000002";
+    let layer_id = "00000000-0000-4000-8000-000000000003";
+    let transform = json!({
+        "translation": { "x": 0, "y": 0 },
+        "rotation": 0,
+        "scale": { "x": 1, "y": 1 }
+    });
+    snapshot["assets"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000030",
+        "sha256": "a".repeat(64),
+        "relativePath": format!("assets/sha256/aa/{}.png", "a".repeat(64)),
+        "mediaType": "image/png",
+        "size": 42
+    }]);
+    snapshot["project"]["entities"] = json!([
+        {
+            "type": "dimension",
+            "id": "00000000-0000-4000-8000-000000000012",
+            "name": "Width",
+            "tags": [],
+            "floorId": floor_id,
+            "layerId": layer_id,
+            "transform": transform,
+            "locked": false,
+            "start": { "kind": "point", "point": { "x": 0, "y": 0 } },
+            "end": {
+                "kind": "entity",
+                "entityId": "00000000-0000-4000-8000-000000000011",
+                "locator": "origin"
+            },
+            "offset": 50,
+            "displayUnit": "mm"
+        },
+        {
+            "type": "space-unit",
+            "id": "00000000-0000-4000-8000-000000000010",
+            "name": "Shop",
+            "tags": [],
+            "floorId": floor_id,
+            "layerId": layer_id,
+            "transform": transform,
+            "locked": false,
+            "kind": "shop",
+            "footprint": [
+                { "x": 0, "y": 0 },
+                { "x": 1000, "y": 0 },
+                { "x": 1000, "y": 1000 },
+                { "x": 0, "y": 1000 }
+            ]
+        },
+        {
+            "type": "fixture",
+            "id": "00000000-0000-4000-8000-000000000011",
+            "name": "Display",
+            "tags": [],
+            "floorId": floor_id,
+            "layerId": layer_id,
+            "transform": transform,
+            "locked": false,
+            "kind": "generic",
+            "size": { "width": 1000, "height": 500 }
+        }
+    ]);
+    snapshot["project"]["vendors"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000020",
+        "name": "Vendor",
+        "tags": [],
+        "spaceUnitId": "00000000-0000-4000-8000-000000000010",
+        "externalId": "vendor-1",
+        "category": "retail",
+        "status": "active"
+    }]);
+    snapshot["project"]["mediaAssets"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000021",
+        "name": "Display image",
+        "tags": [],
+        "assetId": "00000000-0000-4000-8000-000000000030",
+        "kind": "image"
+    }]);
+    snapshot["project"]["productContents"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000022",
+        "name": "Product",
+        "tags": [],
+        "targetEntityId": "00000000-0000-4000-8000-000000000011",
+        "description": "Featured",
+        "mediaAssetIds": ["00000000-0000-4000-8000-000000000021"]
+    }]);
+    snapshot["project"]["cameraShots"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000023",
+        "name": "Overview",
+        "tags": [],
+        "position": [0, 2000, 3000],
+        "target": [0, 0, 0],
+        "fieldOfView": 45
+    }]);
+    snapshot["project"]["storySequences"] = json!([{
+        "id": "00000000-0000-4000-8000-000000000024",
+        "name": "Tour",
+        "tags": [],
+        "cameraShotIds": ["00000000-0000-4000-8000-000000000023"],
+        "duration": 5
+    }]);
+    snapshot
+}
+
+#[test]
+fn rust_v3_reference_validation_matches_the_typescript_contract() {
+    let valid = complete_v3_reference_snapshot();
+    serde_json::from_value::<ProjectSnapshot>(valid.clone()).unwrap();
+    let unknown = "00000000-0000-4000-8000-999999999999";
+
+    let mut invalid_cases = Vec::new();
+    let mut candidate = valid.clone();
+    candidate["project"]["vendors"][0]["spaceUnitId"] =
+        json!("00000000-0000-4000-8000-000000000011");
+    invalid_cases.push(("vendor space-unit type", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["productContents"][0]["targetEntityId"] = json!(unknown);
+    invalid_cases.push(("product target", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["productContents"][0]["mediaAssetIds"][0] = json!(unknown);
+    invalid_cases.push(("product media asset", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["mediaAssets"][0]["assetId"] = json!(unknown);
+    invalid_cases.push(("media source asset", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["storySequences"][0]["cameraShotIds"][0] = json!(unknown);
+    invalid_cases.push(("story camera shot", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["entities"][0]["end"]["entityId"] = json!(unknown);
+    invalid_cases.push(("dimension entity", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["entities"][0]["end"]["locator"] = json!({ "vertex": 0 });
+    invalid_cases.push(("dimension locator compatibility", candidate));
+
+    let mut candidate = valid.clone();
+    candidate["project"]["entities"][0]["end"] = json!({
+        "kind": "entity",
+        "entityId": "00000000-0000-4000-8000-000000000010",
+        "locator": { "vertex": 99 }
+    });
+    invalid_cases.push(("dimension locator range", candidate));
+
+    for (label, candidate) in invalid_cases {
+        assert!(
+            serde_json::from_value::<ProjectSnapshot>(candidate).is_err(),
+            "accepted invalid {label} reference"
+        );
+    }
+}
+
 #[test]
 fn project_io_errors_expose_stable_codes() {
     let cases = [

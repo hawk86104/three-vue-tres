@@ -500,6 +500,7 @@ impl ProjectSnapshot {
 
         let mut identities = BTreeSet::from([self.project.id]);
         let mut floor_ids = BTreeSet::new();
+        let mut asset_ids = BTreeSet::new();
         let mut layers_by_floor = BTreeMap::new();
         for floor in &self.project.floors {
             if !valid_uuid(&floor.id)
@@ -534,6 +535,7 @@ impl ProjectSnapshot {
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
                 || asset.size > TYPESCRIPT_MAX_SAFE_INTEGER
                 || !identities.insert(asset.id)
+                || !asset_ids.insert(asset.id)
             {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
@@ -574,6 +576,7 @@ impl ProjectSnapshot {
         }
 
         let mut entity_types = BTreeMap::new();
+        let mut entity_geometries = BTreeMap::new();
         for entity in &self.project.entities {
             let source = entity
                 .as_object()
@@ -593,21 +596,65 @@ impl ProjectSnapshot {
             {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
+            let geometry = match entity_type {
+                "boundary" | "zone" => {
+                    EntityReferenceGeometry::Closed(json_array_len(source, "polygon")?)
+                }
+                "space-unit" => {
+                    EntityReferenceGeometry::Closed(json_array_len(source, "footprint")?)
+                }
+                "wall" => EntityReferenceGeometry::Open(json_array_len(source, "centerLine")?),
+                _ => EntityReferenceGeometry::OriginOnly,
+            };
             entity_types.insert(id, entity_type.to_owned());
+            entity_geometries.insert(id, geometry);
+        }
+        for entity in &self.project.entities {
+            let source = entity
+                .as_object()
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            if source.get("type").and_then(Value::as_str) == Some("dimension") {
+                validate_dimension_anchor(
+                    source
+                        .get("start")
+                        .ok_or(ProjectIoError::InvalidProjectStructure)?,
+                    &entity_geometries,
+                )?;
+                validate_dimension_anchor(
+                    source
+                        .get("end")
+                        .ok_or(ProjectIoError::InvalidProjectStructure)?,
+                    &entity_geometries,
+                )?;
+            }
         }
 
         let route_nodes =
             register_route_networks(&self.project.route_networks, &floor_ids, &mut identities)?;
-        for collection in [
-            &self.project.vendors,
+        let _vendor_ids = register_json_record_ids(&self.project.vendors, &mut identities)?;
+        let _product_content_ids =
+            register_json_record_ids(&self.project.product_contents, &mut identities)?;
+        let media_asset_ids =
+            register_json_record_ids(&self.project.media_assets, &mut identities)?;
+        let _theme_ids = register_json_record_ids(&self.project.themes, &mut identities)?;
+        let camera_shot_ids =
+            register_json_record_ids(&self.project.camera_shots, &mut identities)?;
+        let _story_sequence_ids =
+            register_json_record_ids(&self.project.story_sequences, &mut identities)?;
+
+        let entity_ids = entity_types.keys().copied().collect();
+        let space_unit_ids = entity_types
+            .iter()
+            .filter_map(|(id, entity_type)| (entity_type == "space-unit").then_some(*id))
+            .collect();
+        validate_vendor_references(&self.project.vendors, &space_unit_ids)?;
+        validate_product_references(
             &self.project.product_contents,
-            &self.project.media_assets,
-            &self.project.themes,
-            &self.project.camera_shots,
-            &self.project.story_sequences,
-        ] {
-            register_json_record_ids(collection, &mut identities)?;
-        }
+            &entity_ids,
+            &media_asset_ids,
+        )?;
+        validate_media_asset_references(&self.project.media_assets, &asset_ids)?;
+        validate_story_references(&self.project.story_sequences, &camera_shot_ids)?;
 
         if self.schema_version == 3 {
             let assets_by_id: BTreeMap<_, _> =
@@ -744,17 +791,218 @@ fn json_uuid(
         .and_then(parse_contract_uuid)
 }
 
-fn register_json_record_ids(
+#[derive(Clone, Copy)]
+enum EntityReferenceGeometry {
+    OriginOnly,
+    Closed(usize),
+    Open(usize),
+}
+
+fn json_array_len(
+    source: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<usize, ProjectIoError> {
+    source
+        .get(key)
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .ok_or(ProjectIoError::InvalidProjectStructure)
+}
+
+fn validate_dimension_anchor(
+    value: &Value,
+    entities: &BTreeMap<Uuid, EntityReferenceGeometry>,
+) -> Result<(), ProjectIoError> {
+    let source = value
+        .as_object()
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    match source.get("kind").and_then(Value::as_str) {
+        Some("point") => {
+            let point = source
+                .get("point")
+                .and_then(Value::as_object)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let x = point
+                .get("x")
+                .and_then(Value::as_f64)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let y = point
+                .get("y")
+                .and_then(Value::as_f64)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            if source.len() != 2 || point.len() != 2 || !x.is_finite() || !y.is_finite() {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        Some("entity") => {
+            let entity_id = json_uuid(source, "entityId")?;
+            let geometry = entities
+                .get(&entity_id)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let locator = source
+                .get("locator")
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            if source.len() != 3 || !valid_dimension_locator(locator, *geometry) {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        _ => return Err(ProjectIoError::InvalidProjectStructure),
+    }
+    Ok(())
+}
+
+fn valid_dimension_locator(locator: &Value, geometry: EntityReferenceGeometry) -> bool {
+    if locator.as_str() == Some("origin") {
+        return true;
+    }
+    let source = match locator.as_object() {
+        Some(source) => source,
+        None => return false,
+    };
+    match geometry {
+        EntityReferenceGeometry::OriginOnly => false,
+        EntityReferenceGeometry::Closed(points) => {
+            valid_index_locator(source, points, points)
+        }
+        EntityReferenceGeometry::Open(points) => {
+            valid_index_locator(source, points, points.saturating_sub(1))
+        }
+    }
+}
+
+fn valid_index_locator(
+    source: &serde_json::Map<String, Value>,
+    vertex_count: usize,
+    segment_count: usize,
+) -> bool {
+    if source.len() == 1 {
+        return source
+            .get("vertex")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+            .is_some_and(|index| index < vertex_count);
+    }
+    if source.len() == 2 {
+        let segment = source
+            .get("segment")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok());
+        let t = source.get("t").and_then(Value::as_f64);
+        return segment.is_some_and(|index| index < segment_count)
+            && t.is_some_and(|value| bounded(value, 0.0, 1.0));
+    }
+    false
+}
+
+fn json_uuid_array(
+    source: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Vec<Uuid>, ProjectIoError> {
+    source
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or(ProjectIoError::InvalidProjectStructure)
+                .and_then(parse_contract_uuid)
+        })
+        .collect()
+}
+
+fn validate_vendor_references(
     values: &[Value],
-    identities: &mut BTreeSet<Uuid>,
+    space_unit_ids: &BTreeSet<Uuid>,
 ) -> Result<(), ProjectIoError> {
     for value in values {
         let source = value
             .as_object()
             .ok_or(ProjectIoError::InvalidProjectStructure)?;
-        json_record_base(source, identities)?;
+        match source.get("spaceUnitId") {
+            Some(Value::Null) => {}
+            Some(value) => {
+                let id = value
+                    .as_str()
+                    .ok_or(ProjectIoError::InvalidProjectStructure)
+                    .and_then(parse_contract_uuid)?;
+                if !space_unit_ids.contains(&id) {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+            }
+            None => return Err(ProjectIoError::InvalidProjectStructure),
+        }
     }
     Ok(())
+}
+
+fn validate_product_references(
+    values: &[Value],
+    entity_ids: &BTreeSet<Uuid>,
+    media_asset_ids: &BTreeSet<Uuid>,
+) -> Result<(), ProjectIoError> {
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        if !entity_ids.contains(&json_uuid(source, "targetEntityId")?)
+            || json_uuid_array(source, "mediaAssetIds")?
+                .iter()
+                .any(|id| !media_asset_ids.contains(id))
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    Ok(())
+}
+
+fn validate_media_asset_references(
+    values: &[Value],
+    asset_ids: &BTreeSet<Uuid>,
+) -> Result<(), ProjectIoError> {
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        if !asset_ids.contains(&json_uuid(source, "assetId")?) {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    Ok(())
+}
+
+fn validate_story_references(
+    values: &[Value],
+    camera_shot_ids: &BTreeSet<Uuid>,
+) -> Result<(), ProjectIoError> {
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        if json_uuid_array(source, "cameraShotIds")?
+            .iter()
+            .any(|id| !camera_shot_ids.contains(id))
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    Ok(())
+}
+
+fn register_json_record_ids(
+    values: &[Value],
+    identities: &mut BTreeSet<Uuid>,
+) -> Result<BTreeSet<Uuid>, ProjectIoError> {
+    let mut ids = BTreeSet::new();
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let (id, _) = json_record_base(source, identities)?;
+        ids.insert(id);
+    }
+    Ok(ids)
 }
 
 fn register_route_networks(

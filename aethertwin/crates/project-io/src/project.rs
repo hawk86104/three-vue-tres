@@ -387,7 +387,16 @@ pub fn recover_project(path: &Path, confirm: bool) -> Result<OpenedProject, Proj
         return Err(ProjectIoError::StaleProjectLock);
     }
     let lock = ProjectLock::acquire(path, true)?;
-    recover_with_lock(&lock)
+    let opened = recover_with_lock(&lock)?;
+    let previous_manifest = fs::read(lock.bound_path().join("manifest.json"))?;
+    let mut connection = open_database(&lock.bound_path().join("project.db"))?;
+    let (upgraded, _) = upgrade_opened_project(
+        &mut connection,
+        lock.bound_path(),
+        opened,
+        &previous_manifest,
+    )?;
+    Ok(upgraded)
 }
 
 impl ProjectSession {

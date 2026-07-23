@@ -127,11 +127,23 @@ function parseOpenedProject(value: unknown): ParsedOpenedProject {
       "Invalid native opened project response.schemaVersion: expected manifest and snapshot schemaVersion 3",
     );
   }
+  const manifest = parseManifest(record.manifest);
+  const snapshot = parseSnapshotV3(record.snapshot);
+  if (
+    manifest.projectId !== snapshot.project.id ||
+    manifest.name !== snapshot.project.name ||
+    manifest.profile !== snapshot.project.profile
+  ) {
+    throw new Error(
+      "Invalid native opened project response: manifest and snapshot must be coherent",
+    );
+  }
+
   return Object.freeze({
     sessionId,
     projectPath,
-    manifest: parseManifest(record.manifest),
-    snapshot: parseSnapshotV3(record.snapshot),
+    manifest,
+    snapshot,
     recovered: record.recovered,
   });
 }

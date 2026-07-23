@@ -442,6 +442,72 @@ describe("TauriProjectBackend", () => {
     },
   );
 
+  it.each([
+    [
+      "project id",
+      (opened: NativeOpenedProject): NativeOpenedProject => ({
+        ...opened,
+        manifest: {
+          ...opened.manifest,
+          projectId: "00000000-0000-4000-8000-999999999999",
+        },
+      }),
+    ],
+    [
+      "name",
+      (opened: NativeOpenedProject): NativeOpenedProject => ({
+        ...opened,
+        manifest: { ...opened.manifest, name: "Different" },
+      }),
+    ],
+    [
+      "profile",
+      (opened: NativeOpenedProject): NativeOpenedProject => ({
+        ...opened,
+        manifest: { ...opened.manifest, profile: "market" },
+      }),
+    ],
+  ] as const)(
+    "rejects an opened project with mismatched %s and preserves failed cleanup for the next operation",
+    async (_label, makeIncoherent) => {
+      const incoherent = makeIncoherent(fixture());
+      const next = fixture(SESSION_B, PROJECT_B, "Market");
+      invoke
+        .mockResolvedValueOnce(incoherent)
+        .mockRejectedValueOnce(new Error("initial cleanup unavailable"))
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(next);
+      const { TauriProjectBackend } = await import("./tauri-backend");
+      const backend = new TauriProjectBackend();
+
+      await expect(backend.openProject(PROJECT_A)).rejects.toThrow(/coherent/i);
+      await expect(
+        backend.createProject({
+          name: "Market",
+          location: "E:\\Projects",
+          profile: "market",
+        }),
+      ).resolves.toMatchObject({
+        projectPath: PROJECT_B,
+        manifest: next.manifest,
+        snapshot: next.snapshot,
+      });
+
+      expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+        "open_project",
+        "close_project",
+        "close_project",
+        "create_project",
+      ]);
+      expect(invoke).toHaveBeenNthCalledWith(2, "close_project", {
+        payload: { sessionId: SESSION_A },
+      });
+      expect(invoke).toHaveBeenNthCalledWith(3, "close_project", {
+        payload: { sessionId: SESSION_A },
+      });
+    },
+);
+
   it("retains a malformed create session when cleanup fails so explicit cleanup can be retried", async () => {
     const opened = fixture();
     const corrupt = {

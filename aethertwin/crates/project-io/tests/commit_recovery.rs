@@ -212,6 +212,68 @@ fn sqlite_source_fingerprint(
         .collect()
 }
 
+fn encode_sqlite_bytes(value: &[u8]) -> String {
+    value.iter().fold(
+        String::with_capacity(value.len() * 2),
+        |mut encoded, byte| {
+            std::fmt::Write::write_fmt(&mut encoded, format_args!("{byte:02x}")).unwrap();
+            encoded
+        },
+    )
+}
+
+fn sqlite_logical_source_fingerprint(
+    project_path: &std::path::Path,
+) -> Vec<(String, Vec<Vec<String>>)> {
+    let connection = Connection::open(project_path.join("project.db")).unwrap();
+    let tables: Vec<(String, String)> = connection
+        .prepare(
+            "SELECT name, COALESCE(sql, '')
+             FROM sqlite_schema
+             WHERE type = 'table'
+             ORDER BY name",
+        )
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let mut fingerprint = Vec::with_capacity(tables.len() * 2);
+    for (table, sql) in tables {
+        fingerprint.push((format!("schema:{table}"), vec![vec![sql]]));
+        let quoted_table = table.replace('"', "\"\"");
+        let mut statement = connection
+            .prepare(&format!("SELECT * FROM \"{quoted_table}\""))
+            .unwrap();
+        let column_count = statement.column_count();
+        let mut query = statement.query([]).unwrap();
+        let mut rows = Vec::new();
+        while let Some(row) = query.next().unwrap() {
+            let mut values = Vec::with_capacity(column_count);
+            for index in 0..column_count {
+                let value = match row.get_ref(index).unwrap() {
+                    rusqlite::types::ValueRef::Null => "null".into(),
+                    rusqlite::types::ValueRef::Integer(value) => format!("integer:{value}"),
+                    rusqlite::types::ValueRef::Real(value) => {
+                        format!("real:{:016x}", value.to_bits())
+                    }
+                    rusqlite::types::ValueRef::Text(value) => {
+                        format!("text:{}", encode_sqlite_bytes(value))
+                    }
+                    rusqlite::types::ValueRef::Blob(value) => {
+                        format!("blob:{}", encode_sqlite_bytes(value))
+                    }
+                };
+                values.push(value);
+            }
+            rows.push(values);
+        }
+        rows.sort();
+        fingerprint.push((format!("rows:{table}"), rows));
+    }
+    fingerprint
+}
+
 fn checkpoint_then_commit(opened: &project_io::OpenedProject) -> ProjectSnapshot {
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
@@ -689,15 +751,21 @@ fn post_checkpoint_snapshot_can_commit_and_manifest_failure_does_not_publish_it(
 
     let manifest_path = opened.project_path.join("manifest.json");
     let manifest_bytes = fs::read(&manifest_path).unwrap();
+    let source_before = sqlite_logical_source_fingerprint(&opened.project_path);
     fs::remove_file(&manifest_path).unwrap();
     fs::create_dir(&manifest_path).unwrap();
     let before_failure = session.snapshot().clone();
 
     assert!(session.checkpoint(session.snapshot().clone()).is_err());
     assert_eq!(session.snapshot(), &before_failure);
+    assert_eq!(
+        sqlite_logical_source_fingerprint(&opened.project_path),
+        source_before
+    );
 
     fs::remove_dir(&manifest_path).unwrap();
-    fs::write(&manifest_path, manifest_bytes).unwrap();
+    fs::write(&manifest_path, &manifest_bytes).unwrap();
+    assert_eq!(fs::read(&manifest_path).unwrap(), manifest_bytes);
     let retry = session.checkpoint(session.snapshot().clone()).unwrap();
     assert_eq!(retry.snapshot.checkpoint_sequence, retry.snapshot.sequence);
 }
@@ -844,6 +912,68 @@ fn automatic_v2_upgrade_database_failure_restores_the_old_coherent_pair() {
 
     let session = open_session(&opened.project_path, false).unwrap();
     assert_eq!(session.snapshot(), &expected);
+}
+
+#[test]
+fn public_recovery_upgrades_coherent_v2_durably_before_return() {
+    let opened = create("Recovered V2 Upgrade", ProjectProfile::Showroom);
+    let expected = downgrade_to_v2(&opened, 0, 0);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+
+    assert!(recovered.recovered);
+    assert_eq!(recovered.manifest.schema_version, 3);
+    assert_eq!(recovered.snapshot, expected);
+
+    let manifest: project_io::ProjectManifest = serde_json::from_slice(
+        &fs::read(opened.project_path.join("manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.schema_version, 3);
+
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let (database_schema, snapshot_json): (String, String) = connection
+        .query_row(
+            "SELECT (SELECT value_json FROM project_meta WHERE key = 'schemaVersion'),
+                    (SELECT snapshot_json FROM snapshots ORDER BY sequence DESC LIMIT 1)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(database_schema, "3");
+    assert_eq!(
+        serde_json::from_str::<Value>(&snapshot_json).unwrap()["schemaVersion"],
+        3
+    );
+}
+
+#[test]
+fn public_recovery_upgrade_database_failure_restores_exact_old_pair() {
+    let opened = create("Recovered V2 Failure", ProjectProfile::Market);
+    let expected = downgrade_to_v2(&opened, 0, 0);
+    let manifest_path = opened.project_path.join("manifest.json");
+    let database_path = opened.project_path.join("project.db");
+    let manifest_before = fs::read(&manifest_path).unwrap();
+    let source_before = sqlite_logical_source_fingerprint(&opened.project_path);
+    let original_permissions = fs::metadata(&database_path).unwrap().permissions();
+    let mut read_only_permissions = original_permissions.clone();
+    read_only_permissions.set_readonly(true);
+    fs::set_permissions(&database_path, read_only_permissions).unwrap();
+
+    let error = recover_project(&opened.project_path, true).unwrap_err();
+    fs::set_permissions(&database_path, original_permissions).unwrap();
+
+    assert_code(error, "DATABASE_ERROR");
+    assert_eq!(fs::read(&manifest_path).unwrap(), manifest_before);
+    assert_eq!(
+        sqlite_logical_source_fingerprint(&opened.project_path),
+        source_before
+    );
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert!(recovered.recovered);
+    assert_eq!(recovered.manifest.schema_version, 3);
+    assert_eq!(recovered.snapshot, expected);
 }
 
 #[test]
