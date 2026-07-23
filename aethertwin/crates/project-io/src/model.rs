@@ -1,13 +1,17 @@
 use crate::{ProjectIoError, validate_relative_resource_path};
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde_json::Value;
+use std::{collections::{BTreeMap, BTreeSet}, path::PathBuf};
 use uuid::Uuid;
 
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 pub const MIN_SUPPORTED_SCHEMA_VERSION: u32 = 1;
 const TYPESCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const MAX_COLLECTION_JSON_BYTES: usize = 16 * 1024 * 1024;
+const MAX_INTRINSIC_AXIS: u64 = 16_384;
+const MAX_DECODED_PIXELS: u64 = 268_435_456;
+const MAX_WORLD_COORDINATE_MM: f64 = 1_000_000_000.0;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -24,7 +28,7 @@ pub struct CreateProjectRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectManifest {
     pub schema_version: u32,
     #[serde(with = "contract_uuid")]
@@ -38,7 +42,7 @@ pub struct ProjectManifest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Floor {
     #[serde(with = "contract_uuid")]
     pub id: Uuid,
@@ -49,7 +53,7 @@ pub struct Floor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanLayer {
     #[serde(with = "contract_uuid")]
     pub id: Uuid,
@@ -59,8 +63,191 @@ pub struct PlanLayer {
     pub locked: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Point2 {
+    #[serde(serialize_with = "serialize_js_number")]
+    pub x: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub y: f64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IntrinsicSize {
+    pub width: u64,
+    pub height: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Transform2D {
+    pub translation: Point2,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub rotation: f64,
+    pub scale: Point2,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CalibrationEvidence {
+    pub source_point_a: Point2,
+    pub source_point_b: Point2,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub measured_distance_mm: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlanReference {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub floor_id: Uuid,
+    #[serde(with = "contract_uuid")]
+    pub layer_id: Uuid,
+    #[serde(with = "contract_uuid")]
+    pub asset_id: Uuid,
+    pub intrinsic_size: IntrinsicSize,
+    pub transform: Transform2D,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub opacity: f64,
+    pub locked: bool,
+    pub calibration: Option<CalibrationEvidence>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpeningKind {
+    Door,
+    Window,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Opening {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub wall_id: Uuid,
+    pub kind: OpeningKind,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub distance_along_wall: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub width: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub height: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub sill_height: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GuidedRoute {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub route_network_id: Uuid,
+    #[serde(with = "contract_uuid_vec")]
+    pub stop_node_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MaterialDefinition {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub base_color: String,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub roughness: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub metalness: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub opacity: f64,
+    #[serde(with = "optional_contract_uuid")]
+    pub asset_id: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MaterialTargetKind {
+    SpaceFloor,
+    Wall,
+    Fixture,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MaterialAssignment {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub material_id: Uuid,
+    pub target_kind: MaterialTargetKind,
+    #[serde(with = "contract_uuid")]
+    pub target_id: Uuid,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AmbientLight {
+    pub color: String,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub intensity: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KeyLight {
+    pub color: String,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub intensity: f64,
+    #[serde(serialize_with = "serialize_js_vector3")]
+    pub direction: [f64; 3],
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SceneEnvironment {
+    pub background_color: String,
+    pub ambient: AmbientLight,
+    pub key: KeyLight,
+    pub shadows_enabled: bool,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub shadow_softness: f64,
+}
+
+impl Default for SceneEnvironment {
+    fn default() -> Self {
+        Self {
+            background_color: "#10151c".into(),
+            ambient: AmbientLight {
+                color: "#ffffff".into(),
+                intensity: 0.6,
+            },
+            key: KeyLight {
+                color: "#ffffff".into(),
+                intensity: 1.0,
+                direction: [-0.5, -1.0, -0.5],
+            },
+            shadows_enabled: true,
+            shadow_softness: 0.5,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpatialProject {
     #[serde(with = "contract_uuid")]
     pub id: Uuid,
@@ -84,10 +271,22 @@ pub struct SpatialProject {
     pub camera_shots: Vec<serde_json::Value>,
     #[serde(default)]
     pub story_sequences: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub plan_references: Vec<PlanReference>,
+    #[serde(default)]
+    pub openings: Vec<Opening>,
+    #[serde(default)]
+    pub guided_routes: Vec<GuidedRoute>,
+    #[serde(default)]
+    pub materials: Vec<MaterialDefinition>,
+    #[serde(default)]
+    pub material_assignments: Vec<MaterialAssignment>,
+    #[serde(default)]
+    pub scene_environment: SceneEnvironment,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AssetRecord {
     #[serde(with = "contract_uuid")]
     pub id: Uuid,
@@ -97,8 +296,8 @@ pub struct AssetRecord {
     pub size: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectSnapshot {
     pub schema_version: u32,
     pub sequence: u64,
@@ -107,8 +306,100 @@ pub struct ProjectSnapshot {
     pub assets: Vec<AssetRecord>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectSnapshotWire {
+    schema_version: u32,
+    sequence: u64,
+    checkpoint_sequence: u64,
+    project: SpatialProject,
+    assets: Vec<AssetRecord>,
+}
+
+impl<'de> Deserialize<'de> for ProjectSnapshot {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let schema_version = value
+            .as_object()
+            .and_then(|source| source.get("schemaVersion"))
+            .and_then(Value::as_u64)
+            .ok_or_else(|| D::Error::custom("invalid schemaVersion"))?;
+        if schema_version == 3 {
+            require_exact_keys::<D::Error>(
+                &value,
+                &["schemaVersion", "sequence", "checkpointSequence", "project", "assets"],
+            )?;
+            let project = value
+                .as_object()
+                .and_then(|source| source.get("project"))
+                .ok_or_else(|| D::Error::custom("missing project"))?;
+            require_exact_keys::<D::Error>(
+                project,
+                &[
+                    "id", "name", "tags", "profile", "floors", "entities", "vendors",
+                    "productContents", "mediaAssets", "routeNetworks", "themes", "cameraShots",
+                    "storySequences", "planReferences", "openings", "guidedRoutes", "materials",
+                    "materialAssignments", "sceneEnvironment",
+                ],
+            )?;
+            let project = project
+                .as_object()
+                .ok_or_else(|| D::Error::custom("project must be an object"))?;
+            let floors = project
+                .get("floors")
+                .and_then(Value::as_array)
+                .ok_or_else(|| D::Error::custom("floors must be an array"))?;
+            for floor in floors {
+                require_exact_keys::<D::Error>(floor, &["id", "name", "tags", "layers"])?;
+                let layers = floor
+                    .as_object()
+                    .and_then(|source| source.get("layers"))
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| D::Error::custom("layers must be an array"))?;
+                for layer in layers {
+                    require_exact_keys::<D::Error>(
+                        layer,
+                        &["id", "name", "tags", "visible", "locked"],
+                    )?;
+                }
+            }
+            let assets = value
+                .as_object()
+                .and_then(|source| source.get("assets"))
+                .and_then(Value::as_array)
+                .ok_or_else(|| D::Error::custom("assets must be an array"))?;
+            for asset in assets {
+                require_exact_keys::<D::Error>(asset, &["id", "sha256", "relativePath", "mediaType", "size"])?;
+            }
+        }
+        let wire: ProjectSnapshotWire =
+            serde_json::from_value(value).map_err(D::Error::custom)?;
+        let snapshot = Self {
+            schema_version: wire.schema_version,
+            sequence: wire.sequence,
+            checkpoint_sequence: wire.checkpoint_sequence,
+            project: wire.project,
+            assets: wire.assets,
+        };
+        snapshot.validate().map_err(D::Error::custom)?;
+        Ok(snapshot)
+    }
+}
+
+fn require_exact_keys<E: serde::de::Error>(value: &Value, expected: &[&str]) -> Result<(), E> {
+    let source = value
+        .as_object()
+        .ok_or_else(|| E::custom("expected an object"))?;
+    if source.len() != expected.len()
+        || !expected.iter().all(|key| source.contains_key(*key))
+    {
+        return Err(E::custom("object keys do not match schema v3"));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CheckpointResult {
     pub manifest: ProjectManifest,
     pub snapshot: ProjectSnapshot,
@@ -206,27 +497,34 @@ impl ProjectSnapshot {
         {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
-        let mut identities = std::collections::BTreeSet::from([self.project.id]);
-        let mut floor_ids = std::collections::BTreeSet::new();
+
+        let mut identities = BTreeSet::from([self.project.id]);
+        let mut floor_ids = BTreeSet::new();
+        let mut layers_by_floor = BTreeMap::new();
         for floor in &self.project.floors {
-            if !valid_uuid(&floor.id) || floor.name.trim().is_empty() {
-                return Err(ProjectIoError::InvalidProjectStructure);
-            }
-            if !identities.insert(floor.id) || !floor_ids.insert(floor.id) {
+            if !valid_uuid(&floor.id)
+                || floor.name.trim().is_empty()
+                || !identities.insert(floor.id)
+                || !floor_ids.insert(floor.id)
+            {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
             if self.schema_version == 1 && !floor.layers.is_empty() {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
+            let mut layer_ids = BTreeSet::new();
             for layer in &floor.layers {
                 if !valid_uuid(&layer.id)
                     || layer.name.trim().is_empty()
                     || !identities.insert(layer.id)
+                    || !layer_ids.insert(layer.id)
                 {
                     return Err(ProjectIoError::InvalidProjectStructure);
                 }
             }
+            layers_by_floor.insert(floor.id, layer_ids);
         }
+
         for asset in &self.assets {
             if !valid_uuid(&asset.id)
                 || asset.sha256.len() != 64
@@ -234,14 +532,20 @@ impl ProjectSnapshot {
                     .sha256
                     .bytes()
                     .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-                || asset.media_type.trim().is_empty()
                 || asset.size > TYPESCRIPT_MAX_SAFE_INTEGER
-                || validate_relative_resource_path(&asset.relative_path).is_err()
                 || !identities.insert(asset.id)
             {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
+            if self.schema_version == 3 {
+                validate_canonical_asset(asset)?;
+            } else if asset.media_type.trim().is_empty()
+                || validate_relative_resource_path(&asset.relative_path).is_err()
+            {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
         }
+
         let collections = [
             &self.project.entities,
             &self.project.vendors,
@@ -255,39 +559,400 @@ impl ProjectSnapshot {
         if self.schema_version == 1 && collections.iter().any(|collection| !collection.is_empty()) {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
+        if self.schema_version < 3
+            && (!self.project.plan_references.is_empty()
+                || !self.project.openings.is_empty()
+                || !self.project.guided_routes.is_empty()
+                || !self.project.materials.is_empty()
+                || !self.project.material_assignments.is_empty()
+                || self.project.scene_environment != SceneEnvironment::default())
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
         for collection in collections {
             validate_json_collection(collection)?;
         }
+
+        let mut entity_types = BTreeMap::new();
         for entity in &self.project.entities {
             let source = entity
                 .as_object()
                 .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            let id_text = source
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            let id = parse_contract_uuid(id_text)?;
+            let (id, _) = json_record_base(source, &mut identities)?;
             let entity_type = source
                 .get("type")
-                .and_then(serde_json::Value::as_str)
+                .and_then(Value::as_str)
                 .filter(|value| !value.trim().is_empty())
                 .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            let floor_id_text = source
-                .get("floorId")
-                .and_then(serde_json::Value::as_str)
-                .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            let floor_id = parse_contract_uuid(floor_id_text)?;
-            if id.hyphenated().to_string() != id_text
-                || floor_id.hyphenated().to_string() != floor_id_text
-                || entity_type.trim().is_empty()
-                || !floor_ids.contains(&floor_id)
-                || !identities.insert(id)
+            let floor_id = json_uuid(source, "floorId")?;
+            let layer_id = json_uuid(source, "layerId")?;
+            if !floor_ids.contains(&floor_id)
+                || !layers_by_floor
+                    .get(&floor_id)
+                    .is_some_and(|layers| layers.contains(&layer_id))
             {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
+            entity_types.insert(id, entity_type.to_owned());
+        }
+
+        let route_nodes =
+            register_route_networks(&self.project.route_networks, &floor_ids, &mut identities)?;
+        for collection in [
+            &self.project.vendors,
+            &self.project.product_contents,
+            &self.project.media_assets,
+            &self.project.themes,
+            &self.project.camera_shots,
+            &self.project.story_sequences,
+        ] {
+            register_json_record_ids(collection, &mut identities)?;
+        }
+
+        if self.schema_version == 3 {
+            let assets_by_id: BTreeMap<_, _> =
+                self.assets.iter().map(|asset| (asset.id, asset)).collect();
+            for reference in &self.project.plan_references {
+                validate_record(reference.id, &reference.name, &mut identities)?;
+                if !floor_ids.contains(&reference.floor_id)
+                    || !layers_by_floor
+                        .get(&reference.floor_id)
+                        .is_some_and(|layers| layers.contains(&reference.layer_id))
+                    || !assets_by_id
+                        .get(&reference.asset_id)
+                        .is_some_and(|asset| is_plan_media(&asset.media_type))
+                {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+                validate_plan_reference(reference)?;
+            }
+
+            for opening in &self.project.openings {
+                validate_record(opening.id, &opening.name, &mut identities)?;
+                if entity_types.get(&opening.wall_id).map(String::as_str) != Some("wall")
+                    || !finite_non_negative(opening.distance_along_wall)
+                    || !finite_positive(opening.width)
+                    || !finite_positive(opening.height)
+                    || !finite_non_negative(opening.sill_height)
+                {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+            }
+
+            for route in &self.project.guided_routes {
+                validate_record(route.id, &route.name, &mut identities)?;
+                let nodes = route_nodes
+                    .get(&route.route_network_id)
+                    .ok_or(ProjectIoError::InvalidProjectStructure)?;
+                if route.stop_node_ids.len() < 2 {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+                let mut route_floor = None;
+                for node_id in &route.stop_node_ids {
+                    let floor = nodes
+                        .get(node_id)
+                        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+                    if route_floor.is_some_and(|candidate| candidate != *floor) {
+                        return Err(ProjectIoError::InvalidProjectStructure);
+                    }
+                    route_floor = Some(*floor);
+                }
+            }
+
+            let mut material_ids = BTreeSet::new();
+            for material in &self.project.materials {
+                validate_record(material.id, &material.name, &mut identities)?;
+                material_ids.insert(material.id);
+                if !valid_color(&material.base_color)
+                    || !bounded(material.roughness, 0.0, 1.0)
+                    || !bounded(material.metalness, 0.0, 1.0)
+                    || !finite_positive(material.opacity)
+                    || material.opacity > 1.0
+                    || material.asset_id.is_some_and(|id| {
+                        !assets_by_id
+                            .get(&id)
+                            .is_some_and(|asset| is_plan_media(&asset.media_type))
+                    })
+                {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+            }
+
+            let mut assigned_targets = BTreeSet::new();
+            for assignment in &self.project.material_assignments {
+                validate_record(assignment.id, &assignment.name, &mut identities)?;
+                let entity_type = entity_types.get(&assignment.target_id).map(String::as_str);
+                let valid_target = match assignment.target_kind {
+                    MaterialTargetKind::SpaceFloor => {
+                        matches!(entity_type, Some("space-unit" | "zone"))
+                    }
+                    MaterialTargetKind::Wall => entity_type == Some("wall"),
+                    MaterialTargetKind::Fixture => entity_type == Some("fixture"),
+                };
+                if !material_ids.contains(&assignment.material_id)
+                    || !valid_target
+                    || !assigned_targets.insert((assignment.target_kind, assignment.target_id))
+                {
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+            }
+            validate_scene_environment(&self.project.scene_environment)?;
         }
         Ok(())
     }
+}
+
+fn validate_record(
+    id: Uuid,
+    name: &str,
+    identities: &mut BTreeSet<Uuid>,
+) -> Result<(), ProjectIoError> {
+    if !valid_uuid(&id) || name.trim().is_empty() || !identities.insert(id) {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(())
+}
+
+fn json_record_base<'a>(
+    source: &'a serde_json::Map<String, Value>,
+    identities: &mut BTreeSet<Uuid>,
+) -> Result<(Uuid, &'a str), ProjectIoError> {
+    let id = json_uuid(source, "id")?;
+    let name = source
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    let tags = source
+        .get("tags")
+        .and_then(Value::as_array)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    if tags.iter().any(|tag| !tag.is_string()) || !identities.insert(id) {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok((id, name))
+}
+
+fn json_uuid(
+    source: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Uuid, ProjectIoError> {
+    source
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or(ProjectIoError::InvalidProjectStructure)
+        .and_then(parse_contract_uuid)
+}
+
+fn register_json_record_ids(
+    values: &[Value],
+    identities: &mut BTreeSet<Uuid>,
+) -> Result<(), ProjectIoError> {
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        json_record_base(source, identities)?;
+    }
+    Ok(())
+}
+
+fn register_route_networks(
+    values: &[Value],
+    floor_ids: &BTreeSet<Uuid>,
+    identities: &mut BTreeSet<Uuid>,
+) -> Result<BTreeMap<Uuid, BTreeMap<Uuid, Uuid>>, ProjectIoError> {
+    let mut result = BTreeMap::new();
+    for value in values {
+        let source = value
+            .as_object()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let (network_id, _) = json_record_base(source, identities)?;
+        let nodes = source
+            .get("nodes")
+            .and_then(Value::as_array)
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let edges = source
+            .get("edges")
+            .and_then(Value::as_array)
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let mut network_nodes = BTreeMap::new();
+        for node in nodes {
+            let node = node
+                .as_object()
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let (node_id, _) = json_record_base(node, identities)?;
+            let floor_id = json_uuid(node, "floorId")?;
+            if !floor_ids.contains(&floor_id) || network_nodes.insert(node_id, floor_id).is_some() {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        for edge in edges {
+            let edge = edge
+                .as_object()
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            json_record_base(edge, identities)?;
+            let from = json_uuid(edge, "from")?;
+            let to = json_uuid(edge, "to")?;
+            if !network_nodes.contains_key(&from) || !network_nodes.contains_key(&to) {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        result.insert(network_id, network_nodes);
+    }
+    Ok(result)
+}
+
+fn validate_canonical_asset(asset: &AssetRecord) -> Result<(), ProjectIoError> {
+    let (extension, maximum) =
+        asset_policy(&asset.media_type).ok_or(ProjectIoError::InvalidProjectStructure)?;
+    let expected = format!(
+        "assets/sha256/{}/{}.{}",
+        &asset.sha256[..2],
+        asset.sha256,
+        extension
+    );
+    if asset.relative_path != expected || asset.size > maximum {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(())
+}
+
+pub(crate) fn canonical_asset_path(sha256: &str, media_type: &str) -> Option<String> {
+    let (extension, _) = asset_policy(media_type)?;
+    Some(format!(
+        "assets/sha256/{}/{}.{}",
+        &sha256[..2],
+        sha256,
+        extension
+    ))
+}
+
+fn asset_policy(media_type: &str) -> Option<(&'static str, u64)> {
+    match media_type {
+        "image/png" => Some(("png", 268_435_456)),
+        "image/jpeg" => Some(("jpg", 268_435_456)),
+        "image/svg+xml" => Some(("svg", 33_554_432)),
+        "video/mp4" => Some(("mp4", 4_294_967_296)),
+        "video/webm" => Some(("webm", 4_294_967_296)),
+        _ => None,
+    }
+}
+
+fn is_plan_media(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "image/png" | "image/jpeg" | "image/svg+xml"
+    )
+}
+
+fn validate_plan_reference(reference: &PlanReference) -> Result<(), ProjectIoError> {
+    let size = reference.intrinsic_size;
+    if size.width == 0
+        || size.height == 0
+        || size.width > MAX_INTRINSIC_AXIS
+        || size.height > MAX_INTRINSIC_AXIS
+        || size.width > MAX_DECODED_PIXELS / size.height
+        || !finite_point(reference.transform.translation)
+        || !reference.transform.rotation.is_finite()
+        || !finite_positive(reference.transform.scale.x)
+        || !finite_positive(reference.transform.scale.y)
+        || !bounded(reference.opacity, 0.0, 1.0)
+    {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    if let Some(calibration) = reference.calibration {
+        if !finite_point(calibration.source_point_a)
+            || !finite_point(calibration.source_point_b)
+            || calibration.source_point_a.x < 0.0
+            || calibration.source_point_a.y < 0.0
+            || calibration.source_point_b.x < 0.0
+            || calibration.source_point_b.y < 0.0
+            || calibration.source_point_a.x > size.width as f64
+            || calibration.source_point_b.x > size.width as f64
+            || calibration.source_point_a.y > size.height as f64
+            || calibration.source_point_b.y > size.height as f64
+            || calibration.source_point_a == calibration.source_point_b
+            || !finite_positive(calibration.measured_distance_mm)
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        let pixel_distance = (calibration.source_point_b.x - calibration.source_point_a.x)
+            .hypot(calibration.source_point_b.y - calibration.source_point_a.y);
+        let calibrated_scale = calibration.measured_distance_mm / pixel_distance;
+        if !finite_positive(calibrated_scale)
+            || reference.transform.scale.x != reference.transform.scale.y
+            || reference.transform.scale.x != calibrated_scale
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    validate_plan_bounds(reference)
+}
+
+fn validate_plan_bounds(reference: &PlanReference) -> Result<(), ProjectIoError> {
+    let transform = reference.transform;
+    let cosine = transform.rotation.cos();
+    let sine = transform.rotation.sin();
+    let width = reference.intrinsic_size.width as f64;
+    let height = reference.intrinsic_size.height as f64;
+    for (x, y) in [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)] {
+        let scaled_x = x * transform.scale.x;
+        let scaled_y = y * transform.scale.y;
+        let world_x =
+            scaled_x * cosine - scaled_y * sine + transform.translation.x;
+        let world_y =
+            scaled_x * sine + scaled_y * cosine + transform.translation.y;
+        if !world_x.is_finite()
+            || !world_y.is_finite()
+            || world_x.abs() > MAX_WORLD_COORDINATE_MM
+            || world_y.abs() > MAX_WORLD_COORDINATE_MM
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+    }
+    Ok(())
+}
+
+fn validate_scene_environment(environment: &SceneEnvironment) -> Result<(), ProjectIoError> {
+    if !valid_color(&environment.background_color)
+        || !valid_color(&environment.ambient.color)
+        || !valid_color(&environment.key.color)
+        || !bounded(environment.ambient.intensity, 0.0, 4.0)
+        || !bounded(environment.key.intensity, 0.0, 8.0)
+        || !bounded(environment.shadow_softness, 0.0, 1.0)
+        || environment
+            .key
+            .direction
+            .iter()
+            .any(|component| !bounded(*component, -100.0, 100.0))
+        || environment.key.direction.iter().all(|component| *component == 0.0)
+    {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(())
+}
+
+fn valid_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+}
+
+fn finite_point(point: Point2) -> bool {
+    point.x.is_finite() && point.y.is_finite()
+}
+
+fn finite_positive(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn finite_non_negative(value: f64) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+fn bounded(value: f64, minimum: f64, maximum: f64) -> bool {
+    value.is_finite() && value >= minimum && value <= maximum
 }
 
 fn validate_json_collection(values: &[serde_json::Value]) -> Result<(), ProjectIoError> {
@@ -431,6 +1096,75 @@ mod contract_uuid {
             return Err(D::Error::custom("invalid project UUID"));
         }
         Uuid::parse_str(&value).map_err(|_| D::Error::custom("invalid project UUID"))
+    }
+}
+
+fn serialize_js_number<S: serde::Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+    if value.fract() == 0.0 && *value >= i64::MIN as f64 && *value <= i64::MAX as f64 {
+        serializer.serialize_i64(*value as i64)
+    } else {
+        serializer.serialize_f64(*value)
+    }
+}
+
+fn serialize_js_vector3<S: serde::Serializer>(
+    values: &[f64; 3],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeSeq;
+    let mut sequence = serializer.serialize_seq(Some(3))?;
+    for value in values {
+        if value.fract() == 0.0 && *value >= i64::MIN as f64 && *value <= i64::MAX as f64 {
+            sequence.serialize_element(&(*value as i64))?;
+        } else {
+            sequence.serialize_element(value)?;
+        }
+    }
+    sequence.end()
+}
+
+mod contract_uuid_vec {
+    use super::{Uuid, contract_uuid_text};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+
+    pub fn serialize<S: Serializer>(values: &[Uuid], serializer: S) -> Result<S::Ok, S::Error> {
+        values
+            .iter()
+            .map(|value| value.hyphenated().to_string())
+            .collect::<Vec<_>>()
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Uuid>, D::Error> {
+        Vec::<String>::deserialize(deserializer)?
+            .into_iter()
+            .map(|value| {
+                if !contract_uuid_text(&value) {
+                    return Err(D::Error::custom("invalid project UUID"));
+                }
+                Uuid::parse_str(&value).map_err(|_| D::Error::custom("invalid project UUID"))
+            })
+            .collect()
+    }
+}
+
+mod optional_contract_uuid {
+    use super::{Uuid, contract_uuid_text};
+    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+
+    pub fn serialize<S: Serializer>(value: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_some(&value.map(|id| id.hyphenated().to_string()))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Uuid>, D::Error> {
+        Option::<String>::deserialize(deserializer)?
+            .map(|value| {
+                if !contract_uuid_text(&value) {
+                    return Err(D::Error::custom("invalid project UUID"));
+                }
+                Uuid::parse_str(&value).map_err(|_| D::Error::custom("invalid project UUID"))
+            })
+            .transpose()
     }
 }
 

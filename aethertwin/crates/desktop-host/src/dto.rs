@@ -1,7 +1,7 @@
 use crate::error::HostError;
 use project_io::{
-    AssetRecord, CommitBatch, Floor, JournalAction, JournalOperation, ProjectProfile,
-    PlanLayer, ProjectSnapshot, SpatialProject, validate_commit_batch,
+    CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer, ProjectProfile,
+    ProjectSnapshot, validate_commit_batch,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -40,7 +40,7 @@ pub struct CommitProjectDto {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CheckpointProjectDto {
     session_id: String,
-    snapshot: ProjectSnapshotDto,
+    snapshot: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,7 +60,7 @@ impl CommitProjectDto {
 
 impl CheckpointProjectDto {
     pub(crate) fn into_native(self) -> Result<(String, ProjectSnapshot), HostError> {
-        Ok((self.session_id, self.snapshot.into_native()?))
+        Ok((self.session_id, strict_v3_snapshot(self.snapshot)?))
     }
 }
 
@@ -73,16 +73,16 @@ impl CloseProjectDto {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CommitBatchDto {
-    before: ProjectSnapshotDto,
-    after: ProjectSnapshotDto,
+    before: Value,
+    after: Value,
     journal: Vec<JournalOperationDto>,
 }
 
 impl CommitBatchDto {
     fn into_native(self) -> Result<CommitBatch, HostError> {
         Ok(CommitBatch {
-            before: self.before.into_native()?,
-            after: self.after.into_native()?,
+            before: strict_v3_snapshot(self.before)?,
+            after: strict_v3_snapshot(self.after)?,
             journal: self
                 .journal
                 .into_iter()
@@ -92,72 +92,13 @@ impl CommitBatchDto {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProjectSnapshotDto {
-    schema_version: u32,
-    sequence: u64,
-    checkpoint_sequence: u64,
-    project: SpatialProjectDto,
-    assets: Vec<AssetRecordDto>,
-}
-
-impl ProjectSnapshotDto {
-    fn into_native(self) -> Result<ProjectSnapshot, HostError> {
-        Ok(ProjectSnapshot {
-            schema_version: self.schema_version,
-            sequence: self.sequence,
-            checkpoint_sequence: self.checkpoint_sequence,
-            project: self.project.into_native()?,
-            assets: self
-                .assets
-                .into_iter()
-                .map(AssetRecordDto::into_native)
-                .collect::<Result<_, _>>()?,
-        })
+fn strict_v3_snapshot(value: Value) -> Result<ProjectSnapshot, HostError> {
+    let snapshot: ProjectSnapshot =
+        serde_json::from_value(value).map_err(|_| HostError::IpcInvalidRequest)?;
+    if snapshot.schema_version != 3 {
+        return Err(HostError::IpcInvalidRequest);
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SpatialProjectDto {
-    id: String,
-    name: String,
-    tags: Vec<String>,
-    profile: String,
-    floors: Vec<FloorDto>,
-    entities: Vec<Value>,
-    vendors: Vec<Value>,
-    product_contents: Vec<Value>,
-    media_assets: Vec<Value>,
-    route_networks: Vec<Value>,
-    themes: Vec<Value>,
-    camera_shots: Vec<Value>,
-    story_sequences: Vec<Value>,
-}
-
-impl SpatialProjectDto {
-    fn into_native(self) -> Result<SpatialProject, HostError> {
-        Ok(SpatialProject {
-            id: canonical_uuid(&self.id)?,
-            name: self.name,
-            tags: self.tags,
-            profile: profile(&self.profile)?,
-            floors: self
-                .floors
-                .into_iter()
-                .map(FloorDto::into_native)
-                .collect::<Result<_, _>>()?,
-            entities: self.entities,
-            vendors: self.vendors,
-            product_contents: self.product_contents,
-            media_assets: self.media_assets,
-            route_networks: self.route_networks,
-            themes: self.themes,
-            camera_shots: self.camera_shots,
-            story_sequences: self.story_sequences,
-        })
-    }
+    Ok(snapshot)
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,28 +143,6 @@ impl PlanLayerDto {
             tags: self.tags,
             visible: self.visible,
             locked: self.locked,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AssetRecordDto {
-    id: String,
-    sha256: String,
-    relative_path: String,
-    media_type: String,
-    size: u64,
-}
-
-impl AssetRecordDto {
-    fn into_native(self) -> Result<AssetRecord, HostError> {
-        Ok(AssetRecord {
-            id: canonical_uuid(&self.id)?,
-            sha256: self.sha256,
-            relative_path: self.relative_path,
-            media_type: self.media_type,
-            size: self.size,
         })
     }
 }

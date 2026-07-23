@@ -44,9 +44,17 @@ fn creates_and_reopens_both_profiles() {
         assert_eq!(opened.snapshot, reopened.snapshot);
         assert_eq!(opened.manifest.project_id, opened.snapshot.project.id);
         assert_eq!(opened.manifest.profile, opened.snapshot.project.profile);
-        assert_eq!(opened.snapshot.schema_version, 2);
+        assert_eq!(opened.snapshot.schema_version, 3);
+        assert_eq!(opened.manifest.schema_version, 3);
         assert_eq!(opened.snapshot.project.floors[0].layers.len(), 1);
         assert!(opened.snapshot.project.entities.is_empty());
+        let project = serde_json::to_value(&opened.snapshot.project).unwrap();
+        for collection in [
+            "planReferences", "openings", "guidedRoutes", "materials", "materialAssignments",
+        ] {
+            assert_eq!(project[collection], json!([]), "unexpected {collection}");
+        }
+        assert_eq!(project["sceneEnvironment"]["backgroundColor"], "#10151c");
         assert!(!reopened.recovered);
     }
 }
@@ -272,7 +280,7 @@ fn rejects_invalid_manifest_fields_and_unsupported_schema() {
     }
 
     let mut newer = original;
-    newer["schemaVersion"] = json!(3);
+    newer["schemaVersion"] = json!(4);
     fs::write(&manifest_path, serde_json::to_vec_pretty(&newer).unwrap()).unwrap();
     assert_code(
         open_project(&opened.project_path).unwrap_err(),

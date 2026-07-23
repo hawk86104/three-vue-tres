@@ -1,4 +1,4 @@
-import { parseSnapshotV2, type ProjectSnapshot } from "@aethertwin/core-model";
+import { parseSnapshotV3, type ProjectSnapshot } from "@aethertwin/core-model";
 import {
   screenToWorld,
   type PlanEditIntent,
@@ -467,7 +467,7 @@ describe("plan editor interaction controller", () => {
           translation: { x: 400, y: 0 },
         },
       };
-      const snapshot = parseSnapshotV2({
+      const snapshot = parseSnapshotV3({
         ...base.snapshot,
         project: {
           ...base.snapshot.project,
@@ -626,7 +626,7 @@ describe("plan editor interaction controller", () => {
       locked: false,
     };
     const lockedFixture = { ...base.fixture, layerId: lockedLayer.id };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...base.snapshot,
       project: {
         ...base.snapshot.project,
@@ -775,7 +775,7 @@ describe("plan editor interaction controller", () => {
       },
       polygon: [{ x: -50, y: -50 }, { x: 50, y: -50 }, { x: 0, y: 50 }],
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...base.snapshot,
       project: {
         ...base.snapshot.project,
@@ -852,7 +852,7 @@ describe("plan editor interaction controller", () => {
         translation: { x: 400, y: 0 },
       },
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...base.snapshot,
       project: {
         ...base.snapshot.project,
@@ -897,7 +897,7 @@ describe("plan editor interaction controller", () => {
         translation: { x: 400, y: 0 },
       },
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...base.snapshot,
       project: {
         ...base.snapshot.project,
@@ -934,7 +934,7 @@ describe("plan editor interaction controller", () => {
         translation: { x: 1e-20, y: 0 },
       },
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...base.snapshot,
       project: {
         ...base.snapshot.project,
@@ -1008,7 +1008,7 @@ describe("InteractionController keyboard grid movement", () => {
     async (kind) => {
       const base = createPlanEditorTestHarness();
       const layer = base.floorA.layers[0]!;
-      const snapshot = parseSnapshotV2({
+      const snapshot = parseSnapshotV3({
         ...base.snapshot,
         project: {
           ...base.snapshot.project,

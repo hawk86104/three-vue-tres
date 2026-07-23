@@ -1,7 +1,6 @@
 import {
-  migrateSnapshot,
   parseManifest,
-  parseSnapshotV2,
+  parseSnapshotV3,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
 import type {
@@ -101,7 +100,6 @@ async function invokeNative<T>(command: string, payload: UnknownRecord): Promise
 
 interface ParsedOpenedProject extends OpenedProject {
   readonly sessionId: string;
-  readonly storedSchemaVersion: number;
 }
 
 function storedSchemaVersion(value: unknown, label: string): number {
@@ -124,15 +122,16 @@ function parseOpenedProject(value: unknown): ParsedOpenedProject {
   }
   const manifestSchemaVersion = storedSchemaVersion(record.manifest, "native manifest");
   const snapshotSchemaVersion = storedSchemaVersion(record.snapshot, "native snapshot");
-  if (manifestSchemaVersion !== snapshotSchemaVersion) {
-    throw new Error("Invalid native opened project response: schema versions must match");
+  if (manifestSchemaVersion !== 3 || snapshotSchemaVersion !== 3) {
+    throw new Error(
+      "Invalid native opened project response.schemaVersion: expected manifest and snapshot schemaVersion 3",
+    );
   }
   return Object.freeze({
     sessionId,
-    storedSchemaVersion: snapshotSchemaVersion,
     projectPath,
     manifest: parseManifest(record.manifest),
-    snapshot: migrateSnapshot(record.snapshot),
+    snapshot: parseSnapshotV3(record.snapshot),
     recovered: record.recovered,
   });
 }
@@ -150,14 +149,14 @@ function parseCheckpointResult(
     record.snapshot,
     "native checkpoint snapshot",
   );
-  if (manifestSchemaVersion !== 2 || snapshotSchemaVersion !== 2) {
+  if (manifestSchemaVersion !== 3 || snapshotSchemaVersion !== 3) {
     throw new Error(
-      "Invalid native checkpoint response.schemaVersion: expected manifest and snapshot schemaVersion 2",
+      "Invalid native checkpoint response.schemaVersion: expected manifest and snapshot schemaVersion 3",
     );
   }
   const manifest = parseManifest(record.manifest);
-  const snapshot = parseSnapshotV2(record.snapshot);
-  const expectedWithCheckpoint = parseSnapshotV2({
+  const snapshot = parseSnapshotV3(record.snapshot);
+  const expectedWithCheckpoint = parseSnapshotV3({
     ...expected,
     checkpointSequence: expected.sequence,
   });
@@ -268,23 +267,7 @@ export class TauriProjectBackend implements ProjectBackend {
 
   private async acceptOpenedProject(value: unknown): Promise<OpenedProject> {
     try {
-      let parsed = parseOpenedProject(value);
-      if (parsed.storedSchemaVersion === 1) {
-        const upgraded = parseCheckpointResult(
-          await invokeNative<unknown>("checkpoint_project", {
-            sessionId: parsed.sessionId,
-            snapshot: parsed.snapshot,
-          }),
-          parsed.snapshot,
-        );
-        parsed = Object.freeze({
-          ...parsed,
-          manifest: upgraded.manifest,
-          snapshot: upgraded.snapshot,
-          storedSchemaVersion: upgraded.snapshot.schemaVersion,
-        });
-      }
-
+      const parsed = parseOpenedProject(value);
       this.sessions.set(parsed.projectPath, parsed.sessionId);
       return Object.freeze({
         projectPath: parsed.projectPath,

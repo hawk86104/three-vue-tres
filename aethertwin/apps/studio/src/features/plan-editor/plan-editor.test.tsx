@@ -84,7 +84,7 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(within(inspector).getByLabelText("项目名称")).toHaveValue("北岸展厅");
     expect(within(inspector).getByLabelText("项目标签")).toHaveValue("featured, north");
     expect(inspector).toHaveTextContent("showroom");
-    expect(inspector).toHaveTextContent(/Schema\s*2/i);
+    expect(inspector).toHaveTextContent(/Schema\s*3/i);
     expect(inspector).toHaveTextContent("未保存");
     expect(inspector).toHaveTextContent(/sandbox/i);
     expect(inspector).toHaveTextContent("项目位置");

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { parseSnapshotV2 } from "@aethertwin/core-model";
+import { parseSnapshotV3 } from "@aethertwin/core-model";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
 import {
   act, cleanup, fireEvent, render, screen, waitFor,
@@ -74,7 +74,7 @@ describe("PlanCanvas lifecycle", () => {
     const harness = createPlanEditorTestHarness();
     const renderer = new FakePlanRenderer();
     const props = createPlanCanvasProps(harness, renderer);
-    const movedSnapshot = parseSnapshotV2({
+    const movedSnapshot = parseSnapshotV3({
       ...harness.snapshot,
       project: {
         ...harness.snapshot.project,
@@ -347,7 +347,7 @@ describe("PlanCanvas accessible parity", () => {
       floorId: harness.floorB.id,
       layerId: harness.floorB.layers[0]!.id,
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...harness.snapshot,
       project: {
         ...harness.snapshot.project,

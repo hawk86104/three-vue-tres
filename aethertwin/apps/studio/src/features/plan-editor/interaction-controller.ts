@@ -1,5 +1,5 @@
 import {
-  parseSnapshotV2,
+  parseSnapshotV3,
   type DimensionAnchor,
   type PlanLayer,
   type Point2,
@@ -434,7 +434,7 @@ function dimensionEntity(
 }
 
 function createIntent(snapshot: ProjectSnapshot, entity: SpatialEntity): PlanEditIntent {
-  const parsed = parseSnapshotV2({
+  const parsed = parseSnapshotV3({
     ...snapshot,
     project: {
       ...snapshot.project,
@@ -1112,7 +1112,7 @@ export function createInteractionController(
         const additions = result.value.changes.flatMap((change) => (
           change.after === null ? [] : [change.after]
         ));
-        const parsed = parseSnapshotV2({
+        const parsed = parseSnapshotV3({
           ...context.snapshot,
           project: {
             ...context.snapshot.project,

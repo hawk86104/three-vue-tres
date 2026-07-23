@@ -1,6 +1,6 @@
 import {
   createInitialSnapshot,
-  parseSnapshotV2,
+  parseSnapshotV3,
   type Fixture,
   type Floor,
   type PlanLayer,
@@ -61,7 +61,7 @@ export function createPlanEditorTestHarness() {
     kind: "generic",
     size: { width: 100, height: 100 },
   };
-  const snapshot = parseSnapshotV2({
+  const snapshot = parseSnapshotV3({
     ...initial,
     project: { ...initial.project, floors: [floorA, floorB], entities: [fixture] },
   });
@@ -252,7 +252,7 @@ export function renderPlanEditorFixture(
     } as SpatialEntity, ...entities.slice(1)];
   }
 
-  const snapshot = parseSnapshotV2({
+  const snapshot = parseSnapshotV3({
     ...base.snapshot,
     project: {
       ...base.snapshot.project,
@@ -298,7 +298,7 @@ export function renderPlanEditorFixture(
       if (change.after === null) byId.delete(change.id);
       else byId.set(change.id, change.after);
     }
-    publish(parseSnapshotV2({
+    publish(parseSnapshotV3({
       ...current,
       sequence: current.sequence + 1,
       project: {
@@ -309,7 +309,7 @@ export function renderPlanEditorFixture(
   });
   const applyFloorPatch = vi.fn(async (change: FloorChange) => {
     const current = projectState.snapshot!;
-    publish(parseSnapshotV2({
+    publish(parseSnapshotV3({
       ...current,
       sequence: current.sequence + 1,
       project: {

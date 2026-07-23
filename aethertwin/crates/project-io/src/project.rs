@@ -1,7 +1,7 @@
 use crate::lock::ProjectLock;
 use crate::model::{
     CURRENT_SCHEMA_VERSION, CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer,
-    SaveState, parse_contract_uuid,
+    SaveState, SceneEnvironment, canonical_asset_path, parse_contract_uuid,
 };
 use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
@@ -137,6 +137,97 @@ pub(crate) fn load_opened_project(
     })
 }
 
+fn upgrade_opened_project(
+    connection: &mut Connection,
+    io_path: &Path,
+    opened: OpenedProject,
+    previous_manifest: &[u8],
+) -> Result<(OpenedProject, Vec<u8>), ProjectIoError> {
+    if opened.snapshot.schema_version == CURRENT_SCHEMA_VERSION {
+        if opened.manifest.schema_version != CURRENT_SCHEMA_VERSION {
+            return Err(ProjectIoError::ManifestDatabaseMismatch);
+        }
+        return Ok((opened, previous_manifest.to_vec()));
+    }
+    if opened.manifest.schema_version != opened.snapshot.schema_version {
+        return Err(ProjectIoError::ManifestDatabaseMismatch);
+    }
+
+    let opened_snapshot_value =
+        serde_json::to_value(&opened.snapshot).map_err(|_| ProjectIoError::DatabaseError)?;
+    let migrated_opened_snapshot = migrate_snapshot_value(opened_snapshot_value)?;
+    let mut migrated_manifest = opened.manifest.clone();
+    migrated_manifest.schema_version = CURRENT_SCHEMA_VERSION;
+    migrated_manifest.validate()?;
+    let published_manifest = serialize_manifest(&migrated_manifest)?;
+
+    let transaction = connection.transaction()?;
+    let stored_rows: Vec<(i64, String, String)> = {
+        let mut statement = transaction.prepare(
+            "SELECT sequence, snapshot_json, checksum FROM snapshots ORDER BY sequence",
+        )?;
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    if stored_rows.is_empty() {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    let mut migrated_rows = Vec::with_capacity(stored_rows.len());
+    for (row_sequence, snapshot_json, checksum) in stored_rows {
+        if row_sequence < 0 || checksum != snapshot_checksum(&snapshot_json) {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        let stored: ProjectSnapshot = serde_json::from_str(&snapshot_json)
+            .map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+        stored.validate()?;
+        if stored.sequence != row_sequence as u64
+            || stored.schema_version != opened.snapshot.schema_version
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        let migrated = migrate_snapshot_value(
+            serde_json::from_str(&snapshot_json)
+                .map_err(|_| ProjectIoError::InvalidProjectStructure)?,
+        )?;
+        let migrated_json =
+            serde_json::to_string(&migrated).map_err(|_| ProjectIoError::DatabaseError)?;
+        migrated_rows.push((row_sequence, migrated_json));
+    }
+
+    for (row_sequence, snapshot_json) in migrated_rows {
+        transaction.execute(
+            "UPDATE snapshots SET snapshot_json = ?1, checksum = ?2 WHERE sequence = ?3",
+            params![
+                snapshot_json,
+                snapshot_checksum(&snapshot_json),
+                row_sequence,
+            ],
+        )?;
+    }
+    upsert_meta(&transaction, "schemaVersion", &CURRENT_SCHEMA_VERSION)?;
+    write_entity_records(&transaction, &migrated_opened_snapshot)?;
+    write_asset_records(&transaction, &migrated_opened_snapshot)?;
+
+    publish_manifest_with_restore(io_path, &published_manifest, previous_manifest)?;
+    if transaction.commit().is_err() {
+        if write_manifest_bytes_atomically(io_path, previous_manifest).is_err() {
+            return Err(ProjectIoError::RecoveryFailed);
+        }
+        return Err(ProjectIoError::DatabaseError);
+    }
+
+    Ok((
+        OpenedProject {
+            project_path: opened.project_path,
+            manifest: migrated_manifest,
+            snapshot: migrated_opened_snapshot,
+            recovered: opened.recovered,
+        },
+        published_manifest,
+    ))
+}
+
 pub struct ProjectSession {
     project_path: std::path::PathBuf,
     snapshot: ProjectSnapshot,
@@ -204,7 +295,7 @@ pub fn open_session(
         }
         return Err(ProjectIoError::StaleProjectLock);
     }
-    let opened_result = if recovered {
+    let mut opened_result = if recovered {
         let recovered = match recovery_copy {
             Some(copy) => recover_from_copy(copy, lock.canonical_path()),
             None => recover_with_lock(&lock),
@@ -227,11 +318,16 @@ pub fn open_session(
             }
         }
     };
-    let connection = match (|| {
-        let connection = open_database(&lock.bound_path().join("project.db"))?;
-        upsert_meta(&connection, "cleanShutdown", &false)?;
-        Ok::<_, ProjectIoError>(connection)
-    })() {
+    let mut manifest_bytes = match fs::read(lock.bound_path().join("manifest.json")) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if !lock.stale_recovered() {
+                let _ = lock.clean_close();
+            }
+            return Err(error.into());
+        }
+    };
+    let mut connection = match open_database(&lock.bound_path().join("project.db")) {
         Ok(connection) => connection,
         Err(error) => {
             if !lock.stale_recovered() {
@@ -240,22 +336,39 @@ pub fn open_session(
             return Err(error);
         }
     };
+    if opened_result.snapshot.schema_version != CURRENT_SCHEMA_VERSION {
+        match upgrade_opened_project(
+            &mut connection,
+            lock.bound_path(),
+            opened_result,
+            &manifest_bytes,
+        ) {
+            Ok((upgraded, published_manifest)) => {
+                opened_result = upgraded;
+                manifest_bytes = published_manifest;
+            }
+            Err(error) => {
+                drop(connection);
+                if !lock.stale_recovered() {
+                    let _ = lock.clean_close();
+                }
+                return Err(error);
+            }
+        }
+    }
+    if let Err(error) = upsert_meta(&connection, "cleanShutdown", &false) {
+        drop(connection);
+        if !lock.stale_recovered() {
+            let _ = lock.clean_close();
+        }
+        return Err(error);
+    }
     let save_state = if recovered {
         SaveState::Recovered
     } else if opened_result.snapshot.sequence == opened_result.snapshot.checkpoint_sequence {
         SaveState::Saved
     } else {
         SaveState::Dirty
-    };
-    let manifest_bytes = match fs::read(lock.bound_path().join("manifest.json")) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            drop(connection);
-            if !lock.stale_recovered() {
-                let _ = lock.clean_close();
-            }
-            return Err(error.into());
-        }
     };
     Ok(ProjectSession {
         project_path: opened_result.project_path,
@@ -572,8 +685,11 @@ fn default_layer_id_for_floor(floor_id: Uuid) -> Uuid {
 }
 
 pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> {
-    batch.before.validate()?;
-    batch.after.validate()?;
+    batch
+        .before
+        .validate()
+        .map_err(|_| ProjectIoError::DatabaseError)?;
+    batch.after.validate().map_err(|_| ProjectIoError::DatabaseError)?;
     if batch.journal.is_empty()
         || batch.after.checkpoint_sequence != batch.before.checkpoint_sequence
         || batch.after.sequence
@@ -1498,9 +1614,128 @@ fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSna
             themes: Vec::new(),
             camera_shots: Vec::new(),
             story_sequences: Vec::new(),
+            plan_references: Vec::new(),
+            openings: Vec::new(),
+            guided_routes: Vec::new(),
+            materials: Vec::new(),
+            material_assignments: Vec::new(),
+            scene_environment: SceneEnvironment::default(),
         },
         assets: Vec::new(),
     }
+}
+
+fn migrate_snapshot_value(mut value: Value) -> Result<ProjectSnapshot, ProjectIoError> {
+    let mut schema_version = snapshot_schema_version(&value)?;
+    if schema_version > CURRENT_SCHEMA_VERSION {
+        return Err(ProjectIoError::UnsupportedSchemaVersion);
+    }
+    while schema_version < CURRENT_SCHEMA_VERSION {
+        value = match schema_version {
+            1 => migrate_snapshot_v1_to_v2(value)?,
+            2 => migrate_snapshot_v2_to_v3(value)?,
+            _ => return Err(ProjectIoError::UnsupportedSchemaVersion),
+        };
+        schema_version = snapshot_schema_version(&value)?;
+    }
+    let snapshot: ProjectSnapshot =
+        serde_json::from_value(value).map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+    snapshot.validate()?;
+    Ok(snapshot)
+}
+
+fn snapshot_schema_version(value: &Value) -> Result<u32, ProjectIoError> {
+    let version = value
+        .as_object()
+        .and_then(|source| source.get("schemaVersion"))
+        .and_then(Value::as_u64)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    if version == 0 || version > 9_007_199_254_740_991 {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    u32::try_from(version).map_err(|_| ProjectIoError::UnsupportedSchemaVersion)
+}
+
+fn migrate_snapshot_v1_to_v2(mut value: Value) -> Result<Value, ProjectIoError> {
+    let source = value
+        .as_object_mut()
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    source.insert("schemaVersion".into(), Value::from(2));
+    let assets = source
+        .get_mut("assets")
+        .and_then(Value::as_array_mut)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    for asset in assets {
+        let asset = asset
+            .as_object_mut()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let sha256 = asset.get("sha256").and_then(Value::as_str);
+        let media_type = asset.get("mediaType").and_then(Value::as_str);
+        if let (Some(sha256), Some(media_type)) = (sha256, media_type)
+            && sha256.len() == 64
+            && sha256.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            && let Some(relative_path) = canonical_asset_path(sha256, media_type)
+        {
+            asset.insert("relativePath".into(), Value::String(relative_path));
+        }
+    }
+    let project = source
+        .get_mut("project")
+        .and_then(Value::as_object_mut)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    let floors = project
+        .get_mut("floors")
+        .and_then(Value::as_array_mut)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    for floor in floors {
+        let floor = floor
+            .as_object_mut()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let floor_id = floor
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let layer_id = default_layer_id_for_floor(parse_contract_uuid(floor_id)?);
+        floor.insert(
+            "layers".into(),
+            serde_json::json!([{
+                "id": layer_id.hyphenated().to_string(),
+                "name": "默认图层",
+                "tags": [],
+                "visible": true,
+                "locked": false
+            }]),
+        );
+    }
+    for collection in [
+        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
+        "cameraShots", "storySequences",
+    ] {
+        project.insert(collection.into(), Value::Array(Vec::new()));
+    }
+    Ok(value)
+}
+
+fn migrate_snapshot_v2_to_v3(mut value: Value) -> Result<Value, ProjectIoError> {
+    let source = value
+        .as_object_mut()
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    source.insert("schemaVersion".into(), Value::from(3));
+    let project = source
+        .get_mut("project")
+        .and_then(Value::as_object_mut)
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    for collection in [
+        "planReferences", "openings", "guidedRoutes", "materials", "materialAssignments",
+    ] {
+        project.insert(collection.into(), Value::Array(Vec::new()));
+    }
+    project.insert(
+        "sceneEnvironment".into(),
+        serde_json::to_value(SceneEnvironment::default())
+            .map_err(|_| ProjectIoError::InvalidProjectStructure)?,
+    );
+    Ok(value)
 }
 
 fn path_entry_exists(path: &Path) -> bool {
@@ -1687,10 +1922,10 @@ fn replace_file_atomically(
 #[cfg(test)]
 mod checkpoint_publication_tests {
     use super::{
-        default_layer_id_for_floor, fail_next_manifest_directory_sync, open_session,
+        fail_next_manifest_directory_sync, open_session,
     };
     use crate::{
-        CreateProjectRequest, PlanLayer, ProjectProfile, create_project, snapshot_checksum,
+        CreateProjectRequest, ProjectProfile, create_project, snapshot_checksum,
     };
     use rusqlite::{Connection, params};
     use serde_json::{Value, json};
@@ -1698,7 +1933,7 @@ mod checkpoint_publication_tests {
     use tempfile::tempdir;
 
     #[test]
-    fn post_replace_directory_sync_failure_restores_v1_manifest_and_rolls_back_database() {
+    fn automatic_upgrade_manifest_sync_failure_restores_v1_manifest_and_database() {
         let root = tempdir().unwrap();
         let opened = create_project(CreateProjectRequest {
             parent: root.path().to_path_buf(),
@@ -1727,6 +1962,12 @@ mod checkpoint_publication_tests {
             "themes",
             "cameraShots",
             "storySequences",
+            "planReferences",
+            "openings",
+            "guidedRoutes",
+            "materials",
+            "materialAssignments",
+            "sceneEnvironment",
         ] {
             snapshot["project"].as_object_mut().unwrap().remove(collection);
         }
@@ -1746,24 +1987,10 @@ mod checkpoint_publication_tests {
             .unwrap();
         drop(connection);
 
-        let mut session = open_session(&opened.project_path, false).unwrap();
-        let mut requested = session.snapshot().clone();
-        requested.schema_version = 2;
-        for floor in &mut requested.project.floors {
-            floor.layers = vec![PlanLayer {
-                id: default_layer_id_for_floor(floor.id),
-                name: "默认图层".into(),
-                tags: Vec::new(),
-                visible: true,
-                locked: false,
-            }];
-        }
-
         fail_next_manifest_directory_sync();
-        let error = session.checkpoint(requested).unwrap_err();
+        let error = open_session(&opened.project_path, false).unwrap_err();
 
         assert_eq!(error.code(), "FILESYSTEM_ERROR");
-        assert_eq!(session.snapshot().schema_version, 1);
         assert_eq!(
             fs::read(&manifest_path).unwrap(),
             previous_manifest
@@ -1788,5 +2015,9 @@ mod checkpoint_publication_tests {
             serde_json::from_str::<Value>(&stored_snapshot).unwrap()["schemaVersion"],
             1
         );
+        drop(connection);
+
+        let session = open_session(&opened.project_path, false).unwrap();
+        assert_eq!(session.snapshot().schema_version, 3);
     }
 }

@@ -199,7 +199,7 @@ describe("TauriProjectBackend", () => {
     ]);
   });
 
-  it("passes exact schema-v2 snapshots and generic entity patches through the native command boundary", async () => {
+  it("passes exact schema-v3 snapshots and generic entity patches through the native command boundary", async () => {
     const opened = fixture();
     const { batch, entity } = entityPatchBatch(opened.snapshot);
     const checkpointed = parseSnapshot({
@@ -223,8 +223,8 @@ describe("TauriProjectBackend", () => {
     const checkpoint = await backend.checkpoint(PROJECT_A, batch.after);
     await backend.closeProject(PROJECT_A);
 
-    expect(batch.before.schemaVersion).toBe(2);
-    expect(batch.after.schemaVersion).toBe(2);
+    expect(batch.before.schemaVersion).toBe(3);
+    expect(batch.after.schemaVersion).toBe(3);
     expect(batch.journal[0]).toMatchObject({
       commandType: "plan.entities.patch",
       payload: {
@@ -262,74 +262,31 @@ describe("TauriProjectBackend", () => {
     ]);
   });
 
-  it("checkpoints a migrated v1 snapshot before exposing the editor session", async () => {
+  it("rejects a coherent v2 native session and closes it without frontend migration", async () => {
     const current = fixture();
     const legacy = {
       ...current,
       manifest: {
         ...current.manifest,
-        schemaVersion: 1,
-        name: snapshotV1Fixture.project.name,
-        profile: snapshotV1Fixture.project.profile,
+        schemaVersion: 2,
       },
-      snapshot: snapshotV1Fixture,
+      snapshot: {
+        ...current.snapshot,
+        schemaVersion: 2,
+      },
     };
-    const upgradedManifest = {
-      ...current.manifest,
-      name: snapshotV1Fixture.project.name,
-      profile: snapshotV1Fixture.project.profile,
-    };
-    invoke
-      .mockResolvedValueOnce(legacy)
-      .mockResolvedValueOnce({
-        manifest: upgradedManifest,
-        snapshot: {
-          ...current.snapshot,
-          sequence: snapshotV1Fixture.sequence,
-          checkpointSequence: snapshotV1Fixture.sequence,
-          project: {
-            ...current.snapshot.project,
-            id: snapshotV1Fixture.project.id,
-            name: snapshotV1Fixture.project.name,
-            tags: snapshotV1Fixture.project.tags,
-            profile: snapshotV1Fixture.project.profile,
-            floors: [{
-              ...snapshotV1Fixture.project.floors[0],
-              layers: [{
-                id: "00000000-0000-5000-8000-0000000000a5",
-                name: "默认图层",
-                tags: [],
-                visible: true,
-                locked: false,
-              }],
-            }],
-          },
-          assets: snapshotV1Fixture.assets,
-        },
-      });
+    invoke.mockResolvedValueOnce(legacy).mockResolvedValueOnce(undefined);
 
     const { TauriProjectBackend } = await import("./tauri-backend");
     const backend = new TauriProjectBackend();
-    const opened = await backend.openProject(PROJECT_A);
-
-    expect(opened.snapshot.schemaVersion).toBe(2);
+    await expect(backend.openProject(PROJECT_A)).rejects.toThrow(/schemaVersion/i);
     expect(invoke.mock.calls.map(([command]) => command)).toEqual([
       "open_project",
-      "checkpoint_project",
+      "close_project",
     ]);
-    expect(invoke.mock.calls[1]?.[1]).toMatchObject({
-      payload: {
-        sessionId: SESSION_A,
-        snapshot: {
-          schemaVersion: 2,
-          sequence: snapshotV1Fixture.sequence,
-          checkpointSequence: snapshotV1Fixture.checkpointSequence,
-        },
-      },
-    });
   });
 
-  it("closes a v1 session when its upgrade checkpoint fails", async () => {
+  it("closes a trusted v1 session when native publication violates the v3 contract", async () => {
     const current = fixture();
     invoke
       .mockResolvedValueOnce({
@@ -342,7 +299,6 @@ describe("TauriProjectBackend", () => {
         },
         snapshot: snapshotV1Fixture,
       })
-      .mockRejectedValueOnce(new Error("upgrade failed"))
       .mockResolvedValueOnce(undefined);
 
     const { TauriProjectBackend } = await import("./tauri-backend");
@@ -351,7 +307,6 @@ describe("TauriProjectBackend", () => {
 
     expect(invoke.mock.calls.map(([command]) => command)).toEqual([
       "open_project",
-      "checkpoint_project",
       "close_project",
     ]);
   });
@@ -842,7 +797,7 @@ describe("TauriProjectBackend", () => {
 
   it("runtime-parses authoritative checkpoints, rejects malformed or incoherent results, and keeps the session available", async () => {
     const opened = fixture();
-    const invalidManifest = { ...opened.manifest, schemaVersion: 3 };
+    const invalidManifest = { ...opened.manifest, schemaVersion: 2 };
     const incoherentSnapshot = parseSnapshot({
       ...opened.snapshot,
       project: { ...opened.snapshot.project, name: "Different" },

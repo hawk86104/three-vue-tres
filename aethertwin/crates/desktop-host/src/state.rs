@@ -25,7 +25,7 @@ use uuid::Uuid;
 pub(crate) type SessionHandle = Arc<Mutex<ProjectSession>>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenedProjectDto {
     pub session_id: String,
     pub project_path: String,
@@ -375,6 +375,9 @@ pub(crate) fn opened_project_dto(
     session_id: Uuid,
     session: &ProjectSession,
 ) -> Result<OpenedProjectDto, HostError> {
+    if session.manifest().schema_version != 3 || session.snapshot().schema_version != 3 {
+        return Err(HostError::IpcInvalidRequest);
+    }
     let project_path = session
         .project_path()
         .to_str()

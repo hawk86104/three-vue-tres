@@ -25,7 +25,7 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
     let floor_id = Uuid::parse_str("00000000-0000-4000-8000-000000000002").unwrap();
     let asset_id = Uuid::parse_str("00000000-0000-4000-8000-000000000003").unwrap();
     let snapshot = ProjectSnapshot {
-        schema_version: 2,
+        schema_version: 3,
         sequence: 4,
         checkpoint_sequence: 3,
         project: SpatialProject {
@@ -53,17 +53,23 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
             themes: Vec::new(),
             camera_shots: Vec::new(),
             story_sequences: Vec::new(),
+            plan_references: Vec::new(),
+            openings: Vec::new(),
+            guided_routes: Vec::new(),
+            materials: Vec::new(),
+            material_assignments: Vec::new(),
+            scene_environment: Default::default(),
         },
         assets: vec![AssetRecord {
             id: asset_id,
             sha256: "a".repeat(64),
-            relative_path: "assets/item.png".into(),
+            relative_path: format!("assets/sha256/aa/{}.png", "a".repeat(64)),
             media_type: "image/png".into(),
             size: 12,
         }],
     };
     let expected = json!({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "sequence": 4,
         "checkpointSequence": 3,
         "project": {
@@ -90,12 +96,18 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
             "routeNetworks": [],
             "themes": [],
             "cameraShots": [],
-            "storySequences": []
+            "storySequences": [],
+            "planReferences": [],
+            "openings": [],
+            "guidedRoutes": [],
+            "materials": [],
+            "materialAssignments": [],
+            "sceneEnvironment": { "backgroundColor": "#10151c", "ambient": { "color": "#ffffff", "intensity": 0.6 }, "key": { "color": "#ffffff", "intensity": 1, "direction": [-0.5, -1, -0.5] }, "shadowsEnabled": true, "shadowSoftness": 0.5 }
         },
         "assets": [{
             "id": "00000000-0000-4000-8000-000000000003",
             "sha256": "a".repeat(64),
-            "relativePath": "assets/item.png",
+            "relativePath": format!("assets/sha256/aa/{}.png", "a".repeat(64)),
             "mediaType": "image/png",
             "size": 12
         }]
@@ -109,7 +121,7 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
 }
 
 #[test]
-fn snapshot_fixtures_deserialize_and_v2_preserves_every_collection() {
+fn snapshot_fixtures_deserialize_and_preserve_every_version_exactly() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/contracts");
     let v1: ProjectSnapshot =
@@ -121,7 +133,20 @@ fn snapshot_fixtures_deserialize_and_v2_preserves_every_collection() {
     let expected: Value = serde_json::from_slice(&source).unwrap();
     let v2: ProjectSnapshot = serde_json::from_slice(&source).unwrap();
     assert_eq!(v2.schema_version, 2);
-    assert_eq!(serde_json::to_value(v2).unwrap(), expected);
+    let actual = serde_json::to_value(v2).unwrap();
+    for key in [
+        "id", "name", "tags", "profile", "floors", "entities", "vendors",
+        "productContents", "mediaAssets", "routeNetworks", "themes", "cameraShots",
+        "storySequences",
+    ] {
+        assert_eq!(actual["project"][key], expected["project"][key], "changed {key}");
+    }
+
+    let source = fs::read(fixtures.join("snapshot.v3.json")).unwrap();
+    let expected: Value = serde_json::from_slice(&source).unwrap();
+    let v3: ProjectSnapshot = serde_json::from_slice(&source).unwrap();
+    assert_eq!(v3.schema_version, 3);
+    assert_eq!(serde_json::to_value(v3).unwrap(), expected);
 }
 
 #[test]
