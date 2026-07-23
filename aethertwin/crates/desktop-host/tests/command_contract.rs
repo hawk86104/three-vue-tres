@@ -541,7 +541,7 @@ fn real_tauri_invoke_handler_rejects_wrong_unknown_and_invalid_nested_values() {
         }),
     )
     .unwrap();
-    assert_eq!(checkpoint["snapshot"]["schemaVersion"], 2);
+    assert_eq!(checkpoint["snapshot"]["schemaVersion"], 3);
 
     let next = renamed(opened.snapshot.clone(), "Never Applied", 1);
     let batch = rename_batch(&opened.snapshot, &next);
@@ -894,4 +894,177 @@ fn plan_entity_patch_dto_accepts_exact_entity_and_floor_payloads_and_rejects_var
             }),
         ).unwrap_err());
     }
+}
+
+fn record_patch_batch_value(
+    before: &ProjectSnapshot,
+    after: &ProjectSnapshot,
+    payload: Value,
+    inverse_payload: Value,
+) -> Value {
+    serde_json::to_value(CommitBatch {
+        before: before.clone(),
+        after: after.clone(),
+        journal: vec![JournalOperation {
+            sequence: after.sequence,
+            transaction_id: Uuid::new_v4().to_string(),
+            command_type: "snapshot.records.patch".into(),
+            payload,
+            inverse_payload,
+            action: project_io::JournalAction::Apply,
+            timestamp: "2026-07-23T00:00:00.000Z".into(),
+        }],
+    })
+    .unwrap()
+}
+
+#[test]
+fn snapshot_record_patch_dto_accepts_only_the_typed_allowlist_and_exact_payload_shape() {
+    let root = tempdir().unwrap();
+    let app = with_invoke_handler(tauri::test::mock_builder().manage(AppService::default()))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Record Contract",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let digest = "c".repeat(64);
+    let asset: project_io::AssetRecord = serde_json::from_value(json!({
+        "id": "00000000-0000-4000-8000-000000000080",
+        "sha256": digest,
+        "relativePath": format!("assets/sha256/cc/{}.png", "c".repeat(64)),
+        "mediaType": "image/png",
+        "size": 16
+    }))
+    .unwrap();
+    let asset_value = serde_json::to_value(&asset).unwrap();
+    let valid_payload = json!({
+        "collection": "assets",
+        "changes": [{
+            "id": asset.id,
+            "before": null,
+            "after": asset_value,
+            "index": 0
+        }]
+    });
+    let valid_inverse = json!({
+        "collection": "assets",
+        "changes": [{
+            "id": asset.id,
+            "before": asset_value,
+            "after": null,
+            "index": 0
+        }]
+    });
+    let mut after = opened.snapshot.clone();
+    after.assets = vec![asset];
+    after.sequence = 1;
+
+    let mut invalid_pairs = Vec::new();
+    let mut unknown_collection = valid_payload.clone();
+    unknown_collection["collection"] = json!("vendors");
+    let mut unknown_collection_inverse = valid_inverse.clone();
+    unknown_collection_inverse["collection"] = json!("vendors");
+    invalid_pairs.push((unknown_collection, unknown_collection_inverse));
+
+    let mut arbitrary_path = valid_payload.clone();
+    arbitrary_path["path"] = json!("/assets/0");
+    invalid_pairs.push((arbitrary_path, valid_inverse.clone()));
+
+    let mut extra_root = valid_payload.clone();
+    extra_root["extra"] = json!(true);
+    invalid_pairs.push((extra_root, valid_inverse.clone()));
+
+    let mut extra_change = valid_payload.clone();
+    extra_change["changes"][0]["extra"] = json!(true);
+    invalid_pairs.push((extra_change, valid_inverse.clone()));
+
+    let mut extra_record = valid_payload.clone();
+    extra_record["changes"][0]["after"]["unexpected"] = json!(true);
+    invalid_pairs.push((extra_record, valid_inverse.clone()));
+
+    let mut null_index = valid_payload.clone();
+    null_index["changes"][0]["index"] = Value::Null;
+    invalid_pairs.push((null_index, valid_inverse.clone()));
+
+    let mut duplicate = valid_payload.clone();
+    let repeated = duplicate["changes"][0].clone();
+    duplicate["changes"].as_array_mut().unwrap().push(repeated);
+    invalid_pairs.push((duplicate, valid_inverse.clone()));
+
+    let mut wrong_typed_collection = valid_payload.clone();
+    wrong_typed_collection["collection"] = json!("planReferences");
+    let mut wrong_typed_inverse = valid_inverse.clone();
+    wrong_typed_inverse["collection"] = json!("planReferences");
+    invalid_pairs.push((wrong_typed_collection, wrong_typed_inverse));
+
+    let mut wrong_inverse = valid_inverse.clone();
+    wrong_inverse["changes"][0]["index"] = json!(1);
+    invalid_pairs.push((valid_payload.clone(), wrong_inverse));
+
+    for (payload, inverse) in invalid_pairs {
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "commit_project",
+                json!({
+                    "payload": {
+                        "sessionId": opened.session_id,
+                        "batch": record_patch_batch_value(&opened.snapshot, &after, payload, inverse)
+                    }
+                }),
+            )
+            .unwrap_err(),
+        );
+    }
+
+    let mut claimed_after = opened.snapshot.clone();
+    claimed_after.sequence = 1;
+    assert_invalid_ipc(
+        &invoke(
+            &webview,
+            "commit_project",
+            json!({
+                "payload": {
+                    "sessionId": opened.session_id,
+                    "batch": record_patch_batch_value(
+                        &opened.snapshot,
+                        &claimed_after,
+                        valid_payload.clone(),
+                        valid_inverse.clone()
+                    )
+                }
+            }),
+        )
+        .unwrap_err(),
+    );
+
+    invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id,
+                "batch": record_patch_batch_value(
+                    &opened.snapshot,
+                    &after,
+                    valid_payload,
+                    valid_inverse
+                )
+            }
+        }),
+    )
+    .unwrap();
 }

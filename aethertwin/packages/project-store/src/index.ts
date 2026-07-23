@@ -7,6 +7,15 @@ export {
 } from "./backend";
 export { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 export { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
+export {
+  patchSnapshotRecordsCommand,
+  snapshotRecordCollections,
+  type AnySnapshotRecordsPatch,
+  type SnapshotRecordByCollection,
+  type SnapshotRecordChange,
+  type SnapshotRecordCollection,
+  type SnapshotRecordsPatch,
+} from "./snapshot-records-command";
 export type {
   EntityChange,
   FloorChange,

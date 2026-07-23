@@ -212,6 +212,7 @@ fn validate_payload_shapes(batch: &CommitBatch) -> Result<(), HostError> {
             "plan.entities.patch" => {
                 exact_entity_patch_pair(&operation.payload, &operation.inverse_payload)
             }
+            "snapshot.records.patch" => true,
             "plan.floor.patch" => {
                 exact_floor_patch_pair(&operation.payload, &operation.inverse_payload)
             }

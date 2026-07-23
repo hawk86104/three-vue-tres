@@ -820,7 +820,7 @@ describe("ProjectStore", () => {
     expect(store.getState().snapshot?.project.entities).toEqual([]);
   });
 
-  it("reopens the exact edited schema-v2 plan after array, undo, redo, and save", async () => {
+  it("reopens the exact edited schema-v3 plan after array, undo, redo, and save", async () => {
     const backend = new SandboxProjectBackend();
     const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
     await store.create({ name: "M1 Demo", location: "sandbox", profile: "market" });
@@ -906,7 +906,7 @@ describe("ProjectStore", () => {
 
     const projectPath = store.getState().projectPath!;
     const expected = store.getState().snapshot!;
-    expect(expected.schemaVersion).toBe(2);
+    expect(expected.schemaVersion).toBe(3);
     expect(expected.sequence).toBe(undone.sequence + 1);
     expect(expected.checkpointSequence).toBe(beforeArray.checkpointSequence);
     expect(expected.project.entities).toEqual(expectedArrayEntities);

@@ -1,4 +1,4 @@
-import { CommandBus } from "@aethertwin/command-bus";
+import { CommandBus, commandIntent } from "@aethertwin/command-bus";
 import {
   parseManifest,
   parseSnapshot,
@@ -16,6 +16,10 @@ import type {
 } from "./backend";
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
+import {
+  patchSnapshotRecordsCommand,
+  type AnySnapshotRecordsPatch,
+} from "./snapshot-records-command";
 
 export interface ProjectStoreState {
   readonly projectPath: string | null;
@@ -178,6 +182,18 @@ export class ProjectStore {
     const ownedChange = structuredClone(change);
     return this.enqueueMutation(() =>
       this.mutate((bus) => bus.execute(patchFloorCommand, ownedChange)),
+    );
+  }
+
+  applySnapshotRecordPatches(
+    patches: readonly AnySnapshotRecordsPatch[],
+  ): Promise<void> {
+    const ownedPatches = structuredClone(patches);
+    return this.enqueueMutation(() =>
+      this.mutate((bus) =>
+        bus.transaction(ownedPatches.map((patch) =>
+          commandIntent(patchSnapshotRecordsCommand, patch))),
+      ),
     );
   }
 

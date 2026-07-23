@@ -1776,3 +1776,251 @@ fn plan_entity_patch_rejects_stale_before_and_unknown_layer_without_publication(
     );
     assert_eq!(session.snapshot(), &initial);
 }
+
+fn snapshot_record_payload(collection: &str, changes: Vec<Value>) -> Value {
+    json!({ "collection": collection, "changes": changes })
+}
+
+fn inverse_snapshot_record_changes(changes: &[Value]) -> Vec<Value> {
+    changes
+        .iter()
+        .rev()
+        .map(|change| {
+            let mut inverse = json!({
+                "id": change["id"],
+                "before": change["after"],
+                "after": change["before"]
+            });
+            if let Some(index) = change.get("index") {
+                inverse["index"] = index.clone();
+            }
+            inverse
+        })
+        .collect()
+}
+
+fn snapshot_asset(id: &str, digest_character: char) -> AssetRecord {
+    let sha256 = digest_character.to_string().repeat(64);
+    AssetRecord {
+        id: uuid::Uuid::parse_str(id).unwrap(),
+        relative_path: format!("assets/sha256/{0}{0}/{sha256}.png", digest_character),
+        sha256,
+        media_type: "image/png".into(),
+        size: 16,
+    }
+}
+
+fn snapshot_plan_reference(snapshot: &ProjectSnapshot, asset: &AssetRecord, id: &str) -> Value {
+    let floor = &snapshot.project.floors[0];
+    json!({
+        "id": id,
+        "name": "Reference",
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "assetId": asset.id,
+        "intrinsicSize": { "width": 100, "height": 50 },
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "opacity": 1,
+        "locked": false,
+        "calibration": null
+    })
+}
+
+#[test]
+fn snapshot_record_patch_replays_heterogeneous_transaction_and_normalized_rows_through_recovery() {
+    let opened = create("Snapshot Record Replay", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let asset = snapshot_asset("00000000-0000-4000-8000-000000000070", 'a');
+    let reference_value = snapshot_plan_reference(
+        &initial,
+        &asset,
+        "00000000-0000-4000-8000-000000000071",
+    );
+    let reference_id = uuid::Uuid::parse_str(reference_value["id"].as_str().unwrap()).unwrap();
+    let asset_value = serde_json::to_value(&asset).unwrap();
+    let asset_changes =
+        vec![json!({ "id": asset.id, "before": null, "after": asset_value, "index": 0 })];
+    let reference_changes = vec![json!({
+        "id": reference_value["id"],
+        "before": null,
+        "after": reference_value,
+        "index": 0
+    })];
+    let asset_payload = snapshot_record_payload("assets", asset_changes.clone());
+    let asset_inverse =
+        snapshot_record_payload("assets", inverse_snapshot_record_changes(&asset_changes));
+    let reference_payload =
+        snapshot_record_payload("planReferences", reference_changes.clone());
+    let reference_inverse = snapshot_record_payload(
+        "planReferences",
+        inverse_snapshot_record_changes(&reference_changes),
+    );
+    let transaction_id = "00000000-0000-4000-8000-000000000701";
+    let mut applied = initial.clone();
+    applied.assets = vec![asset.clone()];
+    applied.project.plan_references =
+        vec![serde_json::from_value(reference_value.clone()).unwrap()];
+    applied.sequence = 2;
+    session
+        .commit(CommitBatch {
+            before: initial.clone(),
+            after: applied.clone(),
+            journal: vec![
+                plan_operation(
+                    1,
+                    transaction_id,
+                    "snapshot.records.patch",
+                    asset_payload.clone(),
+                    asset_inverse.clone(),
+                    JournalAction::Apply,
+                ),
+                plan_operation(
+                    2,
+                    transaction_id,
+                    "snapshot.records.patch",
+                    reference_payload.clone(),
+                    reference_inverse.clone(),
+                    JournalAction::Apply,
+                ),
+            ],
+        })
+        .unwrap();
+    assert_eq!(session.snapshot(), &applied);
+
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let stored_asset_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM asset_records WHERE id = ?1",
+            [asset.id.hyphenated().to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored_asset_count, 1);
+    let (entity_type, payload_json): (String, String) = connection
+        .query_row(
+            "SELECT entity_type, payload_json FROM entity_records WHERE id = ?1",
+            [reference_id.hyphenated().to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(entity_type, "plan-reference");
+    assert_eq!(
+        serde_json::from_str::<Value>(&payload_json).unwrap(),
+        reference_value
+    );
+    drop(connection);
+
+    let mut undone = initial.clone();
+    undone.sequence = 4;
+    session
+        .commit(CommitBatch {
+            before: applied.clone(),
+            after: undone.clone(),
+            journal: vec![
+                plan_operation(
+                    3,
+                    "00000000-0000-4000-8000-000000000702",
+                    "snapshot.records.patch",
+                    reference_payload.clone(),
+                    reference_inverse.clone(),
+                    JournalAction::Undo,
+                ),
+                plan_operation(
+                    4,
+                    "00000000-0000-4000-8000-000000000702",
+                    "snapshot.records.patch",
+                    asset_payload.clone(),
+                    asset_inverse.clone(),
+                    JournalAction::Undo,
+                ),
+            ],
+        })
+        .unwrap();
+    assert!(session.snapshot().assets.is_empty());
+    assert!(session.snapshot().project.plan_references.is_empty());
+
+    let mut redone = applied.clone();
+    redone.sequence = 6;
+    session
+        .commit(CommitBatch {
+            before: undone,
+            after: redone.clone(),
+            journal: vec![
+                plan_operation(
+                    5,
+                    "00000000-0000-4000-8000-000000000703",
+                    "snapshot.records.patch",
+                    asset_payload,
+                    asset_inverse,
+                    JournalAction::Redo,
+                ),
+                plan_operation(
+                    6,
+                    "00000000-0000-4000-8000-000000000703",
+                    "snapshot.records.patch",
+                    reference_payload,
+                    reference_inverse,
+                    JournalAction::Redo,
+                ),
+            ],
+        })
+        .unwrap();
+    assert_eq!(session.snapshot(), &redone);
+    drop(session);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert_eq!(recovered.snapshot, redone);
+    assert!(recovered.recovered);
+}
+
+#[test]
+fn snapshot_record_patch_rejects_claimed_after_mismatch_without_publication() {
+    let opened = create("Snapshot Record Mismatch", ProjectProfile::Market);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let asset = snapshot_asset("00000000-0000-4000-8000-000000000072", 'b');
+    let asset_value = serde_json::to_value(&asset).unwrap();
+    let changes = vec![json!({
+        "id": asset.id,
+        "before": null,
+        "after": asset_value,
+        "index": 0
+    })];
+    let mut claimed_after = initial.clone();
+    claimed_after.sequence = 1;
+    assert_code(
+        session
+            .commit(patch_batch(
+                &initial,
+                &claimed_after,
+                plan_operation(
+                    1,
+                    "00000000-0000-4000-8000-000000000704",
+                    "snapshot.records.patch",
+                    snapshot_record_payload("assets", changes.clone()),
+                    snapshot_record_payload(
+                        "assets",
+                        inverse_snapshot_record_changes(&changes),
+                    ),
+                    JournalAction::Apply,
+                ),
+            ))
+            .unwrap_err(),
+        "DATABASE_ERROR",
+    );
+    assert_eq!(session.snapshot(), &initial);
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let journal_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM command_journal", [], |row| row.get(0))
+        .unwrap();
+    let asset_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM asset_records", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!((journal_count, asset_count), (0, 0));
+}

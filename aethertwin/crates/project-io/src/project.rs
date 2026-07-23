@@ -1,7 +1,9 @@
 use crate::lock::ProjectLock;
 use crate::model::{
-    CURRENT_SCHEMA_VERSION, CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer,
-    SaveState, SceneEnvironment, canonical_asset_path, parse_contract_uuid,
+    CURRENT_SCHEMA_VERSION, AssetRecord, CommitBatch, Floor, GuidedRoute, JournalAction,
+    JournalOperation, MaterialAssignment, MaterialDefinition, MediaAsset,
+    Opening, PlanLayer, PlanReference, ProductContent, RecordChange, RouteNetwork, SaveState,
+    SceneEnvironment, SnapshotRecordsPatch, canonical_asset_path, parse_contract_uuid,
 };
 use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
@@ -17,7 +19,7 @@ use crate::{
 };
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, params};
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -951,6 +953,218 @@ fn apply_entity_patch(
     })
 }
 
+trait SnapshotPatchRecord {
+    fn patch_id(&self) -> Uuid;
+}
+
+macro_rules! impl_snapshot_patch_record {
+    ($($record:ty),+ $(,)?) => {
+        $(
+            impl SnapshotPatchRecord for $record {
+                fn patch_id(&self) -> Uuid {
+                    self.id
+                }
+            }
+        )+
+    };
+}
+
+impl_snapshot_patch_record!(
+    AssetRecord,
+    PlanReference,
+    Opening,
+    ProductContent,
+    MediaAsset,
+    RouteNetwork,
+    GuidedRoute,
+    MaterialDefinition,
+    MaterialAssignment,
+);
+
+fn validate_record_changes<T: SnapshotPatchRecord>(
+    changes: &[RecordChange<T>],
+) -> Result<(), ProjectIoError> {
+    const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+    let mut ids = BTreeSet::new();
+    for change in changes {
+        let id = canonical_patch_id(&change.id)?;
+        if !ids.insert(change.id.as_str())
+            || (change.before.0.is_none() && change.after.0.is_none())
+            || change
+                .index
+                .is_some_and(|index| index > MAX_JSON_SAFE_INTEGER)
+        {
+            return Err(ProjectIoError::DatabaseError);
+        }
+        for side in [change.before.0.as_ref(), change.after.0.as_ref()] {
+            if side.is_some_and(|record| record.patch_id() != id) {
+                return Err(ProjectIoError::DatabaseError);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_snapshot_records_patch(
+    patch: &SnapshotRecordsPatch,
+) -> Result<(), ProjectIoError> {
+    match patch {
+        SnapshotRecordsPatch::Assets { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::PlanReferences { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::Openings { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::ProductContents { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::MediaAssets { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::RouteNetworks { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::GuidedRoutes { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::Materials { changes } => validate_record_changes(changes),
+        SnapshotRecordsPatch::MaterialAssignments { changes } => validate_record_changes(changes),
+    }
+}
+
+fn snapshot_records_patch(value: &Value) -> Result<SnapshotRecordsPatch, ProjectIoError> {
+    let patch: SnapshotRecordsPatch =
+        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    validate_snapshot_records_patch(&patch)?;
+    Ok(patch)
+}
+
+fn apply_record_changes<T>(
+    records: &mut Vec<T>,
+    changes: &[RecordChange<T>],
+) -> Result<Vec<RecordChange<T>>, ProjectIoError>
+where
+    T: Clone + PartialEq + SnapshotPatchRecord,
+{
+    let mut normalized = Vec::with_capacity(changes.len());
+    for change in changes {
+        let id = canonical_patch_id(&change.id)?;
+        let positions = records
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| (record.patch_id() == id).then_some(index))
+            .collect::<Vec<_>>();
+        let supplied_index = change
+            .index
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| ProjectIoError::DatabaseError)?;
+        match change.before.0.as_ref() {
+            None => {
+                if !positions.is_empty() {
+                    return Err(ProjectIoError::DatabaseError);
+                }
+                let index = supplied_index.unwrap_or(records.len());
+                if index > records.len() {
+                    return Err(ProjectIoError::DatabaseError);
+                }
+                records.insert(
+                    index,
+                    change
+                        .after
+                        .0
+                        .clone()
+                        .ok_or(ProjectIoError::DatabaseError)?,
+                );
+                normalized.push(RecordChange {
+                    id: change.id.clone(),
+                    before: change.before.clone(),
+                    after: change.after.clone(),
+                    index: Some(index as u64),
+                });
+            }
+            Some(before) => {
+                if positions.len() != 1 {
+                    return Err(ProjectIoError::DatabaseError);
+                }
+                let index = positions[0];
+                if &records[index] != before
+                    || supplied_index.is_some_and(|supplied| supplied != index)
+                {
+                    return Err(ProjectIoError::DatabaseError);
+                }
+                normalized.push(RecordChange {
+                    id: change.id.clone(),
+                    before: change.before.clone(),
+                    after: change.after.clone(),
+                    index: Some(index as u64),
+                });
+                match change.after.0.as_ref() {
+                    Some(after) => records[index] = after.clone(),
+                    None => {
+                        records.remove(index);
+                    }
+                }
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn typed_records<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, ProjectIoError> {
+    values
+        .iter()
+        .cloned()
+        .map(|value| serde_json::from_value(value).map_err(|_| ProjectIoError::DatabaseError))
+        .collect()
+}
+
+fn record_values<T: Serialize>(records: &[T]) -> Result<Vec<Value>, ProjectIoError> {
+    records
+        .iter()
+        .map(|record| serde_json::to_value(record).map_err(|_| ProjectIoError::DatabaseError))
+        .collect()
+}
+
+fn apply_snapshot_records_patch(
+    snapshot: &mut ProjectSnapshot,
+    patch: &SnapshotRecordsPatch,
+) -> Result<SnapshotRecordsPatch, ProjectIoError> {
+    match patch {
+        SnapshotRecordsPatch::Assets { changes } => Ok(SnapshotRecordsPatch::Assets {
+            changes: apply_record_changes(&mut snapshot.assets, changes)?,
+        }),
+        SnapshotRecordsPatch::PlanReferences { changes } =>
+            Ok(SnapshotRecordsPatch::PlanReferences {
+                changes: apply_record_changes(&mut snapshot.project.plan_references, changes)?,
+            }),
+        SnapshotRecordsPatch::Openings { changes } => Ok(SnapshotRecordsPatch::Openings {
+            changes: apply_record_changes(&mut snapshot.project.openings, changes)?,
+        }),
+        SnapshotRecordsPatch::ProductContents { changes } => {
+            let mut records = typed_records::<ProductContent>(&snapshot.project.product_contents)?;
+            let normalized = apply_record_changes(&mut records, changes)?;
+            snapshot.project.product_contents = record_values(&records)?;
+            Ok(SnapshotRecordsPatch::ProductContents { changes: normalized })
+        }
+        SnapshotRecordsPatch::MediaAssets { changes } => {
+            let mut records = typed_records::<MediaAsset>(&snapshot.project.media_assets)?;
+            let normalized = apply_record_changes(&mut records, changes)?;
+            snapshot.project.media_assets = record_values(&records)?;
+            Ok(SnapshotRecordsPatch::MediaAssets { changes: normalized })
+        }
+        SnapshotRecordsPatch::RouteNetworks { changes } => {
+            let mut records = typed_records::<RouteNetwork>(&snapshot.project.route_networks)?;
+            let normalized = apply_record_changes(&mut records, changes)?;
+            snapshot.project.route_networks = record_values(&records)?;
+            Ok(SnapshotRecordsPatch::RouteNetworks { changes: normalized })
+        }
+        SnapshotRecordsPatch::GuidedRoutes { changes } => Ok(SnapshotRecordsPatch::GuidedRoutes {
+            changes: apply_record_changes(&mut snapshot.project.guided_routes, changes)?,
+        }),
+        SnapshotRecordsPatch::Materials { changes } => Ok(SnapshotRecordsPatch::Materials {
+            changes: apply_record_changes(&mut snapshot.project.materials, changes)?,
+        }),
+        SnapshotRecordsPatch::MaterialAssignments { changes } =>
+            Ok(SnapshotRecordsPatch::MaterialAssignments {
+                changes: apply_record_changes(
+                    &mut snapshot.project.material_assignments,
+                    changes,
+                )?,
+            }),
+    }
+}
+
 fn floor_patch(value: &Value) -> Result<FloorPatchPayload, ProjectIoError> {
     let payload: FloorPatchPayload =
         serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
@@ -1095,6 +1309,32 @@ fn apply_operation(
                 }
             }
         }
+        "snapshot.records.patch" => {
+            let payload = snapshot_records_patch(&operation.payload)?;
+            let inverse = snapshot_records_patch(&operation.inverse_payload)?;
+            if !payload.has_inverse_values(&inverse) {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            match operation.action {
+                JournalAction::Apply | JournalAction::Redo => {
+                    let normalized =
+                        apply_snapshot_records_patch(&mut candidate, &payload)?;
+                    if !normalized.has_exact_inverse(&inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+                JournalAction::Undo => {
+                    let normalized_inverse =
+                        apply_snapshot_records_patch(&mut candidate, &inverse)?;
+                    let mut replayed = candidate.clone();
+                    let normalized_payload =
+                        apply_snapshot_records_patch(&mut replayed, &payload)?;
+                    if !normalized_payload.has_exact_inverse(&normalized_inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+            }
+        }
         "plan.floor.patch" => {
             let payload = floor_patch(&operation.payload)?;
             let inverse = floor_patch(&operation.inverse_payload)?;
@@ -1131,33 +1371,46 @@ fn string_array(value: &Value, key: &str) -> Result<Vec<String>, ProjectIoError>
         .collect()
 }
 
-fn write_entity_records(
-    connection: &Connection,
+struct NormalizedEntityRow {
+    id: String,
+    entity_type: String,
+    parent_id: Option<String>,
+    payload_json: String,
+}
+
+fn normalized_typed_row<T: Serialize>(
+    id: Uuid,
+    entity_type: &str,
+    parent_id: Option<Uuid>,
+    record: &T,
+) -> Result<NormalizedEntityRow, ProjectIoError> {
+    Ok(NormalizedEntityRow {
+        id: id.hyphenated().to_string(),
+        entity_type: entity_type.to_owned(),
+        parent_id: parent_id.map(|id| id.hyphenated().to_string()),
+        payload_json: serde_json::to_string(record)
+            .map_err(|_| ProjectIoError::DatabaseError)?,
+    })
+}
+
+fn normalized_entity_rows(
     snapshot: &ProjectSnapshot,
-) -> Result<(), ProjectIoError> {
-    connection.execute("DELETE FROM entity_records", [])?;
-    connection.execute(
-        "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
-         VALUES (?1, 'project', NULL, ?2, ?3)",
-        params![
-            snapshot.project.id.hyphenated().to_string(),
-            sequence_i64(snapshot.sequence)?,
-            serde_json::to_string(&snapshot.project).map_err(|_| ProjectIoError::DatabaseError)?,
-        ],
-    )?;
+) -> Result<Vec<NormalizedEntityRow>, ProjectIoError> {
+    let project_id = snapshot.project.id;
+    let mut rows = vec![normalized_typed_row(
+        project_id,
+        "project",
+        None,
+        &snapshot.project,
+    )?];
     for floor in &snapshot.project.floors {
-        connection.execute(
-            "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
-             VALUES (?1, 'floor', ?2, ?3, ?4)",
-            params![
-                floor.id.hyphenated().to_string(),
-                snapshot.project.id.hyphenated().to_string(),
-                sequence_i64(snapshot.sequence)?,
-                serde_json::to_string(floor).map_err(|_| ProjectIoError::DatabaseError)?,
-            ],
-        )?;
+        rows.push(normalized_typed_row(
+            floor.id,
+            "floor",
+            Some(project_id),
+            floor,
+        )?);
     }
-    let mut entity_ids = BTreeSet::new();
     for entity in &snapshot.project.entities {
         let source = entity
             .as_object()
@@ -1175,21 +1428,120 @@ fn write_entity_records(
             .get("floorId")
             .and_then(Value::as_str)
             .ok_or(ProjectIoError::DatabaseError)?;
-        if parse_contract_uuid(id).is_err()
-            || parse_contract_uuid(floor_id).is_err()
-            || !entity_ids.insert(id)
-        {
-            return Err(ProjectIoError::DatabaseError);
+        canonical_patch_id(id)?;
+        canonical_patch_id(floor_id)?;
+        rows.push(NormalizedEntityRow {
+            id: id.to_owned(),
+            entity_type: entity_type.to_owned(),
+            parent_id: Some(floor_id.to_owned()),
+            payload_json: serde_json::to_string(entity)
+                .map_err(|_| ProjectIoError::DatabaseError)?,
+        });
+    }
+    for reference in &snapshot.project.plan_references {
+        rows.push(normalized_typed_row(
+            reference.id,
+            "plan-reference",
+            Some(reference.floor_id),
+            reference,
+        )?);
+    }
+    for opening in &snapshot.project.openings {
+        rows.push(normalized_typed_row(
+            opening.id,
+            "opening",
+            Some(opening.wall_id),
+            opening,
+        )?);
+    }
+    for value in &snapshot.project.product_contents {
+        let record: ProductContent = serde_json::from_value(value.clone())
+            .map_err(|_| ProjectIoError::DatabaseError)?;
+        rows.push(normalized_typed_row(
+            record.id,
+            "product-content",
+            Some(record.target_entity_id),
+            &record,
+        )?);
+    }
+    for value in &snapshot.project.media_assets {
+        let record: MediaAsset = serde_json::from_value(value.clone())
+            .map_err(|_| ProjectIoError::DatabaseError)?;
+        rows.push(normalized_typed_row(
+            record.id,
+            "media-asset",
+            Some(project_id),
+            &record,
+        )?);
+    }
+    for value in &snapshot.project.route_networks {
+        let network: RouteNetwork = serde_json::from_value(value.clone())
+            .map_err(|_| ProjectIoError::DatabaseError)?;
+        rows.push(normalized_typed_row(
+            network.id,
+            "route-network",
+            Some(project_id),
+            &network,
+        )?);
+        for node in &network.nodes {
+            rows.push(normalized_typed_row(
+                node.id,
+                "route-node",
+                Some(network.id),
+                node,
+            )?);
         }
+        for edge in &network.edges {
+            rows.push(normalized_typed_row(
+                edge.id,
+                "route-edge",
+                Some(network.id),
+                edge,
+            )?);
+        }
+    }
+    for route in &snapshot.project.guided_routes {
+        rows.push(normalized_typed_row(
+            route.id,
+            "guided-route",
+            Some(route.route_network_id),
+            route,
+        )?);
+    }
+    for material in &snapshot.project.materials {
+        rows.push(normalized_typed_row(
+            material.id,
+            "material",
+            Some(project_id),
+            material,
+        )?);
+    }
+    for assignment in &snapshot.project.material_assignments {
+        rows.push(normalized_typed_row(
+            assignment.id,
+            "material-assignment",
+            Some(assignment.target_id),
+            assignment,
+        )?);
+    }
+    Ok(rows)
+}
+
+fn write_entity_records(
+    connection: &Connection,
+    snapshot: &ProjectSnapshot,
+) -> Result<(), ProjectIoError> {
+    connection.execute("DELETE FROM entity_records", [])?;
+    for row in normalized_entity_rows(snapshot)? {
         connection.execute(
             "INSERT INTO entity_records(id, entity_type, parent_id, revision, payload_json)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
-                id,
-                entity_type,
-                floor_id,
+                row.id,
+                row.entity_type,
+                row.parent_id,
                 sequence_i64(snapshot.sequence)?,
-                serde_json::to_string(entity).map_err(|_| ProjectIoError::DatabaseError)?,
+                row.payload_json,
             ],
         )?;
     }
@@ -1492,55 +1844,21 @@ fn validate_entity_invariants(
         })?
         .collect::<Result<_, _>>()?;
     if snapshot.sequence != 0 || !actual_entities.is_empty() {
-        let mut expected = BTreeMap::new();
-        expected.insert(
-            snapshot.project.id.hyphenated().to_string(),
-            (
-                "project".to_owned(),
-                None,
-                sequence_i64(snapshot.sequence)?,
-                serde_json::to_string(&snapshot.project)
-                    .map_err(|_| ProjectIoError::RecoveryFailed)?,
-            ),
-        );
-        for floor in &snapshot.project.floors {
-            expected.insert(
-                floor.id.hyphenated().to_string(),
-                (
-                    "floor".to_owned(),
-                    Some(snapshot.project.id.hyphenated().to_string()),
-                    sequence_i64(snapshot.sequence)?,
-                    serde_json::to_string(floor).map_err(|_| ProjectIoError::RecoveryFailed)?,
-                ),
-            );
-        }
-        for entity in &snapshot.project.entities {
-            let source = entity
-                .as_object()
-                .ok_or(ProjectIoError::RecoveryFailed)?;
-            let id = source
-                .get("id")
-                .and_then(Value::as_str)
-                .ok_or(ProjectIoError::RecoveryFailed)?;
-            let entity_type = source
-                .get("type")
-                .and_then(Value::as_str)
-                .ok_or(ProjectIoError::RecoveryFailed)?;
-            let floor_id = source
-                .get("floorId")
-                .and_then(Value::as_str)
-                .ok_or(ProjectIoError::RecoveryFailed)?;
-            expected.insert(
-                id.to_owned(),
-                (
-                    entity_type.to_owned(),
-                    Some(floor_id.to_owned()),
-                    sequence_i64(snapshot.sequence)?,
-                    serde_json::to_string(entity)
-                        .map_err(|_| ProjectIoError::RecoveryFailed)?,
-                ),
-            );
-        }
+        let expected = normalized_entity_rows(snapshot)
+            .map_err(|_| ProjectIoError::RecoveryFailed)?
+            .into_iter()
+            .map(|row| {
+                Ok((
+                    row.id,
+                    (
+                        row.entity_type,
+                        row.parent_id,
+                        sequence_i64(snapshot.sequence)?,
+                        row.payload_json,
+                    ),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, ProjectIoError>>()?;
         if actual_entities != expected {
             return Err(ProjectIoError::RecoveryFailed);
         }

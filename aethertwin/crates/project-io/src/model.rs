@@ -147,6 +147,88 @@ pub struct Opening {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProductContent {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub target_entity_id: Uuid,
+    pub description: String,
+    #[serde(with = "contract_uuid_vec")]
+    pub media_asset_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaAssetKind {
+    Image,
+    Video,
+    Audio,
+    Model,
+    Document,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaAsset {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub asset_id: Uuid,
+    pub kind: MediaAssetKind,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouteNode {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub position: Point2,
+    #[serde(with = "contract_uuid")]
+    pub floor_id: Uuid,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouteEdge {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    #[serde(with = "contract_uuid")]
+    pub from: Uuid,
+    #[serde(with = "contract_uuid")]
+    pub to: Uuid,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub distance: f64,
+    pub bidirectional: bool,
+    pub accessible: bool,
+    pub enabled: bool,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub width: f64,
+    #[serde(serialize_with = "serialize_js_number")]
+    pub weight: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouteNetwork {
+    #[serde(with = "contract_uuid")]
+    pub id: Uuid,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub nodes: Vec<RouteNode>,
+    pub edges: Vec<RouteEdge>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GuidedRoute {
     #[serde(with = "contract_uuid")]
     pub id: Uuid,
@@ -441,6 +523,130 @@ pub struct CommitBatch {
     pub before: ProjectSnapshot,
     pub after: ProjectSnapshot,
     pub journal: Vec<JournalOperation>,
+}
+
+fn deserialize_present_record_index<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    u64::deserialize(deserializer).map(Some)
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct NullableRecord<T>(pub Option<T>);
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecordChange<T> {
+    pub id: String,
+    pub before: NullableRecord<T>,
+    pub after: NullableRecord<T>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present_record_index",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub index: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "collection", deny_unknown_fields)]
+pub enum SnapshotRecordsPatch {
+    #[serde(rename = "assets")]
+    Assets {
+        changes: Vec<RecordChange<AssetRecord>>,
+    },
+    #[serde(rename = "planReferences")]
+    PlanReferences {
+        changes: Vec<RecordChange<PlanReference>>,
+    },
+    #[serde(rename = "openings")]
+    Openings {
+        changes: Vec<RecordChange<Opening>>,
+    },
+    #[serde(rename = "productContents")]
+    ProductContents {
+        changes: Vec<RecordChange<ProductContent>>,
+    },
+    #[serde(rename = "mediaAssets")]
+    MediaAssets {
+        changes: Vec<RecordChange<MediaAsset>>,
+    },
+    #[serde(rename = "routeNetworks")]
+    RouteNetworks {
+        changes: Vec<RecordChange<RouteNetwork>>,
+    },
+    #[serde(rename = "guidedRoutes")]
+    GuidedRoutes {
+        changes: Vec<RecordChange<GuidedRoute>>,
+    },
+    #[serde(rename = "materials")]
+    Materials {
+        changes: Vec<RecordChange<MaterialDefinition>>,
+    },
+    #[serde(rename = "materialAssignments")]
+    MaterialAssignments {
+        changes: Vec<RecordChange<MaterialAssignment>>,
+    },
+}
+
+fn changes_have_inverse_values<T: PartialEq>(
+    payload: &[RecordChange<T>],
+    inverse: &[RecordChange<T>],
+    exact_index: bool,
+) -> bool {
+    payload.len() == inverse.len()
+        && payload
+            .iter()
+            .rev()
+            .zip(inverse)
+            .all(|(change, reversed)| {
+                change.id == reversed.id
+                    && change.before == reversed.after
+                    && change.after == reversed.before
+                    && if exact_index {
+                        change.index == reversed.index
+                    } else {
+                        change.index.is_none()
+                            || reversed.index.is_none()
+                            || change.index == reversed.index
+                    }
+            })
+}
+
+impl SnapshotRecordsPatch {
+    pub fn has_inverse_values(&self, inverse: &Self) -> bool {
+        self.inverse_matches(inverse, false)
+    }
+
+    pub(crate) fn has_exact_inverse(&self, inverse: &Self) -> bool {
+        self.inverse_matches(inverse, true)
+    }
+
+    fn inverse_matches(&self, inverse: &Self, exact_index: bool) -> bool {
+        match (self, inverse) {
+            (Self::Assets { changes }, Self::Assets { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::PlanReferences { changes }, Self::PlanReferences { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::Openings { changes }, Self::Openings { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::ProductContents { changes }, Self::ProductContents { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::MediaAssets { changes }, Self::MediaAssets { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::RouteNetworks { changes }, Self::RouteNetworks { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::GuidedRoutes { changes }, Self::GuidedRoutes { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::Materials { changes }, Self::Materials { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::MaterialAssignments { changes }, Self::MaterialAssignments { changes: reversed }) =>
+                changes_have_inverse_values(changes, reversed, exact_index),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
