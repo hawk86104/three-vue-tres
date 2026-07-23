@@ -1,14 +1,19 @@
 export {
   CURRENT_SCHEMA_VERSION,
+  DEFAULT_SCENE_ENVIRONMENT,
   createInitialSnapshot,
   createManifest,
   type AssetRecord,
+  type AssetMediaType,
+  type AssetRecordV2,
   type InitialProjectInput,
   type ProjectManifest,
   type ProjectProfile,
   type ProjectSnapshot,
+  type ProjectSnapshotV2,
   type SaveState,
   type SpatialProject,
+  type SpatialProjectV2,
 } from "./model";
 export {
   identityTransform2D,
@@ -37,13 +42,19 @@ export type {
   Zone,
 } from "./spatial-entities";
 export type {
+  CalibrationEvidence,
   CameraShot,
+  GuidedRoute,
+  MaterialAssignment,
+  MaterialDefinition,
   MediaAsset,
   Opening,
+  PlanReference,
   ProductContent,
   RouteEdge,
   RouteNetwork,
   RouteNode,
+  SceneEnvironment,
   StorySequence,
   ThemeConfig,
   Vendor,
@@ -52,6 +63,7 @@ export {
   ModelValidationError,
   parseManifest,
   parseSnapshotV2,
+  parseSnapshotV3,
   type ModelIssueCode,
 } from "./validation";
 export {

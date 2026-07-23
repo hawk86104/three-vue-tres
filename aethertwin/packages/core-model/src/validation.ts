@@ -1,6 +1,12 @@
 import type {
+  CalibrationEvidence,
   CameraShot,
+  GuidedRoute,
+  MaterialAssignment,
+  MaterialDefinition,
   MediaAsset,
+  Opening,
+  PlanReference,
   ProductContent,
   RouteEdge,
   RouteNetwork,
@@ -8,16 +14,21 @@ import type {
   StorySequence,
   ThemeConfig,
   Vendor,
+  SceneEnvironment,
 } from "./content-model";
 import { parsePoint, polygon, polyline } from "./geometry-validation";
 import type { Point2, Size2, Spatial3D, Transform2D } from "./geometry";
 import { deepFreeze } from "./immutability";
 import type {
   AssetRecord,
+  AssetMediaType,
+  AssetRecordV2,
   ProjectManifest,
   ProjectProfile,
   ProjectSnapshot,
+  ProjectSnapshotV2,
   SpatialProject,
+  SpatialProjectV2,
 } from "./model";
 import type {
   DimensionAnchor,
@@ -45,7 +56,7 @@ import {
 
 export { ModelValidationError, type ModelIssueCode } from "./validation-primitives";
 
-const SCHEMA_VERSION = 2 as const;
+const CURRENT_SCHEMA_VERSION = 3 as const;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const PROJECT_PROFILES = ["showroom", "market"] as const;
@@ -60,6 +71,27 @@ const POI_KINDS = [
 const VENDOR_STATUSES = ["unassigned", "active", "inactive"] as const;
 const MEDIA_KINDS = ["image", "video", "audio", "model", "document"] as const;
 const DISPLAY_UNITS = ["m", "cm", "mm"] as const;
+const ASSET_MEDIA_TYPES = ["image/png", "image/jpeg", "image/svg+xml", "video/mp4", "video/webm"] as const;
+const PLAN_MEDIA_TYPES: ReadonlySet<AssetMediaType> = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const ASSET_EXTENSION: Readonly<Record<AssetMediaType, string>> = Object.freeze({
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+});
+const ASSET_SIZE_LIMIT: Readonly<Record<AssetMediaType, number>> = Object.freeze({
+  "image/png": 268_435_456,
+  "image/jpeg": 268_435_456,
+  "image/svg+xml": 33_554_432,
+  "video/mp4": 4_294_967_296,
+  "video/webm": 4_294_967_296,
+});
+const MAX_INTRINSIC_AXIS = 16_384;
+const MAX_DECODED_PIXELS = 268_435_456;
+const MAX_WORLD_COORDINATE_MM = 1_000_000_000;
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const MATERIAL_TARGET_KINDS = ["space-floor", "wall", "fixture"] as const;
 
 type RegisterId = (id: string, path: string) => void;
 
@@ -89,21 +121,201 @@ export function assertTimestamp(value: unknown, path: string): string {
   return timestamp;
 }
 
-function schemaVersion(value: unknown, path: string): typeof SCHEMA_VERSION {
-  if (value !== SCHEMA_VERSION) {
-    fail("UNSUPPORTED_SCHEMA_VERSION", path, `expected ${SCHEMA_VERSION}`);
+function schemaVersionV2(value: unknown, path: string): 2 {
+  if (value !== 2) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", path, "expected 2");
   }
-  return SCHEMA_VERSION;
+  return 2;
 }
 
-function storedManifestSchemaVersion(value: unknown): typeof SCHEMA_VERSION {
+function storedManifestSchemaVersion(value: unknown): typeof CURRENT_SCHEMA_VERSION {
   if (!Number.isSafeInteger(value) || (value as number) < 1) {
     fail("INVALID_VALUE", "schemaVersion", "expected a positive safe integer");
   }
-  if ((value as number) > SCHEMA_VERSION) {
-    fail("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", `expected at most ${SCHEMA_VERSION}`);
+  if ((value as number) > CURRENT_SCHEMA_VERSION) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", `expected at most ${CURRENT_SCHEMA_VERSION}`);
   }
-  return SCHEMA_VERSION;
+  return CURRENT_SCHEMA_VERSION;
+}
+
+function exactKeys(value: unknown, path: string, allowedKeys: readonly string[]): UnknownRecord {
+  const source = record(value, path);
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(source)) {
+    if (!allowed.has(key)) {
+      fail("INVALID_VALUE", `${path}.${key}`, "unknown property");
+    }
+  }
+  return source;
+}
+
+function assertPointExact(value: unknown, path: string): void {
+  exactKeys(value, path, ["x", "y"]);
+}
+
+function assertPointListExact(value: unknown, path: string): void {
+  list(value, path).forEach((point, index) => assertPointExact(point, `${path}[${index}]`));
+}
+
+function assertTransformExact(value: unknown, path: string): void {
+  const source = exactKeys(value, path, ["translation", "rotation", "scale"]);
+  assertPointExact(source.translation, `${path}.translation`);
+  exactKeys(source.scale, `${path}.scale`, ["x", "y"]);
+}
+
+function assertRecordBaseExact(
+  value: unknown,
+  path: string,
+  additionalKeys: readonly string[],
+): UnknownRecord {
+  return exactKeys(value, path, ["id", "name", "tags", ...additionalKeys]);
+}
+
+function assertDimensionAnchorExact(value: unknown, path: string): void {
+  const candidate = record(value, path);
+  const kind = oneOf(candidate.kind, `${path}.kind`, ["point", "entity"] as const);
+  if (kind === "point") {
+    const source = exactKeys(candidate, path, ["kind", "point"]);
+    assertPointExact(source.point, `${path}.point`);
+    return;
+  }
+  const source = exactKeys(candidate, path, ["kind", "entityId", "locator"]);
+  if (source.locator === "origin") return;
+  const locator = record(source.locator, `${path}.locator`);
+  exactKeys(locator, `${path}.locator`, locator.vertex !== undefined ? ["vertex"] : ["segment", "t"]);
+}
+
+function assertSpatialEntityExact(value: unknown, path: string): void {
+  const candidate = record(value, path);
+  const type = oneOf(candidate.type, `${path}.type`, ENTITY_TYPES);
+  const common = ["type", "floorId", "layerId", "transform", "spatial3D", "locked"];
+  const keysByType: Readonly<Record<(typeof ENTITY_TYPES)[number], readonly string[]>> = {
+    boundary: ["polygon"],
+    wall: ["centerLine", "thickness"],
+    zone: ["polygon", "purpose", "color"],
+    "space-unit": ["kind", "footprint"],
+    fixture: ["kind", "size"],
+    poi: ["kind", "radius"],
+    dimension: ["start", "end", "offset", "displayUnit"],
+  };
+  const source = assertRecordBaseExact(candidate, path, [...common, ...keysByType[type]]);
+  assertTransformExact(source.transform, `${path}.transform`);
+  if (source.spatial3D !== undefined) {
+    exactKeys(source.spatial3D, `${path}.spatial3D`, ["elevation", "height"]);
+  }
+  switch (type) {
+    case "boundary":
+    case "zone":
+      assertPointListExact(source.polygon, `${path}.polygon`);
+      break;
+    case "wall":
+      assertPointListExact(source.centerLine, `${path}.centerLine`);
+      break;
+    case "space-unit":
+      assertPointListExact(source.footprint, `${path}.footprint`);
+      break;
+    case "fixture":
+      exactKeys(source.size, `${path}.size`, ["width", "height"]);
+      break;
+    case "dimension":
+      assertDimensionAnchorExact(source.start, `${path}.start`);
+      assertDimensionAnchorExact(source.end, `${path}.end`);
+      break;
+    case "poi":
+      break;
+  }
+}
+
+function assertRouteNetworkExact(value: unknown, path: string): void {
+  const source = assertRecordBaseExact(value, path, ["nodes", "edges"]);
+  list(source.nodes, `${path}.nodes`).forEach((node, index) => {
+    const nodePath = `${path}.nodes[${index}]`;
+    const nodeSource = assertRecordBaseExact(node, nodePath, ["position", "floorId", "kind"]);
+    assertPointExact(nodeSource.position, `${nodePath}.position`);
+  });
+  list(source.edges, `${path}.edges`).forEach((edge, index) => {
+    assertRecordBaseExact(edge, `${path}.edges[${index}]`, [
+      "from", "to", "distance", "bidirectional", "accessible", "enabled", "width", "weight",
+    ]);
+  });
+}
+
+function assertPlanReferenceExact(value: unknown, path: string): void {
+  const source = assertRecordBaseExact(value, path, [
+    "floorId", "layerId", "assetId", "intrinsicSize", "transform", "opacity", "locked", "calibration",
+  ]);
+  exactKeys(source.intrinsicSize, `${path}.intrinsicSize`, ["width", "height"]);
+  assertTransformExact(source.transform, `${path}.transform`);
+  if (source.calibration !== null) {
+    const calibration = exactKeys(source.calibration, `${path}.calibration`, [
+      "sourcePointA", "sourcePointB", "measuredDistanceMm",
+    ]);
+    assertPointExact(calibration.sourcePointA, `${path}.calibration.sourcePointA`);
+    assertPointExact(calibration.sourcePointB, `${path}.calibration.sourcePointB`);
+  }
+}
+
+function assertSceneEnvironmentExact(value: unknown, path: string): void {
+  const source = exactKeys(value, path, [
+    "backgroundColor", "ambient", "key", "shadowsEnabled", "shadowSoftness",
+  ]);
+  exactKeys(source.ambient, `${path}.ambient`, ["color", "intensity"]);
+  exactKeys(source.key, `${path}.key`, ["color", "intensity", "direction"]);
+}
+
+function assertSnapshotV3ExactKeys(value: unknown): void {
+  const source = exactKeys(value, "snapshot", [
+    "schemaVersion", "sequence", "checkpointSequence", "project", "assets",
+  ]);
+  const project = assertRecordBaseExact(source.project, "project", [
+    "profile", "floors", "entities", "vendors", "productContents", "mediaAssets",
+    "routeNetworks", "themes", "cameraShots", "storySequences", "planReferences",
+    "openings", "guidedRoutes", "materials", "materialAssignments", "sceneEnvironment",
+  ]);
+  list(project.floors, "project.floors").forEach((floor, floorIndex) => {
+    const floorPath = `project.floors[${floorIndex}]`;
+    const floorSource = assertRecordBaseExact(floor, floorPath, ["layers"]);
+    list(floorSource.layers, `${floorPath}.layers`).forEach((layer, layerIndex) =>
+      assertRecordBaseExact(layer, `${floorPath}.layers[${layerIndex}]`, ["visible", "locked"]));
+  });
+  list(project.entities, "project.entities").forEach((entity, index) =>
+    assertSpatialEntityExact(entity, `project.entities[${index}]`));
+  list(project.vendors, "project.vendors").forEach((vendor, index) =>
+    assertRecordBaseExact(vendor, `project.vendors[${index}]`, ["spaceUnitId", "externalId", "category", "status"]));
+  list(project.productContents, "project.productContents").forEach((content, index) =>
+    assertRecordBaseExact(content, `project.productContents[${index}]`, ["targetEntityId", "description", "mediaAssetIds"]));
+  list(project.mediaAssets, "project.mediaAssets").forEach((asset, index) =>
+    assertRecordBaseExact(asset, `project.mediaAssets[${index}]`, ["assetId", "kind"]));
+  list(project.routeNetworks, "project.routeNetworks").forEach((network, index) =>
+    assertRouteNetworkExact(network, `project.routeNetworks[${index}]`));
+  list(project.themes, "project.themes").forEach((theme, index) => {
+    const path = `project.themes[${index}]`;
+    const themeSource = assertRecordBaseExact(theme, path, ["profile", "values"]);
+    record(themeSource.values, `${path}.values`);
+  });
+  list(project.cameraShots, "project.cameraShots").forEach((shot, index) =>
+    assertRecordBaseExact(shot, `project.cameraShots[${index}]`, ["position", "target", "fieldOfView"]));
+  list(project.storySequences, "project.storySequences").forEach((sequence, index) =>
+    assertRecordBaseExact(sequence, `project.storySequences[${index}]`, ["cameraShotIds", "duration"]));
+  list(project.planReferences, "project.planReferences").forEach((reference, index) =>
+    assertPlanReferenceExact(reference, `project.planReferences[${index}]`));
+  list(project.openings, "project.openings").forEach((opening, index) =>
+    assertRecordBaseExact(opening, `project.openings[${index}]`, [
+      "wallId", "kind", "distanceAlongWall", "width", "height", "sillHeight",
+    ]));
+  list(project.guidedRoutes, "project.guidedRoutes").forEach((route, index) =>
+    assertRecordBaseExact(route, `project.guidedRoutes[${index}]`, ["routeNetworkId", "stopNodeIds"]));
+  list(project.materials, "project.materials").forEach((material, index) =>
+    assertRecordBaseExact(material, `project.materials[${index}]`, [
+      "baseColor", "roughness", "metalness", "opacity", "assetId",
+    ]));
+  list(project.materialAssignments, "project.materialAssignments").forEach((assignment, index) =>
+    assertRecordBaseExact(assignment, `project.materialAssignments[${index}]`, [
+      "materialId", "targetKind", "targetId",
+    ]));
+  assertSceneEnvironmentExact(project.sceneEnvironment, "project.sceneEnvironment");
+  list(source.assets, "assets").forEach((asset, index) =>
+    exactKeys(asset, `assets[${index}]`, ["id", "sha256", "relativePath", "mediaType", "size"]));
 }
 
 function parseRecordBase(source: UnknownRecord, path: string, registerId: RegisterId): ProjectRecordBase {
@@ -266,7 +478,7 @@ function parseSpatialEntity(value: unknown, path: string, registerId: RegisterId
   }
 }
 
-function parseAsset(value: unknown, path: string, registerId: RegisterId): AssetRecord {
+function parseAssetV2(value: unknown, path: string, registerId: RegisterId): AssetRecordV2 {
   const source = record(value, path);
   const id = uuid(source.id, `${path}.id`);
   registerId(id, `${path}.id`);
@@ -277,13 +489,13 @@ function parseAsset(value: unknown, path: string, registerId: RegisterId): Asset
   return {
     id,
     sha256,
-    relativePath: parseRelativePath(source.relativePath, `${path}.relativePath`),
+    relativePath: parseRelativePathV2(source.relativePath, `${path}.relativePath`),
     mediaType: nonEmpty(source.mediaType, `${path}.mediaType`),
     size: nonNegativeInteger(source.size, `${path}.size`),
   };
 }
 
-function parseRelativePath(value: unknown, path: string): string {
+function parseRelativePathV2(value: unknown, path: string): string {
   const candidate = nonEmpty(value, path);
   const segments = candidate.split("/");
   if (
@@ -293,6 +505,231 @@ function parseRelativePath(value: unknown, path: string): string {
     fail("INVALID_RELATIVE_PATH", path, "must be a normalized project-relative path");
   }
   return candidate;
+}
+
+function parseAssetV3(value: unknown, path: string, registerId: RegisterId): AssetRecord {
+  const source = record(value, path);
+  const id = uuid(source.id, `${path}.id`);
+  registerId(id, `${path}.id`);
+  const sha256 = text(source.sha256, `${path}.sha256`);
+  if (!SHA256_PATTERN.test(sha256)) {
+    fail("INVALID_VALUE", `${path}.sha256`, "expected a lowercase SHA-256 digest");
+  }
+  const mediaType = oneOf(source.mediaType, `${path}.mediaType`, ASSET_MEDIA_TYPES);
+  const relativePath = nonEmpty(source.relativePath, `${path}.relativePath`);
+  const expectedPath = `assets/sha256/${sha256.slice(0, 2)}/${sha256}.${ASSET_EXTENSION[mediaType]}`;
+  if (relativePath !== expectedPath) {
+    fail("INVALID_RELATIVE_PATH", `${path}.relativePath`, `expected ${expectedPath}`);
+  }
+  const size = nonNegativeInteger(source.size, `${path}.size`);
+  if (size > ASSET_SIZE_LIMIT[mediaType]) {
+    fail("INVALID_VALUE", `${path}.size`, `exceeds ${ASSET_SIZE_LIMIT[mediaType]} bytes`);
+  }
+  return { id, sha256, relativePath, mediaType, size };
+}
+
+function bounded(value: unknown, path: string, minimum: number, maximum: number): number {
+  const result = finite(value, path);
+  if (result < minimum || result > maximum) {
+    fail("INVALID_VALUE", path, `must be between ${minimum} and ${maximum}`);
+  }
+  return result;
+}
+
+function positiveSafeIntegerAtMost(value: unknown, path: string, maximum: number): number {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0 || (value as number) > maximum) {
+    fail("INVALID_VALUE", path, `expected an integer from 1 through ${maximum}`);
+  }
+  return value as number;
+}
+
+function parseIntrinsicSize(value: unknown, path: string): Size2 {
+  const source = record(value, path);
+  const width = positiveSafeIntegerAtMost(source.width, `${path}.width`, MAX_INTRINSIC_AXIS);
+  const height = positiveSafeIntegerAtMost(source.height, `${path}.height`, MAX_INTRINSIC_AXIS);
+  if (width > Math.floor(MAX_DECODED_PIXELS / height)) {
+    fail("INVALID_VALUE", path, `decoded pixels exceed ${MAX_DECODED_PIXELS}`);
+  }
+  return { width, height };
+}
+
+function assertSourcePointInBounds(point: Point2, size: Size2, path: string): void {
+  if (point.x < 0 || point.x > size.width) {
+    fail("INVALID_VALUE", `${path}.x`, "must be within the intrinsic width");
+  }
+  if (point.y < 0 || point.y > size.height) {
+    fail("INVALID_VALUE", `${path}.y`, "must be within the intrinsic height");
+  }
+}
+
+function parseCalibrationEvidence(
+  value: unknown,
+  path: string,
+  intrinsicSize: Size2,
+  transform: Transform2D,
+): CalibrationEvidence {
+  const source = record(value, path);
+  const sourcePointA = parsePoint(source.sourcePointA, `${path}.sourcePointA`);
+  const sourcePointB = parsePoint(source.sourcePointB, `${path}.sourcePointB`);
+  assertSourcePointInBounds(sourcePointA, intrinsicSize, `${path}.sourcePointA`);
+  assertSourcePointInBounds(sourcePointB, intrinsicSize, `${path}.sourcePointB`);
+  if (sourcePointA.x === sourcePointB.x && sourcePointA.y === sourcePointB.y) {
+    fail("INVALID_VALUE", `${path}.sourcePointB`, "must be distinct from sourcePointA");
+  }
+  const measuredDistanceMm = positive(source.measuredDistanceMm, `${path}.measuredDistanceMm`);
+  const pixelDistance = Math.hypot(
+    sourcePointB.x - sourcePointA.x,
+    sourcePointB.y - sourcePointA.y,
+  );
+  const calibratedScale = measuredDistanceMm / pixelDistance;
+  if (!Number.isFinite(calibratedScale) || calibratedScale <= 0) {
+    fail("INVALID_VALUE", `${path}.measuredDistanceMm`, "produces an invalid calibrated scale");
+  }
+  if (
+    transform.scale.x !== transform.scale.y
+    || transform.scale.x !== calibratedScale
+  ) {
+    fail("INVALID_VALUE", path.replace(/\.calibration$/, ".transform.scale"), "must match the uniform calibrated scale");
+  }
+  return { sourcePointA, sourcePointB, measuredDistanceMm };
+}
+
+function validatePlanTransformBounds(transform: Transform2D, size: Size2, path: string): void {
+  const cosine = Math.cos(transform.rotation);
+  const sine = Math.sin(transform.rotation);
+  const corners: readonly Point2[] = [
+    { x: 0, y: 0 },
+    { x: size.width, y: 0 },
+    { x: size.width, y: size.height },
+    { x: 0, y: size.height },
+  ];
+  for (const corner of corners) {
+    const scaledX = corner.x * transform.scale.x;
+    const scaledY = corner.y * transform.scale.y;
+    const worldX = scaledX * cosine - scaledY * sine + transform.translation.x;
+    const worldY = scaledX * sine + scaledY * cosine + transform.translation.y;
+    if (
+      !Number.isFinite(worldX)
+      || !Number.isFinite(worldY)
+      || Math.abs(worldX) > MAX_WORLD_COORDINATE_MM
+      || Math.abs(worldY) > MAX_WORLD_COORDINATE_MM
+    ) {
+      fail("INVALID_VALUE", path, `transformed bounds must stay within +/-${MAX_WORLD_COORDINATE_MM} mm`);
+    }
+  }
+}
+
+function parsePlanReference(value: unknown, path: string, registerId: RegisterId): PlanReference {
+  const source = record(value, path);
+  const base = parseRecordBase(source, path, registerId);
+  const intrinsicSize = parseIntrinsicSize(source.intrinsicSize, `${path}.intrinsicSize`);
+  const transform = parseTransform(source.transform, `${path}.transform`);
+  const opacity = bounded(source.opacity, `${path}.opacity`, 0, 1);
+  const calibration = source.calibration === null
+    ? null
+    : parseCalibrationEvidence(source.calibration, `${path}.calibration`, intrinsicSize, transform);
+  validatePlanTransformBounds(transform, intrinsicSize, `${path}.transform`);
+  return {
+    ...base,
+    floorId: uuid(source.floorId, `${path}.floorId`),
+    layerId: uuid(source.layerId, `${path}.layerId`),
+    assetId: uuid(source.assetId, `${path}.assetId`),
+    intrinsicSize,
+    transform,
+    opacity,
+    locked: bool(source.locked, `${path}.locked`),
+    calibration,
+  };
+}
+
+function parseOpening(value: unknown, path: string, registerId: RegisterId): Opening {
+  const source = record(value, path);
+  const distanceAlongWall = finite(source.distanceAlongWall, `${path}.distanceAlongWall`);
+  const sillHeight = finite(source.sillHeight, `${path}.sillHeight`);
+  if (distanceAlongWall < 0) fail("INVALID_VALUE", `${path}.distanceAlongWall`, "must be non-negative");
+  if (sillHeight < 0) fail("INVALID_VALUE", `${path}.sillHeight`, "must be non-negative");
+  return {
+    ...parseRecordBase(source, path, registerId),
+    wallId: uuid(source.wallId, `${path}.wallId`),
+    kind: oneOf(source.kind, `${path}.kind`, ["door", "window"] as const),
+    distanceAlongWall,
+    width: positive(source.width, `${path}.width`),
+    height: positive(source.height, `${path}.height`),
+    sillHeight,
+  };
+}
+
+function parseGuidedRoute(value: unknown, path: string, registerId: RegisterId): GuidedRoute {
+  const source = record(value, path);
+  const stopNodeIds = list(source.stopNodeIds, `${path}.stopNodeIds`).map((id, index) =>
+    uuid(id, `${path}.stopNodeIds[${index}]`));
+  if (stopNodeIds.length < 2) {
+    fail("INVALID_VALUE", `${path}.stopNodeIds`, "requires at least two stops");
+  }
+  return {
+    ...parseRecordBase(source, path, registerId),
+    routeNetworkId: uuid(source.routeNetworkId, `${path}.routeNetworkId`),
+    stopNodeIds,
+  };
+}
+
+function parseColor(value: unknown, path: string): string {
+  const color = text(value, path);
+  if (!COLOR_PATTERN.test(color)) fail("INVALID_VALUE", path, "expected #RRGGBB");
+  return color;
+}
+
+function parseMaterial(value: unknown, path: string, registerId: RegisterId): MaterialDefinition {
+  const source = record(value, path);
+  const opacity = bounded(source.opacity, `${path}.opacity`, 0, 1);
+  if (opacity === 0) fail("INVALID_VALUE", `${path}.opacity`, "must be positive");
+  return {
+    ...parseRecordBase(source, path, registerId),
+    baseColor: parseColor(source.baseColor, `${path}.baseColor`),
+    roughness: bounded(source.roughness, `${path}.roughness`, 0, 1),
+    metalness: bounded(source.metalness, `${path}.metalness`, 0, 1),
+    opacity,
+    assetId: source.assetId === null ? null : uuid(source.assetId, `${path}.assetId`),
+  };
+}
+
+function parseMaterialAssignment(value: unknown, path: string, registerId: RegisterId): MaterialAssignment {
+  const source = record(value, path);
+  return {
+    ...parseRecordBase(source, path, registerId),
+    materialId: uuid(source.materialId, `${path}.materialId`),
+    targetKind: oneOf(source.targetKind, `${path}.targetKind`, MATERIAL_TARGET_KINDS),
+    targetId: uuid(source.targetId, `${path}.targetId`),
+  };
+}
+
+function parseSceneEnvironment(value: unknown, path: string): SceneEnvironment {
+  const source = record(value, path);
+  const ambient = record(source.ambient, `${path}.ambient`);
+  const key = record(source.key, `${path}.key`);
+  const direction = parseVector3(key.direction, `${path}.key.direction`);
+  direction.forEach((component, index) => {
+    if (component < -100 || component > 100) {
+      fail("INVALID_VALUE", `${path}.key.direction[${index}]`, "must be between -100 and 100");
+    }
+  });
+  if (direction.every((component) => component === 0)) {
+    fail("INVALID_VALUE", `${path}.key.direction`, "must be non-zero");
+  }
+  return {
+    backgroundColor: parseColor(source.backgroundColor, `${path}.backgroundColor`),
+    ambient: {
+      color: parseColor(ambient.color, `${path}.ambient.color`),
+      intensity: bounded(ambient.intensity, `${path}.ambient.intensity`, 0, 4),
+    },
+    key: {
+      color: parseColor(key.color, `${path}.key.color`),
+      intensity: bounded(key.intensity, `${path}.key.intensity`, 0, 8),
+      direction,
+    },
+    shadowsEnabled: bool(source.shadowsEnabled, `${path}.shadowsEnabled`),
+    shadowSoftness: bounded(source.shadowSoftness, `${path}.shadowSoftness`, 0, 1),
+  };
 }
 
 function parseVendor(value: unknown, path: string, registerId: RegisterId): Vendor {
@@ -415,7 +852,7 @@ function parseStorySequence(value: unknown, path: string, registerId: RegisterId
   };
 }
 
-function parseProject(value: unknown, registerId: RegisterId): SpatialProject {
+function parseProjectV2(value: unknown, registerId: RegisterId): SpatialProjectV2 {
   const source = record(value, "project");
   const base = parseRecordBase(source, "project", registerId);
   return {
@@ -495,7 +932,7 @@ function validateAnchorReference(
   }
 }
 
-function validateReferences(snapshot: ProjectSnapshot): void {
+function validateV2References(snapshot: ProjectSnapshotV2 | ProjectSnapshot): void {
   const floorIds = new Set(snapshot.project.floors.map((floor) => floor.id));
   const layersByFloor = new Map(snapshot.project.floors.map((floor) => [
     floor.id,
@@ -548,6 +985,91 @@ function validateReferences(snapshot: ProjectSnapshot): void {
       requireReference(cameraShotIds, id, `project.storySequences[${sequenceIndex}].cameraShotIds[${shotIndex}]`, "unknown camera shot")));
 }
 
+function validateV3References(snapshot: ProjectSnapshot): void {
+  const floorIds = new Set(snapshot.project.floors.map((floor) => floor.id));
+  const layersByFloor = new Map(snapshot.project.floors.map((floor) => [
+    floor.id,
+    new Set(floor.layers.map((layer) => layer.id)),
+  ]));
+  const assetsById = new Map(snapshot.assets.map((asset) => [asset.id, asset]));
+  const entitiesById = new Map(snapshot.project.entities.map((entity) => [entity.id, entity]));
+  const routeNetworksById = new Map(snapshot.project.routeNetworks.map((network) => [network.id, network]));
+  const materialsById = new Map(snapshot.project.materials.map((material) => [material.id, material]));
+
+  snapshot.project.planReferences.forEach((reference, index) => {
+    const path = `project.planReferences[${index}]`;
+    requireReference(floorIds, reference.floorId, `${path}.floorId`, "unknown floor");
+    if (!layersByFloor.get(reference.floorId)?.has(reference.layerId)) {
+      fail("INVALID_REFERENCE", `${path}.layerId`, "layer does not belong to floor");
+    }
+    const asset = assetsById.get(reference.assetId);
+    if (asset === undefined) {
+      fail("INVALID_REFERENCE", `${path}.assetId`, "unknown asset");
+    }
+    if (!PLAN_MEDIA_TYPES.has(asset.mediaType)) {
+      fail("INVALID_REFERENCE", `${path}.assetId`, "plan references require PNG, JPEG, or sanitized SVG");
+    }
+  });
+
+  snapshot.project.openings.forEach((opening, index) => {
+    const wall = entitiesById.get(opening.wallId);
+    if (wall?.type !== "wall") {
+      fail("INVALID_REFERENCE", `project.openings[${index}].wallId`, "expected an existing wall");
+    }
+  });
+
+  snapshot.project.guidedRoutes.forEach((route, routeIndex) => {
+    const path = `project.guidedRoutes[${routeIndex}]`;
+    const network = routeNetworksById.get(route.routeNetworkId);
+    if (network === undefined) {
+      fail("INVALID_REFERENCE", `${path}.routeNetworkId`, "unknown route network");
+    }
+    const nodesById = new Map(network.nodes.map((node) => [node.id, node]));
+    let floorId: string | undefined;
+    route.stopNodeIds.forEach((nodeId, stopIndex) => {
+      const node = nodesById.get(nodeId);
+      if (node === undefined) {
+        fail("INVALID_REFERENCE", `${path}.stopNodeIds[${stopIndex}]`, "unknown route node in this network");
+      }
+      floorId ??= node.floorId;
+      if (node.floorId !== floorId) {
+        fail("INVALID_REFERENCE", `${path}.stopNodeIds[${stopIndex}]`, "guided route stops must share one floor");
+      }
+    });
+  });
+
+  snapshot.project.materials.forEach((material, index) => {
+    if (material.assetId === null) return;
+    const asset = assetsById.get(material.assetId);
+    if (asset === undefined) {
+      fail("INVALID_REFERENCE", `project.materials[${index}].assetId`, "unknown asset");
+    }
+    if (!PLAN_MEDIA_TYPES.has(asset.mediaType)) {
+      fail("INVALID_REFERENCE", `project.materials[${index}].assetId`, "material textures require an image asset");
+    }
+  });
+
+  const assignedTargets = new Set<string>();
+  snapshot.project.materialAssignments.forEach((assignment, index) => {
+    const path = `project.materialAssignments[${index}]`;
+    if (!materialsById.has(assignment.materialId)) {
+      fail("INVALID_REFERENCE", `${path}.materialId`, "unknown material");
+    }
+    const target = entitiesById.get(assignment.targetId);
+    const validTarget = assignment.targetKind === "space-floor"
+      ? target?.type === "space-unit" || target?.type === "zone"
+      : target?.type === assignment.targetKind;
+    if (!validTarget) {
+      fail("INVALID_REFERENCE", `${path}.targetId`, `expected a ${assignment.targetKind} target`);
+    }
+    const targetKey = `${assignment.targetKind}:${assignment.targetId}`;
+    if (assignedTargets.has(targetKey)) {
+      fail("INVALID_REFERENCE", `${path}.targetId`, "target already has a material assignment");
+    }
+    assignedTargets.add(targetKey);
+  });
+}
+
 export function parseManifest(value: unknown): ProjectManifest {
   const source = record(value, "manifest");
   return deepFreeze({
@@ -562,7 +1084,7 @@ export function parseManifest(value: unknown): ProjectManifest {
   });
 }
 
-export function parseSnapshotV2(value: unknown): ProjectSnapshot {
+export function parseSnapshotV2(value: unknown): ProjectSnapshotV2 {
   const source = record(value, "snapshot");
   const seenIds = new Map<string, string>();
   const registerId: RegisterId = (id, path) => {
@@ -573,18 +1095,61 @@ export function parseSnapshotV2(value: unknown): ProjectSnapshot {
     seenIds.set(id, path);
   };
 
-  const candidate: ProjectSnapshot = {
-    schemaVersion: schemaVersion(source.schemaVersion, "schemaVersion"),
+  const candidate: ProjectSnapshotV2 = {
+    schemaVersion: schemaVersionV2(source.schemaVersion, "schemaVersion"),
     sequence: nonNegativeInteger(source.sequence, "sequence"),
     checkpointSequence: nonNegativeInteger(source.checkpointSequence, "checkpointSequence"),
-    project: parseProject(source.project, registerId),
+    project: parseProjectV2(source.project, registerId),
     assets: list(source.assets, "assets").map((asset, index) =>
-      parseAsset(asset, `assets[${index}]`, registerId)),
+      parseAssetV2(asset, `assets[${index}]`, registerId)),
   };
 
-  validateReferences(candidate);
+  validateV2References(candidate);
   return deepFreeze(candidate);
 }
 
-// Compatibility for the existing migration dispatcher; it validates the current snapshot shape.
+export function parseSnapshotV3(value: unknown): ProjectSnapshot {
+  assertSnapshotV3ExactKeys(value);
+  const source = record(value, "snapshot");
+  if (source.schemaVersion !== 3) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", "expected 3");
+  }
+  const seenIds = new Map<string, string>();
+  const registerId: RegisterId = (id, path) => {
+    const firstPath = seenIds.get(id);
+    if (firstPath !== undefined) {
+      fail("DUPLICATE_UUID", path, `duplicates ${firstPath}`);
+    }
+    seenIds.set(id, path);
+  };
+  const projectSource = record(source.project, "project");
+  const projectV2 = parseProjectV2(projectSource, registerId);
+  const project: SpatialProject = {
+    ...projectV2,
+    planReferences: list(projectSource.planReferences, "project.planReferences").map((reference, index) =>
+      parsePlanReference(reference, `project.planReferences[${index}]`, registerId)),
+    openings: list(projectSource.openings, "project.openings").map((opening, index) =>
+      parseOpening(opening, `project.openings[${index}]`, registerId)),
+    guidedRoutes: list(projectSource.guidedRoutes, "project.guidedRoutes").map((route, index) =>
+      parseGuidedRoute(route, `project.guidedRoutes[${index}]`, registerId)),
+    materials: list(projectSource.materials, "project.materials").map((material, index) =>
+      parseMaterial(material, `project.materials[${index}]`, registerId)),
+    materialAssignments: list(projectSource.materialAssignments, "project.materialAssignments").map((assignment, index) =>
+      parseMaterialAssignment(assignment, `project.materialAssignments[${index}]`, registerId)),
+    sceneEnvironment: parseSceneEnvironment(projectSource.sceneEnvironment, "project.sceneEnvironment"),
+  };
+  const candidate: ProjectSnapshot = {
+    schemaVersion: 3,
+    sequence: nonNegativeInteger(source.sequence, "sequence"),
+    checkpointSequence: nonNegativeInteger(source.checkpointSequence, "checkpointSequence"),
+    project,
+    assets: list(source.assets, "assets").map((asset, index) =>
+      parseAssetV3(asset, `assets[${index}]`, registerId)),
+  };
+
+  validateV2References(candidate);
+  validateV3References(candidate);
+  return deepFreeze(candidate);
+}
+
 export const parseSnapshotV1 = parseSnapshotV2;

@@ -1,4 +1,5 @@
 import type { Point2 } from "./geometry";
+import type { Size2, Transform2D } from "./geometry";
 import type { ProjectProfile } from "./model";
 import type { ProjectRecordBase } from "./spatial-entities";
 
@@ -12,3 +13,43 @@ export interface RouteNetwork extends ProjectRecordBase { readonly nodes: readon
 export interface ThemeConfig extends ProjectRecordBase { readonly profile: ProjectProfile; readonly values: Readonly<Record<string, string | number | boolean>> }
 export interface CameraShot extends ProjectRecordBase { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number]; readonly fieldOfView: number }
 export interface StorySequence extends ProjectRecordBase { readonly cameraShotIds: readonly string[]; readonly duration: number }
+
+export interface CalibrationEvidence {
+  readonly sourcePointA: Point2;
+  readonly sourcePointB: Point2;
+  readonly measuredDistanceMm: number;
+}
+
+export interface PlanReference extends ProjectRecordBase {
+  readonly floorId: string; readonly layerId: string; readonly assetId: string;
+  readonly intrinsicSize: Size2; readonly transform: Transform2D;
+  readonly opacity: number; readonly locked: boolean;
+  readonly calibration: CalibrationEvidence | null;
+}
+
+export interface GuidedRoute extends ProjectRecordBase {
+  readonly routeNetworkId: string;
+  readonly stopNodeIds: readonly string[];
+}
+
+export interface MaterialDefinition extends ProjectRecordBase {
+  readonly baseColor: string;
+  readonly roughness: number;
+  readonly metalness: number;
+  readonly opacity: number;
+  readonly assetId: string | null;
+}
+
+export interface MaterialAssignment extends ProjectRecordBase {
+  readonly materialId: string;
+  readonly targetKind: "space-floor" | "wall" | "fixture";
+  readonly targetId: string;
+}
+
+export interface SceneEnvironment {
+  readonly backgroundColor: string;
+  readonly ambient: { readonly color: string; readonly intensity: number };
+  readonly key: { readonly color: string; readonly intensity: number; readonly direction: readonly [number, number, number] };
+  readonly shadowsEnabled: boolean;
+  readonly shadowSoftness: number;
+}
