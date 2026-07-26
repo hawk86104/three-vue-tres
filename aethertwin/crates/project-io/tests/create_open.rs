@@ -58,7 +58,7 @@ fn creates_and_reopens_both_profiles() {
         ] {
             assert_eq!(project[collection], json!([]), "unexpected {collection}");
         }
-        assert_eq!(project["sceneEnvironment"]["backgroundColor"], "#10151c");
+        assert_eq!(project["sceneEnvironment"]["backgroundColor"], "#101820");
         assert!(!reopened.recovered);
     }
 }
