@@ -1,6 +1,6 @@
 # Architecture
 
-## Implemented M1 graph
+## Implemented M1 and accepted M2.1 graph
 
 ```text
 apps/studio (React)
@@ -16,7 +16,7 @@ apps/studio (React)
 apps/player -> packages/design-system
 ```
 
-`core-model` owns schema-v2 manifest/snapshot parsing, deterministic v1-to-v2 migration, immutable profile contracts, floors/layers, six business spatial entities, dimension annotations, and the deferred content records. Plan coordinates are millimetres; stored rotations are radians.
+`core-model` owns schema-v3 manifest/snapshot parsing, deterministic v1-to-v2-to-v3 migration, immutable profile contracts, floors/layers, six business spatial entities, dimension annotations, accepted M2.1 record contracts, and the deferred later-workflow records. Plan coordinates are millimetres; stored rotations are radians.
 
 `command-bus` is the serialized mutation path. A command batch's entity delta, generic `plan.entities.patch` journal row, inverse payload, and metadata commit in the same SQLite transaction; the next immutable snapshot is published only after persistence commits. After a durable checkpoint, its queued acknowledgement rebases the current snapshot plus every undo/redo history endpoint to authoritative checkpoint metadata without changing sequence or history availability. `project-store` coordinates save, autosave, undo/redo, close, recovery, and app-local recents. Zustand stores transient UI state only; it is not the project database.
 
@@ -44,6 +44,6 @@ A clean close checkpoints, writes `cleanShutdown=true`, truncates WAL, closes SQ
 
 ## Current boundary
 
-M1 is the implemented unified authoring core. Opening, product content, vendor, route network, theme, camera shot, and story sequence types remain contract-only or deferred. There is no 3D preview, route authoring, data import, export/publish, real Player/media workflow, or browser/GPU performance claim.
+M1 is the implemented unified authoring core. M2.1 Tasks 1?4 are implemented and independently accepted, including Task 4's independent review. Asset import, asset resolution, and calibration are not implemented; Task 5+ is not implemented. Native invokes remain exactly the six commands listed above. There is no runtime, browser, GPU, or packaged-application evidence claim.
 
-M2 is the next milestone. Later workflow, Player/media, and hardening work must consume these contracts without bypassing CommandBus or duplicating the model.
+Later workflow, Player/media, and hardening work must consume these contracts without bypassing CommandBus or duplicating the model.

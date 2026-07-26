@@ -4,10 +4,12 @@
 
 - M0 foundation: complete.
 - M1 unified authoring core: complete, with evidence in `M1_REPORT.md`.
-- M2 showroom workflow: next milestone.
+- M2 showroom workflow: in progress; M2.1 Tasks 1?4 are implemented and independently accepted, including Task 4 independent review.
 - M3 market workflow: deferred until after M2.
 - M4 Player and media: deferred.
 - M5 hardening and performance profiling: deferred; no M5 performance claim is made by M1.
+
+Asset import, asset resolution, calibration, and all Task 5+ capabilities remain unimplemented. Native invokes remain exactly six, and no runtime, browser, or GPU evidence is claimed.
 
 ## Milestone definitions
 

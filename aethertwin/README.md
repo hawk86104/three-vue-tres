@@ -1,10 +1,10 @@
 # AetherTwin Studio
 
-AetherTwin M1 is a local-first, desktop-first unified 2D authoring core with exactly two immutable profiles: `showroom` and `market`. Studio opens a project directly in the plan editor; Player remains an intentionally noninteractive future boundary.
+AetherTwin has an implemented M1 unified 2D authoring core and accepted M2.1 Tasks 1?4, with exactly two immutable profiles: `showroom` and `market`. Studio opens a project directly in the plan editor; Player remains an intentionally noninteractive future boundary.
 
 ## Implemented M1 capabilities
 
-- schema-v2 core model with deterministic v1-to-v2 migration;
+- schema-v3 core model with deterministic v1-to-v2-to-v3 migration;
 - floors and explicit layers with one active floor rendered at a time;
 - six editable business entities (boundary, wall, zone, space unit, fixture, and POI) plus dimension annotation;
 - nine authoring tools: select, pan, boundary, wall, zone, space unit, fixture, POI, and dimension;
@@ -30,11 +30,11 @@ Studio web development sandbox
   -> SandboxProjectBackend (in-memory only; no native filesystem or SQLite)
 ```
 
-`project-store` is the UI persistence coordinator; CommandBus serializes mutations and publishes only after persistence commits. Native `desktop-host` owns the six typed Tauri commands; `project-io` owns `.twinproj`, SQLite, locking, recovery, and the exact schema-v1 checkpoint upgrade to schema v2.
+`project-store` is the UI persistence coordinator; CommandBus serializes mutations and publishes only after persistence commits. Native `desktop-host` owns exactly six typed Tauri commands; `project-io` owns `.twinproj`, SQLite, locking, recovery, and deterministic schema v1-to-v2-to-v3 migration.
 
 ## Deliberate boundary
 
-M1 does not implement opening/content/vendor/route/theme/camera/story authoring, 3D preview, route authoring, data import, export/publish, real Player/media, browser/GPU profiling, or an M5 performance claim. M2 is the next milestone.
+M2.1 Tasks 1?4 are implemented and independently accepted; Task 4 has completed independent review. Asset import, asset resolution, and calibration are not implemented, and neither are Task 5+ capabilities. There is no runtime, browser, or GPU evidence claim.
 
 ## Verification boundary
 

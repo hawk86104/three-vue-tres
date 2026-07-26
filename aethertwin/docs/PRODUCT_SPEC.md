@@ -2,6 +2,8 @@
 
 AetherTwin M1 supports exactly two immutable project profiles: `showroom` and `market`. The selected profile cannot change after creation; any future conversion requires an explicit migration workflow.
 
+M2.1 Tasks 1?4 are implemented and independently accepted, and Task 4 has completed independent review. This status does not imply asset I/O: import, resolution, and calibration are not implemented, and Task 5+ capabilities remain unimplemented.
+
 ## Implemented M1 authoring surface
 
 Studio opens a project directly in a 2D-first editor. The editor shows one active floor at a time and keeps the floor tree, Pixi canvas, accessible DOM mirror, and Inspector on the same selection. Project, floor, layer, single-entity, and multi-selection Inspector contexts use the durable ProjectStore/CommandBus path.
@@ -34,4 +36,4 @@ M1 does not claim:
 - a real Player, media workflow, visitor theme, or kiosk mode;
 - real-browser or GPU profiling, or an M5 performance result.
 
-These deferred capabilities are not exposed as working controls in the M1 editor. M2 is the next milestone.
+These deferred capabilities are not exposed as working controls. There is no runtime, browser, or GPU evidence claim.

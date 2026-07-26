@@ -1,6 +1,6 @@
 import {
   createInitialSnapshot,
-  parseSnapshotV2,
+  parseSnapshotV3,
   type Fixture,
   type Floor,
 } from "@aethertwin/core-model";
@@ -55,7 +55,7 @@ function fixtureAt(id: string, floor: Floor, x: number): Fixture {
 
 const visibleFixture = fixtureAt(uuid(10), floorA, 0);
 const floorBFixture = fixtureAt(uuid(11), floorB, 0);
-const snapshot = parseSnapshotV2({
+const snapshot = parseSnapshotV3({
   ...base,
   project: {
     ...base.project,
@@ -367,7 +367,7 @@ describe("PixiPlanRenderer", () => {
     const inputWithFixture = rendererInput();
     const inputWithoutFixture: PlanRendererInput = {
       ...inputWithFixture,
-      snapshot: parseSnapshotV2({
+      snapshot: parseSnapshotV3({
         ...snapshot,
         project: { ...snapshot.project, entities: [floorBFixture] },
       }),

@@ -24,9 +24,9 @@ Native checkpoint returns one authoritative manifest/snapshot envelope. ProjectS
 
 Desktop window close and process exit both attempt `close_all`. Create/open/recover hold a shared lifecycle lease through session publication; `close_all` takes the exclusive lease, waits for those producers, drains the registry, and verifies it is empty before returning success. It records successful shutdown while still exclusive, causing waiting and later producers to fail instead of publishing after the drain. A failed shutdown does not set that closed state and releases the lease for normal production and retry. Each native session is closed without holding the registry lock; successful entries are removed, failures remain retryable, and any failure prevents the requested close/exit while exposing only a sanitized message and log reference.
 
-## Schema v2 and deterministic migration
+## Schema v3 and deterministic migration
 
-Schema v2 is the only newly created project format. A schema-v1 project is upgraded deterministically by deriving one default layer per floor and initializing new collections empty. The native checkpoint must persist that exact transition before Studio publishes an editor session. This preserves one migration contract across TypeScript, Tauri, and Rust.
+Schema v3 is the only newly created project format. A schema-v1 project is upgraded deterministically through v2, which derives one default layer per floor and initializes v2 collections, then v3, which adds only its deterministic collections and approved scene environment. The native checkpoint must persist that exact transition before Studio publishes an editor session. This preserves one migration contract across TypeScript, Tauri, and Rust.
 
 ## One model and one durable 2D editing path
 
@@ -34,8 +34,8 @@ The plan tree, canvas, accessible DOM mirror, and Inspector are projections of t
 
 All durable plan changes use generic `plan.entities.patch` or exact floor patches through ProjectStore and CommandBus. Millimetres and radians are the storage contract; explicit input units are normalized at the editor boundary. Undo, redo, arrays, transforms, save, and reopen therefore share the same journal and checkpoint path.
 
-## Honest M1 UI boundary
+## Honest current UI boundary
 
 M1 exposes only working project actions and the nine working 2D tools. The editor does not display BIM, IoT, point-cloud, 3DGS, export, publish, route, import, or 3D-preview controls.
 
-Opening, content, vendor, route, theme, camera, and story records remain contract-only or deferred. Real Player/media, browser/GPU profiling, and M5 performance work are not claimed. M2 is next.
+M2.1 Tasks 1?4 are implemented and independently accepted; Task 4's independent review is complete. Asset import, resolution, and calibration remain unimplemented, as do Task 5+ capabilities. Native invokes remain exactly six. Real runtime, browser, GPU, Player/media, and M5 performance evidence are not claimed.

@@ -2,7 +2,7 @@
 
 import {
   createInitialSnapshot,
-  parseSnapshotV2,
+  parseSnapshotV3,
   type Boundary,
   type DimensionAnnotation,
   type Fixture,
@@ -86,7 +86,7 @@ function fixtureAt(id: string, floor: Floor, x: number, layerId = floor.layers[0
 }
 
 function snapshotWith(entities: readonly SpatialEntity[]): ProjectSnapshot {
-  return parseSnapshotV2({
+  return parseSnapshotV3({
     ...base,
     project: {
       ...base.project,
@@ -400,7 +400,7 @@ describe("projectScene 2,000-entity culling fixture", () => {
       name: "Hidden layer",
       layerId: hiddenLayer.id,
     };
-    const snapshot = parseSnapshotV2({
+    const snapshot = parseSnapshotV3({
       ...harness.snapshot,
       project: {
         ...harness.snapshot.project,

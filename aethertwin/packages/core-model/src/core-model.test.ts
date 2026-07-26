@@ -397,7 +397,7 @@ describe("core model", () => {
   });
 });
 describe("schema v2 validation", () => {
-  it("creates a complete schema-v2 project with one editable default layer", () => {
+  it("creates a complete current-schema project with one editable default layer", () => {
     const ids = [
       "00000000-0000-4000-8000-000000000001",
       "00000000-0000-4000-8000-000000000002",
