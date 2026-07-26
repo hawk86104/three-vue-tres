@@ -7,16 +7,41 @@ import {
   type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
+import type { TauriProjectBackend } from "./tauri-backend";
+type AssetImportRequest = Parameters<TauriProjectBackend["importAsset"]>[1];
+type AssetImportProgress = Parameters<
+  Parameters<TauriProjectBackend["importAsset"]>[2]
+>[0];
+type AssetImportResult = Awaited<ReturnType<TauriProjectBackend["importAsset"]>>;
 import snapshotV1Fixture from "../../../../fixtures/contracts/snapshot.v1.json";
 import type { ProjectBackend } from "@aethertwin/project-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+const { Channel, channels, invoke } = vi.hoisted(() => {
+  interface MockChannel {
+    onmessage: ((message: unknown) => void) | null;
+  }
+  const createdChannels: MockChannel[] = [];
+  class MockChannelImpl implements MockChannel {
+    onmessage: ((message: unknown) => void) | null = null;
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+    constructor() {
+      createdChannels.push(this);
+    }
+  }
+  return {
+    Channel: MockChannelImpl,
+    channels: createdChannels,
+    invoke: vi.fn(),
+  };
+});
+
+vi.mock("@tauri-apps/api/core", () => ({ Channel, invoke }));
 
 const SESSION_A = "10000000-0000-4000-8000-000000000001";
 const SESSION_B = "10000000-0000-4000-8000-000000000002";
+const IMPORT_OPERATION = "30000000-0000-4000-8000-000000000001";
+const SOURCE_PATH = "E:\\Private\\floor-plan.png";
 const PROJECT_A = "E:\\Projects\\Demo.twinproj";
 const PROJECT_B = "E:\\Projects\\Market.twinproj";
 
@@ -138,6 +163,7 @@ function entityPatchBatch(before: ProjectSnapshot): {
 
 afterEach(() => {
   invoke.mockReset();
+  channels.length = 0;
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.resetModules();
@@ -930,6 +956,262 @@ describe("TauriProjectBackend", () => {
       payload: { sessionId: SESSION_A, snapshot },
     });
   });
+
+  it("imports only a native path with the exact transient payload and parses matching Channel progress and result fields", async () => {
+    const opened = fixture();
+    const result = importResult();
+    const onProgress = vi.fn();
+    invoke.mockImplementation(async (command: string, args?: {
+      readonly onProgress?: { onmessage: ((message: unknown) => void) | null };
+    }) => {
+      if (command === "open_project") return opened;
+      if (command === "import_project_asset") {
+        args?.onProgress?.onmessage?.(progress());
+        args?.onProgress?.onmessage?.(progress({
+          stage: "complete",
+          completedBytes: 42,
+        }));
+        return result;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    await expect(
+      backend.importAsset(PROJECT_A, importRequest(), onProgress),
+    ).resolves.toEqual(result);
+
+    expect(onProgress.mock.calls).toEqual([
+      [progress()],
+      [progress({ stage: "complete", completedBytes: 42 })],
+    ]);
+    expect(invoke).toHaveBeenNthCalledWith(2, "import_project_asset", {
+      payload: {
+        sessionId: SESSION_A,
+        operationId: IMPORT_OPERATION,
+        role: "plan-reference",
+        sourcePath: SOURCE_PATH,
+      },
+      onProgress: channels[0],
+    });
+    expect(invoke.mock.calls[1]?.[1]).not.toHaveProperty("payload.source");
+    expect(invoke.mock.calls[1]?.[1]).not.toHaveProperty("payload.displayName");
+  });
+
+  it("rejects sandbox blobs without invoking the native import command", async () => {
+    const opened = fixture();
+    invoke.mockResolvedValueOnce(opened);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    invoke.mockClear();
+
+    await expect(backend.importAsset(PROJECT_A, {
+      operationId: IMPORT_OPERATION,
+      role: "plan-reference",
+      source: {
+        kind: "sandbox-blob",
+        blob: new Blob(["private"]),
+        displayName: "private.png",
+      },
+    }, vi.fn())).rejects.toThrow(/native-path/i);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "unknown progress field",
+      { ...progress(), sourcePath: SOURCE_PATH },
+      /progress|field|invalid/i,
+    ],
+    [
+      "wrong operation id",
+      progress({ operationId: "30000000-0000-4000-8000-000000000099" }),
+      /operation/i,
+    ],
+  ] as const)("rejects %s from the native progress Channel", async (_label, invalid, message) => {
+    const opened = fixture();
+    const completion = deferred<AssetImportResult>();
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockReturnValueOnce(completion.promise);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    const importing = backend.importAsset(PROJECT_A, importRequest(), vi.fn());
+    await vi.waitFor(() => expect(channels).toHaveLength(1));
+    channels[0]?.onmessage?.(invalid);
+
+    await expect(importing).rejects.toThrow(message);
+    completion.resolve(importResult());
+  });
+
+  it("rejects non-monotonic progress after the validated kickoff event", async () => {
+    const opened = fixture();
+    const completion = deferred<AssetImportResult>();
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockReturnValueOnce(completion.promise);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    const importing = backend.importAsset(PROJECT_A, importRequest(), vi.fn());
+    await vi.waitFor(() => expect(channels).toHaveLength(1));
+    channels[0]?.onmessage?.(progress({
+      stage: "hash",
+      completedBytes: 21,
+    }));
+    channels[0]?.onmessage?.(progress({
+      stage: "validate",
+      completedBytes: 20,
+    }));
+
+    await expect(importing).rejects.toThrow(/monotonic|backwards|progress/i);
+    completion.resolve(importResult());
+  });
+
+  it.each([
+    ["outer result", (value: AssetImportResult) => ({ ...value, sourcePath: SOURCE_PATH })],
+    ["asset", (value: AssetImportResult) => ({
+      ...value,
+      asset: { ...value.asset, sourcePath: SOURCE_PATH },
+    })],
+    ["facts", (value: AssetImportResult) => ({
+      ...value,
+      facts: { ...value.facts, sourcePath: SOURCE_PATH },
+    })],
+  ] as const)("requires exact fields in the native %s", async (_label, corrupt) => {
+    const opened = fixture();
+    invoke.mockImplementation(async (command: string, args?: {
+      readonly onProgress?: { onmessage: ((message: unknown) => void) | null };
+    }) => {
+      if (command === "open_project") return opened;
+      if (command === "import_project_asset") {
+        args?.onProgress?.onmessage?.(progress());
+        return corrupt(importResult());
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    await expect(
+      backend.importAsset(PROJECT_A, importRequest(), vi.fn()),
+    ).rejects.toThrow(/result|asset|facts|field|invalid/i);
+  });
+
+  it("sanitizes an asset import error without retaining its source path or native diagnostics", async () => {
+    const opened = fixture();
+    const nativeError = {
+      code: "ASSET_IO_FAILED",
+      message: "Asset import failed",
+      details: { retryable: true },
+      logRef: "native-import-ref",
+      sourcePath: SOURCE_PATH,
+      osError: `Access denied: ${SOURCE_PATH}`,
+    };
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockRejectedValueOnce(nativeError);
+    const { ProjectBackendError, TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    let caught: unknown;
+    try {
+      await backend.importAsset(PROJECT_A, importRequest(), vi.fn());
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ProjectBackendError);
+    expect(caught).toMatchObject({
+      code: "ASSET_IO_FAILED",
+      message: nativeError.message,
+      details: nativeError.details,
+      logRef: nativeError.logRef,
+    });
+    expect(caught).not.toHaveProperty("sourcePath");
+    expect(caught).not.toHaveProperty("osError");
+    expect(String((caught as Error).stack)).not.toContain(SOURCE_PATH);
+  });
+
+  it("lets an immediate queued cancel invoke after validated kickoff and before import completion settles", async () => {
+    const opened = fixture();
+    const completion = deferred<AssetImportResult>();
+    let importSettled = false;
+    invoke.mockImplementation((command: string) => {
+      if (command === "open_project") return Promise.resolve(opened);
+      if (command === "import_project_asset") return completion.promise;
+      if (command === "cancel_project_asset_import") {
+        expect(importSettled).toBe(false);
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    const importing = backend.importAsset(PROJECT_A, importRequest(), vi.fn()).finally(() => {
+      importSettled = true;
+    });
+    const cancelling = backend.cancelAssetImport(PROJECT_A, IMPORT_OPERATION);
+    await vi.waitFor(() => expect(channels).toHaveLength(1));
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "open_project",
+      "import_project_asset",
+    ]);
+
+    channels[0]?.onmessage?.(progress());
+    await cancelling;
+    expect(invoke).toHaveBeenNthCalledWith(3, "cancel_project_asset_import", {
+      payload: {
+        sessionId: SESSION_A,
+        operationId: IMPORT_OPERATION,
+      },
+    });
+    expect(importSettled).toBe(false);
+
+    completion.resolve(importResult());
+    await expect(importing).resolves.toEqual(importResult());
+  });
+
+  it("releases the queue when import fails before first progress so cancel cannot deadlock", async () => {
+    const opened = fixture();
+    const earlyFailure = deferred<AssetImportResult>();
+    invoke.mockImplementation((command: string) => {
+      if (command === "open_project") return Promise.resolve(opened);
+      if (command === "import_project_asset") return earlyFailure.promise;
+      if (command === "cancel_project_asset_import") return Promise.resolve(undefined);
+      return Promise.reject(new Error(`Unexpected command: ${command}`));
+    });
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+
+    const importing = backend.importAsset(PROJECT_A, importRequest(), vi.fn());
+    const cancelling = backend.cancelAssetImport(PROJECT_A, IMPORT_OPERATION);
+    earlyFailure.reject({
+      code: "ASSET_IO_FAILED",
+      message: "Asset import failed",
+      details: { retryable: true },
+      logRef: "native-early-failure",
+    });
+
+    await expect(importing).rejects.toMatchObject({ code: "ASSET_IO_FAILED" });
+    await expect(cancelling).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "open_project",
+      "import_project_asset",
+      "cancel_project_asset_import",
+    ]);
+  });
 });
 
 describe("selectBackend", () => {
@@ -960,4 +1242,56 @@ describe("selectBackend", () => {
     await expect(selectBackend()).rejects.toThrow("TAURI_RUNTIME_REQUIRED");
     await expect(selectBackend("sandbox")).rejects.toThrow("WEB_SANDBOX_DISABLED");
   });
+
 });
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason?: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function importRequest(operationId = IMPORT_OPERATION): AssetImportRequest {
+  return {
+    operationId,
+    role: "plan-reference",
+    source: {
+      kind: "native-path",
+      path: SOURCE_PATH,
+      displayName: "floor-plan.png",
+    },
+  };
+}
+
+function importResult(): AssetImportResult {
+  const sha256 = "a".repeat(64);
+  return {
+    asset: {
+      id: "40000000-0000-4000-8000-000000000001",
+      sha256,
+      relativePath: `assets/sha256/aa/${sha256}.png`,
+      mediaType: "image/png",
+      size: 42,
+    },
+    facts: { kind: "image", width: 640, height: 480 },
+  };
+}
+
+function progress(
+  overrides: Partial<AssetImportProgress> = {},
+): AssetImportProgress {
+  return {
+    operationId: IMPORT_OPERATION,
+    stage: "capture",
+    completedBytes: 0,
+    totalBytes: 42,
+    ...overrides,
+  };
+}

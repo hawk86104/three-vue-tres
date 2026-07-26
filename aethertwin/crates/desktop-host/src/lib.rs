@@ -8,7 +8,8 @@ mod registry;
 mod state;
 
 pub use dto::{
-    CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto, OpenProjectDto,
+    CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto, CommitProjectDto,
+    CreateProjectDto, ImportProgressDto, ImportProjectAssetDto, ImportResultDto, OpenProjectDto,
     RecoverProjectDto,
 };
 pub use error::{NativeErrorDto, NativeLogSink, SanitizedLogRecord};
@@ -21,6 +22,8 @@ pub fn with_invoke_handler<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tau
         commands::commit_project,
         commands::checkpoint_project,
         commands::close_project,
-        commands::recover_project
+        commands::recover_project,
+        commands::import_project_asset,
+        commands::cancel_project_asset_import
     ])
 }

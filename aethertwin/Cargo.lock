@@ -743,6 +743,7 @@ dependencies = [
 name = "desktop-host"
 version = "0.1.0"
 dependencies = [
+ "asset-io",
  "project-io",
  "rusqlite",
  "serde",

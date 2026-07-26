@@ -2,11 +2,13 @@ pub(crate) use crate::{boundary::validate_session_id, error::HostError};
 use crate::{
     boundary::{require_recovery_confirmation, validate_absolute_path, validate_create_request},
     dto::{
-        CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto, OpenProjectDto,
-        RecoverProjectDto,
+        CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto, CommitProjectDto,
+        CreateProjectDto, ImportProgressDto, ImportProjectAssetDto, ImportResultDto,
+        NativeImportProjectAsset, OpenProjectDto, RecoverProjectDto,
     },
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
+use asset_io::{ImportObserver, ImportProgress, ImportRequest, ImportStage, import_project_asset};
 use project_io::{
     CheckpointResult, CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession,
     ProjectSnapshot, SaveState, create_project, open_session, validate_commit_batch,
@@ -15,8 +17,9 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{
     collections::HashMap,
+    fmt,
     sync::{
-        Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        Arc, Condvar, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -24,6 +27,173 @@ use uuid::Uuid;
 
 pub(crate) type SessionHandle = Arc<Mutex<ProjectSession>>;
 
+struct ActiveAssetImport {
+    session_id: Uuid,
+    cancellation: Arc<AtomicBool>,
+}
+
+pub(crate) struct PreparedAssetImport {
+    session_id: Uuid,
+    operation_id: Uuid,
+    role: asset_io::AssetImportRole,
+    source_path: std::path::PathBuf,
+    session: SessionHandle,
+    cancellation: Arc<AtomicBool>,
+}
+
+impl fmt::Debug for PreparedAssetImport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PreparedAssetImport")
+            .field("session_id", &self.session_id)
+            .field("operation_id", &self.operation_id)
+            .finish_non_exhaustive()
+    }
+}
+
+pub(crate) trait ProgressSink: Send + Sync {
+    fn send(&self, progress: ImportProgressDto) -> Result<(), HostError>;
+}
+
+impl PreparedAssetImport {
+    #[cfg(test)]
+    pub(crate) fn session_id(&self) -> Uuid {
+        self.session_id
+    }
+
+    pub(crate) fn operation_id(&self) -> Uuid {
+        self.operation_id
+    }
+
+    pub(crate) fn cancellation(&self) -> Arc<AtomicBool> {
+        self.cancellation.clone()
+    }
+
+    pub(crate) fn run(self, sink: &dyn ProgressSink) -> Result<ImportResultDto, HostError> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|_| HostError::SessionStateUnavailable)?;
+        let request = ImportRequest {
+            project_root: session.project_path().to_owned(),
+            source: self.source_path,
+            operation_id: self.operation_id,
+            role: self.role,
+        };
+        let observer = ForwardingImportObserver::new(self.operation_id, self.cancellation, sink);
+        let result = import_project_asset(request, &observer);
+        drop(session);
+        match observer.take_failure()? {
+            Some(error) => Err(error),
+            None => result.map(ImportResultDto::from).map_err(HostError::from),
+        }
+    }
+}
+
+pub(crate) struct ProgressTracker {
+    operation_id: Uuid,
+    previous: Option<ImportProgress>,
+}
+
+impl ProgressTracker {
+    pub(crate) fn new(operation_id: Uuid) -> Self {
+        Self {
+            operation_id,
+            previous: None,
+        }
+    }
+
+    pub(crate) fn accept(
+        &mut self,
+        progress: ImportProgress,
+    ) -> Result<ImportProgressDto, HostError> {
+        if progress.operation_id != self.operation_id {
+            return Err(HostError::AssetProgressOperationMismatch);
+        }
+        if progress.completed_bytes > progress.total_bytes
+            || (progress.stage == ImportStage::Complete
+                && progress.completed_bytes != progress.total_bytes)
+        {
+            return Err(HostError::AssetProgressNotMonotonic);
+        }
+        if let Some(previous) = self.previous {
+            if previous.total_bytes != progress.total_bytes
+                || previous.completed_bytes > progress.completed_bytes
+                || import_stage_index(previous.stage) > import_stage_index(progress.stage)
+            {
+                return Err(HostError::AssetProgressNotMonotonic);
+            }
+        }
+        self.previous = Some(progress);
+        Ok(ImportProgressDto {
+            operation_id: progress.operation_id.to_string(),
+            stage: progress.stage.as_str().into(),
+            completed_bytes: progress.completed_bytes,
+            total_bytes: progress.total_bytes,
+        })
+    }
+}
+
+const fn import_stage_index(stage: ImportStage) -> u8 {
+    match stage {
+        ImportStage::Capture => 0,
+        ImportStage::Validate => 1,
+        ImportStage::Hash => 2,
+        ImportStage::Publish => 3,
+        ImportStage::Complete => 4,
+    }
+}
+struct ForwardingImportObserver<'a> {
+    tracker: Mutex<ProgressTracker>,
+    cancellation: Arc<AtomicBool>,
+    sink: &'a dyn ProgressSink,
+    failure: Mutex<Option<HostError>>,
+}
+
+impl<'a> ForwardingImportObserver<'a> {
+    fn new(operation_id: Uuid, cancellation: Arc<AtomicBool>, sink: &'a dyn ProgressSink) -> Self {
+        Self {
+            tracker: Mutex::new(ProgressTracker::new(operation_id)),
+            cancellation,
+            sink,
+            failure: Mutex::new(None),
+        }
+    }
+
+    fn take_failure(&self) -> Result<Option<HostError>, HostError> {
+        self.failure
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)
+            .map(|mut failure| failure.take())
+    }
+
+    fn fail(&self, error: HostError) {
+        self.cancellation.store(true, Ordering::Release);
+        if let Ok(mut failure) = self.failure.lock() {
+            if failure.is_none() {
+                *failure = Some(error);
+            }
+        }
+    }
+}
+
+impl ImportObserver for ForwardingImportObserver<'_> {
+    fn progress(&self, progress: ImportProgress) {
+        let converted = self
+            .tracker
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)
+            .and_then(|mut tracker| tracker.accept(progress))
+            .and_then(|progress| self.sink.send(progress));
+        if let Err(error) = converted {
+            self.fail(error);
+        }
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+    }
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenedProjectDto {
@@ -37,6 +207,8 @@ pub struct OpenedProjectDto {
 pub struct AppService {
     pub(crate) sessions: Mutex<HashMap<Uuid, SessionHandle>>,
     session_lifecycle_gate: RwLock<()>,
+    asset_imports: Mutex<HashMap<Uuid, ActiveAssetImport>>,
+    asset_imports_changed: Condvar,
     session_shutdown_complete: AtomicBool,
     log_sink: Arc<dyn NativeLogSink>,
 }
@@ -53,6 +225,8 @@ impl AppService {
             sessions: Mutex::new(HashMap::new()),
             session_lifecycle_gate: RwLock::new(()),
             session_shutdown_complete: AtomicBool::new(false),
+            asset_imports: Mutex::new(HashMap::new()),
+            asset_imports_changed: Condvar::new(),
             log_sink,
         }
     }
@@ -105,6 +279,117 @@ impl AppService {
             details: presentation.details,
             log_ref,
         }
+    }
+    pub(crate) fn prepare_asset_import(
+        &self,
+        request: ImportProjectAssetDto,
+    ) -> Result<PreparedAssetImport, HostError> {
+        let request: NativeImportProjectAsset = request.into_native()?;
+        let _operation_lease = self.session_operation_lease()?;
+        let mut imports = self
+            .asset_imports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        if imports.contains_key(&request.operation_id) {
+            return Err(HostError::AssetImportOperationExists);
+        }
+        let session = self.lookup_session(request.session_id)?;
+        let cancellation = Arc::new(AtomicBool::new(false));
+        imports.insert(
+            request.operation_id,
+            ActiveAssetImport {
+                session_id: request.session_id,
+                cancellation: cancellation.clone(),
+            },
+        );
+        Ok(PreparedAssetImport {
+            session_id: request.session_id,
+            operation_id: request.operation_id,
+            role: request.role,
+            source_path: request.source_path,
+            session,
+            cancellation,
+        })
+    }
+
+    pub(crate) fn cancel_asset_import(
+        &self,
+        request: CancelProjectAssetImportDto,
+    ) -> Result<(), HostError> {
+        let (session_id, operation_id) = request.into_native()?;
+        let imports = self
+            .asset_imports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        let active = imports
+            .get(&operation_id)
+            .filter(|active| active.session_id == session_id)
+            .ok_or(HostError::AssetImportOperationNotFound)?;
+        active.cancellation.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    pub(crate) fn finish_asset_import(
+        &self,
+        operation_id: Uuid,
+        cancellation: &Arc<AtomicBool>,
+    ) -> Result<bool, HostError> {
+        let mut imports = self
+            .asset_imports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        let matches = imports
+            .get(&operation_id)
+            .is_some_and(|active| Arc::ptr_eq(&active.cancellation, cancellation));
+        if matches {
+            imports.remove(&operation_id);
+            self.asset_imports_changed.notify_all();
+        }
+        Ok(matches)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_asset_import_count(&self) -> Result<usize, HostError> {
+        self.asset_imports
+            .lock()
+            .map(|imports| imports.len())
+            .map_err(|_| HostError::HostStateUnavailable)
+    }
+
+    fn wait_for_session_asset_imports(
+        &self,
+        session_id: Uuid,
+    ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, ActiveAssetImport>>, HostError> {
+        let mut imports = self
+            .asset_imports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        while imports
+            .values()
+            .any(|active| active.session_id == session_id)
+        {
+            imports = self
+                .asset_imports_changed
+                .wait(imports)
+                .map_err(|_| HostError::HostStateUnavailable)?;
+        }
+        Ok(imports)
+    }
+
+    fn wait_for_all_asset_imports(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, ActiveAssetImport>>, HostError> {
+        let mut imports = self
+            .asset_imports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?;
+        while !imports.is_empty() {
+            imports = self
+                .asset_imports_changed
+                .wait(imports)
+                .map_err(|_| HostError::HostStateUnavailable)?;
+        }
+        Ok(imports)
     }
 
     pub fn session_count(&self) -> Result<usize, crate::NativeErrorDto> {
@@ -276,6 +561,7 @@ impl AppService {
     pub fn close_all(&self) -> Result<(), crate::NativeErrorDto> {
         let result = (|| {
             let _shutdown_lease = self.session_shutdown_lease()?;
+            let _asset_imports = self.wait_for_all_asset_imports()?;
             if self.session_shutdown_complete.load(Ordering::Acquire) {
                 return if self.registry_len()? == 0 {
                     Ok(())
@@ -329,6 +615,7 @@ impl AppService {
     ) -> Result<(), crate::NativeErrorDto> {
         let result = (|| {
             let session_id = validate_session_id(session_id)?;
+            let _asset_imports = self.wait_for_session_asset_imports(session_id)?;
             let session = self.lookup_session(session_id)?;
             {
                 session

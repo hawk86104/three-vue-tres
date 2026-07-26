@@ -1,10 +1,12 @@
 use crate::error::HostError;
+use asset_io::{AssetImportRole, AssetMediaFacts, ImportResult};
 use project_io::{
     CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer, ProjectProfile,
     ProjectSnapshot, validate_commit_batch,
 };
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -378,4 +380,97 @@ fn exact_strings(value: &Value, key: &str) -> bool {
                 .and_then(Value::as_array)
                 .is_some_and(|values| values.iter().all(Value::is_string))
     })
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ImportProjectAssetDto {
+    pub session_id: String,
+    pub operation_id: String,
+    pub role: String,
+    pub source_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CancelProjectAssetImportDto {
+    pub session_id: String,
+    pub operation_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeImportProjectAsset {
+    pub session_id: Uuid,
+    pub operation_id: Uuid,
+    pub role: AssetImportRole,
+    pub source_path: PathBuf,
+}
+
+impl ImportProjectAssetDto {
+    pub(crate) fn into_native(self) -> Result<NativeImportProjectAsset, HostError> {
+        let role = match self.role.as_str() {
+            "plan-reference" => AssetImportRole::PlanReference,
+            "content-image" => AssetImportRole::ContentImage,
+            "content-video" => AssetImportRole::ContentVideo,
+            _ => return Err(HostError::IpcInvalidRequest),
+        };
+        let source_path = strict_native_path(&self.source_path)?;
+        Ok(NativeImportProjectAsset {
+            session_id: canonical_uuid(&self.session_id)?,
+            operation_id: canonical_uuid(&self.operation_id)?,
+            role,
+            source_path,
+        })
+    }
+}
+
+impl CancelProjectAssetImportDto {
+    pub(crate) fn into_native(self) -> Result<(Uuid, Uuid), HostError> {
+        Ok((
+            canonical_uuid(&self.session_id)?,
+            canonical_uuid(&self.operation_id)?,
+        ))
+    }
+}
+
+fn strict_native_path(value: &str) -> Result<PathBuf, HostError> {
+    if value.is_empty() || value.trim() != value || value.contains('\0') {
+        return Err(HostError::IpcInvalidRequest);
+    }
+    let path = Path::new(value);
+    if !path.is_absolute() {
+        return Err(HostError::IpcInvalidRequest);
+    }
+    Ok(path.to_owned())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgressDto {
+    pub operation_id: String,
+    pub stage: String,
+    pub completed_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResultDto {
+    pub asset: project_io::AssetRecord,
+    pub facts: Value,
+}
+
+impl From<ImportResult> for ImportResultDto {
+    fn from(result: ImportResult) -> Self {
+        let facts = match result.facts {
+            AssetMediaFacts::Image { width, height } => {
+                json!({ "kind": "image", "width": width, "height": height })
+            }
+            AssetMediaFacts::Video => json!({ "kind": "video" }),
+        };
+        Self {
+            asset: result.asset,
+            facts,
+        }
+    }
 }

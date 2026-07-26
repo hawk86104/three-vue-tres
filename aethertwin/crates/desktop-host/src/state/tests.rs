@@ -1,7 +1,13 @@
 use super::{
-    AppService, finalize_created_publication, finalize_created_session, validate_session_id,
+    AppService, ProgressSink, ProgressTracker, finalize_created_publication,
+    finalize_created_session, validate_session_id,
 };
-use crate::{CreateProjectDto, OpenProjectDto, error::HostError};
+use crate::{
+    CancelProjectAssetImportDto, CreateProjectDto, ImportProgressDto, ImportProjectAssetDto,
+    OpenProjectDto,
+    error::{HostError, host_error_code},
+};
+use asset_io::{ImportProgress, ImportStage};
 use project_io::{
     CommitBatch, CreateProjectRequest, JournalOperation, ProjectIoError, ProjectProfile,
     create_project, open_session,
@@ -10,8 +16,13 @@ use rusqlite::Connection;
 use serde_json::json;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{Arc, Barrier, mpsc},
+    sync::{
+        Arc, Barrier, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
+    time::Duration,
 };
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -32,6 +43,35 @@ fn rename_batch(before: &project_io::ProjectSnapshot, name: &str) -> CommitBatch
     }
 }
 
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend_from_slice(&13_u32.to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&width.to_be_bytes());
+    bytes.extend_from_slice(&height.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0_u32.to_be_bytes());
+    bytes.extend_from_slice(b"IEND");
+    bytes.extend_from_slice(&[0; 4]);
+    bytes
+}
+
+struct BlockingProgressSink {
+    ready: Mutex<Option<mpsc::Sender<()>>>,
+    release: Mutex<mpsc::Receiver<()>>,
+    blocked: AtomicBool,
+}
+
+impl ProgressSink for BlockingProgressSink {
+    fn send(&self, _progress: ImportProgressDto) -> Result<(), HostError> {
+        if !self.blocked.swap(true, Ordering::SeqCst) {
+            self.ready.lock().unwrap().take().unwrap().send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+        }
+        Ok(())
+    }
+}
 #[test]
 fn poisoned_session_registry_returns_a_safe_error_instead_of_panicking() {
     let service = AppService::default();
@@ -454,4 +494,242 @@ fn close_all_removes_successes_and_retries_only_remaining_sessions() {
             .exists()
     );
     service.close_all().unwrap();
+}
+
+#[test]
+fn asset_import_registry_binds_owner_rejects_duplicates_and_rejects_cross_session_cancel() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let first = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Import Owner".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let second = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Other Session".into(),
+            profile: "market".into(),
+        })
+        .unwrap();
+    let source = root.path().join("owner.png");
+    std::fs::write(&source, b"not-read-during-registration").unwrap();
+    let operation_id = Uuid::new_v4();
+    let request = || ImportProjectAssetDto {
+        session_id: first.session_id.clone(),
+        operation_id: operation_id.to_string(),
+        role: "plan-reference".into(),
+        source_path: source.to_string_lossy().into_owned(),
+    };
+
+    let prepared = service.prepare_asset_import(request()).unwrap();
+    assert_eq!(
+        prepared.session_id(),
+        validate_session_id(&first.session_id).unwrap()
+    );
+    assert_eq!(prepared.operation_id(), operation_id);
+    assert_eq!(service.active_asset_import_count().unwrap(), 1);
+
+    let duplicate = service.prepare_asset_import(request()).unwrap_err();
+    assert_eq!(host_error_code(&duplicate), "ASSET_IMPORT_OPERATION_EXISTS");
+    let wrong_owner = service
+        .cancel_asset_import(CancelProjectAssetImportDto {
+            session_id: second.session_id.clone(),
+            operation_id: operation_id.to_string(),
+        })
+        .unwrap_err();
+    assert_eq!(
+        host_error_code(&wrong_owner),
+        "ASSET_IMPORT_OPERATION_NOT_FOUND"
+    );
+    assert!(!prepared.cancellation().load(Ordering::Acquire));
+
+    service
+        .cancel_asset_import(CancelProjectAssetImportDto {
+            session_id: first.session_id.clone(),
+            operation_id: operation_id.to_string(),
+        })
+        .unwrap();
+    assert!(prepared.cancellation().load(Ordering::Acquire));
+    assert!(
+        service
+            .finish_asset_import(operation_id, &prepared.cancellation())
+            .unwrap()
+    );
+    assert_eq!(service.active_asset_import_count().unwrap(), 0);
+    assert!(
+        !service
+            .finish_asset_import(operation_id, &prepared.cancellation())
+            .unwrap()
+    );
+    service.close_all().unwrap();
+}
+
+#[test]
+fn progress_tracker_rejects_wrong_operation_and_non_monotonic_progress() {
+    let operation_id = Uuid::new_v4();
+    let mut tracker = ProgressTracker::new(operation_id);
+    let first = tracker
+        .accept(ImportProgress {
+            operation_id,
+            stage: ImportStage::Capture,
+            completed_bytes: 0,
+            total_bytes: 10,
+        })
+        .unwrap();
+    assert_eq!(first.operation_id, operation_id.to_string());
+
+    let mismatch = tracker
+        .accept(ImportProgress {
+            operation_id: Uuid::new_v4(),
+            stage: ImportStage::Validate,
+            completed_bytes: 0,
+            total_bytes: 10,
+        })
+        .unwrap_err();
+    assert_eq!(
+        host_error_code(&mismatch),
+        "ASSET_PROGRESS_OPERATION_MISMATCH"
+    );
+
+    let backwards = tracker
+        .accept(ImportProgress {
+            operation_id,
+            stage: ImportStage::Capture,
+            completed_bytes: 0,
+            total_bytes: 9,
+        })
+        .unwrap_err();
+    assert_eq!(host_error_code(&backwards), "ASSET_PROGRESS_NOT_MONOTONIC");
+}
+#[test]
+fn cancel_and_complete_race_has_one_terminal_registry_cleanup() {
+    let root = tempdir().unwrap();
+    let service = Arc::new(AppService::default());
+    let project = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Import Race".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let source = root.path().join("race.png");
+    std::fs::write(&source, png(1, 1)).unwrap();
+    let operation_id = Uuid::new_v4();
+    let prepared = service
+        .prepare_asset_import(ImportProjectAssetDto {
+            session_id: project.session_id.clone(),
+            operation_id: operation_id.to_string(),
+            role: "plan-reference".into(),
+            source_path: source.to_string_lossy().into_owned(),
+        })
+        .unwrap();
+    let cancellation = prepared.cancellation();
+    let barrier = Arc::new(Barrier::new(3));
+
+    let finish_service = Arc::clone(&service);
+    let finish_barrier = Arc::clone(&barrier);
+    let finish_cancellation = Arc::clone(&cancellation);
+    let finish = thread::spawn(move || {
+        finish_barrier.wait();
+        finish_service
+            .finish_asset_import(operation_id, &finish_cancellation)
+            .unwrap()
+    });
+
+    let cancel_service = Arc::clone(&service);
+    let cancel_barrier = Arc::clone(&barrier);
+    let cancel_session_id = project.session_id.clone();
+    let cancel = thread::spawn(move || {
+        cancel_barrier.wait();
+        cancel_service.cancel_asset_import(CancelProjectAssetImportDto {
+            session_id: cancel_session_id,
+            operation_id: operation_id.to_string(),
+        })
+    });
+
+    barrier.wait();
+    assert!(finish.join().unwrap());
+    if let Err(error) = cancel.join().unwrap() {
+        assert_eq!(host_error_code(&error), "ASSET_IMPORT_OPERATION_NOT_FOUND");
+    }
+    assert_eq!(service.active_asset_import_count().unwrap(), 0);
+    assert!(
+        !service
+            .finish_asset_import(operation_id, &cancellation)
+            .unwrap()
+    );
+    service.close_all().unwrap();
+}
+
+#[test]
+fn close_project_waits_for_the_session_locked_asset_import() {
+    let root = tempdir().unwrap();
+    let service = Arc::new(AppService::default());
+    let project = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close Waits".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let source = root.path().join("blocking.png");
+    std::fs::write(&source, png(3, 2)).unwrap();
+    let operation_id = Uuid::new_v4();
+    let prepared = service
+        .prepare_asset_import(ImportProjectAssetDto {
+            session_id: project.session_id.clone(),
+            operation_id: operation_id.to_string(),
+            role: "plan-reference".into(),
+            source_path: source.to_string_lossy().into_owned(),
+        })
+        .unwrap();
+    let cancellation = prepared.cancellation();
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let sink = Arc::new(BlockingProgressSink {
+        ready: Mutex::new(Some(ready_tx)),
+        release: Mutex::new(release_rx),
+        blocked: AtomicBool::new(false),
+    });
+
+    let import_service = Arc::clone(&service);
+    let import_sink = Arc::clone(&sink);
+    let import = thread::spawn(move || {
+        let result = prepared.run(import_sink.as_ref());
+        let finished = import_service
+            .finish_asset_import(operation_id, &cancellation)
+            .unwrap();
+        (result, finished)
+    });
+    ready_rx.recv().unwrap();
+
+    let close_service = Arc::clone(&service);
+    let close_session_id = project.session_id.clone();
+    let (close_started_tx, close_started_rx) = mpsc::channel();
+    let (close_finished_tx, close_finished_rx) = mpsc::channel();
+    let close = thread::spawn(move || {
+        close_started_tx.send(()).unwrap();
+        close_finished_tx
+            .send(close_service.close_project(&close_session_id))
+            .unwrap();
+    });
+    close_started_rx.recv().unwrap();
+    assert!(matches!(
+        close_finished_rx.recv_timeout(Duration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    release_tx.send(()).unwrap();
+    let (result, finished) = import.join().unwrap();
+    assert!(finished);
+    let result = serde_json::to_value(result.unwrap()).unwrap();
+    assert_eq!(
+        result["facts"],
+        json!({ "kind": "image", "width": 3, "height": 2 })
+    );
+    close_finished_rx.recv().unwrap().unwrap();
+    close.join().unwrap();
+    assert_eq!(service.session_count().unwrap(), 0);
 }

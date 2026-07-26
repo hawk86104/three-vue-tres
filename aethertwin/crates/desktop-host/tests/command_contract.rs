@@ -383,7 +383,7 @@ fn tauri_configuration_and_capability_are_exact_and_least_privilege() {
 #[test]
 fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     let commands = include_str!("../src/commands.rs");
-    assert_eq!(commands.matches("#[tauri::command]").count(), 6);
+    assert_eq!(commands.matches("#[tauri::command]").count(), 8);
     for command in [
         "create_project",
         "open_project",
@@ -391,13 +391,15 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
         "checkpoint_project",
         "close_project",
         "recover_project",
+        "import_project_asset",
+        "cancel_project_asset_import",
     ] {
         assert_eq!(commands.matches(&format!("fn {command}(")).count(), 1);
     }
     for forbidden in ["rusqlite", "std::fs", "Command::new", "std::process"] {
         assert!(!commands.contains(forbidden));
     }
-    assert_eq!(commands.matches("payload: Option<Value>").count(), 6);
+    assert_eq!(commands.matches("payload: Option<Value>").count(), 8);
     assert!(!commands.contains("batch: CommitBatch"));
 
     let main = include_str!("../src/main.rs");
@@ -423,7 +425,7 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
 }
 
 #[test]
-fn real_tauri_invoke_handler_wraps_missing_payload_for_all_six_commands() {
+fn real_tauri_invoke_handler_wraps_missing_payload_for_all_eight_commands() {
     let sink = Arc::new(CapturingLogSink::default());
     let app = with_invoke_handler(
         tauri::test::mock_builder().manage(AppService::with_log_sink(sink.clone())),
@@ -441,6 +443,8 @@ fn real_tauri_invoke_handler_wraps_missing_payload_for_all_six_commands() {
         "checkpoint_project",
         "close_project",
         "recover_project",
+        "import_project_asset",
+        "cancel_project_asset_import",
     ];
     let mut returned_log_refs = Vec::new();
     for command in commands {
@@ -585,6 +589,172 @@ fn real_tauri_invoke_handler_rejects_wrong_unknown_and_invalid_nested_values() {
         .unwrap_err();
         assert_invalid_ipc(&error);
     }
+
+    invoke(
+        &webview,
+        "close_project",
+        json!({ "payload": { "sessionId": opened.session_id } }),
+    )
+    .unwrap();
+}
+
+#[test]
+fn asset_import_invoke_dtos_are_exact_and_native_errors_redact_source_details() {
+    let root = tempdir().unwrap();
+    let sink = Arc::new(CapturingLogSink::default());
+    let app = with_invoke_handler(
+        tauri::test::mock_builder().manage(AppService::with_log_sink(sink.clone())),
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Asset Invoke DTO",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let operation_id = "30000000-0000-4000-8000-000000000001";
+    let private_source = root.path().join("private-os-error-details");
+    std::fs::create_dir(&private_source).unwrap();
+    let source_path = private_source.to_string_lossy().into_owned();
+    let valid_import = json!({
+        "sessionId": opened.session_id,
+        "operationId": operation_id,
+        "role": "plan-reference",
+        "sourcePath": source_path
+    });
+
+    let mut unknown_import = valid_import.clone();
+    unknown_import["source"] = json!({ "kind": "native-path" });
+    let mut snake_case_import = valid_import.clone();
+    snake_case_import["operation_id"] = snake_case_import["operationId"].take();
+    let mut invalid_role = valid_import.clone();
+    invalid_role["role"] = json!("visitor");
+    let mut relative_path = valid_import.clone();
+    relative_path["sourcePath"] = json!("private/source.png");
+    let mut trimmed_path = valid_import.clone();
+    trimmed_path["sourcePath"] = json!(format!(" {} ", source_path));
+    let mut missing_path = valid_import.clone();
+    missing_path.as_object_mut().unwrap().remove("sourcePath");
+    let mut noncanonical_operation = valid_import.clone();
+    noncanonical_operation["operationId"] = json!("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
+    let mut noncanonical_session = valid_import.clone();
+    noncanonical_session["sessionId"] = json!("BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB");
+
+    for payload in [
+        unknown_import,
+        snake_case_import,
+        invalid_role,
+        relative_path,
+        trimmed_path,
+        missing_path,
+        noncanonical_operation,
+        noncanonical_session,
+    ] {
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "import_project_asset",
+                json!({
+                    "payload": payload,
+                    "onProgress": "__CHANNEL__:1"
+                }),
+            )
+            .unwrap_err(),
+        );
+    }
+
+    let valid_cancel = json!({
+        "sessionId": opened.session_id,
+        "operationId": operation_id
+    });
+    let mut unknown_cancel = valid_cancel.clone();
+    unknown_cancel["extra"] = json!(true);
+    let mut snake_case_cancel = valid_cancel.clone();
+    snake_case_cancel["session_id"] = snake_case_cancel["sessionId"].take();
+    let mut noncanonical_cancel = valid_cancel.clone();
+    noncanonical_cancel["operationId"] = json!("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
+    let mut missing_cancel = valid_cancel.clone();
+    missing_cancel
+        .as_object_mut()
+        .unwrap()
+        .remove("operationId");
+    for payload in [
+        unknown_cancel,
+        snake_case_cancel,
+        noncanonical_cancel,
+        missing_cancel,
+    ] {
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "cancel_project_asset_import",
+                json!({ "payload": payload }),
+            )
+            .unwrap_err(),
+        );
+    }
+
+    let import_error = invoke(
+        &webview,
+        "import_project_asset",
+        json!({
+            "payload": valid_import,
+            "onProgress": "__CHANNEL__:1"
+        }),
+    )
+    .unwrap_err();
+    assert_eq!(import_error["code"], "ASSET_SOURCE_NOT_REGULAR_FILE");
+    assert_eq!(
+        import_error
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec!["code", "details", "logRef", "message"]
+    );
+    let public_error = format!(
+        "{} {} {} {}",
+        import_error["code"],
+        import_error["message"],
+        import_error["details"],
+        import_error["logRef"]
+    );
+    assert!(!public_error.contains(&source_path));
+    assert!(!public_error.contains("private-os-error-details"));
+
+    let cancel_error = invoke(
+        &webview,
+        "cancel_project_asset_import",
+        json!({ "payload": valid_cancel }),
+    )
+    .unwrap_err();
+    assert_eq!(cancel_error["code"], "ASSET_IMPORT_OPERATION_NOT_FOUND");
+
+    let import_log_ref = import_error["logRef"].as_str().unwrap();
+    let records = sink.records.lock().unwrap();
+    let import_record = records
+        .iter()
+        .find(|record| record.log_ref == import_log_ref)
+        .unwrap();
+    assert_eq!(import_record.operation, "import_project_asset");
+    assert_eq!(import_record.code, "ASSET_SOURCE_NOT_REGULAR_FILE");
+    let serialized_record = serde_json::to_string(import_record).unwrap();
+    assert!(!serialized_record.contains(&source_path));
+    assert!(!serialized_record.contains("private-os-error-details"));
+    assert!(!serialized_record.to_ascii_lowercase().contains("path"));
+    drop(records);
 
     invoke(
         &webview,
