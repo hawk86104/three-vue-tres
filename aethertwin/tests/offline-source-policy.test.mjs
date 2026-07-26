@@ -28,6 +28,9 @@ const urlPattern =
   /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w])\/\/(?:[\p{L}\p{N}]|\[)[^\s"'`)}]*/giu;
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const acceptanceSpec = readFileSync("apps/studio/e2e/m0.spec.ts", "utf8");
+const tauriConfig = JSON.parse(readFileSync("crates/desktop-host/tauri.conf.json", "utf8"));
+const exactProductionCsp =
+  "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob: data:; media-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
 
 function remoteUrls(source) {
   return [...source.matchAll(urlPattern)].filter(([candidate]) => {
@@ -59,6 +62,18 @@ test("runtime source contains no remote URL or remote CSS import", () => {
     const remotes = remoteUrls(source).map(([url]) => url);
     assert.deepEqual(remotes, [], `remote runtime URL in ${file}: ${remotes.join(", ")}`);
   }
+});
+test("Tauri production CSP is exact, local-only, and does not enable broad asset protocol access", () => {
+  const security = tauriConfig.app.security;
+  assert.equal(security.csp, exactProductionCsp);
+  assert.equal(security.assetProtocol, undefined);
+  assert.doesNotMatch(security.csp, /(?:^|\s)\*(?:\s|;|$)/u);
+  assert.doesNotMatch(security.csp, /'unsafe-eval'/u);
+  assert.deepEqual(
+    security.csp.match(/https?:\/\/[^\s;]+/gu),
+    ["http://ipc.localhost", "http://aethertwin-asset.localhost", "http://aethertwin-asset.localhost"],
+  );
+  assert.doesNotMatch(security.csp, /(?:https|wss?):/u);
 });
 
 test("remoteUrls blocks remote WebSockets and permits loopback WebSockets", () => {

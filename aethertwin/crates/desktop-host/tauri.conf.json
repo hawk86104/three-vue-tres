@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob: data:; media-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'"
     }
   },
   "bundle": {

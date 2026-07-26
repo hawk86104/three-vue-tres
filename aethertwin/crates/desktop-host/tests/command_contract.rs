@@ -361,6 +361,11 @@ fn tauri_configuration_and_capability_are_exact_and_least_privilege() {
     assert_eq!(config["identifier"], "cn.aethertwin.studio");
     assert_eq!(config["build"]["frontendDist"], "../../apps/studio/dist");
     assert_eq!(config["build"]["devUrl"], "http://localhost:5173");
+    assert_eq!(
+        config["app"]["security"]["csp"],
+        "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob: data:; media-src 'self' aethertwin-asset: http://aethertwin-asset.localhost blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'"
+    );
+    assert!(config["app"]["security"].get("assetProtocol").is_none());
 
     let capability: Value =
         serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
