@@ -26,6 +26,7 @@ The following direct non-development dependencies are declared by `Cargo.toml`, 
 | `chrono` | 0.4.45 | MIT OR Apache-2.0 |
 | `fs2` | 0.4.3 | MIT/Apache-2.0 (as declared) |
 | `fs_at` | 0.2.1 | Apache-2.0 (registry manifest; no separate local LICENSE file) |
+| `quick-xml` | 0.41.0 | MIT |
 | `remove_dir_all` | 1.0.0 | MIT OR Apache-2.0 |
 | `rusqlite` | 0.39.0 | MIT |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |

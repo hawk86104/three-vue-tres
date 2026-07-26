@@ -66,6 +66,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "asset-io"
+version = "0.1.0"
+dependencies = [
+ "project-io",
+ "quick-xml",
+ "rustix",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
