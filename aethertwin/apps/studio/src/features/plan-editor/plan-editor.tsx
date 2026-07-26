@@ -1,10 +1,6 @@
 import { Button, StatusNotice } from "@aethertwin/design-system";
 import { EditorShell } from "@aethertwin/editor-shell";
-import {
-  type ProjectBackend,
-  ProjectStore,
-  type ProjectStoreState,
-} from "@aethertwin/project-store";
+import type { ProjectBackend, ProjectStore, ProjectStoreState } from "@aethertwin/project-store";
 import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
 import type { ProjectSnapshot } from "@aethertwin/core-model";
 import {

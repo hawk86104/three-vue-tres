@@ -1,4 +1,4 @@
-import type { Point2, Wall } from "@aethertwin/core-model";
+import type { Wall } from "@aethertwin/core-model";
 import { describe, expect, it } from "vitest";
 import {
   alignmentGuides,

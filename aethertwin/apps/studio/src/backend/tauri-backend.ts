@@ -266,8 +266,7 @@ export class TauriProjectBackend implements ProjectBackend {
       () => undefined,
       () => undefined,
     );
-    let disposeAttempt: Promise<void>;
-    disposeAttempt = pending.catch((error) => {
+    const disposeAttempt = pending.catch((error) => {
       if (this.disposePromise === disposeAttempt) {
         this.disposePromise = null;
       }

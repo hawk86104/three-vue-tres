@@ -9,14 +9,14 @@ import {
 } from "./types";
 import { deepFreeze, ownedCopy } from "./ownership";
 
-interface HistoryOperation<S extends SequencedState> {
+interface HistoryOperation {
   readonly applyRecord: JournalOperation;
 }
 
 interface HistoryEntry<S extends SequencedState> {
   readonly before: S;
   readonly after: S;
-  readonly operations: readonly HistoryOperation<S>[];
+  readonly operations: readonly HistoryOperation[];
 }
 
 type QueuedOperation = () => Promise<void>;
@@ -76,7 +76,7 @@ export class CommandBus<S extends SequencedState> {
     const before = this.state;
     const transactionId = crypto.randomUUID();
     const journal: JournalOperation[] = [];
-    const operations: HistoryOperation<S>[] = [];
+    const operations: HistoryOperation[] = [];
     let candidate = before;
 
     for (const intent of intents) {
@@ -235,7 +235,7 @@ export class CommandBus<S extends SequencedState> {
   private createHistoryEntry(
     before: S,
     after: S,
-    operations: readonly HistoryOperation<S>[],
+    operations: readonly HistoryOperation[],
   ): HistoryEntry<S> {
     return deepFreeze({
       before: ownedCopy(before),

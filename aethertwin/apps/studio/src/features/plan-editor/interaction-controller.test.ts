@@ -55,7 +55,10 @@ function createSnapshotController(
 ) {
   const activeFloorId = snapshot.project.floors[0]!.id;
   const store = createPlanEditorStore({ activeFloorId });
-  const applyPlanEdit = vi.fn(async (_intent: PlanEditIntent) => undefined);
+  const applyPlanEdit = vi.fn(async (intent: PlanEditIntent) => {
+    void intent;
+    return undefined;
+  });
   const errors: unknown[] = [];
   let nextId = 100;
   const controller = createInteractionController({

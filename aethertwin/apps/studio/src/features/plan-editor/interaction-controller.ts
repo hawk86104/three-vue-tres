@@ -1017,8 +1017,9 @@ export function createInteractionController(
       }
     },
 
-    async keyDown(key, _modifiers) {
+    async keyDown(key, modifiers) {
       const selectionBefore = [...deps.store.getState().selectedIds];
+      void modifiers;
       try {
         synchronizeGesture();
         if (commitToken !== null) return;

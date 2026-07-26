@@ -184,8 +184,12 @@ function pointerEvent(
 
 function inputController() {
   return {
-    handle: vi.fn(async (_event: PlanPointerEvent) => {}),
-    keyDown: vi.fn(async (_key: string) => {}),
+    handle: vi.fn(async (event: PlanPointerEvent) => {
+      void event;
+    }),
+    keyDown: vi.fn(async (key: string) => {
+      void key;
+    }),
     copy: vi.fn(),
     paste: vi.fn(async () => {}),
     cancel: vi.fn(),

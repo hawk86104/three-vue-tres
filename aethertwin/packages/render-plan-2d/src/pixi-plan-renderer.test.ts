@@ -83,7 +83,9 @@ class FakePlanRenderPort implements PlanRenderPort {
   destroyCalls = 0;
   initGate: Promise<void> = Promise.resolve();
 
-  async init(_host: HTMLElement, _sink: PlanRendererEventSink): Promise<void> {
+  async init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void> {
+    void host;
+    void sink;
     this.initCalls += 1;
     await this.initGate;
   }

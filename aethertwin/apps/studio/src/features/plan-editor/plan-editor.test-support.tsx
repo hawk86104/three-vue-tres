@@ -9,7 +9,7 @@ import {
   type SpatialEntity,
 } from "@aethertwin/core-model";
 import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
-import { ProjectStore, type ProjectStoreState } from "@aethertwin/project-store";
+import type { ProjectStore, ProjectStoreState } from "@aethertwin/project-store";
 import type {
   PlanPointerEvent,
   PlanRenderer,
@@ -66,7 +66,10 @@ export function createPlanEditorTestHarness() {
     project: { ...initial.project, floors: [floorA, floorB], entities: [fixture] },
   });
   const store = createPlanEditorStore({ activeFloorId: floorA.id });
-  const applyPlanEdit = vi.fn(async (_intent: PlanEditIntent) => undefined);
+  const applyPlanEdit = vi.fn(async (intent: PlanEditIntent) => {
+    void intent;
+    return undefined;
+  });
   const errors: unknown[] = [];
   let nextId = 20;
   const controller = createInteractionController({

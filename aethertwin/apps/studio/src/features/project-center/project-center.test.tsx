@@ -264,7 +264,7 @@ function createDesktopBackend(projects = new Map<string, OpenedProject>()): Proj
       profile: request.profile,
       uuid: nextUuid,
     });
-    const projectPath = `${request.location.replace(/[\\\\\/]$/u, "")}\\${request.name}.twinproj`;
+    const projectPath = `${request.location.replace(/[\\\\/]$/u, "")}\\${request.name}.twinproj`;
     const opened: OpenedProject = {
       projectPath,
       snapshot,

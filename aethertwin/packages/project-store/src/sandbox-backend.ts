@@ -4,7 +4,6 @@ import {
   createManifest,
   parseManifest,
   parseSnapshot,
-  type ProjectManifest,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
 import type {
@@ -61,9 +60,11 @@ export class SandboxProjectBackend implements ProjectBackend {
   }
 
   async recoverProject(
-    _projectPath: string,
-    _confirmation: RecoveryConfirmation,
+    projectPath: string,
+    confirmation: RecoveryConfirmation,
   ): Promise<OpenedProject> {
+    void projectPath;
+    void confirmation;
     throw new Error("Stale-lock recovery is unavailable in the Web sandbox");
   }
 

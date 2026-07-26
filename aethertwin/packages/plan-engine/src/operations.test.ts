@@ -11,7 +11,7 @@ import type {
 } from "@aethertwin/core-model";
 import {
   createInitialSnapshot,
-  parseSnapshotV2,
+  parseSnapshotV3,
 } from "@aethertwin/core-model";
 import { describe, expect, it } from "vitest";
 import {
@@ -89,7 +89,7 @@ function canonicalBoundary(id: string, polygon: readonly Point2[]): Boundary {
     transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } },
     polygon,
   };
-  const parsed = parseSnapshotV2({
+  const parsed = parseSnapshotV3({
     ...snapshot,
     project: { ...snapshot.project, entities: [boundary] },
   });
@@ -136,7 +136,8 @@ function spaceUnitAt(id: string): SpaceUnit {
 }
 
 function poiAt(id: string): PointOfInterest {
-  const { size: _size, ...base } = fixtureAt(id, 0);
+  const { size, ...base } = fixtureAt(id, 0);
+  void size;
   return {
     ...base,
     type: "poi",
@@ -147,7 +148,8 @@ function poiAt(id: string): PointOfInterest {
 }
 
 function dimensionAt(id: string): DimensionAnnotation {
-  const { size: _size, ...base } = fixtureAt(id, 0);
+  const { size, ...base } = fixtureAt(id, 0);
+  void size;
   return {
     ...base,
     type: "dimension",

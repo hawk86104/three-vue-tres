@@ -41,7 +41,12 @@ export class AssetPolicyError extends Error {
 
 export function sanitizeAssetDisplayName(value: string): string {
   const basename = value.split(/[\\/]+/).at(-1) ?? "";
-  const sanitized = basename.replace(/[\u0000-\u001f\u007f]/g, "").trim().replace(/\s+/g, " ");
+  const sanitized = Array.from(basename)
+    .filter((character) => {
+      const characterCode = character.charCodeAt(0);
+      return characterCode > 0x1f && characterCode !== 0x7f;
+    })
+    .join("").trim().replace(/\s+/g, " ");
   return sanitized === "" || sanitized === "." || sanitized === ".." ? "asset" : sanitized;
 }
 
