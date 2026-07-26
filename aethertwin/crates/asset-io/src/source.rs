@@ -204,7 +204,7 @@ impl BoundDirectory {
                 &self.file,
                 leaf,
                 GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_SHARE_READ,
                 FILE_CREATE,
                 FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
             ) {

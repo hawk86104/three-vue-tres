@@ -547,6 +547,79 @@ fn cancellation_is_checked_during_full_stage_hash() {
     assert!(import_stage_leaves(&root).is_empty());
 }
 
+#[cfg(windows)]
+#[test]
+fn published_destination_denies_external_write_during_full_verification_hash() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_READ: u32 = 0x1;
+    const FILE_SHARE_WRITE: u32 = 0x2;
+    const FILE_SHARE_DELETE: u32 = 0x4;
+
+    struct DestinationWriteProbeObserver {
+        destination: PathBuf,
+        armed: AtomicBool,
+        checks: AtomicUsize,
+        attempted: AtomicBool,
+        writer: Mutex<Option<fs::File>>,
+    }
+
+    impl ImportObserver for DestinationWriteProbeObserver {
+        fn progress(&self, value: ImportProgress) {
+            if value.stage == ImportStage::Publish {
+                self.checks.store(0, Ordering::SeqCst);
+                self.armed.store(true, Ordering::SeqCst);
+            }
+        }
+
+        fn is_cancelled(&self) -> bool {
+            if self.armed.load(Ordering::SeqCst)
+                && self.checks.fetch_add(1, Ordering::SeqCst) + 1 == 2
+            {
+                let writer = fs::OpenOptions::new()
+                    .write(true)
+                    .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+                    .open(&self.destination)
+                    .ok();
+                self.attempted.store(true, Ordering::SeqCst);
+                *self.writer.lock().unwrap() = writer;
+            }
+            false
+        }
+    }
+
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(18, 19);
+    bytes.resize(2 * ONE_MIB + 73, 0x8e);
+    fs::write(&source, &bytes).unwrap();
+    let destination = canonical(&root, &digest(&bytes), "png");
+    let observer = DestinationWriteProbeObserver {
+        destination: destination.clone(),
+        armed: AtomicBool::new(false),
+        checks: AtomicUsize::new(0),
+        attempted: AtomicBool::new(false),
+        writer: Mutex::new(None),
+    };
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    assert!(
+        observer.attempted.load(Ordering::SeqCst),
+        "write probe did not run inside destination verification"
+    );
+    assert!(
+        observer.writer.lock().unwrap().is_none(),
+        "external writer acquired the published digest leaf during full verification"
+    );
+    result.unwrap();
+    assert_eq!(fs::read(destination).unwrap(), bytes);
+}
+
 #[test]
 fn cancellation_is_checked_during_new_destination_hash() {
     let temp = TempDir::new().unwrap();
