@@ -28,6 +28,14 @@ const validManifest = {
   appVersion: "0.1.0",
   minCompatibleAppVersion: "0.1.0",
 };
+const APPROVED_SCENE_ENVIRONMENT = {
+  backgroundColor: "#101820",
+  ambient: { color: "#dce8f0", intensity: 0.55 },
+  key: { color: "#fff1dc", intensity: 1.1, direction: [4, 8, 5] },
+  shadowsEnabled: true,
+  shadowSoftness: 0.5,
+} as const;
+
 
 function contractId(value: number): string {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -542,7 +550,7 @@ describe("schema v3 validation and migration", () => {
         guidedRoutes: [],
         materials: [],
         materialAssignments: [],
-        sceneEnvironment: DEFAULT_SCENE_ENVIRONMENT,
+        sceneEnvironment: APPROVED_SCENE_ENVIRONMENT,
       },
       assets: [],
     });
@@ -568,7 +576,7 @@ describe("schema v3 validation and migration", () => {
         guidedRoutes: [],
         materials: [],
         materialAssignments: [],
-        sceneEnvironment: DEFAULT_SCENE_ENVIRONMENT,
+        sceneEnvironment: APPROVED_SCENE_ENVIRONMENT,
       },
     });
     expect(input).toEqual(before);
@@ -582,6 +590,7 @@ describe("schema v3 validation and migration", () => {
   it("round-trips and deeply freezes the real schema-v3 fixture", () => {
     const parsed = parseSnapshotV3(snapshotV3Fixture);
     expect(parsed).toEqual(snapshotV3Fixture);
+    expect(snapshotV3Fixture.project.sceneEnvironment).toEqual(APPROVED_SCENE_ENVIRONMENT);
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed.project.planReferences)).toBe(true);
     expect(Object.isFrozen(parsed.project.sceneEnvironment.key.direction)).toBe(true);

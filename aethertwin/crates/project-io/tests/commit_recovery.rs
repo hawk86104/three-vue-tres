@@ -179,6 +179,16 @@ fn every_published_session_is_schema_v3() {
     assert_eq!(session.manifest().schema_version, 3);
     assert_eq!(session.snapshot().schema_version, 3);
     assert_eq!(session.manifest().schema_version, session.snapshot().schema_version);
+    assert_eq!(
+        serde_json::to_value(&session.snapshot().project.scene_environment).unwrap(),
+        json!({
+            "backgroundColor": "#101820",
+            "ambient": { "color": "#dce8f0", "intensity": 0.55 },
+            "key": { "color": "#fff1dc", "intensity": 1.1, "direction": [4, 8, 5] },
+            "shadowsEnabled": true,
+            "shadowSoftness": 0.5
+        })
+    );
 
     session.close().unwrap();
 }
@@ -822,7 +832,16 @@ fn coherent_v1_is_upgraded_through_v2_to_v3_before_session_publication() {
     );
     let project = serde_json::to_value(&session.snapshot().project).unwrap();
     assert_eq!(project["planReferences"], json!([]));
-    assert_eq!(project["sceneEnvironment"]["backgroundColor"], "#10151c");
+    assert_eq!(
+        project["sceneEnvironment"],
+        json!({
+            "backgroundColor": "#101820",
+            "ambient": { "color": "#dce8f0", "intensity": 0.55 },
+            "key": { "color": "#fff1dc", "intensity": 1.1, "direction": [4, 8, 5] },
+            "shadowsEnabled": true,
+            "shadowSoftness": 0.5
+        })
+    );
 
     let disk_manifest: Value = serde_json::from_slice(
         &fs::read(opened.project_path.join("manifest.json")).unwrap(),
@@ -867,6 +886,16 @@ fn coherent_v2_upgrade_preserves_ids_values_order_sequence_and_checkpoint_sequen
     assert_eq!(
         session.snapshot().project.scene_environment,
         Default::default()
+    );
+    assert_eq!(
+        serde_json::to_value(&session.snapshot().project.scene_environment).unwrap(),
+        json!({
+            "backgroundColor": "#101820",
+            "ambient": { "color": "#dce8f0", "intensity": 0.55 },
+            "key": { "color": "#fff1dc", "intensity": 1.1, "direction": [4, 8, 5] },
+            "shadowsEnabled": true,
+            "shadowSoftness": 0.5
+        })
     );
     drop(session);
 }
@@ -924,6 +953,16 @@ fn public_recovery_upgrades_coherent_v2_durably_before_return() {
     assert!(recovered.recovered);
     assert_eq!(recovered.manifest.schema_version, 3);
     assert_eq!(recovered.snapshot, expected);
+    assert_eq!(
+        serde_json::to_value(&recovered.snapshot.project.scene_environment).unwrap(),
+        json!({
+            "backgroundColor": "#101820",
+            "ambient": { "color": "#dce8f0", "intensity": 0.55 },
+            "key": { "color": "#fff1dc", "intensity": 1.1, "direction": [4, 8, 5] },
+            "shadowsEnabled": true,
+            "shadowSoftness": 0.5
+        })
+    );
 
     let manifest: project_io::ProjectManifest = serde_json::from_slice(
         &fs::read(opened.project_path.join("manifest.json")).unwrap(),

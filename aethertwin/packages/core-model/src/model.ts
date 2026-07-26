@@ -28,9 +28,9 @@ export type ProjectProfile = "showroom" | "market";
 export type SaveState = "dirty" | "saving" | "saved" | "error" | "recovered";
 export type AssetMediaType = "image/png" | "image/jpeg" | "image/svg+xml" | "video/mp4" | "video/webm";
 export const DEFAULT_SCENE_ENVIRONMENT: SceneEnvironment = Object.freeze({
-  backgroundColor: "#10151c",
-  ambient: Object.freeze({ color: "#ffffff", intensity: 0.6 }),
-  key: Object.freeze({ color: "#ffffff", intensity: 1, direction: Object.freeze([-0.5, -1, -0.5]) as readonly [number, number, number] }),
+  backgroundColor: "#101820",
+  ambient: Object.freeze({ color: "#dce8f0", intensity: 0.55 }),
+  key: Object.freeze({ color: "#fff1dc", intensity: 1.1, direction: Object.freeze([4, 8, 5]) as readonly [number, number, number] }),
   shadowsEnabled: true,
   shadowSoftness: 0.5,
 });

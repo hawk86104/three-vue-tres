@@ -102,7 +102,7 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
             "guidedRoutes": [],
             "materials": [],
             "materialAssignments": [],
-            "sceneEnvironment": { "backgroundColor": "#10151c", "ambient": { "color": "#ffffff", "intensity": 0.6 }, "key": { "color": "#ffffff", "intensity": 1, "direction": [-0.5, -1, -0.5] }, "shadowsEnabled": true, "shadowSoftness": 0.5 }
+            "sceneEnvironment": { "backgroundColor": "#101820", "ambient": { "color": "#dce8f0", "intensity": 0.55 }, "key": { "color": "#fff1dc", "intensity": 1.1, "direction": [4, 8, 5] }, "shadowsEnabled": true, "shadowSoftness": 0.5 }
         },
         "assets": [{
             "id": "00000000-0000-4000-8000-000000000003",

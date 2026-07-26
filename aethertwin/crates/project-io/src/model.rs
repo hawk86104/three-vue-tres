@@ -312,15 +312,15 @@ pub struct SceneEnvironment {
 impl Default for SceneEnvironment {
     fn default() -> Self {
         Self {
-            background_color: "#10151c".into(),
+            background_color: "#101820".into(),
             ambient: AmbientLight {
-                color: "#ffffff".into(),
-                intensity: 0.6,
+                color: "#dce8f0".into(),
+                intensity: 0.55,
             },
             key: KeyLight {
-                color: "#ffffff".into(),
-                intensity: 1.0,
-                direction: [-0.5, -1.0, -0.5],
+                color: "#fff1dc".into(),
+                intensity: 1.1,
+                direction: [4.0, 8.0, 5.0],
             },
             shadows_enabled: true,
             shadow_softness: 0.5,
