@@ -30,7 +30,7 @@ Schema v3 is the only newly created project format. A schema-v1 project is upgra
 
 ## One model and one durable 2D editing path
 
-The plan tree, canvas, accessible DOM mirror, and Inspector are projections of the same schema-v2 snapshot and transient editor session. They do not own duplicate business models. Studio renders one active floor at a time through the five Pixi layers (`grid`, `content`, `annotation`, `overlay`, `interaction`).
+The plan tree, canvas, accessible DOM mirror, and Inspector are projections of the same schema-v3 snapshot and transient editor session. They do not own duplicate business models. Studio renders one active floor at a time through the five Pixi layers (`grid`, `content`, `annotation`, `overlay`, `interaction`).
 
 All durable plan changes use generic `plan.entities.patch` or exact floor patches through ProjectStore and CommandBus. Millimetres and radians are the storage contract; explicit input units are normalized at the editor boundary. Undo, redo, arrays, transforms, save, and reopen therefore share the same journal and checkpoint path.
 
