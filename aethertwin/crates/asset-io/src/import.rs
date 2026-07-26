@@ -2,17 +2,17 @@ use crate::{
     AssetIoError, AssetMediaFacts,
     media::{InspectedMedia, inspect_stream, validate_role, validate_size_for_extension},
     source::{
-        BoundProjectRoot, CapturedSource, FileIdentity, OpenedSource, open_destination_no_follow,
-        path_regular_file_identity, regular_file_identity,
+        BoundDirectory, BoundProjectRoot, CapturedSource, FileIdentity, OpenedSource,
+        PublishFileOutcome, delete_open_stage, regular_file_identity,
     },
 };
 use project_io::AssetRecord;
 use sha2::{Digest, Sha256};
 use std::{
     fmt,
-    fs::{self, File, OpenOptions},
+    fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use uuid::Uuid;
 
@@ -120,7 +120,7 @@ pub fn import_project_asset(
         total_bytes,
     )?;
 
-    let assets = ensure_directory(root.path(), "assets")?;
+    let assets = root.child("assets")?;
     let mut stage = StageFile::create(&assets, request.operation_id)?;
     let digest = copy_hash_and_verify_source(
         &mut source,
@@ -129,14 +129,13 @@ pub fn import_project_asset(
         request.operation_id,
         total_bytes,
     )?;
-    stage.flush_and_verify(total_bytes, &digest)?;
+    stage.flush_and_verify(total_bytes, &digest, observer)?;
 
     let digest_text = hex_digest(&digest);
     let prefix = &digest_text[..2];
-    let sha_directory = ensure_directory(&assets, "sha256")?;
-    let destination_directory = ensure_directory(&sha_directory, prefix)?;
-    let destination =
-        destination_directory.join(format!("{digest_text}.{}", inspected.canonical_extension));
+    let sha_directory = assets.child("sha256")?;
+    let destination_directory = sha_directory.child(prefix)?;
+    let destination_leaf = format!("{digest_text}.{}", inspected.canonical_extension);
     notify(
         observer,
         request.operation_id,
@@ -146,27 +145,39 @@ pub fn import_project_asset(
     )?;
 
     let published_identity = stage.identity().clone();
-    match publish_no_replace(stage.path(), &destination)? {
-        PublishOutcome::Published => {
+    match destination_directory.publish_open_stage(stage.file(), &destination_leaf)? {
+        PublishFileOutcome::Published => {
             stage.mark_published();
-            sync_directory(&destination_directory)?;
+            destination_directory.sync()?;
             if !verify_destination(
-                &destination,
+                &destination_directory,
+                &destination_leaf,
                 Some(&published_identity),
                 total_bytes,
                 &digest,
+                observer,
+                true,
             )? {
                 return Err(AssetIoError::Collision);
             }
+            stage.close_published();
         }
-        PublishOutcome::Collision => {
-            if !verify_destination(&destination, None, total_bytes, &digest).unwrap_or(false) {
+        PublishFileOutcome::Collision => {
+            if !verify_destination(
+                &destination_directory,
+                &destination_leaf,
+                None,
+                total_bytes,
+                &digest,
+                observer,
+                false,
+            )? {
                 return Err(AssetIoError::Collision);
             }
+            stage.discard();
         }
     }
 
-    root.verify()?;
     check_cancelled(observer)?;
     observer.progress(ImportProgress {
         operation_id: request.operation_id,
@@ -259,7 +270,7 @@ fn copy_hash_and_verify_source(
     }
     source.verify_unchanged()?;
     let digest: [u8; 32] = hasher.finalize().into();
-    let verified = hash_open_file(source.file_mut(), total_bytes)?;
+    let verified = hash_open_file(source.file_mut(), total_bytes, observer)?;
     source.verify_unchanged()?;
     if verified != digest {
         return Err(AssetIoError::SourceChanged);
@@ -267,7 +278,11 @@ fn copy_hash_and_verify_source(
     Ok(digest)
 }
 
-fn hash_open_file(file: &mut File, expected_size: u64) -> Result<[u8; 32], AssetIoError> {
+fn hash_open_file(
+    file: &mut File,
+    expected_size: u64,
+    observer: &dyn ImportObserver,
+) -> Result<[u8; 32], AssetIoError> {
     file.seek(SeekFrom::Start(0))
         .map_err(|_| AssetIoError::IoFailed)?;
     let mut hasher = Sha256::new();
@@ -278,6 +293,7 @@ fn hash_open_file(file: &mut File, expected_size: u64) -> Result<[u8; 32], Asset
         if count == 0 {
             break;
         }
+        check_cancelled(observer)?;
         length = length
             .checked_add(count as u64)
             .ok_or(AssetIoError::IoFailed)?;
@@ -293,12 +309,15 @@ fn hash_open_file(file: &mut File, expected_size: u64) -> Result<[u8; 32], Asset
 }
 
 fn verify_destination(
-    path: &Path,
+    directory: &BoundDirectory,
+    leaf: &str,
     expected_identity: Option<&FileIdentity>,
     expected_size: u64,
     expected_digest: &[u8; 32],
+    observer: &dyn ImportObserver,
+    protected_by_stage: bool,
 ) -> Result<bool, AssetIoError> {
-    let mut file = open_destination_no_follow(path)?;
+    let mut file = directory.open_child_file(leaf, protected_by_stage)?;
     let identity_before = regular_file_identity(&file).map_err(|_| AssetIoError::Collision)?;
     if expected_identity.is_some_and(|expected| expected != &identity_before) {
         return Ok(false);
@@ -306,7 +325,7 @@ fn verify_destination(
     if file.metadata().map_err(|_| AssetIoError::IoFailed)?.len() != expected_size {
         return Ok(false);
     }
-    let digest = hash_open_file(&mut file, expected_size)?;
+    let digest = hash_open_file(&mut file, expected_size, observer)?;
     let identity_after = regular_file_identity(&file).map_err(|_| AssetIoError::Collision)?;
     let final_size = file.metadata().map_err(|_| AssetIoError::IoFailed)?.len();
     Ok(identity_before == identity_after
@@ -334,34 +353,19 @@ fn build_result(inspected: InspectedMedia, digest: String, size: u64) -> ImportR
 }
 
 struct StageFile {
-    path: PathBuf,
     file: Option<File>,
     identity: FileIdentity,
     published: bool,
 }
 
 impl StageFile {
-    fn create(directory: &Path, operation_id: Uuid) -> Result<Self, AssetIoError> {
+    fn create(directory: &BoundDirectory, operation_id: Uuid) -> Result<Self, AssetIoError> {
         for _ in 0..8 {
-            let path = directory.join(format!(
-                "{STAGE_PREFIX}{operation_id}-{}.stage",
-                Uuid::new_v4()
-            ));
-            let mut options = OpenOptions::new();
-            options.read(true).write(true).create_new(true);
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::OpenOptionsExt;
-                const FILE_SHARE_READ: u32 = 1;
-                const FILE_SHARE_WRITE: u32 = 2;
-                const FILE_SHARE_DELETE: u32 = 4;
-                options.share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
-            }
-            match options.open(&path) {
+            let leaf = format!("{STAGE_PREFIX}{operation_id}-{}.stage", Uuid::new_v4());
+            match directory.create_stage_file(&leaf) {
                 Ok(file) => {
                     let identity = regular_file_identity(&file)?;
                     return Ok(Self {
-                        path,
                         file: Some(file),
                         identity,
                         published: false,
@@ -374,14 +378,12 @@ impl StageFile {
         Err(AssetIoError::IoFailed)
     }
 
-    fn path(&self) -> &Path {
-        &self.path
+    fn file_mut(&mut self) -> &mut File {
+        self.file.as_mut().expect("a live stage owns its handle")
     }
 
-    fn file_mut(&mut self) -> &mut File {
-        self.file
-            .as_mut()
-            .expect("an unpublished stage always owns its handle")
+    fn file(&self) -> &File {
+        self.file.as_ref().expect("a live stage owns its handle")
     }
 
     fn identity(&self) -> &FileIdentity {
@@ -392,13 +394,14 @@ impl StageFile {
         &mut self,
         expected_size: u64,
         expected_digest: &[u8; 32],
+        observer: &dyn ImportObserver,
     ) -> Result<(), AssetIoError> {
         let file = self.file.as_mut().ok_or(AssetIoError::IoFailed)?;
         file.flush().map_err(|_| AssetIoError::IoFailed)?;
         file.sync_all().map_err(|_| AssetIoError::IoFailed)?;
         if file.metadata().map_err(|_| AssetIoError::IoFailed)?.len() != expected_size
             || regular_file_identity(file)? != self.identity
-            || hash_open_file(file, expected_size)? != *expected_digest
+            || hash_open_file(file, expected_size, observer)? != *expected_digest
             || regular_file_identity(file)? != self.identity
         {
             return Err(AssetIoError::IoFailed);
@@ -408,145 +411,30 @@ impl StageFile {
 
     fn mark_published(&mut self) {
         self.published = true;
+    }
+
+    fn close_published(&mut self) {
+        debug_assert!(self.published);
+        drop(self.file.take());
+    }
+
+    fn discard(&mut self) {
+        if let Some(file) = self.file.as_ref() {
+            delete_open_stage(file);
+        }
         drop(self.file.take());
     }
 }
 
 impl Drop for StageFile {
     fn drop(&mut self) {
-        if !self.published
-            && path_regular_file_identity(&self.path)
-                .is_ok_and(|identity| identity == self.identity)
-        {
-            drop(self.file.take());
-            let _ = fs::remove_file(&self.path);
+        if !self.published {
+            if let Some(file) = self.file.as_ref() {
+                delete_open_stage(file);
+            }
         }
+        drop(self.file.take());
     }
-}
-
-enum PublishOutcome {
-    Published,
-    Collision,
-}
-
-#[cfg(windows)]
-fn publish_no_replace(source: &Path, destination: &Path) -> Result<PublishOutcome, AssetIoError> {
-    use std::os::windows::ffi::OsStrExt;
-    #[link(name = "Kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(source: *const u16, destination: *const u16, flags: u32) -> i32;
-    }
-    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-    const ERROR_FILE_EXISTS: i32 = 80;
-    const ERROR_ALREADY_EXISTS: i32 = 183;
-    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    // SAFETY: both UTF-16 paths are NUL-terminated and remain live for the call.
-    if unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_WRITE_THROUGH,
-        )
-    } != 0
-    {
-        return Ok(PublishOutcome::Published);
-    }
-    match std::io::Error::last_os_error().raw_os_error() {
-        Some(ERROR_FILE_EXISTS | ERROR_ALREADY_EXISTS) => Ok(PublishOutcome::Collision),
-        _ => Err(AssetIoError::IoFailed),
-    }
-}
-
-#[cfg(any(
-    target_os = "linux",
-    target_os = "android",
-    target_vendor = "apple",
-    target_os = "redox"
-))]
-fn publish_no_replace(source: &Path, destination: &Path) -> Result<PublishOutcome, AssetIoError> {
-    use rustix::fs::{CWD, RenameFlags, renameat_with};
-    match renameat_with(CWD, source, CWD, destination, RenameFlags::NOREPLACE) {
-        Ok(()) => Ok(PublishOutcome::Published),
-        Err(rustix::io::Errno::EXIST) => Ok(PublishOutcome::Collision),
-        Err(_) => Err(AssetIoError::IoFailed),
-    }
-}
-
-#[cfg(all(
-    unix,
-    not(any(
-        target_os = "linux",
-        target_os = "android",
-        target_vendor = "apple",
-        target_os = "redox"
-    ))
-))]
-fn publish_no_replace(source: &Path, destination: &Path) -> Result<PublishOutcome, AssetIoError> {
-    match fs::hard_link(source, destination) {
-        Ok(()) => {
-            fs::remove_file(source).map_err(|_| AssetIoError::IoFailed)?;
-            Ok(PublishOutcome::Published)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            Ok(PublishOutcome::Collision)
-        }
-        Err(_) => Err(AssetIoError::IoFailed),
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-fn publish_no_replace(_: &Path, _: &Path) -> Result<PublishOutcome, AssetIoError> {
-    Err(AssetIoError::IoFailed)
-}
-
-fn ensure_directory(parent: &Path, leaf: &str) -> Result<PathBuf, AssetIoError> {
-    let path = parent.join(leaf);
-    match fs::create_dir(&path) {
-        Ok(()) => sync_directory(parent)?,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(_) => return Err(AssetIoError::IoFailed),
-    }
-    let metadata = fs::symlink_metadata(&path).map_err(|_| AssetIoError::IoFailed)?;
-    if !safe_directory_metadata(&metadata) {
-        return Err(AssetIoError::IoFailed);
-    }
-    Ok(path)
-}
-
-#[cfg(unix)]
-fn safe_directory_metadata(metadata: &fs::Metadata) -> bool {
-    metadata.file_type().is_dir() && !metadata.file_type().is_symlink()
-}
-
-#[cfg(windows)]
-fn safe_directory_metadata(metadata: &fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    metadata.file_attributes() & FILE_ATTRIBUTE_DIRECTORY != 0
-        && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
-}
-
-#[cfg(not(any(unix, windows)))]
-fn safe_directory_metadata(metadata: &fs::Metadata) -> bool {
-    metadata.is_dir()
-}
-
-#[cfg(unix)]
-fn sync_directory(directory: &Path) -> Result<(), AssetIoError> {
-    File::open(directory)
-        .and_then(|file| file.sync_all())
-        .map_err(|_| AssetIoError::IoFailed)
-}
-
-#[cfg(not(unix))]
-fn sync_directory(_: &Path) -> Result<(), AssetIoError> {
-    Ok(())
 }
 
 fn hex_digest(digest: &[u8; 32]) -> String {

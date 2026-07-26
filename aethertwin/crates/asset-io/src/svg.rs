@@ -138,6 +138,9 @@ fn process_element(
         if attribute_name == "style" || attribute_name.starts_with("on") {
             return Err(AssetIoError::UnsafeSvg);
         }
+        if is_presentation_attribute(attribute_name) {
+            validate_presentation_value(value)?;
+        }
         validate_attribute_value(attribute_name, value)?;
         if !normalized_attributes.insert(attribute_name.to_owned()) {
             return Err(AssetIoError::UnsafeSvg);
@@ -167,16 +170,120 @@ fn validate_attribute_value(name: &str, value: &str) -> Result<(), AssetIoError>
     {
         return Err(AssetIoError::UnsafeSvg);
     }
-    if matches!(name, "href" | "src")
-        && (!value.starts_with('#')
-            || value.len() < 2
-            || value
-                .bytes()
-                .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control()))
-    {
+    if matches!(name, "href" | "src") && !is_local_fragment(value) {
         return Err(AssetIoError::UnsafeSvg);
     }
     validate_url_functions(&lower)
+}
+
+fn validate_presentation_value(value: &str) -> Result<(), AssetIoError> {
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.is_empty()
+        || trimmed.contains('\\')
+        || lower.contains("/*")
+        || lower.contains("*/")
+        || lower.contains("@import")
+        || lower.contains("expression")
+        || trimmed.bytes().any(|byte| byte.is_ascii_control())
+    {
+        return Err(AssetIoError::UnsafeSvg);
+    }
+    if exact_local_fragment_url(trimmed) {
+        return Ok(());
+    }
+    if lower.contains("url")
+        || lower.contains('(')
+        || lower.contains(')')
+        || lower.contains(':')
+        || lower.contains("//")
+    {
+        return Err(AssetIoError::UnsafeSvg);
+    }
+    Ok(())
+}
+
+fn exact_local_fragment_url(value: &str) -> bool {
+    value
+        .strip_prefix("url(")
+        .and_then(|value| value.strip_suffix(')'))
+        .is_some_and(is_local_fragment)
+}
+
+fn is_local_fragment(value: &str) -> bool {
+    value.strip_prefix('#').is_some_and(|identifier| {
+        !identifier.is_empty()
+            && identifier.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':')
+            })
+    })
+}
+
+fn is_presentation_attribute(name: &str) -> bool {
+    matches!(
+        name,
+        "alignment-baseline"
+            | "baseline-shift"
+            | "clip"
+            | "clip-path"
+            | "color-profile"
+            | "clip-rule"
+            | "color"
+            | "color-interpolation"
+            | "color-interpolation-filters"
+            | "color-rendering"
+            | "cursor"
+            | "direction"
+            | "enable-background"
+            | "display"
+            | "dominant-baseline"
+            | "fill"
+            | "fill-opacity"
+            | "fill-rule"
+            | "filter"
+            | "flood-color"
+            | "flood-opacity"
+            | "font-family"
+            | "font-size"
+            | "font-stretch"
+            | "font-style"
+            | "font-size-adjust"
+            | "font-variant"
+            | "font-weight"
+            | "image-rendering"
+            | "letter-spacing"
+            | "lighting-color"
+            | "glyph-orientation-horizontal"
+            | "glyph-orientation-vertical"
+            | "marker-end"
+            | "marker-mid"
+            | "marker-start"
+            | "kerning"
+            | "mask"
+            | "opacity"
+            | "overflow"
+            | "paint-order"
+            | "pointer-events"
+            | "shape-rendering"
+            | "stop-color"
+            | "stop-opacity"
+            | "stroke"
+            | "stroke-dasharray"
+            | "stroke-dashoffset"
+            | "stroke-linecap"
+            | "stroke-linejoin"
+            | "stroke-miterlimit"
+            | "stroke-opacity"
+            | "stroke-width"
+            | "text-anchor"
+            | "text-decoration"
+            | "text-rendering"
+            | "unicode-bidi"
+            | "vector-effect"
+            | "visibility"
+            | "word-spacing"
+            | "writing-mode"
+    )
 }
 
 fn validate_url_functions(value: &str) -> Result<(), AssetIoError> {

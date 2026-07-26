@@ -7,8 +7,8 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 use tempfile::TempDir;
@@ -112,8 +112,71 @@ impl ImportObserver for HookObserver {
             }
         }
     }
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+struct VerificationCancelObserver {
+    target_stage: ImportStage,
+    cancel_on_check: usize,
+    armed: AtomicBool,
+    checks: AtomicUsize,
+    cancelled: AtomicBool,
+    events: Mutex<Vec<ImportProgress>>,
+}
+
+impl VerificationCancelObserver {
+    fn after_terminal_hash_check(cancel_on_check: usize) -> Self {
+        Self {
+            target_stage: ImportStage::Hash,
+            cancel_on_check,
+            armed: AtomicBool::new(false),
+            checks: AtomicUsize::new(0),
+            cancelled: AtomicBool::new(false),
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn after_publish_check(cancel_on_check: usize) -> Self {
+        Self {
+            target_stage: ImportStage::Publish,
+            cancel_on_check,
+            armed: AtomicBool::new(false),
+            checks: AtomicUsize::new(0),
+            cancelled: AtomicBool::new(false),
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn events(&self) -> Vec<ImportProgress> {
+        self.events.lock().unwrap().clone()
+    }
+}
+
+impl ImportObserver for VerificationCancelObserver {
+    fn progress(&self, value: ImportProgress) {
+        self.events.lock().unwrap().push(value);
+        let should_arm = match self.target_stage {
+            ImportStage::Hash => {
+                value.stage == ImportStage::Hash && value.completed_bytes == value.total_bytes
+            }
+            ImportStage::Publish => value.stage == ImportStage::Publish,
+            _ => false,
+        };
+        if should_arm {
+            self.checks.store(0, Ordering::SeqCst);
+            self.armed.store(true, Ordering::SeqCst);
+        }
+    }
 
     fn is_cancelled(&self) -> bool {
+        if self.armed.load(Ordering::SeqCst) {
+            let check = self.checks.fetch_add(1, Ordering::SeqCst) + 1;
+            if check == self.cancel_on_check {
+                self.cancelled.store(true, Ordering::SeqCst);
+            }
+        }
         self.cancelled.load(Ordering::SeqCst)
     }
 }
@@ -293,6 +356,247 @@ fn publication_race_never_overwrites_the_colliding_leaf() {
 }
 
 #[test]
+fn bound_project_root_remains_authority_if_its_path_is_replaced() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    let moved_root = temp.path().join("bound-project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let bytes = png(4, 5);
+    fs::write(&source, &bytes).unwrap();
+    let replacement_succeeded = Arc::new(AtomicBool::new(false));
+    let replacement_succeeded_for_hook = Arc::clone(&replacement_succeeded);
+    let root_for_hook = root.clone();
+    let moved_root_for_hook = moved_root.clone();
+    let observer = HookObserver::new(ImportStage::Capture, move || {
+        if fs::rename(&root_for_hook, &moved_root_for_hook).is_ok() {
+            fs::create_dir(&root_for_hook).unwrap();
+            replacement_succeeded_for_hook.store(true, Ordering::SeqCst);
+        }
+    });
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    )
+    .unwrap();
+    if replacement_succeeded.load(Ordering::SeqCst) {
+        assert_eq!(
+            fs::read(moved_root.join(&result.asset.relative_path)).unwrap(),
+            bytes
+        );
+        assert!(!root.join(&result.asset.relative_path).exists());
+    } else {
+        assert_eq!(
+            fs::read(root.join(&result.asset.relative_path)).unwrap(),
+            bytes
+        );
+    }
+}
+
+#[test]
+fn held_derived_directory_cannot_redirect_publication() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let bytes = png(6, 7);
+    fs::write(&source, &bytes).unwrap();
+    let digest = digest(&bytes);
+    let prefix = &digest[..2];
+    let prefix_directory = root.join("assets/sha256").join(prefix);
+    let moved_prefix = root.join("assets/sha256").join(format!("{prefix}-bound"));
+    let replacement_succeeded = Arc::new(AtomicBool::new(false));
+    let replacement_succeeded_for_hook = Arc::clone(&replacement_succeeded);
+    let prefix_for_hook = prefix_directory.clone();
+    let moved_for_hook = moved_prefix.clone();
+    let observer = HookObserver::new(ImportStage::Publish, move || {
+        if fs::rename(&prefix_for_hook, &moved_for_hook).is_ok() {
+            fs::create_dir(&prefix_for_hook).unwrap();
+            replacement_succeeded_for_hook.store(true, Ordering::SeqCst);
+        }
+    });
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    )
+    .unwrap();
+    let leaf = format!("{digest}.png");
+    if replacement_succeeded.load(Ordering::SeqCst) {
+        let bound_bytes = fs::read(moved_prefix.join(&leaf)).ok();
+        assert_eq!(
+            bound_bytes.as_deref(),
+            Some(bytes.as_slice()),
+            "publication escaped the held derived directory"
+        );
+        assert!(!prefix_directory.join(&leaf).exists());
+    } else {
+        assert_eq!(fs::read(prefix_directory.join(&leaf)).unwrap(), bytes);
+    }
+    assert_eq!(result.asset.sha256, digest);
+}
+
+#[test]
+fn stage_leaf_replacement_is_never_published_or_deleted_as_cleanup() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(8, 8);
+    bytes.resize(ONE_MIB + 31, 0x2f);
+    fs::write(&source, &bytes).unwrap();
+    let foreign = vec![0x61; bytes.len()];
+    let moved_stage = root.join("assets/owned-stage-moved.stage");
+    let replaced_leaf = Arc::new(Mutex::new(None::<PathBuf>));
+    let replaced_leaf_for_hook = Arc::clone(&replaced_leaf);
+    let root_for_hook = root.clone();
+    let moved_stage_for_hook = moved_stage.clone();
+    let foreign_for_hook = foreign.clone();
+    let observer = HookObserver::new(ImportStage::Publish, move || {
+        let Some(stage) = import_stage_leaves(&root_for_hook).into_iter().next() else {
+            return;
+        };
+        if fs::rename(&stage, &moved_stage_for_hook).is_ok() {
+            fs::write(&stage, &foreign_for_hook).unwrap();
+            *replaced_leaf_for_hook.lock().unwrap() = Some(stage);
+        }
+    });
+
+    let outcome = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    let destination = canonical(&root, &digest(&bytes), "png");
+    if let Some(foreign_leaf) = replaced_leaf.lock().unwrap().clone() {
+        assert!(
+            outcome.is_ok(),
+            "publication must continue through the opened owned stage: {outcome:?}"
+        );
+        assert_eq!(fs::read(&foreign_leaf).unwrap(), foreign);
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+    } else {
+        outcome.unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), bytes);
+    }
+}
+
+fn assert_cancelled_before_complete(
+    result: Result<asset_io::ImportResult, asset_io::AssetIoError>,
+    observer: &VerificationCancelObserver,
+) {
+    assert_eq!(result.unwrap_err().code(), "ASSET_IMPORT_CANCELLED");
+    assert_eq!(
+        observer
+            .events()
+            .iter()
+            .filter(|event| event.stage == ImportStage::Complete)
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn cancellation_is_checked_during_second_source_hash() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(10, 11);
+    bytes.resize(2 * ONE_MIB + 73, 0x4a);
+    fs::write(&source, &bytes).unwrap();
+    let observer = VerificationCancelObserver::after_terminal_hash_check(3);
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    assert_cancelled_before_complete(result, &observer);
+    assert!(
+        observer
+            .events()
+            .iter()
+            .all(|event| event.stage != ImportStage::Publish)
+    );
+    assert!(import_stage_leaves(&root).is_empty());
+}
+
+#[test]
+fn cancellation_is_checked_during_full_stage_hash() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(12, 13);
+    bytes.resize(2 * ONE_MIB + 73, 0x5b);
+    fs::write(&source, &bytes).unwrap();
+    let chunks = bytes.len().div_ceil(ONE_MIB);
+    let observer = VerificationCancelObserver::after_terminal_hash_check(chunks + 3);
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    assert_cancelled_before_complete(result, &observer);
+    assert!(
+        observer
+            .events()
+            .iter()
+            .all(|event| event.stage != ImportStage::Publish)
+    );
+    assert!(import_stage_leaves(&root).is_empty());
+}
+
+#[test]
+fn cancellation_is_checked_during_new_destination_hash() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(14, 15);
+    bytes.resize(2 * ONE_MIB + 73, 0x6c);
+    fs::write(&source, &bytes).unwrap();
+    let observer = VerificationCancelObserver::after_publish_check(3);
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    assert_cancelled_before_complete(result, &observer);
+    assert_eq!(
+        fs::read(canonical(&root, &digest(&bytes), "png")).unwrap(),
+        bytes
+    );
+}
+
+#[test]
+fn cancellation_is_checked_during_existing_destination_hash() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let source = temp.path().join("asset.png");
+    let mut bytes = png(16, 17);
+    bytes.resize(2 * ONE_MIB + 73, 0x7d);
+    fs::write(&source, &bytes).unwrap();
+    import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &RecordingObserver::default(),
+    )
+    .unwrap();
+    let observer = VerificationCancelObserver::after_publish_check(3);
+
+    let result = import_project_asset(
+        request(&root, &source, AssetImportRole::ContentImage),
+        &observer,
+    );
+    assert_cancelled_before_complete(result, &observer);
+    assert_eq!(
+        fs::read(canonical(&root, &digest(&bytes), "png")).unwrap(),
+        bytes
+    );
+}
+
+#[test]
 fn cancellation_has_no_complete_event_and_removes_only_its_owned_stage_leaf() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("project.twinproj");
@@ -404,31 +708,56 @@ fn opened_source_bytes_are_never_reopened_by_pathname() {
 }
 
 #[test]
-fn rejects_directories_and_symlink_or_reparse_sources() {
+fn rejects_directories_as_sources() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join("project.twinproj");
     fs::create_dir(&root).unwrap();
-    let observer = RecordingObserver::default();
     let error = import_project_asset(
         request(&root, temp.path(), AssetImportRole::ContentImage),
-        &observer,
+        &RecordingObserver::default(),
     )
     .unwrap_err();
     assert_eq!(error.code(), "ASSET_SOURCE_NOT_REGULAR_FILE");
+}
 
+#[cfg(unix)]
+#[test]
+fn rejects_symlink_sources_on_unix() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
     let target = temp.path().join("target.png");
     let link = temp.path().join("link.png");
     fs::write(&target, png(1, 1)).unwrap();
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&target, &link).unwrap();
-    #[cfg(windows)]
-    if std::os::windows::fs::symlink_file(&target, &link).is_err() {
-        eprintln!("SKIP Windows reparse-source assertion: symlink privilege unavailable");
-        return;
-    }
+    assert!(
+        std::os::unix::fs::symlink(&target, &link).is_ok(),
+        "Unix symlink fixture creation failed"
+    );
     let error = import_project_asset(
         request(&root, &link, AssetImportRole::ContentImage),
-        &observer,
+        &RecordingObserver::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "ASSET_SOURCE_NOT_REGULAR_FILE");
+}
+
+#[cfg(windows)]
+#[test]
+#[ignore = "requires Windows symlink privilege; deterministic reparse-bit classification runs as a unit test"]
+fn rejects_reparse_sources_on_privileged_windows_lane() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("project.twinproj");
+    fs::create_dir(&root).unwrap();
+    let target = temp.path().join("target.png");
+    let link = temp.path().join("link.png");
+    fs::write(&target, png(1, 1)).unwrap();
+    assert!(
+        std::os::windows::fs::symlink_file(&target, &link).is_ok(),
+        "privileged Windows reparse fixture unavailable"
+    );
+    let error = import_project_asset(
+        request(&root, &link, AssetImportRole::ContentImage),
+        &RecordingObserver::default(),
     )
     .unwrap_err();
     assert_eq!(error.code(), "ASSET_SOURCE_NOT_REGULAR_FILE");

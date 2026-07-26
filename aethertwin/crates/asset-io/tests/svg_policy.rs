@@ -141,6 +141,22 @@ fn accepts_local_fragment_references_but_rejects_css_and_external_url_functions(
 }
 
 #[test]
+fn rejects_obfuscated_css_functions_schemes_comments_and_whitespace() {
+    for source in [
+        r#"<svg width="1" height="1"><rect fill="\75\72\6c(\68ttps://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="u/**/rl(https://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect color-profile="\75\72\6c(\68ttps://evil.test/a.icc)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="url/**/(https://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="url (https://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="url(h\74tps://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="url(\68 ttps://evil.test/a.svg#x)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect fill="\75rl(#local)"/></svg>"#,
+        r#"<svg width="1" height="1"><rect filter="url( #local )"/></svg>"#,
+    ] {
+        assert_unsafe(source);
+    }
+}
+#[test]
 fn rejects_malformed_xml_duplicate_geometry_and_non_svg_roots() {
     for source in [
         r#"<svg width="1" height="1">"#,
