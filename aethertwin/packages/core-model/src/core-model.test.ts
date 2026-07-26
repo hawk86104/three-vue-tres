@@ -36,42 +36,135 @@ const APPROVED_SCENE_ENVIRONMENT = {
   shadowSoftness: 0.5,
 } as const;
 
+type Mutable<T> =
+  T extends (...args: never[]) => unknown ? T
+    : T extends readonly (infer Item)[] ? Mutable<Item>[]
+      : T extends object ? { -readonly [Key in keyof T]: Mutable<T[Key]> }
+        : T;
+type MutableSnapshotV2 = Mutable<ReturnType<typeof parseSnapshotV2>>;
+type MutableSnapshotV3 = Mutable<ReturnType<typeof parseSnapshotV3>>;
+type JsonRecord = Record<string, unknown>;
+type JsonPath = readonly (string | number)[];
+type JsonMutation = (value: unknown) => void;
+type HostileCase = readonly [name: string, mutate: JsonMutation, path: string];
+
+const ASSET_EXTENSIONS = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+} as const;
+type SupportedMediaType = keyof typeof ASSET_EXTENSIONS;
+
+function cloneJson<T>(value: T): Mutable<T> {
+  return JSON.parse(JSON.stringify(value)) as Mutable<T>;
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function jsonValueAtPath(value: unknown, path: JsonPath): unknown {
+  let current = value;
+  for (const segment of path) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current) || segment < 0 || segment >= current.length) {
+        throw new Error(`Expected array entry at ${JSON.stringify(path)}`);
+      }
+      current = current[segment];
+      continue;
+    }
+    if (!isJsonRecord(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      throw new Error(`Expected object property at ${JSON.stringify(path)}`);
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function setExistingJsonValue(value: unknown, path: JsonPath, replacement: unknown): void {
+  const key = path.at(-1);
+  if (key === undefined) throw new Error("Cannot replace an empty JSON path");
+  const parent = jsonValueAtPath(value, path.slice(0, -1));
+  if (typeof key === "number") {
+    if (!Array.isArray(parent) || key < 0 || key >= parent.length) {
+      throw new Error(`Expected array entry at ${JSON.stringify(path)}`);
+    }
+    parent[key] = replacement;
+    return;
+  }
+  if (!isJsonRecord(parent) || !Object.prototype.hasOwnProperty.call(parent, key)) {
+    throw new Error(`Expected object property at ${JSON.stringify(path)}`);
+  }
+  parent[key] = replacement;
+}
+
+function addJsonValue(value: unknown, path: JsonPath, addition: unknown): void {
+  const key = path.at(-1);
+  if (typeof key !== "string") throw new Error("Added JSON properties require a string key");
+  const parent = jsonValueAtPath(value, path.slice(0, -1));
+  if (!isJsonRecord(parent) || Object.prototype.hasOwnProperty.call(parent, key)) {
+    throw new Error(`Expected missing object property at ${JSON.stringify(path)}`);
+  }
+  parent[key] = addition;
+}
+
+function jsonMutation(path: JsonPath, replacement: unknown): JsonMutation {
+  return (value) => setExistingJsonValue(value, path, replacement);
+}
+
+function addJsonMutation(path: JsonPath, addition: unknown): JsonMutation {
+  return (value) => addJsonValue(value, path, addition);
+}
+
+function addJsonProperties(value: unknown, path: JsonPath, additions: JsonRecord): void {
+  const target = jsonValueAtPath(value, path);
+  if (!isJsonRecord(target)) throw new Error(`Expected object at ${JSON.stringify(path)}`);
+  for (const key of Object.keys(additions)) {
+    if (Object.prototype.hasOwnProperty.call(target, key)) {
+      throw new Error(`Expected missing object property at ${JSON.stringify([...path, key])}`);
+    }
+  }
+  Object.assign(target, additions);
+}
+
+function assertSupportedMediaType(mediaType: string): asserts mediaType is SupportedMediaType {
+  if (!Object.prototype.hasOwnProperty.call(ASSET_EXTENSIONS, mediaType)) {
+    throw new Error(`Unsupported fixture media type: ${mediaType}`);
+  }
+}
 
 function contractId(value: number): string {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
-function cloneFixture(): any {
-  return JSON.parse(JSON.stringify(snapshotV2Fixture));
+function cloneFixture(): MutableSnapshotV2 {
+  return cloneJson(snapshotV2Fixture) as unknown as MutableSnapshotV2;
 }
 
-function cloneV3Fixture(): any {
-  return JSON.parse(JSON.stringify(snapshotV3Fixture));
+function cloneV3Fixture(): MutableSnapshotV3 {
+  return cloneJson(snapshotV3Fixture) as unknown as MutableSnapshotV3;
 }
 
-function asV3Input(input: any): any {
-  input.schemaVersion = 3;
-  Object.assign(input.project, {
+function asV3Input(input: MutableSnapshotV2): MutableSnapshotV3 {
+  setExistingJsonValue(input, ["schemaVersion"], 3);
+  addJsonProperties(input, ["project"], {
     planReferences: [],
     openings: [],
     guidedRoutes: [],
     materials: [],
     materialAssignments: [],
-    sceneEnvironment: JSON.parse(JSON.stringify(DEFAULT_SCENE_ENVIRONMENT)),
+    sceneEnvironment: cloneJson(DEFAULT_SCENE_ENVIRONMENT),
   });
-  return input;
+  return input as unknown as MutableSnapshotV3;
 }
 
-function planReferenceSnapshot(mediaType = "image/png"): any {
+function planReferenceSnapshot(mediaType = "image/png"): MutableSnapshotV3 {
+  assertSupportedMediaType(mediaType);
   const snapshot = cloneV3Fixture();
   const sha256 = "a".repeat(64);
-  const extension = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/svg+xml": "svg",
-    "video/mp4": "mp4",
-    "video/webm": "webm",
-  }[mediaType] ?? "bin";
+  const extension = ASSET_EXTENSIONS[mediaType];
   snapshot.assets = [{
     id: contractId(20),
     sha256,
@@ -87,7 +180,7 @@ function planReferenceSnapshot(mediaType = "image/png"): any {
     layerId: contractId(3),
     assetId: contractId(20),
     intrinsicSize: { width: 100, height: 50 },
-    transform: JSON.parse(JSON.stringify(identityTransform2D)),
+    transform: cloneJson(identityTransform2D),
     opacity: 0.65,
     locked: false,
     calibration: null,
@@ -95,11 +188,11 @@ function planReferenceSnapshot(mediaType = "image/png"): any {
   return snapshot;
 }
 
-function completeSnapshotInput(): any {
+function completeSnapshotInput(): MutableSnapshotV2 {
   const snapshot = cloneFixture();
   const floorId = contractId(2);
   const layerId = contractId(3);
-  const transform = JSON.parse(JSON.stringify(identityTransform2D));
+  const transform = cloneJson(identityTransform2D);
 
   snapshot.assets = [{
     id: contractId(20),
@@ -137,7 +230,7 @@ function completeSnapshotInput(): any {
       transform, locked: false, kind: "shop",
       footprint: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 1000 }, { x: 0, y: 1000 }],
     },
-    snapshot.project.entities[0],
+    snapshot.project.entities[0]!,
     {
       type: "poi", id: contractId(10), name: "Entrance", tags: [], floorId, layerId,
       transform, locked: false, kind: "entrance", radius: 250,
@@ -475,27 +568,27 @@ describe("schema v2 validation", () => {
   });
 
   it.each([
-    ["dimension entity", (value: any) => { value.project.entities[0].end.entityId = contractId(99); }, "project.entities[0].end.entityId"],
-    ["vendor space", (value: any) => { value.project.vendors[0].spaceUnitId = contractId(99); }, "project.vendors[0].spaceUnitId"],
-    ["product target", (value: any) => { value.project.productContents[0].targetEntityId = contractId(99); }, "project.productContents[0].targetEntityId"],
-    ["product media", (value: any) => { value.project.productContents[0].mediaAssetIds[0] = contractId(99); }, "project.productContents[0].mediaAssetIds[0]"],
-    ["media asset", (value: any) => { value.project.mediaAssets[0].assetId = contractId(99); }, "project.mediaAssets[0].assetId"],
-    ["route floor", (value: any) => { value.project.routeNetworks[0].nodes[0].floorId = contractId(99); }, "project.routeNetworks[0].nodes[0].floorId"],
-    ["route edge", (value: any) => { value.project.routeNetworks[0].edges[0].to = contractId(99); }, "project.routeNetworks[0].edges[0].to"],
-    ["story shot", (value: any) => { value.project.storySequences[0].cameraShotIds[0] = contractId(99); }, "project.storySequences[0].cameraShotIds[0]"],
-  ])("rejects an invalid %s reference", (_name, mutate, path) => {
+    ["dimension entity", jsonMutation(["project","entities",0,"end","entityId"], contractId(99)), "project.entities[0].end.entityId"],
+    ["vendor space", jsonMutation(["project","vendors",0,"spaceUnitId"], contractId(99)), "project.vendors[0].spaceUnitId"],
+    ["product target", jsonMutation(["project","productContents",0,"targetEntityId"], contractId(99)), "project.productContents[0].targetEntityId"],
+    ["product media", jsonMutation(["project","productContents",0,"mediaAssetIds",0], contractId(99)), "project.productContents[0].mediaAssetIds[0]"],
+    ["media asset", jsonMutation(["project","mediaAssets",0,"assetId"], contractId(99)), "project.mediaAssets[0].assetId"],
+    ["route floor", jsonMutation(["project","routeNetworks",0,"nodes",0,"floorId"], contractId(99)), "project.routeNetworks[0].nodes[0].floorId"],
+    ["route edge", jsonMutation(["project","routeNetworks",0,"edges",0,"to"], contractId(99)), "project.routeNetworks[0].edges[0].to"],
+    ["story shot", jsonMutation(["project","storySequences",0,"cameraShotIds",0], contractId(99)), "project.storySequences[0].cameraShotIds[0]"],
+  ] satisfies readonly HostileCase[])("rejects an invalid %s reference", (_name, mutate, path) => {
     const input = completeSnapshotInput();
     mutate(input);
     expectModelIssue(() => parseSnapshotV2(input), "INVALID_REFERENCE", path);
   });
 
   it.each([
-    ["wall thickness", (value: any) => { value.project.entities[2].thickness = 0; }, "project.entities[2].thickness"],
-    ["fixture width", (value: any) => { value.project.entities[5].size.width = 0; }, "project.entities[5].size.width"],
-    ["poi radius", (value: any) => { value.project.entities[6].radius = 0; }, "project.entities[6].radius"],
-    ["route width", (value: any) => { value.project.routeNetworks[0].edges[0].width = 0; }, "project.routeNetworks[0].edges[0].width"],
-    ["story duration", (value: any) => { value.project.storySequences[0].duration = 0; }, "project.storySequences[0].duration"],
-  ])("rejects non-positive %s", (_name, mutate, path) => {
+    ["wall thickness", jsonMutation(["project","entities",2,"thickness"], 0), "project.entities[2].thickness"],
+    ["fixture width", jsonMutation(["project","entities",5,"size","width"], 0), "project.entities[5].size.width"],
+    ["poi radius", jsonMutation(["project","entities",6,"radius"], 0), "project.entities[6].radius"],
+    ["route width", jsonMutation(["project","routeNetworks",0,"edges",0,"width"], 0), "project.routeNetworks[0].edges[0].width"],
+    ["story duration", jsonMutation(["project","storySequences",0,"duration"], 0), "project.storySequences[0].duration"],
+  ] satisfies readonly HostileCase[])("rejects non-positive %s", (_name, mutate, path) => {
     const input = completeSnapshotInput();
     mutate(input);
     expectModelIssue(() => parseSnapshotV2(input), "INVALID_VALUE", path);
@@ -503,7 +596,7 @@ describe("schema v2 validation", () => {
 
   it("rejects non-primitive theme values", () => {
     const input = completeSnapshotInput();
-    input.project.themes[0].values.bad = { executable: true };
+    addJsonValue(input, ["project", "themes", 0, "values", "bad"], { executable: true });
     expectModelIssue(
       () => parseSnapshotV2(input),
       "INVALID_TYPE",
@@ -512,11 +605,11 @@ describe("schema v2 validation", () => {
   });
 
   it.each([
-    ["out-of-range vertex", (value: any) => { value.project.entities[0].end.locator = { vertex: 4 }; }, "project.entities[0].end.locator.vertex"],
-    ["out-of-range segment", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(7), locator: { segment: 1, t: 0.5 } }; }, "project.entities[0].end.locator.segment"],
-    ["fixture vertex", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(4), locator: { vertex: 0 } }; }, "project.entities[0].end.locator.vertex"],
-    ["poi segment", (value: any) => { value.project.entities[0].end = { kind: "entity", entityId: contractId(10), locator: { segment: 0, t: 0.5 } }; }, "project.entities[0].end.locator.segment"],
-  ])("rejects an invalid %s dimension locator", (_name, mutate, path) => {
+    ["out-of-range vertex", jsonMutation(["project","entities",0,"end","locator"], { vertex: 4 }), "project.entities[0].end.locator.vertex"],
+    ["out-of-range segment", jsonMutation(["project","entities",0,"end"], { kind: "entity", entityId: contractId(7), locator: { segment: 1, t: 0.5 } }), "project.entities[0].end.locator.segment"],
+    ["fixture vertex", jsonMutation(["project","entities",0,"end"], { kind: "entity", entityId: contractId(4), locator: { vertex: 0 } }), "project.entities[0].end.locator.vertex"],
+    ["poi segment", jsonMutation(["project","entities",0,"end"], { kind: "entity", entityId: contractId(10), locator: { segment: 0, t: 0.5 } }), "project.entities[0].end.locator.segment"],
+  ] satisfies readonly HostileCase[])("rejects an invalid %s dimension locator", (_name, mutate, path) => {
     const input = completeSnapshotInput();
     mutate(input);
     expectModelIssue(() => parseSnapshotV2(input), "INVALID_REFERENCE", path);
@@ -524,7 +617,7 @@ describe("schema v2 validation", () => {
 
   it("preserves an own __proto__ theme key losslessly", () => {
     const input = completeSnapshotInput();
-    input.project.themes[0].values = JSON.parse('{"__proto__":"preserved","enabled":true}');
+    input.project.themes[0]!.values = JSON.parse('{"__proto__":"preserved","enabled":true}');
     const parsed = parseSnapshotV2(input);
 
     const values = parsed.project.themes[0]!.values;
@@ -562,7 +655,7 @@ describe("schema v3 validation and migration", () => {
     const input = completeSnapshotInput();
     input.sequence = 19;
     input.checkpointSequence = 11;
-    const before = JSON.parse(JSON.stringify(input));
+    const before = cloneJson(input);
 
     const migrated = migrateSnapshot(input);
 
@@ -583,7 +676,7 @@ describe("schema v3 validation and migration", () => {
     expect(migrated.sequence).toBe(19);
     expect(migrated.checkpointSequence).toBe(11);
     expect(migrated.project.entities.map((entity) => entity.id)).toEqual(
-      before.project.entities.map((entity: any) => entity.id),
+      before.project.entities.map((entity) => entity.id),
     );
   });
 
@@ -597,11 +690,11 @@ describe("schema v3 validation and migration", () => {
   });
 
   it.each([
-    ["snapshot key", (value: any) => { value.executable = true; }, "snapshot.executable"],
-    ["project key", (value: any) => { value.project.executable = true; }, "project.executable"],
-    ["nested transform key", (value: any) => { value.project.planReferences[0].transform.scale.z = 1; }, "project.planReferences[0].transform.scale.z"],
-    ["environment key", (value: any) => { value.project.sceneEnvironment.key.castShadow = true; }, "project.sceneEnvironment.key.castShadow"],
-  ])("rejects an unknown exact-key v3 %s", (_name, mutate, path) => {
+    ["snapshot key", addJsonMutation(["executable"], true), "snapshot.executable"],
+    ["project key", addJsonMutation(["project","executable"], true), "project.executable"],
+    ["nested transform key", addJsonMutation(["project","planReferences",0,"transform","scale","z"], 1), "project.planReferences[0].transform.scale.z"],
+    ["environment key", addJsonMutation(["project","sceneEnvironment","key","castShadow"], true), "project.sceneEnvironment.key.castShadow"],
+  ] satisfies readonly HostileCase[])("rejects an unknown exact-key v3 %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
     mutate(input);
     expectModelIssue(() => parseSnapshotV3(input), "INVALID_VALUE", path);
@@ -609,15 +702,15 @@ describe("schema v3 validation and migration", () => {
 
   it("enforces global UUID uniqueness across new v3 collections", () => {
     const input = planReferenceSnapshot();
-    input.project.planReferences[0].id = input.assets[0].id;
+    input.project.planReferences[0]!.id = input.assets[0]!.id;
     expectModelIssue(() => parseSnapshotV3(input), "DUPLICATE_UUID", "assets[0].id");
   });
 
   it.each([
-    ["floor", (value: any) => { value.project.planReferences[0].floorId = contractId(90); }, "project.planReferences[0].floorId"],
-    ["layer", (value: any) => { value.project.planReferences[0].layerId = contractId(90); }, "project.planReferences[0].layerId"],
-    ["asset", (value: any) => { value.project.planReferences[0].assetId = contractId(90); }, "project.planReferences[0].assetId"],
-  ])("rejects a foreign plan-reference %s", (_name, mutate, path) => {
+    ["floor", jsonMutation(["project","planReferences",0,"floorId"], contractId(90)), "project.planReferences[0].floorId"],
+    ["layer", jsonMutation(["project","planReferences",0,"layerId"], contractId(90)), "project.planReferences[0].layerId"],
+    ["asset", jsonMutation(["project","planReferences",0,"assetId"], contractId(90)), "project.planReferences[0].assetId"],
+  ] satisfies readonly HostileCase[])("rejects a foreign plan-reference %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
     mutate(input);
     expectModelIssue(() => parseSnapshotV3(input), "INVALID_REFERENCE", path);
@@ -627,23 +720,23 @@ describe("schema v3 validation and migration", () => {
     "rejects invalid plan-reference opacity %s",
     (opacity) => {
       const input = planReferenceSnapshot();
-      input.project.planReferences[0].opacity = opacity;
+      input.project.planReferences[0]!.opacity = opacity;
       expectModelIssue(() => parseSnapshotV3(input), "INVALID_VALUE", "project.planReferences[0].opacity");
     },
   );
 
   it.each([
-    ["unsupported media", (value: any) => { value.assets[0].mediaType = "application/pdf"; }, "assets[0].mediaType"],
-    ["digest path mismatch", (value: any) => { value.assets[0].relativePath = `assets/sha256/bb/${"a".repeat(64)}.png`; }, "assets[0].relativePath"],
-    ["filename", (value: any) => { value.assets[0].relativePath = "floor.png"; }, "assets[0].relativePath"],
-    ["absolute path", (value: any) => { value.assets[0].relativePath = "C:\\floor.png"; }, "assets[0].relativePath"],
-    ["remote URL", (value: any) => { value.assets[0].relativePath = "https://example.test/floor.png"; }, "assets[0].relativePath"],
-    ["file URL", (value: any) => { value.assets[0].relativePath = "file:///floor.png"; }, "assets[0].relativePath"],
-    ["traversal", (value: any) => { value.assets[0].relativePath = "assets/sha256/aa/../floor.png"; }, "assets[0].relativePath"],
-    ["backslash", (value: any) => { value.assets[0].relativePath = `assets\\sha256\\aa\\${"a".repeat(64)}.png`; }, "assets[0].relativePath"],
-    ["PNG byte limit", (value: any) => { value.assets[0].size = 268_435_457; }, "assets[0].size"],
-    ["unsafe byte count", (value: any) => { value.assets[0].size = Number.MAX_SAFE_INTEGER + 1; }, "assets[0].size"],
-  ])("rejects invalid canonical asset policy: %s", (_name, mutate, path) => {
+    ["unsupported media", jsonMutation(["assets",0,"mediaType"], "application/pdf"), "assets[0].mediaType"],
+    ["digest path mismatch", jsonMutation(["assets",0,"relativePath"], `assets/sha256/bb/${"a".repeat(64)}.png`), "assets[0].relativePath"],
+    ["filename", jsonMutation(["assets",0,"relativePath"], "floor.png"), "assets[0].relativePath"],
+    ["absolute path", jsonMutation(["assets",0,"relativePath"], "C:\\floor.png"), "assets[0].relativePath"],
+    ["remote URL", jsonMutation(["assets",0,"relativePath"], "https://example.test/floor.png"), "assets[0].relativePath"],
+    ["file URL", jsonMutation(["assets",0,"relativePath"], "file:///floor.png"), "assets[0].relativePath"],
+    ["traversal", jsonMutation(["assets",0,"relativePath"], "assets/sha256/aa/../floor.png"), "assets[0].relativePath"],
+    ["backslash", jsonMutation(["assets",0,"relativePath"], `assets\\sha256\\aa\\${"a".repeat(64)}.png`), "assets[0].relativePath"],
+    ["PNG byte limit", jsonMutation(["assets",0,"size"], 268_435_457), "assets[0].size"],
+    ["unsafe byte count", jsonMutation(["assets",0,"size"], Number.MAX_SAFE_INTEGER + 1), "assets[0].size"],
+  ] satisfies readonly HostileCase[])("rejects invalid canonical asset policy: %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
     mutate(input);
     expectModelIssue(
@@ -661,7 +754,7 @@ describe("schema v3 validation and migration", () => {
     ["WebM", "video/webm", 4_294_967_296],
   ])("accepts the exact %s byte limit", (_name, mediaType, size) => {
     const input = planReferenceSnapshot(mediaType);
-    input.assets[0].size = size;
+    input.assets[0]!.size = size;
     if (mediaType.startsWith("video/")) input.project.planReferences = [];
     expect(parseSnapshotV3(input).assets[0]?.size).toBe(size);
   });
@@ -672,10 +765,10 @@ describe("schema v3 validation and migration", () => {
   });
 
   it.each([
-    ["zero width", (value: any) => { value.project.planReferences[0].intrinsicSize.width = 0; }, "project.planReferences[0].intrinsicSize.width"],
-    ["fractional width", (value: any) => { value.project.planReferences[0].intrinsicSize.width = 1.5; }, "project.planReferences[0].intrinsicSize.width"],
-    ["oversized height", (value: any) => { value.project.planReferences[0].intrinsicSize.height = 16_385; }, "project.planReferences[0].intrinsicSize.height"],
-  ])("rejects invalid intrinsic plan size: %s", (_name, mutate, path) => {
+    ["zero width", jsonMutation(["project","planReferences",0,"intrinsicSize","width"], 0), "project.planReferences[0].intrinsicSize.width"],
+    ["fractional width", jsonMutation(["project","planReferences",0,"intrinsicSize","width"], 1.5), "project.planReferences[0].intrinsicSize.width"],
+    ["oversized height", jsonMutation(["project","planReferences",0,"intrinsicSize","height"], 16_385), "project.planReferences[0].intrinsicSize.height"],
+  ] satisfies readonly HostileCase[])("rejects invalid intrinsic plan size: %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
     mutate(input);
     expectModelIssue(() => parseSnapshotV3(input), "INVALID_VALUE", path);
@@ -683,8 +776,8 @@ describe("schema v3 validation and migration", () => {
 
   it("accepts coherent calibration evidence and exact uniform scale", () => {
     const input = planReferenceSnapshot();
-    input.project.planReferences[0].transform.scale = { x: 2.5, y: 2.5 };
-    input.project.planReferences[0].calibration = {
+    input.project.planReferences[0]!.transform.scale = { x: 2.5, y: 2.5 };
+    input.project.planReferences[0]!.calibration = {
       sourcePointA: { x: 0, y: 0 },
       sourcePointB: { x: 100, y: 0 },
       measuredDistanceMm: 250,
@@ -693,15 +786,15 @@ describe("schema v3 validation and migration", () => {
   });
 
   it.each([
-    ["coincident points", (value: any) => { value.project.planReferences[0].calibration.sourcePointB = { x: 0, y: 0 }; }, "project.planReferences[0].calibration.sourcePointB"],
-    ["outside source", (value: any) => { value.project.planReferences[0].calibration.sourcePointB.x = 101; }, "project.planReferences[0].calibration.sourcePointB.x"],
-    ["nonpositive distance", (value: any) => { value.project.planReferences[0].calibration.measuredDistanceMm = 0; }, "project.planReferences[0].calibration.measuredDistanceMm"],
-    ["nonuniform scale", (value: any) => { value.project.planReferences[0].transform.scale.y = 2; }, "project.planReferences[0].transform.scale"],
-    ["inconsistent scale", (value: any) => { value.project.planReferences[0].transform.scale = { x: 3, y: 3 }; }, "project.planReferences[0].transform.scale"],
-  ])("rejects invalid calibration evidence: %s", (_name, mutate, path) => {
+    ["coincident points", jsonMutation(["project","planReferences",0,"calibration","sourcePointB"], { x: 0, y: 0 }), "project.planReferences[0].calibration.sourcePointB"],
+    ["outside source", jsonMutation(["project","planReferences",0,"calibration","sourcePointB","x"], 101), "project.planReferences[0].calibration.sourcePointB.x"],
+    ["nonpositive distance", jsonMutation(["project","planReferences",0,"calibration","measuredDistanceMm"], 0), "project.planReferences[0].calibration.measuredDistanceMm"],
+    ["nonuniform scale", jsonMutation(["project","planReferences",0,"transform","scale","y"], 2), "project.planReferences[0].transform.scale"],
+    ["inconsistent scale", jsonMutation(["project","planReferences",0,"transform","scale"], { x: 3, y: 3 }), "project.planReferences[0].transform.scale"],
+  ] satisfies readonly HostileCase[])("rejects invalid calibration evidence: %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
-    input.project.planReferences[0].transform.scale = { x: 2.5, y: 2.5 };
-    input.project.planReferences[0].calibration = {
+    input.project.planReferences[0]!.transform.scale = { x: 2.5, y: 2.5 };
+    input.project.planReferences[0]!.calibration = {
       sourcePointA: { x: 0, y: 0 },
       sourcePointB: { x: 100, y: 0 },
       measuredDistanceMm: 250,
@@ -711,10 +804,10 @@ describe("schema v3 validation and migration", () => {
   });
 
   it.each([
-    ["non-finite translation", (value: any) => { value.project.planReferences[0].transform.translation.x = Number.POSITIVE_INFINITY; }, "project.planReferences[0].transform.translation.x"],
-    ["unsafe world bounds", (value: any) => { value.project.planReferences[0].transform.translation.x = 1_000_000_001; }, "project.planReferences[0].transform"],
-    ["overflowing scale", (value: any) => { value.project.planReferences[0].transform.scale = { x: 20_000_000, y: 20_000_000 }; }, "project.planReferences[0].transform"],
-  ])("rejects invalid or out-of-bounds plan transform: %s", (_name, mutate, path) => {
+    ["non-finite translation", jsonMutation(["project","planReferences",0,"transform","translation","x"], Number.POSITIVE_INFINITY), "project.planReferences[0].transform.translation.x"],
+    ["unsafe world bounds", jsonMutation(["project","planReferences",0,"transform","translation","x"], 1_000_000_001), "project.planReferences[0].transform"],
+    ["overflowing scale", jsonMutation(["project","planReferences",0,"transform","scale"], { x: 20_000_000, y: 20_000_000 }), "project.planReferences[0].transform"],
+  ] satisfies readonly HostileCase[])("rejects invalid or out-of-bounds plan transform: %s", (_name, mutate, path) => {
     const input = planReferenceSnapshot();
     mutate(input);
     expectModelIssue(() => parseSnapshotV3(input), "INVALID_VALUE", path);
@@ -747,11 +840,11 @@ describe("schema v3 validation and migration", () => {
   });
 
   it.each([
-    ["opening wall", (value: any) => { value.project.openings[0].wallId = contractId(4); }, "project.openings[0].wallId"],
-    ["guided route network", (value: any) => { value.project.guidedRoutes[0].routeNetworkId = contractId(90); }, "project.guidedRoutes[0].routeNetworkId"],
-    ["material asset", (value: any) => { value.project.materials[0].assetId = contractId(90); }, "project.materials[0].assetId"],
-    ["material assignment", (value: any) => { value.project.materialAssignments[0].materialId = contractId(90); }, "project.materialAssignments[0].materialId"],
-  ])("rejects an invalid normalized %s reference", (_name, mutate, path) => {
+    ["opening wall", jsonMutation(["project","openings",0,"wallId"], contractId(4)), "project.openings[0].wallId"],
+    ["guided route network", jsonMutation(["project","guidedRoutes",0,"routeNetworkId"], contractId(90)), "project.guidedRoutes[0].routeNetworkId"],
+    ["material asset", jsonMutation(["project","materials",0,"assetId"], contractId(90)), "project.materials[0].assetId"],
+    ["material assignment", jsonMutation(["project","materialAssignments",0,"materialId"], contractId(90)), "project.materialAssignments[0].materialId"],
+  ] satisfies readonly HostileCase[])("rejects an invalid normalized %s reference", (_name, mutate, path) => {
     const input = asV3Input(completeSnapshotInput());
     input.project.openings = [{ id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door", distanceAlongWall: 500, width: 900, height: 2100, sillHeight: 0 }];
     input.project.guidedRoutes = [{ id: contractId(31), name: "Tour", tags: [], routeNetworkId: contractId(14), stopNodeIds: [contractId(15), contractId(16)] }];
