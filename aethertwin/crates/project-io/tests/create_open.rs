@@ -50,7 +50,11 @@ fn creates_and_reopens_both_profiles() {
         assert!(opened.snapshot.project.entities.is_empty());
         let project = serde_json::to_value(&opened.snapshot.project).unwrap();
         for collection in [
-            "planReferences", "openings", "guidedRoutes", "materials", "materialAssignments",
+            "planReferences",
+            "openings",
+            "guidedRoutes",
+            "materials",
+            "materialAssignments",
         ] {
             assert_eq!(project[collection], json!([]), "unexpected {collection}");
         }
@@ -230,10 +234,7 @@ fn reports_project_not_found_for_a_missing_project_root() {
     let root = tempdir().unwrap();
     let missing = root.path().join("Missing.twinproj");
     assert!(!missing.exists());
-    assert_code(
-        open_project(&missing).unwrap_err(),
-        "PROJECT_NOT_FOUND",
-    );
+    assert_code(open_project(&missing).unwrap_err(), "PROJECT_NOT_FOUND");
 }
 
 #[test]
@@ -297,7 +298,11 @@ fn opens_a_coherent_schema_v1_project_for_pre_editor_upgrade() {
 
     let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
     manifest["schemaVersion"] = json!(1);
-    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
 
     let mut snapshot = serde_json::to_value(&opened.snapshot).unwrap();
     snapshot["schemaVersion"] = json!(1);
@@ -305,10 +310,19 @@ fn opens_a_coherent_schema_v1_project_for_pre_editor_upgrade() {
         floor.as_object_mut().unwrap().remove("layers");
     }
     for collection in [
-        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
-        "cameraShots", "storySequences",
+        "entities",
+        "vendors",
+        "productContents",
+        "mediaAssets",
+        "routeNetworks",
+        "themes",
+        "cameraShots",
+        "storySequences",
     ] {
-        snapshot["project"].as_object_mut().unwrap().remove(collection);
+        snapshot["project"]
+            .as_object_mut()
+            .unwrap()
+            .remove(collection);
     }
     let snapshot_json = serde_json::to_string(&snapshot).unwrap();
     let connection = Connection::open(database_path).unwrap();

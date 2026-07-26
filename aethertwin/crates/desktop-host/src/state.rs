@@ -8,8 +8,8 @@ use crate::{
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
 use project_io::{
-    CheckpointResult, CommitBatch, OpenedProject, ProjectManifest, ProjectSession, ProjectSnapshot,
-    ProjectIoError, SaveState, create_project, open_session, validate_commit_batch,
+    CheckpointResult, CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession,
+    ProjectSnapshot, SaveState, create_project, open_session, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;

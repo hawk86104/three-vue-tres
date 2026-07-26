@@ -273,7 +273,9 @@ fn exact_entity_change(value: &Value) -> bool {
     let required = ["id", "before", "after"];
     (object.len() == required.len() || object.len() == required.len() + 1)
         && required.iter().all(|key| object.contains_key(*key))
-        && object.keys().all(|key| required.contains(&key.as_str()) || key == "index")
+        && object
+            .keys()
+            .all(|key| required.contains(&key.as_str()) || key == "index")
         && object.get("index").is_none_or(|index| {
             index
                 .as_u64()
@@ -347,8 +349,7 @@ fn exact_floor_patch(value: &Value) -> bool {
     let Some(after) = strict_floor(&value["after"]) else {
         return false;
     };
-    canonical_uuid(floor_id)
-        .is_ok_and(|id| before.id == id && after.id == id)
+    canonical_uuid(floor_id).is_ok_and(|id| before.id == id && after.id == id)
 }
 
 fn exact_floor_patch_pair(payload: &Value, inverse: &Value) -> bool {

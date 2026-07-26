@@ -1,9 +1,9 @@
 use crate::lock::ProjectLock;
 use crate::model::{
-    CURRENT_SCHEMA_VERSION, AssetRecord, CommitBatch, Floor, GuidedRoute, JournalAction,
-    JournalOperation, MaterialAssignment, MaterialDefinition, MediaAsset,
-    Opening, PlanLayer, PlanReference, ProductContent, RecordChange, RouteNetwork, SaveState,
-    SceneEnvironment, SnapshotRecordsPatch, canonical_asset_path, parse_contract_uuid,
+    AssetRecord, CURRENT_SCHEMA_VERSION, CommitBatch, Floor, GuidedRoute, JournalAction,
+    JournalOperation, MaterialAssignment, MaterialDefinition, MediaAsset, Opening, PlanLayer,
+    PlanReference, ProductContent, RecordChange, RouteNetwork, SaveState, SceneEnvironment,
+    SnapshotRecordsPatch, canonical_asset_path, parse_contract_uuid,
 };
 use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
@@ -165,9 +165,8 @@ fn upgrade_opened_project(
 
     let transaction = connection.transaction()?;
     let stored_rows: Vec<(i64, String, String)> = {
-        let mut statement = transaction.prepare(
-            "SELECT sequence, snapshot_json, checksum FROM snapshots ORDER BY sequence",
-        )?;
+        let mut statement = transaction
+            .prepare("SELECT sequence, snapshot_json, checksum FROM snapshots ORDER BY sequence")?;
         statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<Result<_, _>>()?
@@ -550,11 +549,7 @@ impl ProjectSession {
         upsert_meta(&transaction, "name", &checkpoint.project.name)?;
         upsert_meta(&transaction, "updatedAt", &updated_at)?;
         upsert_meta(&transaction, "cleanShutdown", &false)?;
-        publish_manifest_with_restore(
-            &io_path,
-            &published_manifest,
-            &previous_manifest,
-        )?;
+        publish_manifest_with_restore(&io_path, &published_manifest, &previous_manifest)?;
         if transaction.commit().is_err() {
             if write_manifest_bytes_atomically(&io_path, &previous_manifest).is_err() {
                 return Err(ProjectIoError::RecoveryFailed);
@@ -661,12 +656,7 @@ fn validate_checkpoint_request(
     {
         return Err(ProjectIoError::DatabaseError);
     }
-    for (before, after) in current
-        .project
-        .floors
-        .iter()
-        .zip(&requested.project.floors)
-    {
+    for (before, after) in current.project.floors.iter().zip(&requested.project.floors) {
         let expected_layer = PlanLayer {
             id: default_layer_id_for_floor(before.id),
             name: "默认图层".into(),
@@ -700,7 +690,10 @@ pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> 
         .before
         .validate()
         .map_err(|_| ProjectIoError::DatabaseError)?;
-    batch.after.validate().map_err(|_| ProjectIoError::DatabaseError)?;
+    batch
+        .after
+        .validate()
+        .map_err(|_| ProjectIoError::DatabaseError)?;
     if batch.journal.is_empty()
         || batch.after.checkpoint_sequence != batch.before.checkpoint_sequence
         || batch.after.sequence
@@ -855,7 +848,10 @@ fn entity_patch(value: &Value) -> Result<EntityPatchPayload, ProjectIoError> {
         if !ids.insert(change.id.as_str()) || (change.before.is_null() && change.after.is_null()) {
             return Err(ProjectIoError::DatabaseError);
         }
-        if change.index.is_some_and(|index| index > MAX_JSON_SAFE_INTEGER) {
+        if change
+            .index
+            .is_some_and(|index| index > MAX_JSON_SAFE_INTEGER)
+        {
             return Err(ProjectIoError::DatabaseError);
         }
         for side in [&change.before, &change.after] {
@@ -1006,9 +1002,7 @@ fn validate_record_changes<T: SnapshotPatchRecord>(
     Ok(())
 }
 
-fn validate_snapshot_records_patch(
-    patch: &SnapshotRecordsPatch,
-) -> Result<(), ProjectIoError> {
+fn validate_snapshot_records_patch(patch: &SnapshotRecordsPatch) -> Result<(), ProjectIoError> {
     match patch {
         SnapshotRecordsPatch::Assets { changes } => validate_record_changes(changes),
         SnapshotRecordsPatch::PlanReferences { changes } => validate_record_changes(changes),
@@ -1124,10 +1118,11 @@ fn apply_snapshot_records_patch(
         SnapshotRecordsPatch::Assets { changes } => Ok(SnapshotRecordsPatch::Assets {
             changes: apply_record_changes(&mut snapshot.assets, changes)?,
         }),
-        SnapshotRecordsPatch::PlanReferences { changes } =>
+        SnapshotRecordsPatch::PlanReferences { changes } => {
             Ok(SnapshotRecordsPatch::PlanReferences {
                 changes: apply_record_changes(&mut snapshot.project.plan_references, changes)?,
-            }),
+            })
+        }
         SnapshotRecordsPatch::Openings { changes } => Ok(SnapshotRecordsPatch::Openings {
             changes: apply_record_changes(&mut snapshot.project.openings, changes)?,
         }),
@@ -1135,19 +1130,25 @@ fn apply_snapshot_records_patch(
             let mut records = typed_records::<ProductContent>(&snapshot.project.product_contents)?;
             let normalized = apply_record_changes(&mut records, changes)?;
             snapshot.project.product_contents = record_values(&records)?;
-            Ok(SnapshotRecordsPatch::ProductContents { changes: normalized })
+            Ok(SnapshotRecordsPatch::ProductContents {
+                changes: normalized,
+            })
         }
         SnapshotRecordsPatch::MediaAssets { changes } => {
             let mut records = typed_records::<MediaAsset>(&snapshot.project.media_assets)?;
             let normalized = apply_record_changes(&mut records, changes)?;
             snapshot.project.media_assets = record_values(&records)?;
-            Ok(SnapshotRecordsPatch::MediaAssets { changes: normalized })
+            Ok(SnapshotRecordsPatch::MediaAssets {
+                changes: normalized,
+            })
         }
         SnapshotRecordsPatch::RouteNetworks { changes } => {
             let mut records = typed_records::<RouteNetwork>(&snapshot.project.route_networks)?;
             let normalized = apply_record_changes(&mut records, changes)?;
             snapshot.project.route_networks = record_values(&records)?;
-            Ok(SnapshotRecordsPatch::RouteNetworks { changes: normalized })
+            Ok(SnapshotRecordsPatch::RouteNetworks {
+                changes: normalized,
+            })
         }
         SnapshotRecordsPatch::GuidedRoutes { changes } => Ok(SnapshotRecordsPatch::GuidedRoutes {
             changes: apply_record_changes(&mut snapshot.project.guided_routes, changes)?,
@@ -1155,13 +1156,11 @@ fn apply_snapshot_records_patch(
         SnapshotRecordsPatch::Materials { changes } => Ok(SnapshotRecordsPatch::Materials {
             changes: apply_record_changes(&mut snapshot.project.materials, changes)?,
         }),
-        SnapshotRecordsPatch::MaterialAssignments { changes } =>
+        SnapshotRecordsPatch::MaterialAssignments { changes } => {
             Ok(SnapshotRecordsPatch::MaterialAssignments {
-                changes: apply_record_changes(
-                    &mut snapshot.project.material_assignments,
-                    changes,
-                )?,
-            }),
+                changes: apply_record_changes(&mut snapshot.project.material_assignments, changes)?,
+            })
+        }
     }
 }
 
@@ -1208,9 +1207,7 @@ fn validate_entity_floor_layer_references(
     snapshot: &ProjectSnapshot,
 ) -> Result<(), ProjectIoError> {
     for entity in &snapshot.project.entities {
-        let source = entity
-            .as_object()
-            .ok_or(ProjectIoError::DatabaseError)?;
+        let source = entity.as_object().ok_or(ProjectIoError::DatabaseError)?;
         let floor_id = source
             .get("floorId")
             .and_then(Value::as_str)
@@ -1277,18 +1274,16 @@ fn apply_operation(
         "plan.entities.patch" => {
             let payload = entity_patch(&operation.payload)?;
             let inverse = entity_patch(&operation.inverse_payload)?;
-            let matching_values = payload.reason == inverse.reason
-                && payload.changes.len() == inverse.changes.len()
-                && payload
-                    .changes
-                    .iter()
-                    .rev()
-                    .zip(&inverse.changes)
-                    .all(|(change, reversed)| {
-                        change.id == reversed.id
-                            && change.before == reversed.after
-                            && change.after == reversed.before
-                    });
+            let matching_values =
+                payload.reason == inverse.reason
+                    && payload.changes.len() == inverse.changes.len()
+                    && payload.changes.iter().rev().zip(&inverse.changes).all(
+                        |(change, reversed)| {
+                            change.id == reversed.id
+                                && change.before == reversed.after
+                                && change.after == reversed.before
+                        },
+                    );
             if !matching_values {
                 return Err(ProjectIoError::DatabaseError);
             }
@@ -1317,8 +1312,7 @@ fn apply_operation(
             }
             match operation.action {
                 JournalAction::Apply | JournalAction::Redo => {
-                    let normalized =
-                        apply_snapshot_records_patch(&mut candidate, &payload)?;
+                    let normalized = apply_snapshot_records_patch(&mut candidate, &payload)?;
                     if !normalized.has_exact_inverse(&inverse) {
                         return Err(ProjectIoError::DatabaseError);
                     }
@@ -1327,8 +1321,7 @@ fn apply_operation(
                     let normalized_inverse =
                         apply_snapshot_records_patch(&mut candidate, &inverse)?;
                     let mut replayed = candidate.clone();
-                    let normalized_payload =
-                        apply_snapshot_records_patch(&mut replayed, &payload)?;
+                    let normalized_payload = apply_snapshot_records_patch(&mut replayed, &payload)?;
                     if !normalized_payload.has_exact_inverse(&normalized_inverse) {
                         return Err(ProjectIoError::DatabaseError);
                     }
@@ -1388,8 +1381,7 @@ fn normalized_typed_row<T: Serialize>(
         id: id.hyphenated().to_string(),
         entity_type: entity_type.to_owned(),
         parent_id: parent_id.map(|id| id.hyphenated().to_string()),
-        payload_json: serde_json::to_string(record)
-            .map_err(|_| ProjectIoError::DatabaseError)?,
+        payload_json: serde_json::to_string(record).map_err(|_| ProjectIoError::DatabaseError)?,
     })
 }
 
@@ -1412,9 +1404,7 @@ fn normalized_entity_rows(
         )?);
     }
     for entity in &snapshot.project.entities {
-        let source = entity
-            .as_object()
-            .ok_or(ProjectIoError::DatabaseError)?;
+        let source = entity.as_object().ok_or(ProjectIoError::DatabaseError)?;
         let id = source
             .get("id")
             .and_then(Value::as_str)
@@ -1455,8 +1445,8 @@ fn normalized_entity_rows(
         )?);
     }
     for value in &snapshot.project.product_contents {
-        let record: ProductContent = serde_json::from_value(value.clone())
-            .map_err(|_| ProjectIoError::DatabaseError)?;
+        let record: ProductContent =
+            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
         rows.push(normalized_typed_row(
             record.id,
             "product-content",
@@ -1465,8 +1455,8 @@ fn normalized_entity_rows(
         )?);
     }
     for value in &snapshot.project.media_assets {
-        let record: MediaAsset = serde_json::from_value(value.clone())
-            .map_err(|_| ProjectIoError::DatabaseError)?;
+        let record: MediaAsset =
+            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
         rows.push(normalized_typed_row(
             record.id,
             "media-asset",
@@ -1475,8 +1465,8 @@ fn normalized_entity_rows(
         )?);
     }
     for value in &snapshot.project.route_networks {
-        let network: RouteNetwork = serde_json::from_value(value.clone())
-            .map_err(|_| ProjectIoError::DatabaseError)?;
+        let network: RouteNetwork =
+            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
         rows.push(normalized_typed_row(
             network.id,
             "route-network",
@@ -2000,7 +1990,9 @@ fn migrate_snapshot_v1_to_v2(mut value: Value) -> Result<Value, ProjectIoError> 
         let media_type = asset.get("mediaType").and_then(Value::as_str);
         if let (Some(sha256), Some(media_type)) = (sha256, media_type)
             && sha256.len() == 64
-            && sha256.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            && sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
             && let Some(relative_path) = canonical_asset_path(sha256, media_type)
         {
             asset.insert("relativePath".into(), Value::String(relative_path));
@@ -2035,8 +2027,14 @@ fn migrate_snapshot_v1_to_v2(mut value: Value) -> Result<Value, ProjectIoError> 
         );
     }
     for collection in [
-        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
-        "cameraShots", "storySequences",
+        "entities",
+        "vendors",
+        "productContents",
+        "mediaAssets",
+        "routeNetworks",
+        "themes",
+        "cameraShots",
+        "storySequences",
     ] {
         project.insert(collection.into(), Value::Array(Vec::new()));
     }
@@ -2053,7 +2051,11 @@ fn migrate_snapshot_v2_to_v3(mut value: Value) -> Result<Value, ProjectIoError> 
         .and_then(Value::as_object_mut)
         .ok_or(ProjectIoError::InvalidProjectStructure)?;
     for collection in [
-        "planReferences", "openings", "guidedRoutes", "materials", "materialAssignments",
+        "planReferences",
+        "openings",
+        "guidedRoutes",
+        "materials",
+        "materialAssignments",
     ] {
         project.insert(collection.into(), Value::Array(Vec::new()));
     }
@@ -2098,8 +2100,8 @@ pub(crate) fn write_manifest_atomically(
 }
 
 fn serialize_manifest(manifest: &ProjectManifest) -> Result<Vec<u8>, ProjectIoError> {
-    let mut bytes = serde_json::to_vec_pretty(manifest)
-        .map_err(|_| ProjectIoError::FilesystemError)?;
+    let mut bytes =
+        serde_json::to_vec_pretty(manifest).map_err(|_| ProjectIoError::FilesystemError)?;
     bytes.push(b'\n');
     Ok(bytes)
 }
@@ -2248,12 +2250,8 @@ fn replace_file_atomically(
 
 #[cfg(test)]
 mod checkpoint_publication_tests {
-    use super::{
-        fail_next_manifest_directory_sync, open_session,
-    };
-    use crate::{
-        CreateProjectRequest, ProjectProfile, create_project, snapshot_checksum,
-    };
+    use super::{fail_next_manifest_directory_sync, open_session};
+    use crate::{CreateProjectRequest, ProjectProfile, create_project, snapshot_checksum};
     use rusqlite::{Connection, params};
     use serde_json::{Value, json};
     use std::fs;
@@ -2296,7 +2294,10 @@ mod checkpoint_publication_tests {
             "materialAssignments",
             "sceneEnvironment",
         ] {
-            snapshot["project"].as_object_mut().unwrap().remove(collection);
+            snapshot["project"]
+                .as_object_mut()
+                .unwrap()
+                .remove(collection);
         }
         let snapshot_json = serde_json::to_string(&snapshot).unwrap();
         let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
@@ -2318,10 +2319,7 @@ mod checkpoint_publication_tests {
         let error = open_session(&opened.project_path, false).unwrap_err();
 
         assert_eq!(error.code(), "FILESYSTEM_ERROR");
-        assert_eq!(
-            fs::read(&manifest_path).unwrap(),
-            previous_manifest
-        );
+        assert_eq!(fs::read(&manifest_path).unwrap(), previous_manifest);
         let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
         let database_schema: String = connection
             .query_row(

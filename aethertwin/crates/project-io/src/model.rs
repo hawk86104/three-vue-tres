@@ -2,7 +2,10 @@ use crate::{ProjectIoError, validate_relative_resource_path};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
-use std::{collections::{BTreeMap, BTreeSet}, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 use uuid::Uuid;
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 3;
@@ -409,7 +412,13 @@ impl<'de> Deserialize<'de> for ProjectSnapshot {
         if schema_version == 3 {
             require_exact_keys::<D::Error>(
                 &value,
-                &["schemaVersion", "sequence", "checkpointSequence", "project", "assets"],
+                &[
+                    "schemaVersion",
+                    "sequence",
+                    "checkpointSequence",
+                    "project",
+                    "assets",
+                ],
             )?;
             let project = value
                 .as_object()
@@ -418,10 +427,25 @@ impl<'de> Deserialize<'de> for ProjectSnapshot {
             require_exact_keys::<D::Error>(
                 project,
                 &[
-                    "id", "name", "tags", "profile", "floors", "entities", "vendors",
-                    "productContents", "mediaAssets", "routeNetworks", "themes", "cameraShots",
-                    "storySequences", "planReferences", "openings", "guidedRoutes", "materials",
-                    "materialAssignments", "sceneEnvironment",
+                    "id",
+                    "name",
+                    "tags",
+                    "profile",
+                    "floors",
+                    "entities",
+                    "vendors",
+                    "productContents",
+                    "mediaAssets",
+                    "routeNetworks",
+                    "themes",
+                    "cameraShots",
+                    "storySequences",
+                    "planReferences",
+                    "openings",
+                    "guidedRoutes",
+                    "materials",
+                    "materialAssignments",
+                    "sceneEnvironment",
                 ],
             )?;
             let project = project
@@ -451,11 +475,13 @@ impl<'de> Deserialize<'de> for ProjectSnapshot {
                 .and_then(Value::as_array)
                 .ok_or_else(|| D::Error::custom("assets must be an array"))?;
             for asset in assets {
-                require_exact_keys::<D::Error>(asset, &["id", "sha256", "relativePath", "mediaType", "size"])?;
+                require_exact_keys::<D::Error>(
+                    asset,
+                    &["id", "sha256", "relativePath", "mediaType", "size"],
+                )?;
             }
         }
-        let wire: ProjectSnapshotWire =
-            serde_json::from_value(value).map_err(D::Error::custom)?;
+        let wire: ProjectSnapshotWire = serde_json::from_value(value).map_err(D::Error::custom)?;
         let snapshot = Self {
             schema_version: wire.schema_version,
             sequence: wire.sequence,
@@ -472,9 +498,7 @@ fn require_exact_keys<E: serde::de::Error>(value: &Value, expected: &[&str]) -> 
     let source = value
         .as_object()
         .ok_or_else(|| E::custom("expected an object"))?;
-    if source.len() != expected.len()
-        || !expected.iter().all(|key| source.contains_key(*key))
-    {
+    if source.len() != expected.len() || !expected.iter().all(|key| source.contains_key(*key)) {
         return Err(E::custom("object keys do not match schema v3"));
     }
     Ok(())
@@ -562,9 +586,7 @@ pub enum SnapshotRecordsPatch {
         changes: Vec<RecordChange<PlanReference>>,
     },
     #[serde(rename = "openings")]
-    Openings {
-        changes: Vec<RecordChange<Opening>>,
-    },
+    Openings { changes: Vec<RecordChange<Opening>> },
     #[serde(rename = "productContents")]
     ProductContents {
         changes: Vec<RecordChange<ProductContent>>,
@@ -597,22 +619,18 @@ fn changes_have_inverse_values<T: PartialEq>(
     exact_index: bool,
 ) -> bool {
     payload.len() == inverse.len()
-        && payload
-            .iter()
-            .rev()
-            .zip(inverse)
-            .all(|(change, reversed)| {
-                change.id == reversed.id
-                    && change.before == reversed.after
-                    && change.after == reversed.before
-                    && if exact_index {
-                        change.index == reversed.index
-                    } else {
-                        change.index.is_none()
-                            || reversed.index.is_none()
-                            || change.index == reversed.index
-                    }
-            })
+        && payload.iter().rev().zip(inverse).all(|(change, reversed)| {
+            change.id == reversed.id
+                && change.before == reversed.after
+                && change.after == reversed.before
+                && if exact_index {
+                    change.index == reversed.index
+                } else {
+                    change.index.is_none()
+                        || reversed.index.is_none()
+                        || change.index == reversed.index
+                }
+        })
 }
 
 impl SnapshotRecordsPatch {
@@ -626,24 +644,34 @@ impl SnapshotRecordsPatch {
 
     fn inverse_matches(&self, inverse: &Self, exact_index: bool) -> bool {
         match (self, inverse) {
-            (Self::Assets { changes }, Self::Assets { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::PlanReferences { changes }, Self::PlanReferences { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::Openings { changes }, Self::Openings { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::ProductContents { changes }, Self::ProductContents { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::MediaAssets { changes }, Self::MediaAssets { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::RouteNetworks { changes }, Self::RouteNetworks { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::GuidedRoutes { changes }, Self::GuidedRoutes { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::Materials { changes }, Self::Materials { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
-            (Self::MaterialAssignments { changes }, Self::MaterialAssignments { changes: reversed }) =>
-                changes_have_inverse_values(changes, reversed, exact_index),
+            (Self::Assets { changes }, Self::Assets { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::PlanReferences { changes }, Self::PlanReferences { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::Openings { changes }, Self::Openings { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::ProductContents { changes }, Self::ProductContents { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::MediaAssets { changes }, Self::MediaAssets { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::RouteNetworks { changes }, Self::RouteNetworks { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::GuidedRoutes { changes }, Self::GuidedRoutes { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (Self::Materials { changes }, Self::Materials { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
+            (
+                Self::MaterialAssignments { changes },
+                Self::MaterialAssignments { changes: reversed },
+            ) => changes_have_inverse_values(changes, reversed, exact_index),
             _ => false,
         }
     }
@@ -986,10 +1014,7 @@ fn json_record_base<'a>(
     Ok((id, name))
 }
 
-fn json_uuid(
-    source: &serde_json::Map<String, Value>,
-    key: &str,
-) -> Result<Uuid, ProjectIoError> {
+fn json_uuid(source: &serde_json::Map<String, Value>, key: &str) -> Result<Uuid, ProjectIoError> {
     source
         .get(key)
         .and_then(Value::as_str)
@@ -1067,9 +1092,7 @@ fn valid_dimension_locator(locator: &Value, geometry: EntityReferenceGeometry) -
     };
     match geometry {
         EntityReferenceGeometry::OriginOnly => false,
-        EntityReferenceGeometry::Closed(points) => {
-            valid_index_locator(source, points, points)
-        }
+        EntityReferenceGeometry::Closed(points) => valid_index_locator(source, points, points),
         EntityReferenceGeometry::Open(points) => {
             valid_index_locator(source, points, points.saturating_sub(1))
         }
@@ -1294,10 +1317,7 @@ fn asset_policy(media_type: &str) -> Option<(&'static str, u64)> {
 }
 
 fn is_plan_media(media_type: &str) -> bool {
-    matches!(
-        media_type,
-        "image/png" | "image/jpeg" | "image/svg+xml"
-    )
+    matches!(media_type, "image/png" | "image/jpeg" | "image/svg+xml")
 }
 
 fn validate_plan_reference(reference: &PlanReference) -> Result<(), ProjectIoError> {
@@ -1353,10 +1373,8 @@ fn validate_plan_bounds(reference: &PlanReference) -> Result<(), ProjectIoError>
     for (x, y) in [(0.0, 0.0), (width, 0.0), (width, height), (0.0, height)] {
         let scaled_x = x * transform.scale.x;
         let scaled_y = y * transform.scale.y;
-        let world_x =
-            scaled_x * cosine - scaled_y * sine + transform.translation.x;
-        let world_y =
-            scaled_x * sine + scaled_y * cosine + transform.translation.y;
+        let world_x = scaled_x * cosine - scaled_y * sine + transform.translation.x;
+        let world_y = scaled_x * sine + scaled_y * cosine + transform.translation.y;
         if !world_x.is_finite()
             || !world_y.is_finite()
             || world_x.abs() > MAX_WORLD_COORDINATE_MM
@@ -1380,7 +1398,11 @@ fn validate_scene_environment(environment: &SceneEnvironment) -> Result<(), Proj
             .direction
             .iter()
             .any(|component| !bounded(*component, -100.0, 100.0))
-        || environment.key.direction.iter().all(|component| *component == 0.0)
+        || environment
+            .key
+            .direction
+            .iter()
+            .all(|component| *component == 0.0)
     {
         return Err(ProjectIoError::InvalidProjectStructure);
     }
@@ -1497,8 +1519,7 @@ mod collection_validation_tests {
         for value in [
             json!({ "nested": [{ "value": 9_007_199_254_740_992_u64 }] }),
             json!({ "nested": [{ "value": -9_007_199_254_740_992_i64 }] }),
-            serde_json::from_str(r#"{ "nested": { "value": 9007199254740992.0 } }"#)
-                .unwrap(),
+            serde_json::from_str(r#"{ "nested": { "value": 9007199254740992.0 } }"#).unwrap(),
         ] {
             let error = validate_json_collection(&[value]).unwrap_err();
             assert_eq!(error.code(), "INVALID_PROJECT_STRUCTURE");
@@ -1553,7 +1574,10 @@ mod contract_uuid {
     }
 }
 
-fn serialize_js_number<S: serde::Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+fn serialize_js_number<S: serde::Serializer>(
+    value: &f64,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     if value.fract() == 0.0 && *value >= i64::MIN as f64 && *value <= i64::MAX as f64 {
         serializer.serialize_i64(*value as i64)
     } else {
@@ -1606,11 +1630,16 @@ mod optional_contract_uuid {
     use super::{Uuid, contract_uuid_text};
     use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
 
-    pub fn serialize<S: Serializer>(value: &Option<Uuid>, serializer: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(
+        value: &Option<Uuid>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         serializer.serialize_some(&value.map(|id| id.hyphenated().to_string()))
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Uuid>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Uuid>, D::Error> {
         Option::<String>::deserialize(deserializer)?
             .map(|value| {
                 if !contract_uuid_text(&value) {

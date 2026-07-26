@@ -1,7 +1,7 @@
 use project_io::{
     AssetRecord, CommitBatch, CreateProjectRequest, JournalAction, JournalOperation,
-    ProjectIoError, ProjectProfile, ProjectSnapshot, SaveState, create_project,
-    open_session, recover_project,
+    ProjectIoError, ProjectProfile, ProjectSnapshot, SaveState, create_project, open_session,
+    recover_project,
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -75,7 +75,6 @@ fn deterministic_layer_id(floor_id: uuid::Uuid) -> uuid::Uuid {
     uuid::Uuid::from_bytes(bytes)
 }
 
-
 fn downgrade_to_v1(opened: &project_io::OpenedProject) -> Vec<u8> {
     let manifest_path = opened.project_path.join("manifest.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
@@ -89,11 +88,25 @@ fn downgrade_to_v1(opened: &project_io::OpenedProject) -> Vec<u8> {
         floor.as_object_mut().unwrap().remove("layers");
     }
     for collection in [
-        "entities", "vendors", "productContents", "mediaAssets", "routeNetworks", "themes",
-        "cameraShots", "storySequences", "planReferences", "openings", "guidedRoutes",
-        "materials", "materialAssignments", "sceneEnvironment",
+        "entities",
+        "vendors",
+        "productContents",
+        "mediaAssets",
+        "routeNetworks",
+        "themes",
+        "cameraShots",
+        "storySequences",
+        "planReferences",
+        "openings",
+        "guidedRoutes",
+        "materials",
+        "materialAssignments",
+        "sceneEnvironment",
     ] {
-        snapshot["project"].as_object_mut().unwrap().remove(collection);
+        snapshot["project"]
+            .as_object_mut()
+            .unwrap()
+            .remove(collection);
     }
     let snapshot_json = serde_json::to_string(&snapshot).unwrap();
     let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
@@ -123,7 +136,11 @@ fn downgrade_to_v2(
     let manifest_path = opened.project_path.join("manifest.json");
     let mut manifest: Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
     manifest["schemaVersion"] = json!(2);
-    fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    fs::write(
+        &manifest_path,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
 
     let mut expected = opened.snapshot.clone();
     expected.sequence = sequence;
@@ -142,9 +159,7 @@ fn downgrade_to_v2(
     }
     let snapshot_json = serde_json::to_string(&snapshot).unwrap();
     let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
-    connection
-        .execute("DELETE FROM snapshots", [])
-        .unwrap();
+    connection.execute("DELETE FROM snapshots", []).unwrap();
     connection
         .execute(
             "INSERT INTO snapshots(sequence, snapshot_json, checksum, created_at)
@@ -178,7 +193,10 @@ fn every_published_session_is_schema_v3() {
 
     assert_eq!(session.manifest().schema_version, 3);
     assert_eq!(session.snapshot().schema_version, 3);
-    assert_eq!(session.manifest().schema_version, session.snapshot().schema_version);
+    assert_eq!(
+        session.manifest().schema_version,
+        session.snapshot().schema_version
+    );
     assert_eq!(
         serde_json::to_value(&session.snapshot().project.scene_environment).unwrap(),
         json!({
@@ -843,10 +861,9 @@ fn coherent_v1_is_upgraded_through_v2_to_v3_before_session_publication() {
         })
     );
 
-    let disk_manifest: Value = serde_json::from_slice(
-        &fs::read(opened.project_path.join("manifest.json")).unwrap(),
-    )
-    .unwrap();
+    let disk_manifest: Value =
+        serde_json::from_slice(&fs::read(opened.project_path.join("manifest.json")).unwrap())
+            .unwrap();
     assert_eq!(disk_manifest["schemaVersion"], 3);
     let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
     let database_schema: String = connection
@@ -964,10 +981,9 @@ fn public_recovery_upgrades_coherent_v2_durably_before_return() {
         })
     );
 
-    let manifest: project_io::ProjectManifest = serde_json::from_slice(
-        &fs::read(opened.project_path.join("manifest.json")).unwrap(),
-    )
-    .unwrap();
+    let manifest: project_io::ProjectManifest =
+        serde_json::from_slice(&fs::read(opened.project_path.join("manifest.json")).unwrap())
+            .unwrap();
     assert_eq!(manifest.schema_version, 3);
 
     let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
@@ -1357,23 +1373,14 @@ fn plan_entity_patch_replays_entity_and_floor_apply_undo_redo_checkpoint_reopen_
     let opened = create("Plan Replay", ProjectProfile::Market);
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
-    let first = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "First",
-    );
-    let second = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000011",
-        "Second",
-    );
+    let first = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "First");
+    let second = plan_fixture(&initial, "00000000-0000-4000-8000-000000000011", "Second");
     let entity_changes = vec![
         json!({ "id": first["id"], "before": null, "after": first, "index": 0 }),
         json!({ "id": second["id"], "before": null, "after": second, "index": 1 }),
     ];
     let entity_payload = entity_patch_payload("create", entity_changes.clone());
-    let entity_inverse =
-        entity_patch_payload("create", inverse_entity_changes(&entity_changes));
+    let entity_inverse = entity_patch_payload("create", inverse_entity_changes(&entity_changes));
     let mut entities_applied = initial.clone();
     entities_applied.project.entities = vec![first.clone(), second.clone()];
     entities_applied.sequence = 1;
@@ -1519,11 +1526,7 @@ fn plan_entity_patch_rejects_explicit_null_index_without_publication() {
     let opened = create("Null Index Rejection", ProjectProfile::Market);
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
-    let fixture = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "Fixture",
-    );
+    let fixture = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "Fixture");
     let payload = entity_patch_payload(
         "create",
         vec![json!({
@@ -1576,21 +1579,9 @@ fn plan_entity_patch_preserves_middle_order_through_undo_redo_and_dirty_recovery
     let opened = create("Indexed Plan Replay", ProjectProfile::Market);
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
-    let first = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "First",
-    );
-    let middle = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000011",
-        "Middle",
-    );
-    let last = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000012",
-        "Last",
-    );
+    let first = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "First");
+    let middle = plan_fixture(&initial, "00000000-0000-4000-8000-000000000011", "Middle");
+    let last = plan_fixture(&initial, "00000000-0000-4000-8000-000000000012", "Last");
     let create_changes = vec![
         json!({ "id": first["id"], "before": null, "after": first }),
         json!({ "id": middle["id"], "before": null, "after": middle }),
@@ -1650,7 +1641,10 @@ fn plan_entity_patch_preserves_middle_order_through_undo_redo_and_dirty_recovery
             ),
         ))
         .unwrap();
-    assert_eq!(session.snapshot().project.entities, vec![first.clone(), last.clone()]);
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), last.clone()]
+    );
 
     let mut undone = deleted.clone();
     undone.project.entities = vec![first.clone(), middle.clone(), last.clone()];
@@ -1691,7 +1685,10 @@ fn plan_entity_patch_preserves_middle_order_through_undo_redo_and_dirty_recovery
             ),
         ))
         .unwrap();
-    assert_eq!(session.snapshot().project.entities, vec![first.clone(), last.clone()]);
+    assert_eq!(
+        session.snapshot().project.entities,
+        vec![first.clone(), last.clone()]
+    );
 
     let mut restored = redone.clone();
     restored.project.entities = vec![first.clone(), middle.clone(), last.clone()];
@@ -1720,8 +1717,14 @@ fn plan_entity_patch_preserves_middle_order_through_undo_redo_and_dirty_recovery
     let source_sqlite = sqlite_source_fingerprint(&opened.project_path);
 
     let recovered = recover_project(&opened.project_path, true).unwrap();
-    assert_eq!(fs::read(opened.project_path.join("manifest.json")).unwrap(), source_manifest);
-    assert_eq!(sqlite_source_fingerprint(&opened.project_path), source_sqlite);
+    assert_eq!(
+        fs::read(opened.project_path.join("manifest.json")).unwrap(),
+        source_manifest
+    );
+    assert_eq!(
+        sqlite_source_fingerprint(&opened.project_path),
+        source_sqlite
+    );
     assert_eq!(
         recovered.snapshot.project.entities,
         vec![first, middle, last]
@@ -1736,21 +1739,9 @@ fn plan_entity_patch_rejects_stale_before_and_unknown_layer_without_publication(
     let opened = create("Plan Rejection", ProjectProfile::Showroom);
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
-    let current = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "Current",
-    );
-    let stale = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "Stale",
-    );
-    let next = plan_fixture(
-        &initial,
-        "00000000-0000-4000-8000-000000000010",
-        "Next",
-    );
+    let current = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "Current");
+    let stale = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "Stale");
+    let next = plan_fixture(&initial, "00000000-0000-4000-8000-000000000010", "Next");
     let stale_changes = vec![json!({
         "id": current["id"],
         "before": stale,
@@ -1758,8 +1749,7 @@ fn plan_entity_patch_rejects_stale_before_and_unknown_layer_without_publication(
         "index": 0
     })];
     let stale_payload = entity_patch_payload("properties", stale_changes.clone());
-    let stale_inverse =
-        entity_patch_payload("properties", inverse_entity_changes(&stale_changes));
+    let stale_inverse = entity_patch_payload("properties", inverse_entity_changes(&stale_changes));
     let mut claimed_after = initial.clone();
     claimed_after.project.entities = vec![next];
     claimed_after.sequence = 1;
@@ -1791,8 +1781,7 @@ fn plan_entity_patch_rejects_stale_before_and_unknown_layer_without_publication(
         "index": 0
     })];
     let invalid_payload = entity_patch_payload("create", invalid_changes.clone());
-    let invalid_inverse =
-        entity_patch_payload("create", inverse_entity_changes(&invalid_changes));
+    let invalid_inverse = entity_patch_payload("create", inverse_entity_changes(&invalid_changes));
     let mut invalid_after = initial.clone();
     invalid_after.project.entities = vec![invalid_layer];
     invalid_after.sequence = 1;
@@ -1876,11 +1865,8 @@ fn snapshot_record_patch_replays_heterogeneous_transaction_and_normalized_rows_t
     let mut session = open_session(&opened.project_path, false).unwrap();
     let initial = session.snapshot().clone();
     let asset = snapshot_asset("00000000-0000-4000-8000-000000000070", 'a');
-    let reference_value = snapshot_plan_reference(
-        &initial,
-        &asset,
-        "00000000-0000-4000-8000-000000000071",
-    );
+    let reference_value =
+        snapshot_plan_reference(&initial, &asset, "00000000-0000-4000-8000-000000000071");
     let reference_id = uuid::Uuid::parse_str(reference_value["id"].as_str().unwrap()).unwrap();
     let asset_value = serde_json::to_value(&asset).unwrap();
     let asset_changes =
@@ -1894,8 +1880,7 @@ fn snapshot_record_patch_replays_heterogeneous_transaction_and_normalized_rows_t
     let asset_payload = snapshot_record_payload("assets", asset_changes.clone());
     let asset_inverse =
         snapshot_record_payload("assets", inverse_snapshot_record_changes(&asset_changes));
-    let reference_payload =
-        snapshot_record_payload("planReferences", reference_changes.clone());
+    let reference_payload = snapshot_record_payload("planReferences", reference_changes.clone());
     let reference_inverse = snapshot_record_payload(
         "planReferences",
         inverse_snapshot_record_changes(&reference_changes),
@@ -2043,10 +2028,7 @@ fn snapshot_record_patch_rejects_claimed_after_mismatch_without_publication() {
                     "00000000-0000-4000-8000-000000000704",
                     "snapshot.records.patch",
                     snapshot_record_payload("assets", changes.clone()),
-                    snapshot_record_payload(
-                        "assets",
-                        inverse_snapshot_record_changes(&changes),
-                    ),
+                    snapshot_record_payload("assets", inverse_snapshot_record_changes(&changes)),
                     JournalAction::Apply,
                 ),
             ))

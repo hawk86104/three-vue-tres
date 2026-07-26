@@ -795,7 +795,13 @@ fn plan_entity_patch_dto_accepts_exact_entity_and_floor_payloads_and_rejects_var
     let mut unknown_change = valid_payload.clone();
     unknown_change["changes"][0]["extra"] = json!(true);
     invalid_payloads.push(unknown_change);
-    for index in [json!(-1), json!(0.5), json!(9_007_199_254_740_992_u64), json!(u64::MAX), json!("0")] {
+    for index in [
+        json!(-1),
+        json!(0.5),
+        json!(9_007_199_254_740_992_u64),
+        json!(u64::MAX),
+        json!("0"),
+    ] {
         let mut invalid_index = valid_payload.clone();
         invalid_index["changes"][0]["index"] = index;
         invalid_payloads.push(invalid_index);
@@ -819,8 +825,7 @@ fn plan_entity_patch_dto_accepts_exact_entity_and_floor_payloads_and_rejects_var
     noncanonical["changes"][0]["after"]["id"] = noncanonical_id;
     invalid_payloads.push(noncanonical);
     let mut mismatched = valid_payload.clone();
-    mismatched["changes"][0]["after"]["id"] =
-        json!("00000000-0000-4000-8000-000000000099");
+    mismatched["changes"][0]["after"]["id"] = json!("00000000-0000-4000-8000-000000000099");
     invalid_payloads.push(mismatched);
     let mut duplicate = valid_payload;
     let repeated = duplicate["changes"][0].clone();
@@ -883,16 +888,19 @@ fn plan_entity_patch_dto_accepts_exact_entity_and_floor_payloads_and_rejects_var
             payload,
             inverse,
         );
-        assert_invalid_ipc(&invoke(
-            &webview,
-            "commit_project",
-            json!({
-                "payload": {
-                    "sessionId": opened.session_id,
-                    "batch": invalid_floor_batch
-                }
-            }),
-        ).unwrap_err());
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "commit_project",
+                json!({
+                    "payload": {
+                        "sessionId": opened.session_id,
+                        "batch": invalid_floor_batch
+                    }
+                }),
+            )
+            .unwrap_err(),
+        );
     }
 }
 

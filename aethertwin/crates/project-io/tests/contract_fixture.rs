@@ -122,8 +122,8 @@ fn snapshot_serde_shape_matches_the_typescript_contract() {
 
 #[test]
 fn snapshot_fixtures_deserialize_and_preserve_every_version_exactly() {
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/contracts");
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/contracts");
     let v1: ProjectSnapshot =
         serde_json::from_slice(&fs::read(fixtures.join("snapshot.v1.json")).unwrap()).unwrap();
     assert_eq!(v1.schema_version, 1);
@@ -135,11 +135,24 @@ fn snapshot_fixtures_deserialize_and_preserve_every_version_exactly() {
     assert_eq!(v2.schema_version, 2);
     let actual = serde_json::to_value(v2).unwrap();
     for key in [
-        "id", "name", "tags", "profile", "floors", "entities", "vendors",
-        "productContents", "mediaAssets", "routeNetworks", "themes", "cameraShots",
+        "id",
+        "name",
+        "tags",
+        "profile",
+        "floors",
+        "entities",
+        "vendors",
+        "productContents",
+        "mediaAssets",
+        "routeNetworks",
+        "themes",
+        "cameraShots",
         "storySequences",
     ] {
-        assert_eq!(actual["project"][key], expected["project"][key], "changed {key}");
+        assert_eq!(
+            actual["project"][key], expected["project"][key],
+            "changed {key}"
+        );
     }
 
     let source = fs::read(fixtures.join("snapshot.v3.json")).unwrap();
