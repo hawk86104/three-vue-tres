@@ -128,6 +128,12 @@ importers:
         specifier: 29.1.1
         version: 29.1.1
 
+  packages/asset-pipeline:
+    dependencies:
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
+
   packages/command-bus: {}
 
   packages/core-model: {}
