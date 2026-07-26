@@ -1031,6 +1031,34 @@ describe("TauriProjectBackend", () => {
       progress({ operationId: "30000000-0000-4000-8000-000000000099" }),
       /operation/i,
     ],
+    [
+      "negative completed bytes",
+      progress({ completedBytes: -1 }),
+      /progress|integer|invalid/i,
+    ],
+    [
+      "negative total bytes",
+      progress({ totalBytes: -1 }),
+      /progress|integer|invalid/i,
+    ],
+    [
+      "unsafe completed bytes",
+      progress({
+        completedBytes: Number.MAX_SAFE_INTEGER + 1,
+        totalBytes: Number.MAX_SAFE_INTEGER,
+      }),
+      /progress|integer|invalid/i,
+    ],
+    [
+      "unsafe total bytes",
+      progress({ totalBytes: Number.MAX_SAFE_INTEGER + 1 }),
+      /progress|integer|invalid/i,
+    ],
+    [
+      "incomplete complete stage",
+      progress({ stage: "complete", completedBytes: 41 }),
+      /progress|complete|invalid/i,
+    ],
   ] as const)("rejects %s from the native progress Channel", async (_label, invalid, message) => {
     const opened = fixture();
     const completion = deferred<AssetImportResult>();
@@ -1103,6 +1131,202 @@ describe("TauriProjectBackend", () => {
     await expect(
       backend.importAsset(PROJECT_A, importRequest(), vi.fn()),
     ).rejects.toThrow(/result|asset|facts|field|invalid/i);
+  });
+
+  it.each([
+    [
+      "raster byte maximum",
+      mediaImportResult(
+        "image/png",
+        256 * 1024 * 1024,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "SVG byte maximum",
+      mediaImportResult(
+        "image/svg+xml",
+        32 * 1024 * 1024,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "video byte maximum",
+      mediaImportResult("video/mp4", 4 * 1024 * 1024 * 1024, { kind: "video" }),
+      importRequest(IMPORT_OPERATION, "content-video"),
+    ],
+    [
+      "width axis maximum",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 16_384, height: 1 },
+      ),
+      importRequest(),
+    ],
+    [
+      "height axis maximum",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 1, height: 16_384 },
+      ),
+      importRequest(),
+    ],
+    [
+      "decoded pixel maximum",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 16_384, height: 16_384 },
+      ),
+      importRequest(),
+    ],
+  ] as const)("accepts the native %s", async (_label, result, request) => {
+    await expect(importNativeResult(result, request)).resolves.toEqual(result);
+  });
+
+  it.each([
+    [
+      "raster maximum plus one",
+      mediaImportResult(
+        "image/png",
+        256 * 1024 * 1024 + 1,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "SVG maximum plus one",
+      mediaImportResult(
+        "image/svg+xml",
+        32 * 1024 * 1024 + 1,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "video maximum plus one",
+      mediaImportResult(
+        "video/mp4",
+        4 * 1024 * 1024 * 1024 + 1,
+        { kind: "video" },
+      ),
+      importRequest(IMPORT_OPERATION, "content-video"),
+    ],
+    [
+      "negative byte length",
+      mediaImportResult(
+        "image/png",
+        -1,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "unsafe byte length",
+      mediaImportResult(
+        "image/png",
+        Number.MAX_SAFE_INTEGER + 1,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(),
+    ],
+    [
+      "width axis maximum plus one",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 16_385, height: 1 },
+      ),
+      importRequest(),
+    ],
+    [
+      "height axis maximum plus one",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 1, height: 16_385 },
+      ),
+      importRequest(),
+    ],
+    [
+      "zero image width",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 0, height: 1 },
+      ),
+      importRequest(),
+    ],
+    [
+      "unsafe image width",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: Number.MAX_SAFE_INTEGER + 1, height: 1 },
+      ),
+      importRequest(),
+    ],
+    [
+      "plan role with video MIME",
+      mediaImportResult("video/mp4", 42, { kind: "video" }),
+      importRequest(),
+    ],
+    [
+      "video role with image MIME",
+      mediaImportResult(
+        "image/png",
+        42,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(IMPORT_OPERATION, "content-video"),
+    ],
+    [
+      "image MIME with video facts",
+      mediaImportResult("image/png", 42, { kind: "video" }),
+      importRequest(),
+    ],
+    [
+      "video MIME with image facts",
+      mediaImportResult(
+        "video/mp4",
+        42,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(IMPORT_OPERATION, "content-video"),
+    ],
+    [
+      "sha256 and relative path mismatch",
+      (() => {
+        const result = importResult();
+        return {
+          ...result,
+          asset: { ...result.asset, sha256: "b".repeat(64) },
+        };
+      })(),
+      importRequest(),
+    ],
+    [
+      "relative path and digest mismatch",
+      (() => {
+        const result = importResult();
+        return {
+          ...result,
+          asset: {
+            ...result.asset,
+            relativePath: "assets/sha256/ff/" + result.asset.sha256 + ".png",
+          },
+        };
+      })(),
+      importRequest(),
+    ],
+  ] as const)("rejects the native %s", async (_label, result, request) => {
+    await expect(importNativeResult(result, request)).rejects.toThrow(
+      /result|asset|facts|media|size|dimensions|safe|role|sha|relative/i,
+    );
   });
 
   it("sanitizes an asset import error without retaining its source path or native diagnostics", async () => {
@@ -1258,10 +1482,13 @@ function deferred<T>(): {
   return { promise, resolve, reject };
 }
 
-function importRequest(operationId = IMPORT_OPERATION): AssetImportRequest {
+function importRequest(
+  operationId = IMPORT_OPERATION,
+  role: AssetImportRequest["role"] = "plan-reference",
+): AssetImportRequest {
   return {
     operationId,
-    role: "plan-reference",
+    role,
     source: {
       kind: "native-path",
       path: SOURCE_PATH,
@@ -1282,6 +1509,56 @@ function importResult(): AssetImportResult {
     },
     facts: { kind: "image", width: 640, height: 480 },
   };
+}
+
+function mediaImportResult(
+  mediaType: AssetImportResult["asset"]["mediaType"],
+  size: number,
+  facts: AssetImportResult["facts"],
+): AssetImportResult {
+  const sha256 = "a".repeat(64);
+  const extension: Record<
+    AssetImportResult["asset"]["mediaType"],
+    string
+  > = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/svg+xml": "svg",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+  };
+  return {
+    asset: {
+      id: "40000000-0000-4000-8000-000000000001",
+      sha256,
+      relativePath:
+        "assets/sha256/aa/" + sha256 + "." + extension[mediaType],
+      mediaType,
+      size,
+    },
+    facts,
+  };
+}
+
+async function importNativeResult(
+  result: unknown,
+  request: AssetImportRequest,
+): Promise<AssetImportResult> {
+  const opened = fixture();
+  invoke.mockImplementation(async (command: string, args?: {
+    readonly onProgress?: { onmessage: ((message: unknown) => void) | null };
+  }) => {
+    if (command === "open_project") return opened;
+    if (command === "import_project_asset") {
+      args?.onProgress?.onmessage?.(progress());
+      return result;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  const { TauriProjectBackend } = await import("./tauri-backend");
+  const backend = new TauriProjectBackend();
+  await backend.openProject(PROJECT_A);
+  return backend.importAsset(PROJECT_A, request, vi.fn());
 }
 
 function progress(

@@ -85,15 +85,19 @@ pub async fn import_project_asset(
     state: tauri::State<'_, AppService>,
     webview: tauri::Webview<impl tauri::Runtime>,
     payload: Option<Value>,
-    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
+    on_progress: Option<Value>,
 ) -> Result<ImportResultDto, NativeErrorDto> {
     let request: ImportProjectAssetDto = state.decode_payload(IMPORT_PROJECT_ASSET, payload)?;
-    let on_progress = on_progress.ok_or_else(|| {
-        state.render_error(
-            IMPORT_PROJECT_ASSET,
-            crate::error::HostError::IpcInvalidRequest,
-        )
-    })?;
+    let on_progress = on_progress
+        .as_ref()
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<tauri::ipc::JavaScriptChannelId>().ok())
+        .ok_or_else(|| {
+            state.render_error(
+                IMPORT_PROJECT_ASSET,
+                crate::error::HostError::IpcInvalidRequest,
+            )
+        })?;
     let on_progress: tauri::ipc::Channel<ImportProgressDto> = on_progress.channel_on(webview);
     let prepared = state
         .prepare_asset_import(request)

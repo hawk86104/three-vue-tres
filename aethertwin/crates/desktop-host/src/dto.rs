@@ -6,6 +6,7 @@ use project_io::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -382,7 +383,7 @@ fn exact_strings(value: &Value, key: &str) -> bool {
     })
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportProjectAssetDto {
     pub session_id: String,
@@ -398,12 +399,33 @@ pub struct CancelProjectAssetImportDto {
     pub operation_id: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct NativeImportProjectAsset {
     pub session_id: Uuid,
     pub operation_id: Uuid,
     pub role: AssetImportRole,
     pub source_path: PathBuf,
+}
+impl fmt::Debug for ImportProjectAssetDto {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImportProjectAssetDto")
+            .field("session_id", &self.session_id)
+            .field("operation_id", &self.operation_id)
+            .field("role", &self.role)
+            .finish()
+    }
+}
+
+impl fmt::Debug for NativeImportProjectAsset {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NativeImportProjectAsset")
+            .field("session_id", &self.session_id)
+            .field("operation_id", &self.operation_id)
+            .field("role", &self.role)
+            .finish()
+    }
 }
 
 impl ImportProjectAssetDto {
@@ -471,6 +493,35 @@ impl From<ImportResult> for ImportResultDto {
         Self {
             asset: result.asset,
             facts,
+        }
+    }
+}
+
+#[cfg(test)]
+mod import_debug_tests {
+    use super::*;
+
+    #[test]
+    fn asset_import_debug_output_never_contains_the_native_source_path() {
+        let source_path = if cfg!(windows) {
+            r"C:\private\debug-must-not-leak.png"
+        } else {
+            "/private/debug-must-not-leak.png"
+        };
+        let dto = ImportProjectAssetDto {
+            session_id: "10000000-0000-4000-8000-000000000001".into(),
+            operation_id: "30000000-0000-4000-8000-000000000001".into(),
+            role: "plan-reference".into(),
+            source_path: source_path.into(),
+        };
+        let native = dto.clone().into_native().unwrap();
+
+        for debug in [format!("{dto:?}"), format!("{native:?}")] {
+            assert!(debug.contains("10000000-0000-4000-8000-000000000001"));
+            assert!(debug.contains("30000000-0000-4000-8000-000000000001"));
+            assert!(!debug.contains(source_path));
+            assert!(!debug.contains("debug-must-not-leak"));
+            assert!(!debug.contains("source_path"));
         }
     }
 }

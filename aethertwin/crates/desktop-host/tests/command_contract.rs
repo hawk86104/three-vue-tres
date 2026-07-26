@@ -599,6 +599,88 @@ fn real_tauri_invoke_handler_rejects_wrong_unknown_and_invalid_nested_values() {
 }
 
 #[test]
+fn malformed_import_progress_channels_are_wrapped_logged_and_redacted() {
+    let root = tempdir().unwrap();
+    let sink = Arc::new(CapturingLogSink::default());
+    let app = with_invoke_handler(
+        tauri::test::mock_builder().manage(AppService::with_log_sink(sink.clone())),
+    )
+    .build(tauri::test::mock_context(tauri::test::noop_assets()))
+    .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Malformed Channel",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let source_path = root
+        .path()
+        .join("private-channel-original-value.png")
+        .to_string_lossy()
+        .into_owned();
+    let payload = json!({
+        "sessionId": opened.session_id,
+        "operationId": "30000000-0000-4000-8000-000000000001",
+        "role": "plan-reference",
+        "sourcePath": source_path
+    });
+    let malformed_channels = [
+        Some(json!(format!(
+            "{source_path}::private-channel-original-value"
+        ))),
+        Some(json!({
+            "path": source_path,
+            "osError": "private-channel-original-value"
+        })),
+        Some(json!(7)),
+        None,
+    ];
+
+    for malformed in malformed_channels {
+        let mut body = json!({ "payload": payload.clone() });
+        if let Some(value) = malformed {
+            body["onProgress"] = value;
+        }
+        let previous_log_count = sink.records.lock().unwrap().len();
+        let error = invoke(&webview, "import_project_asset", body).unwrap_err();
+        assert_invalid_ipc(&error);
+        let serialized_error = serde_json::to_string(&error).unwrap();
+        assert!(!serialized_error.contains(&source_path));
+        assert!(!serialized_error.contains("private-channel-original-value"));
+        assert!(!serialized_error.contains("osError"));
+        assert!(!serialized_error.to_ascii_lowercase().contains("path"));
+
+        let records = sink.records.lock().unwrap();
+        assert_eq!(records.len(), previous_log_count + 1);
+        let record = records.last().unwrap();
+        assert_eq!(record.operation, "import_project_asset");
+        assert_eq!(record.code, "IPC_INVALID_REQUEST");
+        assert_eq!(record.log_ref, error["logRef"].as_str().unwrap());
+        let serialized_record = serde_json::to_string(record).unwrap();
+        assert!(!serialized_record.contains(&source_path));
+        assert!(!serialized_record.contains("private-channel-original-value"));
+        assert!(!serialized_record.to_ascii_lowercase().contains("path"));
+    }
+
+    invoke(
+        &webview,
+        "close_project",
+        json!({ "payload": { "sessionId": opened.session_id } }),
+    )
+    .unwrap();
+}
+
+#[test]
 fn asset_import_invoke_dtos_are_exact_and_native_errors_redact_source_details() {
     let root = tempdir().unwrap();
     let sink = Arc::new(CapturingLogSink::default());
