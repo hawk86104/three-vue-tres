@@ -623,6 +623,58 @@ describe('Pixi resource ownership compatibility', () => {
       { children: true, texture: false, textureSource: false },
     );
   });
+
+  it('waits for older retirement before failed initialization releases globals', async () => {
+    const retirementGate = deferred();
+    const texture = new pixiHarness.TestTexture();
+    installSharedFakeAssetCache(
+      async () => texture,
+      async () => retirementGate.promise,
+    );
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({
+        assetId,
+        url: 'blob:aethertwin/rejected-init-retirement',
+        mediaType: 'image/png',
+      }),
+    };
+    const firstPort = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await firstPort.init(document.createElement('div'), { handle: () => undefined });
+    const firstApplication = latestApplication();
+    firstPort.upsert(imageNode('rejected-init-reference', 'rejected-init-asset'));
+    await settleResources();
+    firstPort.destroy();
+    await settleResources();
+    expect(firstApplication.destroy).not.toHaveBeenCalled();
+
+    const failure = new Error('Pixi initialization rejected');
+    let rejectInitialization!: (error: unknown) => void;
+    pixiHarness.TestApplication.initGate = new Promise<void>((_resolve, reject) => {
+      rejectInitialization = reject;
+    });
+    const secondPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    const secondInitialization = secondPort.init(
+      document.createElement('div'),
+      { handle: () => undefined },
+    );
+    await settleResources();
+    const secondApplication = latestApplication();
+    rejectInitialization(failure);
+    await expect(secondInitialization).rejects.toBe(failure);
+    await settleResources();
+    expect(secondApplication.destroy).not.toHaveBeenCalled();
+
+    retirementGate.resolve();
+    await vi.waitFor(() => expect(secondApplication.destroy).toHaveBeenCalledOnce());
+    expect(secondApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true, releaseGlobalResources: true },
+      { children: true, texture: false, textureSource: false },
+    );
+    expect(firstApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true },
+      { children: true, texture: false, textureSource: false },
+    );
+  });
 });
 
 describe("Pixi reference resources", () => {

@@ -405,6 +405,22 @@ function drawNode(graphics: Graphics, node: RenderNode): void {
   }
 }
 
+function cleanupApplication(
+  application: Application,
+  lifecycleGeneration: number | null,
+): void {
+  if (lifecycleGeneration === null || reservedPixiPortCount > 0) {
+    tryDestroyApplication(application);
+    return;
+  }
+  void waitForSharedTextureIdle().then(() => {
+    tryDestroyApplication(
+      application,
+      reservedPixiPortCount === 0 && pixiPortGeneration === lifecycleGeneration,
+    );
+  });
+}
+
 function createImageSprite(node: RenderNode, texture: Texture): Sprite | null {
   if (node.geometry.kind !== "image" || texture.width <= 0 || texture.height <= 0) {
     return null;
@@ -488,12 +504,7 @@ class PixiRenderPort implements PlanRenderPort {
       });
       if (this.#destroyed) {
         const generation = this.#releaseLifecycleReservation();
-        tryDestroyApplication(
-          application,
-          generation !== null
-            && reservedPixiPortCount === 0
-            && pixiPortGeneration === generation,
-        );
+        cleanupApplication(application, generation);
         return;
       }
 
@@ -543,12 +554,7 @@ class PixiRenderPort implements PlanRenderPort {
     } catch (error) {
       inputBridge?.destroy();
       const generation = this.#releaseLifecycleReservation();
-      tryDestroyApplication(
-        application,
-        generation !== null
-          && reservedPixiPortCount === 0
-          && pixiPortGeneration === generation,
-      );
+      cleanupApplication(application, generation);
       throw error;
     }
   }
@@ -831,16 +837,7 @@ class PixiRenderPort implements PlanRenderPort {
     this.#interactionBounds = null;
     this.#inputBridge = null;
     if (application === null) return;
-    if (lifecycleGeneration === null || reservedPixiPortCount > 0) {
-      destroyApplication(application);
-      return;
-    }
-    void waitForSharedTextureIdle().then(() => {
-      destroyApplication(
-        application,
-        reservedPixiPortCount === 0 && pixiPortGeneration === lifecycleGeneration,
-      );
-    });
+    cleanupApplication(application, lifecycleGeneration);
   }
 
   #releaseLifecycleReservation(): number | null {
