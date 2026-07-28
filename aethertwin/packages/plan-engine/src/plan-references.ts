@@ -9,7 +9,7 @@ import type {
 import { planFailure, planSuccess, type PlanResult } from "./result";
 import { hitTest } from "./selection";
 import type { SpatialIndex } from "./spatial-index";
-import { invertTransform } from "./transforms";
+import { invertTransform, normalizeTransform } from "./transforms";
 
 export const PLAN_REFERENCE_WORLD_LIMIT_MM = 1_000_000_000;
 
@@ -50,16 +50,12 @@ function worldPointInRange(point: Point2): boolean {
 }
 
 function validReferenceShape(reference: PlanReference): boolean {
-  const { intrinsicSize, transform } = reference;
+  const { intrinsicSize } = reference;
   return Number.isFinite(intrinsicSize.width)
     && Number.isFinite(intrinsicSize.height)
     && intrinsicSize.width > 0
     && intrinsicSize.height > 0
-    && finitePoint(transform.translation)
-    && Number.isFinite(transform.rotation)
-    && finitePoint(transform.scale)
-    && transform.scale.x !== 0
-    && transform.scale.y !== 0;
+    && normalizeTransform(reference.transform).ok;
 }
 
 function transformPoint(point: Point2, transform: Transform2D): Point2 {
@@ -79,12 +75,16 @@ function checkedWorldPolygon(
   if (!validReferenceShape(reference)) {
     return invalidGeometry(reference, "Plan-reference size and transform must be finite and non-degenerate.");
   }
+  const normalized = normalizeTransform(reference.transform);
+  if (!normalized.ok) {
+    return invalidGeometry(reference, "Plan-reference size and transform must be finite and non-degenerate.");
+  }
   const { width, height } = reference.intrinsicSize;
   const polygon = [
-    transformPoint({ x: 0, y: 0 }, reference.transform),
-    transformPoint({ x: width, y: 0 }, reference.transform),
-    transformPoint({ x: width, y: height }, reference.transform),
-    transformPoint({ x: 0, y: height }, reference.transform),
+    transformPoint({ x: 0, y: 0 }, normalized.value),
+    transformPoint({ x: width, y: 0 }, normalized.value),
+    transformPoint({ x: width, y: height }, normalized.value),
+    transformPoint({ x: 0, y: height }, normalized.value),
   ] as const;
   return polygon.every(worldPointInRange) ? planSuccess(polygon) : outOfRange(reference);
 }
@@ -120,7 +120,11 @@ export function planReferenceSourceToWorld(
   }
   const polygon = checkedWorldPolygon(reference);
   if (!polygon.ok) return polygon;
-  const world = transformPoint(point, reference.transform);
+  const normalized = normalizeTransform(reference.transform);
+  if (!normalized.ok) {
+    return invalidGeometry(reference, "Plan-reference size and transform must be finite and non-degenerate.");
+  }
+  const world = transformPoint(point, normalized.value);
   return worldPointInRange(world) ? planSuccess(world) : outOfRange(reference);
 }
 
@@ -176,7 +180,11 @@ export function applyPlanReferenceTransform(
       reference.id,
     );
   }
-  const after = clonePlanReference(reference, transform);
+  const normalized = normalizeTransform(transform);
+  if (!normalized.ok) {
+    return invalidGeometry(reference, "Plan-reference size and transform must be finite and non-degenerate.");
+  }
+  const after = clonePlanReference(reference, normalized.value);
   const polygon = checkedWorldPolygon(after);
   return polygon.ok ? planSuccess(after) : polygon;
 }

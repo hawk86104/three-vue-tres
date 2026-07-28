@@ -78,6 +78,37 @@ describe("plan-reference coordinate conversion", () => {
     expect(roundTrip.y).toBeCloseTo(source.y, 12);
   });
 
+  it("round-trips with positive scales above the shared zero threshold", () => {
+    const reference = makeReference({
+      transform: {
+        translation: { x: 20, y: -30 },
+        rotation: 0.4,
+        scale: { x: 2e-9, y: 3e-9 },
+      },
+    });
+    const source = { x: 75, y: 25 };
+    const world = valueOf(planReferenceSourceToWorld(reference, source));
+    const roundTrip = valueOf(planReferenceWorldToSource(reference, world));
+
+    expect(roundTrip.x).toBeCloseTo(source.x, 5);
+    expect(roundTrip.y).toBeCloseTo(source.y, 5);
+  });
+
+  it.each([
+    ["negative", { x: -1, y: 1 }],
+    ["exactly threshold", { x: 1e-9, y: 1 }],
+    ["sub-threshold positive", { x: 5e-10, y: 1 }],
+  ] as const)("rejects %s scale before world-to-source inversion", (_name, scale) => {
+    const reference = makeReference({
+      transform: { translation: { x: 0, y: 0 }, rotation: 0, scale },
+    });
+
+    expect(planReferenceWorldToSource(reference, { x: 0, y: 0 })).toMatchObject({
+      ok: false,
+      issue: { code: "INVALID_PLAN_REFERENCE_GEOMETRY", entityId: reference.id },
+    });
+  });
+
   it("does not mutate frozen conversion inputs", () => {
     const reference = Object.freeze(makeReference({
       intrinsicSize: Object.freeze({ width: 100, height: 50 }),
@@ -142,6 +173,15 @@ describe("plan-reference polygon and bounds", () => {
     ["degenerate transform", {
       transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 0, y: 1 } },
     }],
+    ["negative scale", {
+      transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: -1, y: 1 } },
+    }],
+    ["scale at the zero threshold", {
+      transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1e-9, y: 1 } },
+    }],
+    ["scale below the zero threshold", {
+      transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 5e-10, y: 1 } },
+    }],
   ] as const)("rejects %s with INVALID_PLAN_REFERENCE_GEOMETRY", (_name, override) => {
     expect(planReferenceWorldPolygon(makeReference(override))).toMatchObject({
       ok: false,
@@ -166,6 +206,38 @@ describe("plan-reference polygon and bounds", () => {
 });
 
 describe("hitTestPlan reference hits", () => {
+  it("uses exact world distance for a rotated non-uniform reference", () => {
+    const rotation = Math.PI / 3;
+    const reference = makeReference({
+      transform: {
+        translation: { x: 100, y: 200 },
+        rotation,
+        scale: { x: 2, y: 3 },
+      },
+    });
+    const index = UniformGridSpatialIndex.from([]);
+    const hit = (point: { readonly x: number; readonly y: number }, tolerance = 0) => hitTestPlan({
+      point, tolerance, entities: [], index, references: [reference],
+    });
+    const interior = valueOf(planReferenceSourceToWorld(reference, { x: 50, y: 25 }));
+    const edge = valueOf(planReferenceSourceToWorld(reference, { x: 50, y: 0 }));
+    const corner = valueOf(planReferenceSourceToWorld(reference, { x: 100, y: 50 }));
+    const outward = { x: Math.sin(rotation), y: -Math.cos(rotation) };
+    const pointAt = (distance: number) => ({
+      x: edge.x + outward.x * distance,
+      y: edge.y + outward.y * distance,
+    });
+    const expected = {
+      ok: true, value: { kind: "plan-reference", referenceId: reference.id },
+    } as const;
+
+    expect(hit(interior)).toEqual(expected);
+    expect(hit(edge)).toEqual(expected);
+    expect(hit(corner)).toEqual(expected);
+    expect(hit(pointAt(4.999), 5)).toEqual(expected);
+    expect(hit(pointAt(5.001), 5)).toEqual({ ok: true, value: null });
+  });
+
   it("hits the reference interior, its exact boundary, and world tolerance", () => {
     const reference = makeReference();
     const index = UniformGridSpatialIndex.from([]);

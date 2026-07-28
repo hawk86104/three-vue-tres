@@ -89,6 +89,9 @@ describe("applyPlanReferenceTransform", () => {
     ["non-finite translation", { translation: { x: Number.NaN, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } }],
     ["non-finite rotation", { translation: { x: 0, y: 0 }, rotation: Number.POSITIVE_INFINITY, scale: { x: 1, y: 1 } }],
     ["zero scale", { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 0, y: 1 } }],
+    ["negative scale", { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: -1, y: 1 } }],
+    ["scale at the zero threshold", { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1e-9, y: 1 } }],
+    ["scale below the zero threshold", { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 5e-10, y: 1 } }],
     ["non-finite scale", { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: Number.NaN } }],
   ] as const)("rejects a %s as invalid plan-reference geometry", (_name, transform) => {
     expect(applyPlanReferenceTransform(makeReference(), transform)).toMatchObject({
