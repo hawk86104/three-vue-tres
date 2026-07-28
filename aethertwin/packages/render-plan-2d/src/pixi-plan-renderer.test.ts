@@ -15,6 +15,7 @@ import type {
   PlanAssetSourcePort,
   PlanPointerEvent,
   PlanRenderPort,
+  PlanRenderPortFactory,
   PlanRendererEventSink,
   PlanRendererInput,
   ProjectAssetSource,
@@ -124,6 +125,7 @@ const pixiHarness = vi.hoisted(() => {
 
   class TestApplication {
     static readonly instances: TestApplication[] = [];
+    static initGate: Promise<void> = Promise.resolve();
     readonly stage = new TestContainer({ label: "stage" });
     readonly canvas = document.createElement("canvas");
     readonly renderer = {
@@ -137,7 +139,7 @@ const pixiHarness = vi.hoisted(() => {
       TestApplication.instances.push(this);
     }
 
-    async init(): Promise<void> {}
+    async init(): Promise<void> { await TestApplication.initGate; }
   }
 
   const load = vi.fn<(url: string) => Promise<TestTexture>>();
@@ -496,6 +498,7 @@ const interactionBounds = {
 
 beforeEach(() => {
   pixiHarness.TestApplication.instances.length = 0;
+  pixiHarness.TestApplication.initGate = Promise.resolve();
   pixiHarness.load.mockReset();
   pixiHarness.unload.mockReset();
 });
@@ -531,7 +534,11 @@ describe('Pixi resource ownership compatibility', () => {
     const directPort = pixiRendererModule.createPixiRenderPort();
     await directPort.init(document.createElement('div'), { handle: () => undefined });
     directPort.destroy();
-    const renderer = new PixiPlanRenderer(() => legacyPlanRenderPort());
+    const legacyFactory: PlanRenderPortFactory = () => legacyPlanRenderPort();
+    const legacyPort = legacyFactory();
+    await legacyPort.init({} as HTMLElement, { handle: () => undefined });
+    legacyPort.destroy();
+    const renderer = new PixiPlanRenderer(legacyFactory);
     await renderer.init({} as HTMLElement, { handle: () => undefined });
     renderer.destroy();
   });
@@ -545,6 +552,76 @@ describe('Pixi resource ownership compatibility', () => {
     renderer.update(rendererInput());
     expect(port.invalidatedAssetIds).toEqual([rendererAssetId]);
     expect(port.removedKeys).toEqual([rendererReference.id]);
+  });
+
+  it('reserves global resources while a newer render port is still initializing', async () => {
+    const firstPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await firstPort.init(document.createElement('div'), { handle: () => undefined });
+    const firstApplication = latestApplication();
+    const initGate = deferred();
+    pixiHarness.TestApplication.initGate = initGate.promise;
+    const secondPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    const secondInitialization = secondPort.init(
+      document.createElement('div'),
+      { handle: () => undefined },
+    );
+    await settleResources();
+    const secondApplication = latestApplication();
+
+    firstPort.destroy();
+    await settleResources();
+    expect(firstApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true },
+      { children: true, texture: false, textureSource: false },
+    );
+    secondPort.destroy();
+    initGate.resolve();
+    await secondInitialization;
+    await vi.waitFor(() => expect(secondApplication.destroy).toHaveBeenCalledOnce());
+    expect(secondApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true, releaseGlobalResources: true },
+      { children: true, texture: false, textureSource: false },
+    );
+  });
+
+  it('waits for retirement and rejects stale final-port global cleanup', async () => {
+    const retirementGate = deferred();
+    const texture = new pixiHarness.TestTexture();
+    installSharedFakeAssetCache(
+      async () => texture,
+      async () => retirementGate.promise,
+    );
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({
+        assetId,
+        url: 'blob:aethertwin/generation-retirement',
+        mediaType: 'image/png',
+      }),
+    };
+    const firstPort = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await firstPort.init(document.createElement('div'), { handle: () => undefined });
+    const firstApplication = latestApplication();
+    firstPort.upsert(imageNode('generation-reference', 'generation-asset'));
+    await settleResources();
+    firstPort.destroy();
+    await settleResources();
+    expect(firstApplication.destroy).not.toHaveBeenCalled();
+
+    const secondPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await secondPort.init(document.createElement('div'), { handle: () => undefined });
+    const secondApplication = latestApplication();
+    retirementGate.resolve();
+    await vi.waitFor(() => expect(firstApplication.destroy).toHaveBeenCalledOnce());
+    expect(firstApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true },
+      { children: true, texture: false, textureSource: false },
+    );
+    secondPort.destroy();
+    await vi.waitFor(() => expect(secondApplication.destroy).toHaveBeenCalledOnce());
+    expect(secondApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true, releaseGlobalResources: true },
+      { children: true, texture: false, textureSource: false },
+    );
   });
 });
 

@@ -99,4 +99,4 @@ export interface PlanRenderPort {
   destroy(): void;
 }
 
-export type PlanRenderPortFactory = (sourcePort: PlanAssetSourcePort) => PlanRenderPort;
+export type PlanRenderPortFactory = (sourcePort?: PlanAssetSourcePort) => PlanRenderPort;

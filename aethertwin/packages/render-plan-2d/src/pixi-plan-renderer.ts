@@ -60,7 +60,7 @@ interface SharedTextureLease {
 
 const sharedTextureEntries = new Map<string, SharedTextureEntry>();
 const sharedTextureOperations = new Set<Promise<void>>();
-let activePixiPortCount = 0;
+let reservedPixiPortCount = 0;
 let pixiPortGeneration = 0;
 
 function trackSharedTextureOperation<T>(operation: Promise<T>): Promise<T> {
@@ -278,9 +278,12 @@ function destroyApplication(
   );
 }
 
-function tryDestroyApplication(application: Application): void {
+function tryDestroyApplication(
+  application: Application,
+  releaseGlobalResources = false,
+): void {
   try {
-    destroyApplication(application);
+    destroyApplication(application, releaseGlobalResources);
   } catch {
     // Best-effort cleanup for a partially initialized Pixi application.
   }
@@ -447,7 +450,7 @@ class PixiRenderPort implements PlanRenderPort {
   #interactionBounds: Rectangle | null = null;
   #inputBridge: PointerInputBridge | null = null;
   #initialization: Promise<void> | null = null;
-  #activeGeneration: number | null = null;
+  #lifecycleGeneration: number | null = null;
   #destroyed = false;
 
   constructor(private readonly sourcePort: PlanAssetSourcePort) {}
@@ -458,7 +461,10 @@ class PixiRenderPort implements PlanRenderPort {
     }
     if (this.#application !== null) return Promise.resolve();
     if (this.#initialization === null) {
+      reservedPixiPortCount += 1;
+      this.#lifecycleGeneration = ++pixiPortGeneration;
       this.#initialization = this.#initialize(host, sink).catch((error: unknown) => {
+        this.#releaseLifecycleReservation();
         if (!this.#destroyed) this.#initialization = null;
         throw error;
       });
@@ -481,7 +487,13 @@ class PixiRenderPort implements PlanRenderPort {
         eventFeatures: { move: true, globalMove: true, click: true, wheel: true },
       });
       if (this.#destroyed) {
-        tryDestroyApplication(application);
+        const generation = this.#releaseLifecycleReservation();
+        tryDestroyApplication(
+          application,
+          generation !== null
+            && reservedPixiPortCount === 0
+            && pixiPortGeneration === generation,
+        );
         return;
       }
 
@@ -528,11 +540,15 @@ class PixiRenderPort implements PlanRenderPort {
       this.#layers = { grid, reference, content, annotation, overlay, interaction };
       this.#interactionBounds = interactionBounds;
       this.#inputBridge = inputBridge;
-      activePixiPortCount += 1;
-      this.#activeGeneration = ++pixiPortGeneration;
     } catch (error) {
       inputBridge?.destroy();
-      tryDestroyApplication(application);
+      const generation = this.#releaseLifecycleReservation();
+      tryDestroyApplication(
+        application,
+        generation !== null
+          && reservedPixiPortCount === 0
+          && pixiPortGeneration === generation,
+      );
       throw error;
     }
   }
@@ -794,9 +810,10 @@ class PixiRenderPort implements PlanRenderPort {
   destroy(): void {
     if (this.#destroyed) return;
     this.#destroyed = true;
-    const activeGeneration = this.#activeGeneration;
-    this.#activeGeneration = null;
-    if (activeGeneration !== null) activePixiPortCount -= 1;
+    const application = this.#application;
+    const lifecycleGeneration = application === null
+      ? null
+      : this.#releaseLifecycleReservation();
     for (const key of [...this.#entries.keys()]) this.remove(key);
     for (const resource of this.#resources.values()) {
       resource.invalidated = true;
@@ -808,23 +825,30 @@ class PixiRenderPort implements PlanRenderPort {
       }
     }
     this.#resources.clear();
-    const application = this.#application;
     this.#inputBridge?.destroy();
     this.#application = null;
     this.#layers = null;
     this.#interactionBounds = null;
     this.#inputBridge = null;
     if (application === null) return;
-    if (activeGeneration === null || activePixiPortCount > 0) {
+    if (lifecycleGeneration === null || reservedPixiPortCount > 0) {
       destroyApplication(application);
       return;
     }
     void waitForSharedTextureIdle().then(() => {
       destroyApplication(
         application,
-        activePixiPortCount === 0 && pixiPortGeneration === activeGeneration,
+        reservedPixiPortCount === 0 && pixiPortGeneration === lifecycleGeneration,
       );
     });
+  }
+
+  #releaseLifecycleReservation(): number | null {
+    const generation = this.#lifecycleGeneration;
+    if (generation === null) return null;
+    this.#lifecycleGeneration = null;
+    reservedPixiPortCount -= 1;
+    return generation;
   }
 
   #requireApplication(): Application {
