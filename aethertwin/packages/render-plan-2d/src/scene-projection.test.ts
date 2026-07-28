@@ -3,10 +3,12 @@
 import {
   createInitialSnapshot,
   parseSnapshotV3,
+  type AssetRecord,
   type Boundary,
   type DimensionAnnotation,
   type Fixture,
   type Floor,
+  type PlanReference,
   type PlanLayer,
   type PointOfInterest,
   type ProjectSnapshot,
@@ -19,6 +21,7 @@ import {
 import {
   applyTransform,
   entityWorldBounds,
+  previewCalibration,
   worldToScreen,
 } from "@aethertwin/plan-engine";
 import { describe, expect, it, vi } from "vitest";
@@ -53,9 +56,16 @@ const hiddenLayer: PlanLayer = {
   visible: false,
   locked: false,
 };
+const lockedLayer: PlanLayer = {
+  id: uuid(7),
+  name: "Locked references",
+  tags: [],
+  visible: true,
+  locked: true,
+};
 const floorA: Floor = {
   ...originalFloor,
-  layers: [...originalFloor.layers, hiddenLayer],
+  layers: [...originalFloor.layers, hiddenLayer, lockedLayer],
 };
 const floorB: Floor = {
   id: uuid(4),
@@ -85,14 +95,58 @@ function fixtureAt(id: string, floor: Floor, x: number, layerId = floor.layers[0
   };
 }
 
-function snapshotWith(entities: readonly SpatialEntity[]): ProjectSnapshot {
+function assetRecord(assetId: string, index: number): AssetRecord {
+  const digit = ((index + 10) % 16).toString(16);
+  const sha256 = digit.repeat(64);
+  return {
+    id: assetId,
+    sha256,
+    relativePath: `assets/sha256/${digit}${digit}/${sha256}.png`,
+    mediaType: "image/png",
+    size: 42,
+  };
+}
+
+function planReferenceAt(
+  id: string,
+  assetId: string,
+  floor: Floor,
+  overrides: Partial<PlanReference> = {},
+): PlanReference {
+  return {
+    id,
+    name: id,
+    tags: [],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    assetId,
+    intrinsicSize: { width: 100, height: 50 },
+    transform: {
+      translation: { x: 0, y: 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    opacity: 0.65,
+    locked: false,
+    calibration: null,
+    ...overrides,
+  };
+}
+
+function snapshotWith(
+  entities: readonly SpatialEntity[],
+  planReferences: readonly PlanReference[] = [],
+): ProjectSnapshot {
+  const assetIds = [...new Set(planReferences.map(({ assetId }) => assetId))];
   return parseSnapshotV3({
     ...base,
     project: {
       ...base.project,
       floors: [floorA, floorB],
       entities,
+      planReferences,
     },
+    assets: assetIds.map(assetRecord),
   });
 }
 
@@ -106,6 +160,7 @@ function inputFor(
     viewport,
     selectedIds: new Set<string>(),
     draft: null,
+    calibrationPreview: null,
     ...overrides,
   };
 }
@@ -145,6 +200,147 @@ describe("projectScene", () => {
     expect(scene.nodes.some((node) => node.entityId === hiddenFixture.id)).toBe(false);
     expect(scene.nodes.some((node) => node.entityId === floorBFixture.id)).toBe(false);
     expect(scene.nodes.some((node) => node.entityId === offscreenFixture.id)).toBe(false);
+  });
+
+  it("projects verified reference identity and transformed corners between grid and content", () => {
+    const fixture = fixtureAt(uuid(40), floorA, 0);
+    const reference = planReferenceAt(uuid(41), uuid(42), floorA, {
+      layerId: lockedLayer.id,
+      intrinsicSize: { width: 100, height: 50 },
+      transform: {
+        translation: { x: -50, y: 40 },
+        rotation: Math.PI / 2,
+        scale: { x: 2, y: 2 },
+      },
+      opacity: 0.42,
+    });
+    const scene = projectScene(inputFor(snapshotWith([fixture], [reference]), {
+      selectedIds: new Set([reference.id]),
+    }));
+    const node = scene.nodes.find((candidate) => candidate.entityId === reference.id);
+
+    expect(node).toMatchObject({
+      layer: "reference",
+      styleToken: "plan-reference",
+      selected: true,
+      locked: true,
+    });
+    expect(node?.geometry).toMatchObject({
+      kind: "image",
+      assetId: reference.assetId,
+      opacity: 0.42,
+    });
+    if (node === undefined || node.geometry.kind !== "image") return;
+    const expectedCorners = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 0, y: 50 },
+    ].map((point) => worldToScreen(applyTransform(point, reference.transform), viewport));
+    expect(node.geometry.corners).toEqual(expectedCorners);
+    expect(Object.keys(node.geometry).sort()).toEqual([
+      "assetId", "corners", "kind", "opacity",
+    ]);
+    expect(node.bounds).toEqual({
+      min: {
+        x: Math.min(...expectedCorners.map(({ x }) => x)),
+        y: Math.min(...expectedCorners.map(({ y }) => y)),
+      },
+      max: {
+        x: Math.max(...expectedCorners.map(({ x }) => x)),
+        y: Math.max(...expectedCorners.map(({ y }) => y)),
+      },
+    });
+    const selection = scene.nodes.find((candidate) => (
+      candidate.entityId === reference.id && candidate.layer === "overlay"
+    ));
+    expect(selection).toMatchObject({
+      key: `__aethertwin:selection:${reference.id}`,
+      styleToken: "selection-plan-reference",
+      selected: true,
+      locked: true,
+      geometry: {
+        kind: "polygon",
+        points: expectedCorners,
+        closed: true,
+      },
+    });
+
+    const lastGrid = scene.nodes.reduce((lastIndex, candidate, index) => (
+      candidate.layer === "grid" ? index : lastIndex
+    ), -1);
+    const referenceIndex = scene.nodes.findIndex(({ layer }) => layer === "reference");
+    const contentIndex = scene.nodes.findIndex(({ layer }) => layer === "content");
+    expect(lastGrid).toBeLessThan(referenceIndex);
+    expect(referenceIndex).toBeLessThan(contentIndex);
+  });
+
+  it("filters references by floor, visible layer, and viewport while merging lock state", () => {
+    const visible = planReferenceAt(uuid(43), uuid(44), floorA, {
+      layerId: lockedLayer.id,
+    });
+    const entityLocked = planReferenceAt(uuid(45), uuid(46), floorA, {
+      locked: true,
+      transform: {
+        translation: { x: 120, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    });
+    const hidden = planReferenceAt(uuid(47), uuid(48), floorA, {
+      layerId: hiddenLayer.id,
+    });
+    const otherFloor = planReferenceAt(uuid(49), uuid(50), floorB);
+    const offscreen = planReferenceAt(uuid(51), uuid(52), floorA, {
+      transform: {
+        translation: { x: 10_000, y: 10_000 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    });
+    const scene = projectScene(inputFor(snapshotWith([], [
+      visible, entityLocked, hidden, otherFloor, offscreen,
+    ])));
+    const references = scene.nodes.filter(({ layer }) => layer === "reference");
+
+    expect(references.map(({ entityId }) => entityId)).toEqual([
+      visible.id,
+      entityLocked.id,
+    ].sort());
+    expect(references.every(({ locked }) => locked)).toBe(true);
+    expect(scene.nodes.some(({ entityId }) => entityId === hidden.id)).toBe(false);
+    expect(scene.nodes.some(({ entityId }) => entityId === otherFloor.id)).toBe(false);
+    expect(scene.nodes.some(({ entityId }) => entityId === offscreen.id)).toBe(false);
+  });
+
+  it("uses calibration preview geometry without mutating the durable snapshot", () => {
+    const reference = planReferenceAt(uuid(53), uuid(54), floorA);
+    const snapshot = snapshotWith([], [reference]);
+    const snapshotBefore = JSON.stringify(snapshot);
+    const preview = previewCalibration(reference, {
+      sourcePointA: { x: 0, y: 0 },
+      sourcePointB: { x: 100, y: 0 },
+      measuredDistanceMm: 250,
+    });
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+
+    const scene = projectScene(inputFor(snapshot, {
+      calibrationPreview: preview.value,
+    }));
+    const node = scene.nodes.find(({ entityId }) => entityId === reference.id);
+    expect(node?.geometry.kind).toBe("image");
+    if (node === undefined || node.geometry.kind !== "image") return;
+    const expectedCorners = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 0, y: 50 },
+    ].map((point) => worldToScreen(applyTransform(point, preview.value.after.transform), viewport));
+
+    expect(node.geometry.corners).toEqual(expectedCorners);
+    expect(JSON.stringify(snapshot)).toBe(snapshotBefore);
+    expect(snapshot.project.planReferences[0]?.transform.scale).toEqual({ x: 1, y: 1 });
   });
 
   it("projects every spatial variant plus dimensions, selection, and drafts to stable layers", () => {
@@ -430,6 +626,7 @@ describe("projectScene 2,000-entity culling fixture", () => {
       viewport: cullingViewport,
       selectedIds: new Set<string>(),
       draft: null,
+      calibrationPreview: null,
     });
     const actualIds = scene.nodes
       .filter((node) => node.layer === "content")

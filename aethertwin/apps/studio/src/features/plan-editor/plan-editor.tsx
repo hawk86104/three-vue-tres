@@ -290,6 +290,7 @@ export function PlanEditor({
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
           {dependencies?.workspace?.(workspaceContext) ?? (
             <PlanCanvas
+              store={store}
               snapshot={snapshot}
               activeFloorId={sessionState.activeFloorId}
               sessionStore={sessionStore}

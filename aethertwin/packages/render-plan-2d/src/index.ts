@@ -4,6 +4,7 @@ export {
   PixiPlanRenderer,
 } from "./pixi-plan-renderer";
 export type {
+  PlanAssetSourcePort,
   PlanPointerEvent,
   PlanRenderPort,
   PlanRenderPortFactory,
@@ -11,6 +12,7 @@ export type {
   PlanRendererEventSink,
   PlanRendererFactory,
   PlanRendererInput,
+  ProjectAssetSource,
   RenderGeometry,
   RenderNode,
   RenderScene,

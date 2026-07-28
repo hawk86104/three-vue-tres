@@ -1,11 +1,13 @@
 import type { ProjectSnapshot } from "@aethertwin/core-model";
 import {
   PixiPlanRenderer,
+  type PlanAssetSourcePort,
   type PlanPointerEvent,
   type PlanRenderer,
   type PlanRendererFactory,
   type PlanRendererInput,
 } from "@aethertwin/render-plan-2d";
+import type { ProjectStore } from "@aethertwin/project-store";
 import {
   useCallback,
   useEffect,
@@ -20,6 +22,7 @@ import type { InteractionController } from "./interaction-controller";
 import { PlanAccessibility } from "./plan-accessibility";
 
 export interface PlanCanvasProps {
+  readonly store: Pick<ProjectStore, "resolveAsset">;
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
   readonly sessionStore: StoreApi<PlanEditorState>;
@@ -32,8 +35,6 @@ interface ActiveRenderer {
   readonly renderer: PlanRenderer;
   initialized: boolean;
 }
-
-const productionRendererFactory: PlanRendererFactory = () => new PixiPlanRenderer();
 
 function isTextInputTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -58,21 +59,44 @@ function rendererInput(
     draft: state.draft?.kind === "create" || state.draft?.kind === "transform"
       ? state.draft.preview
       : null,
+    calibrationPreview: null,
   };
 }
 
 export function PlanCanvas({
+  store,
   snapshot,
   activeFloorId,
   sessionStore,
   controller,
-  rendererFactory = productionRendererFactory,
+  rendererFactory,
   onError,
 }: PlanCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeRendererRef = useRef<ActiveRenderer | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const storeRef = useRef(store);
+  storeRef.current = store;
+  const sourcePortRef = useRef<PlanAssetSourcePort | null>(null);
+  if (sourcePortRef.current === null) {
+    sourcePortRef.current = {
+      async resolve(assetId) {
+        try {
+          return await storeRef.current.resolveAsset(assetId);
+        } catch (error) {
+          onErrorRef.current(error);
+          throw error;
+        }
+      },
+    };
+  }
+  const productionRendererFactoryRef = useRef<PlanRendererFactory | null>(null);
+  if (productionRendererFactoryRef.current === null) {
+    const sourcePort = sourcePortRef.current;
+    productionRendererFactoryRef.current = () => new PixiPlanRenderer(sourcePort);
+  }
+  const activeRendererFactory = rendererFactory ?? productionRendererFactoryRef.current;
   const subscribe = useCallback(
     (listener: () => void) => sessionStore.subscribe(listener),
     [sessionStore],
@@ -96,7 +120,7 @@ export function PlanCanvas({
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
-    const renderer = rendererFactory();
+    const renderer = activeRendererFactory();
     const active: ActiveRenderer = { renderer, initialized: false };
     activeRendererRef.current = active;
     let disposed = false;
@@ -169,7 +193,7 @@ export function PlanCanvas({
       if (activeRendererRef.current === active) activeRendererRef.current = null;
       renderer.destroy();
     };
-  }, [controller, rendererFactory]);
+  }, [activeRendererFactory, controller]);
 
   function reportPromise(action: () => Promise<void>): void {
     try {

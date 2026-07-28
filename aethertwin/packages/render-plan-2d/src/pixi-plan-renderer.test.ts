@@ -1,19 +1,164 @@
+// @vitest-environment jsdom
+
 import {
   createInitialSnapshot,
   parseSnapshotV3,
   type Fixture,
   type Floor,
 } from "@aethertwin/core-model";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pixiRendererModule from "./pixi-plan-renderer";
 import { PixiPlanRenderer } from "./pixi-plan-renderer";
 import type {
+  PlanAssetSourcePort,
   PlanPointerEvent,
   PlanRenderPort,
   PlanRendererEventSink,
   PlanRendererInput,
+  ProjectAssetSource,
   RenderNode,
 } from "./types";
+
+const pixiHarness = vi.hoisted(() => {
+  class TestContainer {
+    readonly label: string;
+    readonly children: TestContainer[] = [];
+    parent: TestContainer | null = null;
+    destroyed = false;
+    destroyedWhileParented = false;
+
+    constructor(options: { readonly label?: string } = {}) {
+      this.label = options.label ?? "";
+    }
+
+    addChild(...children: TestContainer[]): void {
+      for (const child of children) {
+        child.removeFromParent();
+        child.parent = this;
+        this.children.push(child);
+      }
+    }
+
+    setChildIndex(child: TestContainer, index: number): void {
+      const current = this.children.indexOf(child);
+      if (current < 0) return;
+      this.children.splice(current, 1);
+      this.children.splice(index, 0, child);
+    }
+
+    removeFromParent(): void {
+      if (this.parent === null) return;
+      const index = this.parent.children.indexOf(this);
+      if (index >= 0) this.parent.children.splice(index, 1);
+      this.parent = null;
+    }
+
+    on(): this {
+      return this;
+    }
+
+    destroy(options?: { readonly children?: boolean }): void {
+      this.destroyedWhileParented ||= this.parent !== null;
+      this.removeFromParent();
+      if (options?.children) {
+        for (const child of [...this.children]) child.destroy(options);
+      }
+      this.destroyed = true;
+    }
+  }
+
+  class TestGraphics extends TestContainer {
+    clear(): this { return this; }
+    poly(): this { return this; }
+    fill(): this { return this; }
+    stroke(): this { return this; }
+    moveTo(): this { return this; }
+    lineTo(): this { return this; }
+    closePath(): this { return this; }
+    circle(): this { return this; }
+  }
+
+  class TestTexture {
+    destroyCalls = 0;
+    readonly width = 100;
+    readonly height = 50;
+    destroy(): void { this.destroyCalls += 1; }
+  }
+
+  class TestSprite extends TestContainer {
+    alpha = 1;
+    x = 0;
+    y = 0;
+    rotation = 0;
+    readonly position = { set: (x: number, y: number) => {
+      this.x = x;
+      this.y = y;
+    } };
+    readonly scale = { x: 1, y: 1, set: (x: number, y: number) => {
+      this.scale.x = x;
+      this.scale.y = y;
+    } };
+    readonly texture: TestTexture;
+
+    constructor(options: { readonly label?: string; readonly texture: TestTexture }) {
+      super(options);
+      this.texture = options.texture;
+    }
+  }
+
+  class TestRectangle {
+    constructor(
+      public x = 0,
+      public y = 0,
+      public width = 0,
+      public height = 0,
+    ) {}
+    contains(x: number, y: number): boolean {
+      return x >= this.x && x <= this.x + this.width
+        && y >= this.y && y <= this.y + this.height;
+    }
+  }
+
+  class TestApplication {
+    static readonly instances: TestApplication[] = [];
+    readonly stage = new TestContainer({ label: "stage" });
+    readonly canvas = document.createElement("canvas");
+    readonly renderer = {
+      resize: vi.fn(),
+      events: { mapPositionToPoint: vi.fn() },
+    };
+    readonly render = vi.fn();
+    readonly destroy = vi.fn();
+
+    constructor() {
+      TestApplication.instances.push(this);
+    }
+
+    async init(): Promise<void> {}
+  }
+
+  const load = vi.fn<(url: string) => Promise<TestTexture>>();
+  const unload = vi.fn<(url: string) => Promise<void>>();
+  return {
+    TestApplication,
+    TestContainer,
+    TestGraphics,
+    TestRectangle,
+    TestSprite,
+    TestTexture,
+    load,
+    unload,
+  };
+});
+
+vi.mock("pixi.js", () => ({
+  Application: pixiHarness.TestApplication,
+  Assets: { load: pixiHarness.load, unload: pixiHarness.unload },
+  Container: pixiHarness.TestContainer,
+  Graphics: pixiHarness.TestGraphics,
+  Rectangle: pixiHarness.TestRectangle,
+  Sprite: pixiHarness.TestSprite,
+}));
 
 const uuid = (value: number): string => (
   `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`
@@ -71,12 +216,14 @@ function rendererInput(): PlanRendererInput {
     viewport,
     selectedIds: new Set<string>(),
     draft: null,
+    calibrationPreview: null,
   };
 }
 
 class FakePlanRenderPort implements PlanRenderPort {
   readonly upsertedNodes: RenderNode[] = [];
   readonly removedKeys: string[] = [];
+  readonly invalidatedAssetIds: string[] = [];
   readonly resizeCalls: Array<readonly [number, number, number]> = [];
   initCalls = 0;
   renderCalls = 0;
@@ -98,6 +245,10 @@ class FakePlanRenderPort implements PlanRenderPort {
     this.removedKeys.push(key);
   }
 
+  invalidateAsset(assetId: string): void {
+    this.invalidatedAssetIds.push(assetId);
+  }
+
   resize(width: number, height: number, resolution: number): void {
     this.resizeCalls.push([width, height, resolution]);
   }
@@ -111,12 +262,72 @@ class FakePlanRenderPort implements PlanRenderPort {
   }
 }
 
-function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>((complete) => {
+function deferred<T = void>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
     resolve = complete;
   });
   return { promise, resolve };
+}
+
+function imageNode(
+  key: string,
+  assetId: string,
+  corners: readonly [
+    { readonly x: number; readonly y: number },
+    { readonly x: number; readonly y: number },
+    { readonly x: number; readonly y: number },
+    { readonly x: number; readonly y: number },
+  ] = [
+    { x: 10, y: 20 },
+    { x: 210, y: 20 },
+    { x: 210, y: 120 },
+    { x: 10, y: 120 },
+  ],
+  locked = false,
+): RenderNode {
+  const xs = corners.map(({ x }) => x);
+  const ys = corners.map(({ y }) => y);
+  return {
+    key,
+    entityId: key,
+    layer: "reference",
+    geometry: { kind: "image", assetId, corners, opacity: 0.4 },
+    bounds: {
+      min: { x: Math.min(...xs), y: Math.min(...ys) },
+      max: { x: Math.max(...xs), y: Math.max(...ys) },
+    },
+    styleToken: "plan-reference",
+    selected: false,
+    locked,
+  };
+}
+
+function projectAssetSource(assetId: string): ProjectAssetSource {
+  return {
+    assetId,
+    url: `blob:aethertwin/${assetId}`,
+    mediaType: "image/png",
+  };
+}
+
+function latestApplication(): InstanceType<typeof pixiHarness.TestApplication> {
+  const application = pixiHarness.TestApplication.instances.at(-1);
+  if (application === undefined) throw new Error("Pixi application was not initialized");
+  return application;
+}
+
+function referenceLayer(): InstanceType<typeof pixiHarness.TestContainer> {
+  const layer = latestApplication().stage.children.find(({ label }) => label === "reference");
+  if (layer === undefined) throw new Error("Reference layer was not created");
+  return layer;
+}
+
+async function settleResources(): Promise<void> {
+  for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
 }
 
 interface TestPointerInputBridge {
@@ -203,6 +414,264 @@ function planPointerEvent(
 const interactionBounds = {
   contains: (x: number, y: number): boolean => x >= 0 && x <= 100 && y >= 0 && y <= 100,
 };
+
+beforeEach(() => {
+  pixiHarness.TestApplication.instances.length = 0;
+  pixiHarness.load.mockReset();
+  pixiHarness.unload.mockReset();
+});
+
+const unusedSourcePort: PlanAssetSourcePort = {
+  resolve: async (assetId) => projectAssetSource(assetId),
+};
+
+describe("Pixi reference resources", () => {
+  it("loads one verified source per pending asset and keeps reference sprites as layer leaves", async () => {
+    const sourceGate = deferred<ProjectAssetSource>();
+    const textureGate = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
+    const resolve = vi.fn((_assetId: string) => sourceGate.promise);
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    pixiHarness.load.mockReturnValue(textureGate.promise);
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    const host = document.createElement("div");
+    await port.init(host, { handle: () => undefined });
+
+    const cosine = Math.cos(Math.PI / 6);
+    const sine = Math.sin(Math.PI / 6);
+    const origin = { x: 400, y: 300 };
+    const screenX = { x: 200 * cosine, y: -200 * sine };
+    const screenY = { x: -75 * sine, y: -75 * cosine };
+    const rotatedCorners = [
+      origin,
+      { x: origin.x + screenX.x, y: origin.y + screenX.y },
+      {
+        x: origin.x + screenX.x + screenY.x,
+        y: origin.y + screenX.y + screenY.y,
+      },
+      { x: origin.x + screenY.x, y: origin.y + screenY.y },
+    ] as const;
+    const first = imageNode("reference-a", "asset-shared", rotatedCorners, true);
+    const second = imageNode("reference-b", "asset-shared", [
+      { x: 300, y: 20 },
+      { x: 500, y: 20 },
+      { x: 500, y: 120 },
+      { x: 300, y: 120 },
+    ]);
+    port.upsert(first);
+    port.upsert(second);
+    await settleResources();
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith("asset-shared");
+    sourceGate.resolve(projectAssetSource("asset-shared"));
+    await settleResources();
+    expect(pixiHarness.load).toHaveBeenCalledOnce();
+    expect(pixiHarness.load).toHaveBeenCalledWith("blob:aethertwin/asset-shared");
+
+    const texture = new pixiHarness.TestTexture();
+    pixiHarness.unload.mockImplementation(async () => texture.destroy());
+    textureGate.resolve(texture);
+    await settleResources();
+    const layer = referenceLayer();
+    expect(latestApplication().stage.children.map(({ label }) => label)).toEqual([
+      "grid", "reference", "content", "annotation", "overlay", "interaction",
+    ]);
+    expect(layer.children).toHaveLength(2);
+    expect(layer.children.every((child) => child instanceof pixiHarness.TestSprite)).toBe(true);
+    expect(layer.children.every((child) => child.parent === layer && child.children.length === 0)).toBe(true);
+    const firstSprite = layer.children.find(({ label }) => label === first.key);
+    expect(firstSprite).toBeInstanceOf(pixiHarness.TestSprite);
+    if (!(firstSprite instanceof pixiHarness.TestSprite)) return;
+    expect(firstSprite.alpha).toBeCloseTo(0.4 * 0.55, 10);
+    expect(firstSprite.x).toBeCloseTo(400, 10);
+    expect(firstSprite.y).toBeCloseTo(300, 10);
+    expect(firstSprite.rotation).toBeCloseTo(-Math.PI / 6, 10);
+    expect(firstSprite.scale.x).toBeCloseTo(2, 10);
+    expect(firstSprite.scale.y).toBeCloseTo(-1.5, 10);
+
+    port.remove(first.key);
+    expect(firstSprite).toMatchObject({ destroyed: true, destroyedWhileParented: false });
+    expect(texture.destroyCalls).toBe(0);
+    port.remove(second.key);
+    await settleResources();
+    expect(texture.destroyCalls).toBe(1);
+  });
+
+  it("discards stale asset completion by reference generation", async () => {
+    const loadA = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
+    const loadB = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
+    const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    pixiHarness.load.mockImplementation((url) => (
+      url.endsWith("asset-a") ? loadA.promise : loadB.promise
+    ));
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    port.upsert(imageNode("reference", "asset-a"));
+    await settleResources();
+    port.upsert(imageNode("reference", "asset-b"));
+    await settleResources();
+    expect(resolve.mock.calls.map(([assetId]) => assetId)).toEqual(["asset-a", "asset-b"]);
+
+    const textureB = new pixiHarness.TestTexture();
+    loadB.resolve(textureB);
+    await settleResources();
+    const textureA = new pixiHarness.TestTexture();
+    pixiHarness.unload.mockImplementation(async () => textureA.destroy());
+    loadA.resolve(textureA);
+    await settleResources();
+
+    const sprites = referenceLayer().children.filter(
+      (child) => child instanceof pixiHarness.TestSprite,
+    ) as InstanceType<typeof pixiHarness.TestSprite>[];
+    expect(sprites).toHaveLength(1);
+    expect(sprites[0]?.texture).toBe(textureB);
+    expect(textureA.destroyCalls).toBe(1);
+    expect(textureB.destroyCalls).toBe(0);
+  });
+
+  it("waits for cached URL retirement before loading a removed asset again", async () => {
+    const firstTexture = new pixiHarness.TestTexture();
+    const secondTexture = new pixiHarness.TestTexture();
+    const unloadGate = deferred();
+    const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    pixiHarness.load
+      .mockResolvedValueOnce(firstTexture)
+      .mockResolvedValueOnce(secondTexture);
+    pixiHarness.unload.mockImplementation(async () => {
+      await unloadGate.promise;
+      firstTexture.destroy();
+    });
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    const node = imageNode("reference", "asset-reload");
+
+    port.upsert(node);
+    await settleResources();
+    expect(pixiHarness.load).toHaveBeenCalledOnce();
+    port.remove(node.key);
+    port.upsert(node);
+    await settleResources();
+
+    expect(pixiHarness.unload).toHaveBeenCalledWith("blob:aethertwin/asset-reload");
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(pixiHarness.load).toHaveBeenCalledTimes(1);
+
+    unloadGate.resolve();
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(2));
+    expect(firstTexture.destroyCalls).toBe(1);
+    expect(pixiHarness.load).toHaveBeenCalledTimes(2);
+    const sprite = referenceLayer().children[0];
+    expect(sprite).toBeInstanceOf(pixiHarness.TestSprite);
+    expect((sprite as InstanceType<typeof pixiHarness.TestSprite>).texture).toBe(secondTexture);
+  });
+
+  it("retires an invalidated pending load before resolving its replacement", async () => {
+    const firstLoad = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
+    const unloadGate = deferred();
+    const firstTexture = new pixiHarness.TestTexture();
+    const secondTexture = new pixiHarness.TestTexture();
+    const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    pixiHarness.load
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockResolvedValueOnce(secondTexture);
+    pixiHarness.unload.mockImplementation(async () => {
+      await unloadGate.promise;
+      firstTexture.destroy();
+    });
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    const node = imageNode("reference", "asset-pending");
+
+    port.upsert(node);
+    await settleResources();
+    port.invalidateAsset("asset-pending");
+    port.upsert(node);
+    await settleResources();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(pixiHarness.load).toHaveBeenCalledTimes(1);
+
+    firstLoad.resolve(firstTexture);
+    await settleResources();
+    expect(pixiHarness.unload).toHaveBeenCalledWith("blob:aethertwin/asset-pending");
+    expect(resolve).toHaveBeenCalledTimes(1);
+
+    unloadGate.resolve();
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(2));
+    expect(firstTexture.destroyCalls).toBe(1);
+    expect(pixiHarness.load).toHaveBeenCalledTimes(2);
+    const sprite = referenceLayer().children[0];
+    expect(sprite).toBeInstanceOf(pixiHarness.TestSprite);
+    expect((sprite as InstanceType<typeof pixiHarness.TestSprite>).texture).toBe(secondTexture);
+  });
+
+  it("renders a Graphics-only placeholder for typed resolution failure without consuming unsafe fields", async () => {
+    const unsafeBytes = new Uint8Array([1, 2, 3, 4]);
+    const resolve = vi.fn(async () => Promise.reject({
+      code: "ASSET_CORRUPT",
+      url: "file:///private/floor.png",
+      bytes: unsafeBytes,
+    }));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    port.upsert(imageNode("broken-reference", "broken-asset"));
+    await settleResources();
+
+    expect(resolve).toHaveBeenCalledWith("broken-asset");
+    expect(pixiHarness.load).not.toHaveBeenCalled();
+    expect(referenceLayer().children).toHaveLength(1);
+    expect(referenceLayer().children[0]).toBeInstanceOf(pixiHarness.TestGraphics);
+    expect(referenceLayer().children[0]).not.toBeInstanceOf(pixiHarness.TestSprite);
+  });
+
+  it("invalidates and destroys referenced textures idempotently after removing their leaves", async () => {
+    const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    const firstTexture = new pixiHarness.TestTexture();
+    const secondTexture = new pixiHarness.TestTexture();
+    pixiHarness.load
+      .mockResolvedValueOnce(firstTexture)
+      .mockResolvedValueOnce(secondTexture);
+    pixiHarness.unload.mockImplementation(async (url) => {
+      (url.endsWith("asset-a") ? firstTexture : secondTexture).destroy();
+    });
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    port.upsert(imageNode("reference-a", "asset-a"));
+    await settleResources();
+    const invalidatedSprite = referenceLayer().children[0]!;
+    port.invalidateAsset("asset-a");
+    port.invalidateAsset("asset-a");
+    await settleResources();
+    expect(invalidatedSprite).toMatchObject({
+      destroyed: true,
+      destroyedWhileParented: false,
+    });
+    expect(firstTexture.destroyCalls).toBe(1);
+
+    port.upsert(imageNode("reference-b", "asset-b"));
+    await settleResources();
+    const destroyedSprite = referenceLayer().children.find(
+      ({ label }) => label === "reference-b",
+    );
+    port.destroy();
+    port.destroy();
+    await settleResources();
+
+    expect(destroyedSprite).toMatchObject({
+      destroyed: true,
+      destroyedWhileParented: false,
+    });
+    expect(secondTexture.destroyCalls).toBe(1);
+    expect(latestApplication().destroy).toHaveBeenCalledOnce();
+  });
+});
 
 describe("PixiPlanRenderer", () => {
   it("forwards idle global pointer moves inside its interaction bounds", () => {
@@ -321,7 +790,7 @@ describe("PixiPlanRenderer", () => {
     const gate = deferred();
     const port = new FakePlanRenderPort();
     port.initGate = gate.promise;
-    const renderer = new PixiPlanRenderer(() => port);
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
 
     const first = renderer.init({} as HTMLElement, { handle: () => undefined });
     const second = renderer.init({} as HTMLElement, { handle: () => undefined });
@@ -335,7 +804,7 @@ describe("PixiPlanRenderer", () => {
     const gate = deferred();
     const port = new FakePlanRenderPort();
     port.initGate = gate.promise;
-    const renderer = new PixiPlanRenderer(() => port);
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
 
     const initialization = renderer.init({} as HTMLElement, { handle: () => undefined });
     renderer.destroy();
@@ -348,7 +817,7 @@ describe("PixiPlanRenderer", () => {
 
   it("upserts changed projections only and renders on dirty updates", async () => {
     const port = new FakePlanRenderPort();
-    const renderer = new PixiPlanRenderer(() => port);
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
     const input = rendererInput();
 
     await renderer.init({} as HTMLElement, { handle: () => undefined });
@@ -365,7 +834,7 @@ describe("PixiPlanRenderer", () => {
 
   it("removes stale display objects through the render port", async () => {
     const port = new FakePlanRenderPort();
-    const renderer = new PixiPlanRenderer(() => port);
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
     const inputWithFixture = rendererInput();
     const inputWithoutFixture: PlanRendererInput = {
       ...inputWithFixture,
@@ -385,7 +854,7 @@ describe("PixiPlanRenderer", () => {
 
   it("forwards resize as a dirty render and destroys its port once", async () => {
     const port = new FakePlanRenderPort();
-    const renderer = new PixiPlanRenderer(() => port);
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
 
     await renderer.init({} as HTMLElement, { handle: () => undefined });
     renderer.resize(640, 480, 2);

@@ -1,6 +1,7 @@
 import type {
   Bounds2,
   Floor,
+  PlanReference,
   Point2,
   SpatialEntity,
 } from "@aethertwin/core-model";
@@ -9,6 +10,7 @@ import {
   dimensionGeometry,
   entityWorldBounds,
   entityWorldVertices,
+  planReferenceWorldPolygon,
   UniformGridSpatialIndex,
   worldToScreen,
   type ViewportTransform,
@@ -29,6 +31,12 @@ const POI_POLYGON_SEGMENTS = 32;
 
 interface ProjectedGeometry {
   readonly geometry: RenderGeometry;
+  readonly bounds: Bounds2;
+  readonly worldBounds: Bounds2;
+}
+
+interface ProjectedReference {
+  readonly corners: readonly [Point2, Point2, Point2, Point2];
   readonly bounds: Bounds2;
   readonly worldBounds: Bounds2;
 }
@@ -84,6 +92,70 @@ function intersects(left: Bounds2, right: Bounds2): boolean {
 
 function screenPoints(points: readonly Point2[], viewport: ViewportTransform): readonly Point2[] {
   return points.map((point) => worldToScreen(point, viewport));
+}
+
+function referenceProjection(
+  reference: PlanReference,
+  viewport: ViewportTransform,
+): ProjectedReference | null {
+  const polygon = planReferenceWorldPolygon(reference);
+  if (!polygon.ok) return null;
+  const worldBounds = boundsFromPoints(polygon.value);
+  const corners = polygon.value.map((point) => worldToScreen(point, viewport)) as [
+    Point2,
+    Point2,
+    Point2,
+    Point2,
+  ];
+  return {
+    corners,
+    bounds: boundsFromPoints(corners),
+    worldBounds,
+  };
+}
+
+function projectReference(
+  reference: PlanReference,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  layerLocked: boolean,
+  selected: boolean,
+): readonly [RenderNode, RenderNode | null] | null {
+  const projected = referenceProjection(reference, viewport);
+  if (projected === null || !intersects(projected.worldBounds, viewportBounds)) return null;
+  const locked = reference.locked || layerLocked;
+  const image: RenderNode = {
+    key: reference.id,
+    entityId: reference.id,
+    layer: "reference",
+    geometry: {
+      kind: "image",
+      assetId: reference.assetId,
+      corners: projected.corners,
+      opacity: reference.opacity,
+    },
+    bounds: projected.bounds,
+    styleToken: "plan-reference",
+    selected,
+    locked,
+  };
+  const selection: RenderNode | null = selected
+    ? {
+        key: `${SELECTION_NAMESPACE}${reference.id}`,
+        entityId: reference.id,
+        layer: "overlay",
+        geometry: {
+          kind: "polygon",
+          points: projected.corners,
+          closed: true,
+        },
+        bounds: projected.bounds,
+        styleToken: "selection-plan-reference",
+        selected: true,
+        locked,
+      }
+    : null;
+  return [image, selection];
 }
 
 function dimensionProjection(
@@ -308,9 +380,29 @@ export function projectScene(input: PlanRendererInput): RenderScene {
   const visibleSnapshotEntityIds = new Set(
     UniformGridSpatialIndex.from(input.snapshot.project.entities).query(viewportBounds),
   );
+  const references: RenderNode[] = [];
   const content: RenderNode[] = [];
   const annotation: RenderNode[] = [];
   const overlay: RenderNode[] = [];
+
+  for (const durableReference of input.snapshot.project.planReferences) {
+    if (durableReference.floorId !== input.activeFloorId) continue;
+    const layerLocked = visibleLayers.get(durableReference.layerId);
+    if (layerLocked === undefined) continue;
+    const reference = input.calibrationPreview?.after.id === durableReference.id
+      ? input.calibrationPreview.after
+      : durableReference;
+    const projected = projectReference(
+      reference,
+      input.viewport,
+      viewportBounds,
+      layerLocked,
+      input.selectedIds.has(reference.id),
+    );
+    if (projected === null) continue;
+    references.push(projected[0]);
+    if (projected[1] !== null) overlay.push(projected[1]);
+  }
 
   for (const entity of input.snapshot.project.entities) {
     if (!visibleSnapshotEntityIds.has(entity.id)) continue;
@@ -370,6 +462,7 @@ export function projectScene(input: PlanRendererInput): RenderScene {
   return {
     nodes: [
       ...grid,
+      ...references.sort(compareKeys),
       ...content.sort(compareKeys),
       ...annotation.sort(compareKeys),
       ...overlay.sort(compareKeys),

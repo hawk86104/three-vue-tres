@@ -1,14 +1,18 @@
 import {
   Application,
+  Assets,
   Container,
   Graphics,
   Rectangle,
+  Sprite,
   type FederatedPointerEvent,
   type FederatedWheelEvent,
+  type Texture,
 } from "pixi.js";
 import { projectScene } from "./scene-projection";
 import type {
   PlanPointerEvent,
+  PlanAssetSourcePort,
   PlanRenderPort,
   PlanRenderPortFactory,
   PlanRenderer,
@@ -20,14 +24,27 @@ import type {
 type RenderLayer = RenderNode["layer"];
 const MOUSE_POINTER_ID = 1;
 
-interface GraphicsEntry {
-  readonly graphics: Graphics;
+interface RenderEntry {
+  display: Container;
   layer: RenderLayer;
   fingerprint: string;
+  assetId: string | null;
+  generation: number;
+  node: RenderNode;
+}
+
+interface TextureResource {
+  readonly assetId: string;
+  readonly references: Map<string, number>;
+  texture: Texture | null;
+  url: string | null;
+  pending: Promise<void> | null;
+  invalidated: boolean;
 }
 
 interface LayerContainers {
   readonly grid: Container;
+  readonly reference: Container;
   readonly content: Container;
   readonly annotation: Container;
   readonly overlay: Container;
@@ -268,17 +285,64 @@ function drawNode(graphics: Graphics, node: RenderNode): void {
         .circle(geometry.label.x, geometry.label.y, 2.5)
         .fill({ color: paint.color, alpha: paint.alpha });
       break;
+    case "image": {
+      const coordinates = geometry.corners.flatMap((point) => [point.x, point.y]);
+      graphics.poly(coordinates, true)
+        .fill({ color: 0x27384c, alpha: 0.28 })
+        .stroke({ color: 0x86a5c7, alpha: 0.8, width: 1.5 });
+      break;
+    }
+  }
+}
+
+function createImageSprite(node: RenderNode, texture: Texture): Sprite | null {
+  if (node.geometry.kind !== "image" || texture.width <= 0 || texture.height <= 0) {
+    return null;
+  }
+  const [origin, horizontal, , vertical] = node.geometry.corners;
+  const horizontalX = horizontal.x - origin.x;
+  const horizontalY = horizontal.y - origin.y;
+  const verticalX = vertical.x - origin.x;
+  const verticalY = vertical.y - origin.y;
+  const horizontalLength = Math.hypot(horizontalX, horizontalY);
+  const verticalLength = Math.hypot(verticalX, verticalY);
+  if (horizontalLength === 0 || verticalLength === 0) return null;
+  const orientation = horizontalX * verticalY - horizontalY * verticalX;
+  if (orientation === 0) return null;
+
+  const sprite = new Sprite({ texture, label: node.key, eventMode: "none" });
+  sprite.x = origin.x;
+  sprite.y = origin.y;
+  sprite.rotation = Math.atan2(horizontalY, horizontalX);
+  sprite.scale.set(
+    horizontalLength / texture.width,
+    Math.sign(orientation) * verticalLength / texture.height,
+  );
+  sprite.alpha = node.geometry.opacity * (node.locked ? 0.55 : 1);
+  return sprite;
+}
+
+function destroyDisplay(display: Container): void {
+  display.removeFromParent();
+  if (display instanceof Graphics) {
+    display.destroy({ context: true });
+  } else {
+    display.destroy();
   }
 }
 
 class PixiRenderPort implements PlanRenderPort {
-  readonly #entries = new Map<string, GraphicsEntry>();
+  readonly #entries = new Map<string, RenderEntry>();
+  readonly #resources = new Map<string, TextureResource>();
+  readonly #retirementBarriers = new Map<string, Promise<void>>();
   #application: Application | null = null;
   #layers: LayerContainers | null = null;
   #interactionBounds: Rectangle | null = null;
   #inputBridge: PointerInputBridge | null = null;
   #initialization: Promise<void> | null = null;
   #destroyed = false;
+
+  constructor(private readonly sourcePort: PlanAssetSourcePort) {}
 
   init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void> {
     if (this.#destroyed) {
@@ -314,6 +378,7 @@ class PixiRenderPort implements PlanRenderPort {
       }
 
       const grid = new Container({ label: "grid", eventMode: "none" });
+      const reference = new Container({ label: "reference", eventMode: "none" });
       const content = new Container({ label: "content", eventMode: "none" });
       const annotation = new Container({ label: "annotation", eventMode: "none" });
       const overlay = new Container({ label: "overlay", eventMode: "none" });
@@ -324,7 +389,7 @@ class PixiRenderPort implements PlanRenderPort {
         interactiveChildren: false,
         hitArea: interactionBounds,
       });
-      application.stage.addChild(grid, content, annotation, overlay, interaction);
+      application.stage.addChild(grid, reference, content, annotation, overlay, interaction);
 
       inputBridge = createPointerInputBridge(
         interactionBounds,
@@ -352,7 +417,7 @@ class PixiRenderPort implements PlanRenderPort {
 
       host.appendChild(application.canvas);
       this.#application = application;
-      this.#layers = { grid, content, annotation, overlay, interaction };
+      this.#layers = { grid, reference, content, annotation, overlay, interaction };
       this.#interactionBounds = interactionBounds;
       this.#inputBridge = inputBridge;
     } catch (error) {
@@ -363,35 +428,236 @@ class PixiRenderPort implements PlanRenderPort {
   }
 
   upsert(node: RenderNode): void {
-    const layers = this.#requireLayers();
+    this.#requireLayers();
     const nextFingerprint = fingerprint(node);
     const existing = this.#entries.get(node.key);
     if (existing?.fingerprint === nextFingerprint) return;
-
-    const entry = existing ?? {
-      graphics: new Graphics({ label: node.key, eventMode: "none" }),
-      layer: node.layer,
-      fingerprint: "",
-    };
-    if (existing === undefined) {
-      layerContainer(layers, node.layer).addChild(entry.graphics);
-      this.#entries.set(node.key, entry);
-    } else if (existing.layer !== node.layer) {
-      existing.graphics.removeFromParent();
-      layerContainer(layers, node.layer).addChild(existing.graphics);
+    if (node.geometry.kind === "image") {
+      this.#upsertImage(node, nextFingerprint, existing);
+      return;
     }
-    drawNode(entry.graphics, node);
-    entry.layer = node.layer;
-    entry.fingerprint = nextFingerprint;
-    restoreLayerOrder(layerContainer(layers, node.layer));
+
+    if (existing?.assetId !== null && existing?.assetId !== undefined) {
+      this.#releaseAsset(existing.assetId, node.key);
+    }
+    const graphics = this.#graphicsFor(node);
+    if (existing === undefined) {
+      const entry: RenderEntry = {
+        display: graphics,
+        layer: node.layer,
+        fingerprint: nextFingerprint,
+        assetId: null,
+        generation: 1,
+        node,
+      };
+      this.#entries.set(node.key, entry);
+      this.#attach(entry);
+      return;
+    }
+    existing.assetId = null;
+    existing.fingerprint = nextFingerprint;
+    existing.generation += 1;
+    existing.node = node;
+    this.#replaceDisplay(existing, graphics, node.layer);
+  }
+
+  #upsertImage(
+    node: RenderNode,
+    nextFingerprint: string,
+    existing: RenderEntry | undefined,
+  ): void {
+    if (node.geometry.kind !== "image") return;
+    const generation = (existing?.generation ?? 0) + 1;
+    if (existing?.assetId !== null && existing?.assetId !== undefined
+      && existing.assetId !== node.geometry.assetId) {
+      this.#releaseAsset(existing.assetId, node.key);
+    }
+    const resource = this.#resourceFor(node.geometry.assetId);
+    resource.references.set(node.key, generation);
+    const display = resource.texture === null
+      ? this.#graphicsFor(node)
+      : createImageSprite(node, resource.texture) ?? this.#graphicsFor(node);
+
+    if (existing === undefined) {
+      const entry: RenderEntry = {
+        display,
+        layer: node.layer,
+        fingerprint: nextFingerprint,
+        assetId: node.geometry.assetId,
+        generation,
+        node,
+      };
+      this.#entries.set(node.key, entry);
+      this.#attach(entry);
+    } else {
+      existing.assetId = node.geometry.assetId;
+      existing.fingerprint = nextFingerprint;
+      existing.generation = generation;
+      existing.node = node;
+      this.#replaceDisplay(existing, display, node.layer);
+    }
+    this.#startLoad(resource);
+  }
+
+  #graphicsFor(node: RenderNode): Graphics {
+    const graphics = new Graphics({ label: node.key, eventMode: "none" });
+    drawNode(graphics, node);
+    return graphics;
+  }
+
+  #attach(entry: RenderEntry): void {
+    const container = layerContainer(this.#requireLayers(), entry.layer);
+    container.addChild(entry.display);
+    restoreLayerOrder(container);
+  }
+
+  #replaceDisplay(entry: RenderEntry, display: Container, layer: RenderLayer): void {
+    destroyDisplay(entry.display);
+    entry.display = display;
+    entry.layer = layer;
+    this.#attach(entry);
+  }
+
+  #resourceFor(assetId: string): TextureResource {
+    const existing = this.#resources.get(assetId);
+    if (existing !== undefined) return existing;
+    const resource: TextureResource = {
+      assetId,
+      references: new Map(),
+      texture: null,
+      url: null,
+      pending: null,
+      invalidated: false,
+    };
+    this.#resources.set(assetId, resource);
+    return resource;
+  }
+
+  #startLoad(resource: TextureResource): void {
+    if (resource.texture !== null || resource.pending !== null || resource.invalidated) return;
+    const priorRetirement = this.#retirementBarriers.get(resource.assetId)
+      ?? Promise.resolve();
+    const operation = async (): Promise<void> => {
+      await priorRetirement;
+      if (
+        this.#destroyed
+        || resource.invalidated
+        || resource.references.size === 0
+        || this.#resources.get(resource.assetId) !== resource
+      ) return;
+      try {
+        const source = await this.sourcePort.resolve(resource.assetId);
+        if (source.assetId !== resource.assetId) {
+          throw new Error("Resolved asset identity does not match the requested asset.");
+        }
+        if (
+          this.#destroyed
+          || resource.invalidated
+          || resource.references.size === 0
+          || this.#resources.get(resource.assetId) !== resource
+        ) return;
+        resource.url = source.url;
+        const texture = await Assets.load<Texture>(source.url);
+        if (
+          this.#destroyed
+          || resource.invalidated
+          || resource.references.size === 0
+          || this.#resources.get(resource.assetId) !== resource
+        ) {
+          resource.texture = texture;
+          await this.#unloadResource(resource, false);
+          return;
+        }
+        resource.texture = texture;
+        for (const [key, generation] of resource.references) {
+          const entry = this.#entries.get(key);
+          if (
+            entry === undefined
+            || entry.assetId !== resource.assetId
+            || entry.generation !== generation
+          ) continue;
+          const sprite = createImageSprite(entry.node, texture);
+          if (sprite !== null) this.#replaceDisplay(entry, sprite, "reference");
+        }
+        this.#application?.render();
+      } catch {
+        // The existing Graphics leaf is the safe degraded representation.
+      }
+    };
+    resource.pending = operation().finally(() => {
+        resource.pending = null;
+        if (resource.references.size === 0) {
+          if (this.#resources.get(resource.assetId) === resource) {
+            this.#resources.delete(resource.assetId);
+          }
+        }
+      });
+  }
+
+  #extendRetirement(assetId: string, retirement: Promise<void>): void {
+    const previous = this.#retirementBarriers.get(assetId) ?? Promise.resolve();
+    const barrier = Promise.all([previous, retirement]).then(() => undefined, () => undefined);
+    this.#retirementBarriers.set(assetId, barrier);
+    void barrier.then(() => {
+      if (this.#retirementBarriers.get(assetId) === barrier) {
+        this.#retirementBarriers.delete(assetId);
+      }
+    });
+  }
+
+  async #unloadResource(resource: TextureResource, register: boolean): Promise<void> {
+    const url = resource.url;
+    resource.texture = null;
+    resource.url = null;
+    if (url === null) return;
+    const retirement = Assets.unload(url).catch(() => undefined);
+    if (register) this.#extendRetirement(resource.assetId, retirement);
+    await retirement;
+  }
+
+  #releaseAsset(assetId: string, key: string): void {
+    const resource = this.#resources.get(assetId);
+    if (resource === undefined) return;
+    resource.references.delete(key);
+    if (resource.references.size !== 0) return;
+    if (resource.pending !== null) {
+      this.#extendRetirement(assetId, resource.pending);
+      return;
+    }
+    void this.#unloadResource(resource, true);
+    this.#resources.delete(assetId);
   }
 
   remove(key: string): void {
     const entry = this.#entries.get(key);
     if (entry === undefined) return;
-    entry.graphics.removeFromParent();
-    entry.graphics.destroy({ context: true });
+    destroyDisplay(entry.display);
     this.#entries.delete(key);
+    if (entry.assetId !== null) this.#releaseAsset(entry.assetId, key);
+  }
+
+  invalidateAsset(assetId: string): void {
+    if (this.#destroyed) return;
+    const resource = this.#resources.get(assetId);
+    if (resource !== undefined) {
+      resource.invalidated = true;
+      resource.references.clear();
+      if (resource.pending !== null) {
+        this.#extendRetirement(assetId, resource.pending);
+      } else {
+        void this.#unloadResource(resource, true);
+      }
+      this.#resources.delete(assetId);
+    }
+    let dirty = false;
+    for (const entry of this.#entries.values()) {
+      if (entry.assetId !== assetId) continue;
+      entry.generation += 1;
+      entry.fingerprint = "";
+      this.#replaceDisplay(entry, this.#graphicsFor(entry.node), "reference");
+      dirty = true;
+    }
+    if (dirty) this.#application?.render();
   }
 
   resize(width: number, height: number, resolution: number): void {
@@ -410,6 +676,16 @@ class PixiRenderPort implements PlanRenderPort {
     if (this.#destroyed) return;
     this.#destroyed = true;
     for (const key of [...this.#entries.keys()]) this.remove(key);
+    for (const resource of this.#resources.values()) {
+      resource.invalidated = true;
+      resource.references.clear();
+      if (resource.pending !== null) {
+        this.#extendRetirement(resource.assetId, resource.pending);
+      } else {
+        void this.#unloadResource(resource, true);
+      }
+    }
+    this.#resources.clear();
     const application = this.#application;
     this.#inputBridge?.destroy();
     this.#application = null;
@@ -432,8 +708,8 @@ class PixiRenderPort implements PlanRenderPort {
   }
 }
 
-export function createPixiRenderPort(): PlanRenderPort {
-  return new PixiRenderPort();
+export function createPixiRenderPort(sourcePort: PlanAssetSourcePort): PlanRenderPort {
+  return new PixiRenderPort(sourcePort);
 }
 
 export class PixiPlanRenderer implements PlanRenderer {
@@ -443,8 +719,11 @@ export class PixiPlanRenderer implements PlanRenderer {
   #initialization: Promise<void> | null = null;
   #destroyed = false;
 
-  constructor(portFactory: PlanRenderPortFactory = createPixiRenderPort) {
-    this.#port = portFactory();
+  constructor(
+    sourcePort: PlanAssetSourcePort,
+    portFactory: PlanRenderPortFactory = createPixiRenderPort,
+  ) {
+    this.#port = portFactory(sourcePort);
   }
 
   init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void> {

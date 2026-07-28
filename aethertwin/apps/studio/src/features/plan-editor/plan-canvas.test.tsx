@@ -2,7 +2,10 @@
 
 import "@testing-library/jest-dom/vitest";
 import { parseSnapshotV3 } from "@aethertwin/core-model";
-import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
+import type {
+  PlanAssetSourcePort,
+  PlanPointerEvent,
+} from "@aethertwin/render-plan-2d";
 import {
   act, cleanup, fireEvent, render, screen, waitFor,
 } from "@testing-library/react";
@@ -15,8 +18,15 @@ import {
   FakePlanRenderer,
 } from "./plan-editor.test-support";
 
+const productionRendererHarness = vi.hoisted(() => ({
+  sourcePorts: [] as unknown[],
+}));
+
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
+    constructor(sourcePort: unknown) {
+      productionRendererHarness.sourcePorts.push(sourcePort);
+    }
     async init(): Promise<void> {}
     update(): void {}
     resize(): void {}
@@ -59,6 +69,7 @@ function deferred(): {
 }
 
 beforeEach(() => {
+  productionRendererHarness.sourcePorts.length = 0;
   FakeResizeObserver.instances.length = 0;
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.stubGlobal("devicePixelRatio", 3);
@@ -105,6 +116,7 @@ describe("PlanCanvas lifecycle", () => {
     await waitFor(() => expect(
       renderer.updateInputs.at(-1)?.selectedIds.has(harness.fixture.id),
     ).toBe(true));
+    expect(props.store.resolveAsset).not.toHaveBeenCalled();
 
     view.unmount();
     expect(renderer.destroyCount).toBe(1);
@@ -162,6 +174,55 @@ describe("PlanCanvas lifecycle", () => {
     expect(observer.observe).toHaveBeenCalledWith(
       screen.getByRole("region", { name: "二维平面画布" }),
     );
+  });
+});
+
+describe("PlanCanvas production asset source", () => {
+  it("keeps one stable adapter that resolves exact ProjectStore sources by asset ID", async () => {
+    const harness = createPlanEditorTestHarness();
+    const props = createPlanCanvasProps(harness, new FakePlanRenderer());
+    const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    const resolved = {
+      assetId: "asset-a",
+      url: "blob:aethertwin/asset-a",
+      mediaType: "image/png" as const,
+    };
+    const resolveAsset = vi.fn(async (assetId: string) => ({ ...resolved, assetId }));
+    const store = { resolveAsset } as unknown as typeof props.store;
+    const view = render(<PlanCanvas {...productionProps} store={store} />);
+    await waitFor(() => expect(productionRendererHarness.sourcePorts).toHaveLength(1));
+    const sourcePort = productionRendererHarness.sourcePorts[0] as PlanAssetSourcePort;
+
+    await expect(sourcePort.resolve("asset-a")).resolves.toEqual(resolved);
+    expect(Object.keys(await sourcePort.resolve("asset-a")).sort()).toEqual([
+      "assetId", "mediaType", "url",
+    ]);
+    expect(resolveAsset.mock.calls).toEqual([["asset-a"], ["asset-a"]]);
+
+    view.rerender(<PlanCanvas {...productionProps} store={store} />);
+    await Promise.resolve();
+    expect(productionRendererHarness.sourcePorts).toEqual([sourcePort]);
+  });
+
+  it("reports ProjectStore resolution failure and rethrows the same typed error", async () => {
+    const harness = createPlanEditorTestHarness();
+    const props = createPlanCanvasProps(harness, new FakePlanRenderer());
+    const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    const failure = Object.assign(new Error("Asset resolution failed."), {
+      code: "ASSET_MISSING" as const,
+    });
+    const resolveAsset = vi.fn(async () => Promise.reject(failure));
+    const store = { resolveAsset } as unknown as typeof props.store;
+    const onError = vi.fn();
+    render(<PlanCanvas {...productionProps} store={store} onError={onError} />);
+    await waitFor(() => expect(productionRendererHarness.sourcePorts).toHaveLength(1));
+    const sourcePort = productionRendererHarness.sourcePorts[0] as PlanAssetSourcePort;
+
+    await expect(sourcePort.resolve("asset-b")).rejects.toBe(failure);
+    expect(resolveAsset).toHaveBeenCalledOnce();
+    expect(resolveAsset).toHaveBeenCalledWith("asset-b");
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(failure);
   });
 });
 

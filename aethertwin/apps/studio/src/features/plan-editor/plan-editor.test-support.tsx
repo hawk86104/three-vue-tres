@@ -128,6 +128,13 @@ export function createPlanCanvasProps(
   renderer: FakePlanRenderer,
 ): PlanCanvasProps {
   return {
+    store: {
+      resolveAsset: vi.fn(async (assetId: string) => ({
+        assetId,
+        url: `blob:aethertwin/${assetId}`,
+        mediaType: "image/png" as const,
+      })),
+    } as unknown as ProjectStore,
     snapshot: harness.snapshot,
     activeFloorId: harness.floorA.id,
     sessionStore: harness.store,
@@ -384,6 +391,7 @@ export function renderPlanEditorFixture(
       ? options.workspace
       : ({ snapshot: current, activeFloorId, sessionStore: currentStore, controller: currentController }) => (
         <PlanCanvas
+          store={projectStore}
           snapshot={current}
           activeFloorId={activeFloorId}
           sessionStore={currentStore}
