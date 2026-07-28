@@ -47,6 +47,21 @@ pub struct AssetIssueRecord {
     pub issue: AssetIssue,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AssetSessionOwner(Uuid);
+
+impl AssetSessionOwner {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl Default for AssetSessionOwner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -85,8 +100,7 @@ impl VerifiedAsset {
         if end > self.len {
             return Err(AssetIssue::Unavailable);
         }
-        let output_len = usize::try_from(length).map_err(|_| AssetIssue::Unavailable)?;
-        let mut output = vec![0; output_len];
+        let mut output = try_allocate_zeroed(length)?;
         let mut file = self.file.lock().map_err(|_| AssetIssue::Unavailable)?;
         file.seek(SeekFrom::Start(offset))
             .map_err(|_| AssetIssue::Unavailable)?;
@@ -98,6 +112,8 @@ impl VerifiedAsset {
 
 #[derive(Clone)]
 struct CachedAsset {
+    owner: AssetSessionOwner,
+    project_root: PathBuf,
     record: AssetRecord,
     asset: Arc<VerifiedAsset>,
 }
@@ -115,6 +131,23 @@ impl AssetResolver {
         snapshot: &ProjectSnapshot,
         asset_id: Uuid,
     ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
+        self.resolve_for_owner(
+            session_id,
+            AssetSessionOwner(session_id),
+            project_root,
+            snapshot,
+            asset_id,
+        )
+    }
+
+    pub fn resolve_for_owner(
+        &self,
+        session_id: Uuid,
+        owner: AssetSessionOwner,
+        project_root: &Path,
+        snapshot: &ProjectSnapshot,
+        asset_id: Uuid,
+    ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
         let record = snapshot
             .assets
             .iter()
@@ -126,7 +159,7 @@ impl AssetResolver {
             .lock()
             .map_err(|_| AssetIssue::Unavailable)?
             .get(&key)
-            .filter(|cached| cached.record == *record)
+            .filter(|cached| cached.owner == owner && cached.record == *record)
             .cloned()
         {
             return Ok(cached.asset);
@@ -135,12 +168,17 @@ impl AssetResolver {
         let path = canonical_path(project_root, record)?;
         let asset = Arc::new(verify_handle(&path, record)?);
         let mut cache = self.cache.lock().map_err(|_| AssetIssue::Unavailable)?;
-        if let Some(cached) = cache.get(&key).filter(|cached| cached.record == *record) {
+        if let Some(cached) = cache
+            .get(&key)
+            .filter(|cached| cached.owner == owner && cached.record == *record)
+        {
             return Ok(cached.asset.clone());
         }
         cache.insert(
             key,
             CachedAsset {
+                owner,
+                project_root: project_root.to_owned(),
                 record: record.clone(),
                 asset: asset.clone(),
             },
@@ -186,6 +224,20 @@ impl AssetResolver {
         }
     }
 
+    pub fn invalidate_owner(&self, session_id: Uuid, owner: AssetSessionOwner) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|(cached_session, _), cached| {
+                *cached_session != session_id || cached.owner != owner
+            });
+        }
+    }
+
+    pub fn invalidate_project(&self, project_root: &Path) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.retain(|_, cached| cached.project_root != project_root);
+        }
+    }
+
     pub fn cached_count(&self, session_id: Uuid) -> Result<usize, AssetIssue> {
         self.cache
             .lock()
@@ -197,6 +249,16 @@ impl AssetResolver {
                     .count()
             })
     }
+}
+
+fn try_allocate_zeroed(length: u64) -> Result<Vec<u8>, AssetIssue> {
+    let length = usize::try_from(length).map_err(|_| AssetIssue::Unavailable)?;
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(length)
+        .map_err(|_| AssetIssue::Unavailable)?;
+    output.resize(length, 0);
+    Ok(output)
 }
 
 fn preflight_record(project_root: &Path, record: &AssetRecord) -> Result<(), AssetIssue> {

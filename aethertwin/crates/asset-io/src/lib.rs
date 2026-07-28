@@ -14,4 +14,6 @@ pub use import::{
 };
 pub use media::{AssetMediaFacts, AssetMediaType, InspectedMedia, inspect_asset_media};
 pub use project_io::AssetRecord;
-pub use resolver::{AssetIssue, AssetIssueRecord, AssetResolver, VerifiedAsset, sha256_hex};
+pub use resolver::{
+    AssetIssue, AssetIssueRecord, AssetResolver, AssetSessionOwner, VerifiedAsset, sha256_hex,
+};

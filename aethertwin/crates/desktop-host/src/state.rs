@@ -9,8 +9,8 @@ use crate::{
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
 use asset_io::{
-    AssetIssue, AssetIssueRecord, AssetResolver, ImportObserver, ImportProgress, ImportRequest,
-    ImportStage, VerifiedAsset, import_project_asset,
+    AssetIssue, AssetIssueRecord, AssetResolver, AssetSessionOwner, ImportObserver, ImportProgress,
+    ImportRequest, ImportStage, VerifiedAsset, import_project_asset,
 };
 use project_io::{
     CheckpointResult, CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession,
@@ -21,6 +21,7 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     fmt,
+    ops::Deref,
     sync::{
         Arc, Condvar, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
         atomic::{AtomicBool, Ordering},
@@ -28,7 +29,33 @@ use std::{
 };
 use uuid::Uuid;
 
-pub(crate) type SessionHandle = Arc<Mutex<ProjectSession>>;
+pub(crate) struct SessionEntry {
+    cache_owner: AssetSessionOwner,
+    session: Mutex<ProjectSession>,
+}
+
+impl SessionEntry {
+    pub(crate) fn new(session: ProjectSession) -> Self {
+        Self {
+            cache_owner: AssetSessionOwner::new(),
+            session: Mutex::new(session),
+        }
+    }
+
+    pub(crate) fn cache_owner(&self) -> AssetSessionOwner {
+        self.cache_owner
+    }
+}
+
+impl Deref for SessionEntry {
+    type Target = Mutex<ProjectSession>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.session
+    }
+}
+
+pub(crate) type SessionHandle = Arc<SessionEntry>;
 
 struct ActiveAssetImport {
     session_id: Uuid,
@@ -415,17 +442,44 @@ impl AppService {
         session_id: Uuid,
         asset_id: Uuid,
     ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
+        self.resolve_asset_ids_inner(session_id, asset_id, || {})
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resolve_asset_ids_with_lookup_hook<F: FnOnce()>(
+        &self,
+        session_id: Uuid,
+        asset_id: Uuid,
+        after_lookup: F,
+    ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
+        self.resolve_asset_ids_inner(session_id, asset_id, after_lookup)
+    }
+
+    fn resolve_asset_ids_inner<F: FnOnce()>(
+        &self,
+        session_id: Uuid,
+        asset_id: Uuid,
+        after_lookup: F,
+    ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
         let session = self
             .lookup_session(session_id)
             .map_err(|error| match error {
                 HostError::SessionNotFound => AssetIssue::NotFound,
                 _ => AssetIssue::Unavailable,
             })?;
-        let session = session.lock().map_err(|_| AssetIssue::Unavailable)?;
-        self.asset_resolver.resolve(
+        after_lookup();
+        let session_guard = session.lock().map_err(|_| AssetIssue::Unavailable)?;
+        let owns_session = self
+            .owns_session(session_id, &session)
+            .map_err(|_| AssetIssue::Unavailable)?;
+        if !owns_session {
+            return Err(AssetIssue::NotFound);
+        }
+        self.asset_resolver.resolve_for_owner(
             session_id,
-            session.project_path(),
-            session.snapshot(),
+            session.cache_owner(),
+            session_guard.project_path(),
+            session_guard.snapshot(),
             asset_id,
         )
     }
@@ -552,6 +606,8 @@ impl AppService {
         &self,
         session: ProjectSession,
     ) -> Result<OpenedProjectDto, HostError> {
+        self.asset_resolver
+            .invalidate_project(session.project_path());
         let issues = self
             .asset_resolver
             .preflight(Uuid::nil(), session.project_path(), session.snapshot())
@@ -564,6 +620,20 @@ impl AppService {
         let mut opened = self.track_session(session)?;
         opened.asset_issues = issues;
         Ok(opened)
+    }
+
+    pub(crate) fn finalize_closed_session(
+        &self,
+        session_id: Uuid,
+        session: &SessionHandle,
+    ) -> Result<(), HostError> {
+        if self.remove_if_same(session_id, session)? {
+            self.asset_resolver.invalidate_session(session_id);
+        } else {
+            self.asset_resolver
+                .invalidate_owner(session_id, session.cache_owner());
+        }
+        Ok(())
     }
 
     pub(crate) fn commit_request(
@@ -676,13 +746,11 @@ impl AppService {
                     .map_err(|_| HostError::SessionStateUnavailable)
                     .and_then(|mut session| session.close().map_err(HostError::from));
                 match close_result {
-                    Ok(()) => match self.remove_if_same(session_id, &session) {
-                        Ok(true) => self.asset_resolver.invalidate_session(session_id),
-                        Ok(false) => {}
-                        Err(error) => {
+                    Ok(()) => {
+                        if let Err(error) = self.finalize_closed_session(session_id, &session) {
                             first_failure.get_or_insert(error);
                         }
-                    },
+                    }
                     Err(error) => {
                         first_failure.get_or_insert(error);
                     }
@@ -724,9 +792,7 @@ impl AppService {
                     .map_err(|_| HostError::SessionStateUnavailable)?
                     .close()?;
             }
-            if self.remove_if_same(session_id, &session)? {
-                self.asset_resolver.invalidate_session(session_id);
-            }
+            self.finalize_closed_session(session_id, &session)?;
             Ok(())
         })();
         self.finish(operation, result)

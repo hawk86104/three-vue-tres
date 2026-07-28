@@ -1,6 +1,6 @@
 use crate::{
     error::HostError,
-    state::{AppService, OpenedProjectDto, SessionHandle, opened_project_dto},
+    state::{AppService, OpenedProjectDto, SessionEntry, SessionHandle, opened_project_dto},
 };
 use project_io::ProjectSession;
 use std::{
@@ -29,6 +29,17 @@ impl AppService {
             .ok_or(HostError::SessionNotFound)
     }
 
+    pub(crate) fn owns_session(
+        &self,
+        session_id: Uuid,
+        expected: &SessionHandle,
+    ) -> Result<bool, HostError> {
+        Ok(self
+            .lock_registry()?
+            .get(&session_id)
+            .is_some_and(|actual| Arc::ptr_eq(actual, expected)))
+    }
+
     pub(crate) fn track_session(
         &self,
         mut session: ProjectSession,
@@ -53,7 +64,7 @@ impl AppService {
                 }
             }
         };
-        sessions.insert(session_id, Arc::new(std::sync::Mutex::new(session)));
+        sessions.insert(session_id, Arc::new(SessionEntry::new(session)));
         drop(sessions);
         opened.session_id = session_id.to_string();
         Ok(opened)

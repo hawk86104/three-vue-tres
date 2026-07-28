@@ -1,5 +1,5 @@
 use super::{
-    AppService, ProgressSink, ProgressTracker, finalize_created_publication,
+    AppService, ProgressSink, ProgressTracker, SessionEntry, finalize_created_publication,
     finalize_created_session, validate_session_id,
 };
 use crate::{
@@ -110,6 +110,52 @@ fn asset_record_batch(
     }
 }
 
+fn add_asset_records_batch(
+    before: &project_io::ProjectSnapshot,
+    assets: &[AssetRecord],
+) -> CommitBatch {
+    let changes: Vec<_> = assets
+        .iter()
+        .enumerate()
+        .map(|(index, asset)| {
+            json!({
+                "id": asset.id,
+                "before": null,
+                "after": serde_json::to_value(asset).unwrap(),
+                "index": index
+            })
+        })
+        .collect();
+    let inverse: Vec<_> = changes
+        .iter()
+        .rev()
+        .map(|change| {
+            json!({
+                "id": change["id"],
+                "before": change["after"],
+                "after": null,
+                "index": change["index"]
+            })
+        })
+        .collect();
+    let mut after = before.clone();
+    after.sequence += 1;
+    after.assets = assets.to_vec();
+    CommitBatch {
+        before: before.clone(),
+        after,
+        journal: vec![JournalOperation {
+            sequence: before.sequence + 1,
+            transaction_id: Uuid::new_v4().to_string(),
+            command_type: "snapshot.records.patch".into(),
+            payload: json!({ "collection": "assets", "changes": changes }),
+            inverse_payload: json!({ "collection": "assets", "changes": inverse }),
+            action: JournalAction::Apply,
+            timestamp: "2026-07-28T00:00:00Z".into(),
+        }],
+    }
+}
+
 struct BlockingProgressSink {
     ready: Mutex<Option<mpsc::Sender<()>>>,
     release: Mutex<mpsc::Receiver<()>>,
@@ -184,36 +230,90 @@ fn blocked_or_poisoned_session_does_not_block_registry_or_another_session() {
 fn stale_close_completion_cannot_remove_a_replacement_session() {
     let root = tempdir().unwrap();
     let service = AppService::default();
-    let first = service
+    let opened = service
         .create_project(CreateProjectDto {
             parent: root.path().to_string_lossy().into_owned(),
-            name: "Original".into(),
+            name: "Same Root Replacement".into(),
             profile: "showroom".into(),
         })
         .unwrap();
-    let second = service
-        .create_project(CreateProjectDto {
-            parent: root.path().to_string_lossy().into_owned(),
-            name: "Replacement".into(),
-            profile: "showroom".into(),
-        })
+    let session_id = validate_session_id(&opened.session_id).unwrap();
+    let asset = verified_asset(b"same-generation-record");
+    publish_asset(&opened.project_path, &asset, b"same-generation-record");
+    service
+        .commit_project(
+            &opened.session_id,
+            asset_record_batch(&opened.snapshot, None, Some(&asset)),
+        )
         .unwrap();
-    let first_id = validate_session_id(&first.session_id).unwrap();
-    let second_id = validate_session_id(&second.session_id).unwrap();
-    let original = service.lookup_session(first_id).unwrap();
-    let replacement = service.lookup_session(second_id).unwrap();
+    let original_cached = service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    let original = service.lookup_session(session_id).unwrap();
+    original.lock().unwrap().close().unwrap();
+    let replacement = Arc::new(SessionEntry::new(
+        open_session(std::path::Path::new(&opened.project_path), false).unwrap(),
+    ));
     {
         let mut sessions = service.sessions.lock().unwrap();
-        sessions.remove(&first_id);
-        sessions.remove(&second_id);
-        sessions.insert(first_id, replacement.clone());
+        sessions.insert(session_id, replacement.clone());
     }
+    let replacement_cached = service.resolve_asset_ids(session_id, asset.id).unwrap();
+    assert!(!Arc::ptr_eq(&original_cached, &replacement_cached));
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 1);
 
-    assert!(!service.remove_if_same(first_id, &original).unwrap());
-    let still_tracked = service.lookup_session(first_id).unwrap();
+    service
+        .finalize_closed_session(session_id, &original)
+        .unwrap();
+    let still_tracked = service.lookup_session(session_id).unwrap();
     assert!(Arc::ptr_eq(&still_tracked, &replacement));
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 1);
+    let replacement_reused = service.resolve_asset_ids(session_id, asset.id).unwrap();
+    assert!(Arc::ptr_eq(&replacement_cached, &replacement_reused));
 
+    replacement.lock().unwrap().close().unwrap();
+    service.sessions.lock().unwrap().clear();
+}
+
+#[test]
+fn stale_close_drops_only_the_old_owner_cache_before_replacement_resolves() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Selective Stale Close".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let session_id = validate_session_id(&opened.session_id).unwrap();
+    let asset = verified_asset(b"old-owner-only");
+    publish_asset(&opened.project_path, &asset, b"old-owner-only");
+    service
+        .commit_project(
+            &opened.session_id,
+            asset_record_batch(&opened.snapshot, None, Some(&asset)),
+        )
+        .unwrap();
+    service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    let original = service.lookup_session(session_id).unwrap();
     original.lock().unwrap().close().unwrap();
+    let replacement = Arc::new(SessionEntry::new(
+        open_session(std::path::Path::new(&opened.project_path), false).unwrap(),
+    ));
+    service
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(session_id, replacement.clone());
+
+    service
+        .finalize_closed_session(session_id, &original)
+        .unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+    assert!(Arc::ptr_eq(
+        &service.lookup_session(session_id).unwrap(),
+        &replacement
+    ));
+
     replacement.lock().unwrap().close().unwrap();
     service.sessions.lock().unwrap().clear();
 }
@@ -878,4 +978,170 @@ fn commit_and_close_invalidate_verified_asset_handles() {
     drop(final_handle);
     service.close_project(&opened.session_id).unwrap();
     assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+}
+
+#[test]
+fn stale_resolve_cannot_reinsert_after_close_removes_and_invalidates_session() {
+    let root = tempdir().unwrap();
+    let service = Arc::new(AppService::default());
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Resolve Close Race".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let asset = verified_asset(b"race-cache");
+    publish_asset(&opened.project_path, &asset, b"race-cache");
+    service
+        .commit_project(
+            &opened.session_id,
+            asset_record_batch(&opened.snapshot, None, Some(&asset)),
+        )
+        .unwrap();
+    service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    let session_id = validate_session_id(&opened.session_id).unwrap();
+    let (looked_up_tx, looked_up_rx) = mpsc::channel();
+    let (continue_tx, continue_rx) = mpsc::channel();
+    let resolving = Arc::clone(&service);
+    let resolver = thread::spawn(move || {
+        resolving.resolve_asset_ids_with_lookup_hook(session_id, asset.id, || {
+            looked_up_tx.send(()).unwrap();
+            continue_rx.recv().unwrap();
+        })
+    });
+    looked_up_rx.recv().unwrap();
+
+    service.close_project(&opened.session_id).unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+    continue_tx.send(()).unwrap();
+    assert_eq!(resolver.join().unwrap().unwrap_err(), AssetIssue::NotFound);
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+}
+
+#[test]
+fn replacement_or_recovery_publication_invalidates_prior_project_generation_cache() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Project Generation".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let asset = verified_asset(b"generation-cache");
+    publish_asset(&opened.project_path, &asset, b"generation-cache");
+    service
+        .commit_project(
+            &opened.session_id,
+            asset_record_batch(&opened.snapshot, None, Some(&asset)),
+        )
+        .unwrap();
+    let old_handle = service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    let old_id = validate_session_id(&opened.session_id).unwrap();
+    let old_session = service.lookup_session(old_id).unwrap();
+    old_session.lock().unwrap().close().unwrap();
+    assert!(service.remove_if_same(old_id, &old_session).unwrap());
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 1);
+
+    let replacement = open_session(std::path::Path::new(&opened.project_path), false).unwrap();
+    let replacement = service.track_session_with_preflight(replacement).unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+    let new_handle = service
+        .resolve_asset(&replacement.session_id, asset.id)
+        .unwrap();
+    assert!(!Arc::ptr_eq(&old_handle, &new_handle));
+    service.close_project(&replacement.session_id).unwrap();
+}
+
+#[test]
+fn close_all_invalidates_every_verified_asset_cache() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let first = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Cache First".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let second = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Close All Cache Second".into(),
+            profile: "market".into(),
+        })
+        .unwrap();
+    let first_asset = verified_asset(b"first-close-all-cache");
+    let second_asset = verified_asset(b"second-close-all-cache");
+    publish_asset(&first.project_path, &first_asset, b"first-close-all-cache");
+    publish_asset(
+        &second.project_path,
+        &second_asset,
+        b"second-close-all-cache",
+    );
+    service
+        .commit_project(
+            &first.session_id,
+            asset_record_batch(&first.snapshot, None, Some(&first_asset)),
+        )
+        .unwrap();
+    service
+        .commit_project(
+            &second.session_id,
+            asset_record_batch(&second.snapshot, None, Some(&second_asset)),
+        )
+        .unwrap();
+    service
+        .resolve_asset(&first.session_id, first_asset.id)
+        .unwrap();
+    service
+        .resolve_asset(&second.session_id, second_asset.id)
+        .unwrap();
+
+    service.close_all().unwrap();
+    assert_eq!(service.cached_asset_count(&first.session_id).unwrap(), 0);
+    assert_eq!(service.cached_asset_count(&second.session_id).unwrap(), 0);
+}
+
+#[test]
+fn open_preflight_propagates_non_regular_and_size_mismatch_issue_dtos() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Preflight Issue DTOs".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let non_regular = verified_asset(b"directory");
+    let wrong_size = verified_asset(b"expected-size");
+    let directory = std::path::Path::new(&opened.project_path).join(&non_regular.relative_path);
+    fs::create_dir_all(&directory).unwrap();
+    publish_asset(&opened.project_path, &wrong_size, b"short");
+    let batch =
+        add_asset_records_batch(&opened.snapshot, &[non_regular.clone(), wrong_size.clone()]);
+    service.commit_project(&opened.session_id, batch).unwrap();
+    service.close_project(&opened.session_id).unwrap();
+
+    let reopened = service
+        .open_project(OpenProjectDto {
+            path: opened.project_path,
+            recover_stale_lock: false,
+        })
+        .unwrap();
+    assert_eq!(reopened.asset_issues.len(), 2);
+    assert_eq!(reopened.asset_issues[0].asset_id, non_regular.id);
+    assert_eq!(
+        reopened.asset_issues[0].issue,
+        AssetIssue::NotRegularFile.code()
+    );
+    assert_eq!(reopened.asset_issues[1].asset_id, wrong_size.id);
+    assert_eq!(
+        reopened.asset_issues[1].issue,
+        AssetIssue::SizeMismatch.code()
+    );
+    service.close_project(&reopened.session_id).unwrap();
 }

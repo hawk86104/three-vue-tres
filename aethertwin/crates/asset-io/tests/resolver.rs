@@ -1,4 +1,4 @@
-use asset_io::{AssetIssue, AssetResolver};
+use asset_io::{AssetIssue, AssetResolver, AssetSessionOwner};
 use project_io::{AssetRecord, ProjectSnapshot};
 use sha2::{Digest, Sha256};
 use std::{fs, sync::Arc};
@@ -254,4 +254,63 @@ fn reconcile_and_session_invalidation_close_only_stale_cached_handles() {
         .unwrap();
     assert!(!Arc::ptr_eq(&replaced, &reopened));
     drop(first_handle);
+}
+
+#[test]
+fn cache_hits_and_selective_invalidation_require_the_exact_session_owner() {
+    let temp = tempdir().unwrap();
+    let bytes = b"same-root-same-record";
+    let asset = asset(bytes, "image/png");
+    publish(temp.path(), &asset, bytes);
+    let snapshot = snapshot_with(asset.clone());
+    let resolver = AssetResolver::default();
+    let session_id = Uuid::new_v4();
+    let original_owner = AssetSessionOwner::new();
+    let replacement_owner = AssetSessionOwner::new();
+    let original = resolver
+        .resolve_for_owner(session_id, original_owner, temp.path(), &snapshot, asset.id)
+        .unwrap();
+    let replacement = resolver
+        .resolve_for_owner(
+            session_id,
+            replacement_owner,
+            temp.path(),
+            &snapshot,
+            asset.id,
+        )
+        .unwrap();
+
+    assert!(!Arc::ptr_eq(&original, &replacement));
+    assert_eq!(resolver.cached_count(session_id).unwrap(), 1);
+    resolver.invalidate_owner(session_id, original_owner);
+    assert_eq!(resolver.cached_count(session_id).unwrap(), 1);
+    resolver.invalidate_owner(session_id, replacement_owner);
+    assert_eq!(resolver.cached_count(session_id).unwrap(), 0);
+}
+
+#[test]
+fn project_replacement_or_recovery_invalidates_every_session_handle_for_that_root() {
+    let temp = tempdir().unwrap();
+    let bytes = b"project-generation";
+    let asset = asset(bytes, "image/png");
+    publish(temp.path(), &asset, bytes);
+    let snapshot = snapshot_with(asset.clone());
+    let resolver = AssetResolver::default();
+    let first_session = Uuid::new_v4();
+    let second_session = Uuid::new_v4();
+    let first = resolver
+        .resolve(first_session, temp.path(), &snapshot, asset.id)
+        .unwrap();
+    let second = resolver
+        .resolve(second_session, temp.path(), &snapshot, asset.id)
+        .unwrap();
+
+    resolver.invalidate_project(temp.path());
+    assert_eq!(resolver.cached_count(first_session).unwrap(), 0);
+    assert_eq!(resolver.cached_count(second_session).unwrap(), 0);
+    let reopened = resolver
+        .resolve(second_session, temp.path(), &snapshot, asset.id)
+        .unwrap();
+    assert!(!Arc::ptr_eq(&first, &reopened));
+    assert!(!Arc::ptr_eq(&second, &reopened));
 }
