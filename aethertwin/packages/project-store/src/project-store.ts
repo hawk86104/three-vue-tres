@@ -154,6 +154,7 @@ export class ProjectStore {
   private bus: CommandBus<ProjectSnapshot> | null = null;
   private autosaveTimer: TimerHandle | null = null;
   private operationTail: Promise<void> = Promise.resolve();
+  private assetSourceEpoch = 0;
   private latestMutationOutcome: Promise<MutationOutcome> = Promise.resolve(
     successfulMutationOutcome,
   );
@@ -172,6 +173,10 @@ export class ProjectStore {
 
   getState(): ProjectStoreState {
     return this.state;
+  }
+
+  getAssetSourceEpoch(): number {
+    return this.assetSourceEpoch;
   }
 
   subscribe(listener: StateListener): () => void {
@@ -518,6 +523,7 @@ export class ProjectStore {
   private install(prepared: PreparedProject): void {
     const { projectPath, manifest, snapshot, recovered, bus } = prepared;
     this.bus = bus;
+    this.assetSourceEpoch += 1;
     this.publish({
       projectPath,
       manifest,

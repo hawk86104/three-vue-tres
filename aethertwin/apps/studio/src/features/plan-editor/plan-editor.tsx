@@ -291,6 +291,7 @@ export function PlanEditor({
           {dependencies?.workspace?.(workspaceContext) ?? (
             <PlanCanvas
               store={store}
+              assetSourceEpoch={store.getAssetSourceEpoch()}
               snapshot={snapshot}
               activeFloorId={sessionState.activeFloorId}
               sessionStore={sessionStore}

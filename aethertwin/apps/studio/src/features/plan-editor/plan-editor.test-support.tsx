@@ -91,6 +91,7 @@ export const pointerAt = (
 
 export class FakePlanRenderer implements PlanRenderer {
   readonly updateInputs: PlanRendererInput[] = [];
+  readonly invalidatedAssetIds: string[] = [];
   readonly resizeInputs: Array<readonly [number, number, number]> = [];
   initCount = 0;
   destroyCount = 0;
@@ -107,6 +108,10 @@ export class FakePlanRenderer implements PlanRenderer {
 
   update(input: PlanRendererInput): void {
     this.updateInputs.push(input);
+  }
+
+  invalidateAsset(assetId: string): void {
+    this.invalidatedAssetIds.push(assetId);
   }
 
   resize(width: number, height: number, resolution: number): void {
@@ -135,6 +140,7 @@ export function createPlanCanvasProps(
         mediaType: "image/png" as const,
       })),
     } as unknown as ProjectStore,
+    assetSourceEpoch: 0,
     snapshot: harness.snapshot,
     activeFloorId: harness.floorA.id,
     sessionStore: harness.store,
@@ -392,6 +398,7 @@ export function renderPlanEditorFixture(
       : ({ snapshot: current, activeFloorId, sessionStore: currentStore, controller: currentController }) => (
         <PlanCanvas
           store={projectStore}
+          assetSourceEpoch={0}
           snapshot={current}
           activeFloorId={activeFloorId}
           sessionStore={currentStore}

@@ -22,6 +22,7 @@ import type { InteractionController } from "./interaction-controller";
 import { PlanAccessibility } from "./plan-accessibility";
 
 export interface PlanCanvasProps {
+  readonly assetSourceEpoch?: number;
   readonly store: Pick<ProjectStore, "resolveAsset">;
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
@@ -65,6 +66,7 @@ function rendererInput(
 
 export function PlanCanvas({
   store,
+  assetSourceEpoch = 0,
   snapshot,
   activeFloorId,
   sessionStore,
@@ -76,27 +78,23 @@ export function PlanCanvas({
   const activeRendererRef = useRef<ActiveRenderer | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
-  const storeRef = useRef(store);
-  storeRef.current = store;
-  const sourcePortRef = useRef<PlanAssetSourcePort | null>(null);
-  if (sourcePortRef.current === null) {
-    sourcePortRef.current = {
+  const productionRendererFactory = useCallback<PlanRendererFactory>(() => {
+    const sourcePort: PlanAssetSourcePort = {
       async resolve(assetId) {
         try {
-          return await storeRef.current.resolveAsset(assetId);
+          return await store.resolveAsset(assetId);
         } catch (error) {
           onErrorRef.current(error);
           throw error;
         }
       },
+      reportRetirementError(error) {
+        onErrorRef.current(error);
+      },
     };
-  }
-  const productionRendererFactoryRef = useRef<PlanRendererFactory | null>(null);
-  if (productionRendererFactoryRef.current === null) {
-    const sourcePort = sourcePortRef.current;
-    productionRendererFactoryRef.current = () => new PixiPlanRenderer(sourcePort);
-  }
-  const activeRendererFactory = rendererFactory ?? productionRendererFactoryRef.current;
+    return new PixiPlanRenderer(sourcePort);
+  }, [assetSourceEpoch, store]);
+  const activeRendererFactory = rendererFactory ?? productionRendererFactory;
   const subscribe = useCallback(
     (listener: () => void) => sessionStore.subscribe(listener),
     [sessionStore],

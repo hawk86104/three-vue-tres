@@ -1057,6 +1057,29 @@ describe("SandboxProjectBackend asset equivalence", () => {
 });
 
 describe("ProjectStore", () => {
+  it("advances the asset source epoch only after a project replacement is installed", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend);
+    const sourceEpoch = () => (
+      store as unknown as { getAssetSourceEpoch(): number }
+    ).getAssetSourceEpoch();
+
+    expect(sourceEpoch()).toBe(0);
+    await store.create({ name: "Epoch", location: "sandbox", profile: "showroom" });
+    const path = store.getState().projectPath!;
+    expect(sourceEpoch()).toBe(1);
+
+    const failure = new Error("replacement failed");
+    vi.spyOn(backend, "openProject").mockRejectedValueOnce(failure);
+    await expect(store.open(path)).rejects.toBe(failure);
+    expect(sourceEpoch()).toBe(1);
+
+    await store.open(path);
+    expect(sourceEpoch()).toBe(2);
+    await store.renameProject("Ordinary edit");
+    expect(sourceEpoch()).toBe(2);
+  });
+
   it("creates only showroom or market projects", async () => {
     const store = new ProjectStore(new SandboxProjectBackend());
     await store.create({ name: "Market", location: "sandbox", profile: "market" });
@@ -1377,9 +1400,15 @@ describe("ProjectStore", () => {
       closeProject: (path) => sandbox.closeProject(path),
     };
     const store = new ProjectStore(backend);
+    const sourceEpoch = () => (
+      store as unknown as { getAssetSourceEpoch(): number }
+    ).getAssetSourceEpoch();
 
+    expect(sourceEpoch()).toBe(0);
     await store.open(current.projectPath);
+    expect(sourceEpoch()).toBe(1);
     await store.recover(recovered.projectPath, { confirmed: true });
+    expect(sourceEpoch()).toBe(2);
     expect(recoverProject).toHaveBeenCalledWith(recovered.projectPath, { confirmed: true });
     expect(store.getState()).toMatchObject({
       projectPath: recovered.projectPath,
@@ -1390,6 +1419,7 @@ describe("ProjectStore", () => {
     await expect(
       store.recover("E:\\Projects\\Failed.twinproj", { confirmed: true }),
     ).rejects.toBe(recoveryFailure);
+    expect(sourceEpoch()).toBe(2);
     expect(store.getState()).toMatchObject({
       projectPath: recovered.projectPath,
       recovered: true,

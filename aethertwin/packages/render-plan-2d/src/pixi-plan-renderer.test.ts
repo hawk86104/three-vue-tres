@@ -3,8 +3,10 @@
 import {
   createInitialSnapshot,
   parseSnapshotV3,
+  type AssetRecord,
   type Fixture,
   type Floor,
+  type PlanReference,
 } from "@aethertwin/core-model";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pixiRendererModule from "./pixi-plan-renderer";
@@ -24,6 +26,7 @@ const pixiHarness = vi.hoisted(() => {
     readonly label: string;
     readonly children: TestContainer[] = [];
     parent: TestContainer | null = null;
+    alpha = 1;
     destroyed = false;
     destroyedWhileParented = false;
 
@@ -220,6 +223,46 @@ function rendererInput(): PlanRendererInput {
   };
 }
 
+const rendererAssetId = uuid(20);
+const rendererReference: PlanReference = {
+  id: uuid(21),
+  name: "Reloadable reference",
+  tags: [],
+  floorId: floorA.id,
+  layerId: floorA.layers[0]!.id,
+  assetId: rendererAssetId,
+  intrinsicSize: { width: 200, height: 100 },
+  transform: {
+    translation: { x: 0, y: 0 },
+    rotation: 0,
+    scale: { x: 1, y: 1 },
+  },
+  opacity: 0.8,
+  locked: false,
+  calibration: null,
+};
+const rendererAsset: AssetRecord = {
+  id: rendererAssetId,
+  sha256: "a".repeat(64),
+  relativePath: `assets/sha256/aa/${"a".repeat(64)}.png`,
+  mediaType: "image/png",
+  size: 42,
+};
+
+function rendererInputWithReference(): PlanRendererInput {
+  return {
+    ...rendererInput(),
+    snapshot: parseSnapshotV3({
+      ...snapshot,
+      project: {
+        ...snapshot.project,
+        planReferences: [rendererReference],
+      },
+      assets: [rendererAsset],
+    }),
+  };
+}
+
 class FakePlanRenderPort implements PlanRenderPort {
   readonly upsertedNodes: RenderNode[] = [];
   readonly removedKeys: string[] = [];
@@ -330,6 +373,31 @@ async function settleResources(): Promise<void> {
   for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
 }
 
+function installSharedFakeAssetCache(
+  loadTexture: (url: string) => Promise<InstanceType<typeof pixiHarness.TestTexture>>,
+  retireUrl: (url: string) => Promise<void> = async () => undefined,
+) {
+  const cache = new Map<string, Promise<InstanceType<typeof pixiHarness.TestTexture>>>();
+  const sourceLoads = vi.fn(loadTexture);
+  const retire = vi.fn(async (url: string) => {
+    await retireUrl(url);
+    const pending = cache.get(url);
+    if (pending === undefined) return;
+    const texture = await pending;
+    cache.delete(url);
+    texture.destroy();
+  });
+  pixiHarness.load.mockImplementation((url) => {
+    const cached = cache.get(url);
+    if (cached !== undefined) return cached;
+    const pending = sourceLoads(url);
+    cache.set(url, pending);
+    return pending;
+  });
+  pixiHarness.unload.mockImplementation(retire);
+  return { sourceLoads, retire };
+}
+
 interface TestPointerInputBridge {
   pointerDown(event: PlanPointerEvent): void;
   globalPointerMove(event: PlanPointerEvent): void;
@@ -426,6 +494,101 @@ const unusedSourcePort: PlanAssetSourcePort = {
 };
 
 describe("Pixi reference resources", () => {
+  it("leases one cached URL across different asset IDs in the same render port", async () => {
+    const texture = new pixiHarness.TestTexture();
+    const sharedUrl = "blob:aethertwin/shared-floor-plan";
+    const cache = installSharedFakeAssetCache(async () => texture);
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({ assetId, url: sharedUrl, mediaType: "image/png" }),
+    };
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    port.upsert(imageNode("reference-a", "asset-a"));
+    port.upsert(imageNode("reference-b", "asset-b"));
+    await settleResources();
+
+    expect(pixiHarness.load).toHaveBeenCalledOnce();
+    expect(cache.sourceLoads).toHaveBeenCalledOnce();
+    expect(referenceLayer().children).toHaveLength(2);
+    const sprites = referenceLayer().children as InstanceType<typeof pixiHarness.TestSprite>[];
+    expect(sprites.map(({ texture: loaded }) => loaded)).toEqual([texture, texture]);
+
+    port.remove("reference-a");
+    await settleResources();
+    expect(pixiHarness.unload).not.toHaveBeenCalled();
+    port.remove("reference-b");
+    await settleResources();
+    expect(pixiHarness.unload).toHaveBeenCalledOnce();
+    expect(cache.retire).toHaveBeenCalledWith(sharedUrl);
+    expect(texture.destroyCalls).toBe(1);
+  });
+
+  it("leases one cached URL across independent render ports", async () => {
+    const texture = new pixiHarness.TestTexture();
+    const sharedUrl = "blob:aethertwin/shared-across-ports";
+    const cache = installSharedFakeAssetCache(async () => texture);
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({ assetId, url: sharedUrl, mediaType: "image/png" }),
+    };
+    const firstPort = pixiRendererModule.createPixiRenderPort(sourcePort);
+    const secondPort = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await firstPort.init(document.createElement("div"), { handle: () => undefined });
+    await secondPort.init(document.createElement("div"), { handle: () => undefined });
+
+    firstPort.upsert(imageNode("first-reference", "first-asset"));
+    secondPort.upsert(imageNode("second-reference", "second-asset"));
+    await settleResources();
+
+    expect(pixiHarness.load).toHaveBeenCalledOnce();
+    expect(cache.sourceLoads).toHaveBeenCalledOnce();
+    firstPort.remove("first-reference");
+    await settleResources();
+    expect(pixiHarness.unload).not.toHaveBeenCalled();
+    secondPort.remove("second-reference");
+    await settleResources();
+    expect(pixiHarness.unload).toHaveBeenCalledOnce();
+    expect(texture.destroyCalls).toBe(1);
+  });
+
+  it("blocks a URL after unload rejection and reports that retirement failure once", async () => {
+    const texture = new pixiHarness.TestTexture();
+    const failure = new Error("Pixi URL retirement failed");
+    const reportRetirementError = vi.fn();
+    const cache = installSharedFakeAssetCache(
+      async () => texture,
+      async () => Promise.reject(failure),
+    );
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({
+        assetId,
+        url: "blob:aethertwin/blocked-retirement",
+        mediaType: "image/png",
+      }),
+      reportRetirementError,
+    };
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    const node = imageNode("blocked-reference", "blocked-asset");
+
+    port.upsert(node);
+    await settleResources();
+    port.remove(node.key);
+    await vi.waitFor(() => expect(reportRetirementError).toHaveBeenCalledOnce());
+
+    expect(reportRetirementError).toHaveBeenCalledWith(failure);
+    expect(cache.retire).toHaveBeenCalledOnce();
+    expect(texture.destroyCalls).toBe(0);
+    port.upsert(node);
+    await settleResources();
+
+    expect(pixiHarness.load).toHaveBeenCalledOnce();
+    expect(cache.sourceLoads).toHaveBeenCalledOnce();
+    expect(referenceLayer().children).toHaveLength(1);
+    expect(referenceLayer().children[0]).toBeInstanceOf(pixiHarness.TestGraphics);
+    expect(reportRetirementError).toHaveBeenCalledOnce();
+  });
+
   it("loads one verified source per pending asset and keeps reference sprites as layer leaves", async () => {
     const sourceGate = deferred<ProjectAssetSource>();
     const textureGate = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
@@ -627,10 +790,34 @@ describe("Pixi reference resources", () => {
     expect(referenceLayer().children).toHaveLength(1);
     expect(referenceLayer().children[0]).toBeInstanceOf(pixiHarness.TestGraphics);
     expect(referenceLayer().children[0]).not.toBeInstanceOf(pixiHarness.TestSprite);
+    expect(referenceLayer().children[0]?.alpha).toBeCloseTo(0.4, 10);
+  });
+
+  it("rejects resolved identity mismatch and applies locked opacity to its placeholder", async () => {
+    const resolve = vi.fn(async () => ({
+      assetId: "different-asset",
+      url: "blob:aethertwin/identity-mismatch",
+      mediaType: "image/png" as const,
+    }));
+    const sourcePort: PlanAssetSourcePort = { resolve };
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    port.upsert(imageNode("mismatched-reference", "expected-asset", undefined, true));
+    await settleResources();
+
+    expect(resolve).toHaveBeenCalledWith("expected-asset");
+    expect(pixiHarness.load).not.toHaveBeenCalled();
+    expect(referenceLayer().children).toHaveLength(1);
+    expect(referenceLayer().children[0]).toBeInstanceOf(pixiHarness.TestGraphics);
+    expect(referenceLayer().children[0]?.alpha).toBeCloseTo(0.4 * 0.55, 10);
   });
 
   it("invalidates and destroys referenced textures idempotently after removing their leaves", async () => {
-    const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
+    const resolve = vi.fn(async (assetId: string) => ({
+      ...projectAssetSource(assetId),
+      url: ['blob:aethertwin/destroy', assetId].join('/'),
+    }));
     const sourcePort: PlanAssetSourcePort = { resolve };
     const firstTexture = new pixiHarness.TestTexture();
     const secondTexture = new pixiHarness.TestTexture();
@@ -830,6 +1017,29 @@ describe("PixiPlanRenderer", () => {
     expect(firstUpsertCount).toBeGreaterThan(0);
     expect(port.upsertedNodes).toHaveLength(firstUpsertCount);
     expect(port.renderCalls).toBe(1);
+  });
+
+  it("invalidates a referenced asset and re-upserts its image on an identical update", async () => {
+    const port = new FakePlanRenderPort();
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
+    const input = rendererInputWithReference();
+
+    await renderer.init({} as HTMLElement, { handle: () => undefined });
+    renderer.update(input);
+    expect(port.upsertedNodes.some((node) => (
+      node.geometry.kind === "image" && node.geometry.assetId === rendererAssetId
+    ))).toBe(true);
+    port.upsertedNodes.length = 0;
+
+    renderer.invalidateAsset(rendererAssetId);
+    renderer.update(input);
+
+    expect(port.invalidatedAssetIds).toEqual([rendererAssetId]);
+    expect(port.upsertedNodes).toHaveLength(1);
+    expect(port.upsertedNodes[0]).toMatchObject({
+      key: rendererReference.id,
+      geometry: { kind: "image", assetId: rendererAssetId },
+    });
   });
 
   it("removes stale display objects through the render port", async () => {

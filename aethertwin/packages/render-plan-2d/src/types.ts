@@ -13,7 +13,7 @@ export interface PlanRendererInput {
   readonly viewport: ViewportTransform;
   readonly selectedIds: ReadonlySet<string>;
   readonly draft: readonly SpatialEntity[] | null;
-  readonly calibrationPreview: CalibrationPreview | null;
+  readonly calibrationPreview?: CalibrationPreview | null;
 }
 
 export interface ProjectAssetSource {
@@ -24,6 +24,7 @@ export interface ProjectAssetSource {
 
 export interface PlanAssetSourcePort {
   resolve(assetId: string): Promise<ProjectAssetSource>;
+  reportRetirementError?(error: unknown): void;
 }
 
 export interface PlanPointerEvent {
@@ -45,6 +46,7 @@ export interface PlanRendererEventSink {
 export interface PlanRenderer {
   init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void>;
   update(input: PlanRendererInput): void;
+  invalidateAsset?(assetId: string): void;
   resize(width: number, height: number, resolution: number): void;
   destroy(): void;
 }

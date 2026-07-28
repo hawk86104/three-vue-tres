@@ -20,17 +20,23 @@ import {
 
 const productionRendererHarness = vi.hoisted(() => ({
   sourcePorts: [] as unknown[],
+  instances: [] as Array<{ readonly sourcePort: unknown; destroyCount: number }>,
 }));
 
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
+    readonly sourcePort: unknown;
+    destroyCount = 0;
+
     constructor(sourcePort: unknown) {
+      this.sourcePort = sourcePort;
       productionRendererHarness.sourcePorts.push(sourcePort);
+      productionRendererHarness.instances.push(this);
     }
     async init(): Promise<void> {}
     update(): void {}
     resize(): void {}
-    destroy(): void {}
+    destroy(): void { this.destroyCount += 1; }
   },
 }));
 
@@ -70,6 +76,7 @@ function deferred(): {
 
 beforeEach(() => {
   productionRendererHarness.sourcePorts.length = 0;
+  productionRendererHarness.instances.length = 0;
   FakeResizeObserver.instances.length = 0;
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.stubGlobal("devicePixelRatio", 3);
@@ -178,6 +185,51 @@ describe("PlanCanvas lifecycle", () => {
 });
 
 describe("PlanCanvas production asset source", () => {
+  it("restarts the production renderer only when store identity or asset source epoch changes", async () => {
+    const harness = createPlanEditorTestHarness();
+    const props = createPlanCanvasProps(harness, new FakePlanRenderer());
+    const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    const firstResolve = vi.fn(async (assetId: string) => ({
+      assetId, url: `blob:first/${assetId}`, mediaType: "image/png" as const,
+    }));
+    const secondResolve = vi.fn(async (assetId: string) => ({
+      assetId, url: `blob:second/${assetId}`, mediaType: "image/png" as const,
+    }));
+    const firstStore = { resolveAsset: firstResolve } as unknown as typeof props.store;
+    const secondStore = { resolveAsset: secondResolve } as unknown as typeof props.store;
+    const view = render(
+      <PlanCanvas {...productionProps} store={firstStore} assetSourceEpoch={7} />,
+    );
+    await waitFor(() => expect(productionRendererHarness.instances).toHaveLength(1));
+    const firstRenderer = productionRendererHarness.instances[0]!;
+
+    view.rerender(
+      <PlanCanvas {...productionProps} store={firstStore} assetSourceEpoch={7} />,
+    );
+    await Promise.resolve();
+    expect(productionRendererHarness.instances).toEqual([firstRenderer]);
+    expect(firstRenderer.destroyCount).toBe(0);
+
+    view.rerender(
+      <PlanCanvas {...productionProps} store={secondStore} assetSourceEpoch={7} />,
+    );
+    await waitFor(() => expect(productionRendererHarness.instances).toHaveLength(2));
+    const secondRenderer = productionRendererHarness.instances[1]!;
+    expect(firstRenderer.destroyCount).toBe(1);
+    const secondSource = secondRenderer.sourcePort as PlanAssetSourcePort;
+    await expect(secondSource.resolve("asset-b")).resolves.toMatchObject({
+      assetId: "asset-b", url: "blob:second/asset-b",
+    });
+
+    view.rerender(
+      <PlanCanvas {...productionProps} store={secondStore} assetSourceEpoch={8} />,
+    );
+    await waitFor(() => expect(productionRendererHarness.instances).toHaveLength(3));
+    expect(secondRenderer.destroyCount).toBe(1);
+    expect(firstResolve).not.toHaveBeenCalled();
+    expect(secondResolve).toHaveBeenCalledOnce();
+  });
+
   it("keeps one stable adapter that resolves exact ProjectStore sources by asset ID", async () => {
     const harness = createPlanEditorTestHarness();
     const props = createPlanCanvasProps(harness, new FakePlanRenderer());

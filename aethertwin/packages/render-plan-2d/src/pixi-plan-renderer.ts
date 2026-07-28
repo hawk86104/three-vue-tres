@@ -37,9 +37,95 @@ interface TextureResource {
   readonly assetId: string;
   readonly references: Map<string, number>;
   texture: Texture | null;
-  url: string | null;
+  lease: SharedTextureLease | null;
   pending: Promise<void> | null;
   invalidated: boolean;
+}
+
+interface SharedTextureEntry {
+  readonly url: string;
+  readonly texture: Promise<Texture>;
+  references: number;
+  retirement: Promise<void> | null;
+  blocked: boolean;
+  blockedError: unknown;
+  retirementErrorReported: boolean;
+}
+
+interface SharedTextureLease {
+  readonly entry: SharedTextureEntry;
+  readonly texture: Texture;
+  released: boolean;
+}
+
+const sharedTextureEntries = new Map<string, SharedTextureEntry>();
+
+async function acquireSharedTexture(url: string): Promise<SharedTextureLease> {
+  while (true) {
+    let entry = sharedTextureEntries.get(url);
+    if (entry === undefined) {
+      entry = {
+        url,
+        texture: Promise.resolve().then(() => Assets.load<Texture>(url)),
+        references: 0,
+        retirement: null,
+        blocked: false,
+        blockedError: undefined,
+        retirementErrorReported: false,
+      };
+      sharedTextureEntries.set(url, entry);
+    }
+    if (entry.blocked) throw entry.blockedError;
+    if (entry.retirement !== null) {
+      await entry.retirement;
+      continue;
+    }
+    entry.references += 1;
+    try {
+      const texture = await entry.texture;
+      return { entry, texture, released: false };
+    } catch (error) {
+      entry.references -= 1;
+      if (entry.references === 0 && sharedTextureEntries.get(url) === entry) {
+        sharedTextureEntries.delete(url);
+      }
+      throw error;
+    }
+  }
+}
+
+function releaseSharedTexture(
+  lease: SharedTextureLease,
+  reportError: ((error: unknown) => void) | undefined,
+): Promise<void> {
+  if (lease.released) return Promise.resolve();
+  lease.released = true;
+  const entry = lease.entry;
+  entry.references -= 1;
+  if (entry.references !== 0 || entry.retirement !== null) return Promise.resolve();
+  const retirement = Promise.resolve()
+    .then(() => Assets.unload(entry.url))
+    .then(
+      () => {
+        if (sharedTextureEntries.get(entry.url) === entry) {
+          sharedTextureEntries.delete(entry.url);
+        }
+      },
+      (error: unknown) => {
+        entry.blocked = true;
+        entry.blockedError = error;
+        if (!entry.retirementErrorReported) {
+          entry.retirementErrorReported = true;
+          try {
+            reportError?.(error);
+          } catch {
+            // The shared URL remains blocked even if its observer throws.
+          }
+        }
+      },
+    );
+  entry.retirement = retirement;
+  return retirement;
 }
 
 interface LayerContainers {
@@ -166,8 +252,8 @@ function restoreLayerOrder(container: Container): void {
 
 function destroyApplication(application: Application): void {
   application.destroy(
-    { removeView: true, releaseGlobalResources: true },
-    { children: true, texture: true, textureSource: true },
+    { removeView: true },
+    { children: true, texture: false, textureSource: false },
   );
 }
 
@@ -502,6 +588,9 @@ class PixiRenderPort implements PlanRenderPort {
   #graphicsFor(node: RenderNode): Graphics {
     const graphics = new Graphics({ label: node.key, eventMode: "none" });
     drawNode(graphics, node);
+    if (node.geometry.kind === 'image') {
+      graphics.alpha = node.geometry.opacity * (node.locked ? 0.55 : 1);
+    }
     return graphics;
   }
 
@@ -525,7 +614,7 @@ class PixiRenderPort implements PlanRenderPort {
       assetId,
       references: new Map(),
       texture: null,
-      url: null,
+      lease: null,
       pending: null,
       invalidated: false,
     };
@@ -556,18 +645,21 @@ class PixiRenderPort implements PlanRenderPort {
           || resource.references.size === 0
           || this.#resources.get(resource.assetId) !== resource
         ) return;
-        resource.url = source.url;
-        const texture = await Assets.load<Texture>(source.url);
+        const lease = await acquireSharedTexture(source.url);
+        const texture = lease.texture;
         if (
           this.#destroyed
           || resource.invalidated
           || resource.references.size === 0
           || this.#resources.get(resource.assetId) !== resource
         ) {
-          resource.texture = texture;
-          await this.#unloadResource(resource, false);
+          await releaseSharedTexture(
+            lease,
+            this.sourcePort.reportRetirementError,
+          );
           return;
         }
+        resource.lease = lease;
         resource.texture = texture;
         for (const [key, generation] of resource.references) {
           const entry = this.#entries.get(key);
@@ -606,11 +698,14 @@ class PixiRenderPort implements PlanRenderPort {
   }
 
   async #unloadResource(resource: TextureResource, register: boolean): Promise<void> {
-    const url = resource.url;
+    const lease = resource.lease;
     resource.texture = null;
-    resource.url = null;
-    if (url === null) return;
-    const retirement = Assets.unload(url).catch(() => undefined);
+    resource.lease = null;
+    if (lease === null) return;
+    const retirement = releaseSharedTexture(
+      lease,
+      this.sourcePort.reportRetirementError,
+    );
     if (register) this.#extendRetirement(resource.assetId, retirement);
     await retirement;
   }
@@ -712,18 +807,34 @@ export function createPixiRenderPort(sourcePort: PlanAssetSourcePort): PlanRende
   return new PixiRenderPort(sourcePort);
 }
 
+const unavailableAssetSourcePort: PlanAssetSourcePort = {
+  async resolve() {
+    throw new Error('No plan asset source port is configured.');
+  },
+};
+
 export class PixiPlanRenderer implements PlanRenderer {
   readonly #port: PlanRenderPort;
   readonly #fingerprints = new Map<string, string>();
+  readonly #assetIdsByKey = new Map<string, string>();
   #initialized = false;
   #initialization: Promise<void> | null = null;
   #destroyed = false;
 
+  constructor();
+  constructor(portFactory: PlanRenderPortFactory);
+  constructor(sourcePort: PlanAssetSourcePort, portFactory?: PlanRenderPortFactory);
   constructor(
-    sourcePort: PlanAssetSourcePort,
+    sourcePortOrFactory: PlanAssetSourcePort | PlanRenderPortFactory = unavailableAssetSourcePort,
     portFactory: PlanRenderPortFactory = createPixiRenderPort,
   ) {
-    this.#port = portFactory(sourcePort);
+    const sourcePort = typeof sourcePortOrFactory === 'function'
+      ? unavailableAssetSourcePort
+      : sourcePortOrFactory;
+    const resolvedPortFactory = typeof sourcePortOrFactory === 'function'
+      ? sourcePortOrFactory
+      : portFactory;
+    this.#port = resolvedPortFactory(sourcePort);
   }
 
   init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void> {
@@ -751,10 +862,14 @@ export class PixiPlanRenderer implements PlanRenderer {
     this.#requireActive();
     const scene = projectScene(input);
     const nextFingerprints = new Map<string, string>();
+    const nextAssetIdsByKey = new Map<string, string>();
     let dirty = false;
     for (const node of scene.nodes) {
       const nextFingerprint = fingerprint(node);
       nextFingerprints.set(node.key, nextFingerprint);
+      if (node.geometry.kind === 'image') {
+        nextAssetIdsByKey.set(node.key, node.geometry.assetId);
+      }
       if (this.#fingerprints.get(node.key) === nextFingerprint) continue;
       this.#port.upsert(node);
       dirty = true;
@@ -766,7 +881,17 @@ export class PixiPlanRenderer implements PlanRenderer {
     }
     this.#fingerprints.clear();
     for (const [key, value] of nextFingerprints) this.#fingerprints.set(key, value);
+    this.#assetIdsByKey.clear();
+    for (const [key, value] of nextAssetIdsByKey) this.#assetIdsByKey.set(key, value);
     if (dirty) this.#port.render();
+  }
+
+  invalidateAsset(assetId: string): void {
+    this.#requireActive();
+    this.#port.invalidateAsset(assetId);
+    for (const [key, currentAssetId] of this.#assetIdsByKey) {
+      if (currentAssetId === assetId) this.#fingerprints.delete(key);
+    }
   }
 
   resize(width: number, height: number, resolution: number): void {
@@ -779,6 +904,7 @@ export class PixiPlanRenderer implements PlanRenderer {
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.#fingerprints.clear();
+    this.#assetIdsByKey.clear();
     this.#port.destroy();
   }
 
