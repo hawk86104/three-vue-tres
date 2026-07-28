@@ -1,4 +1,5 @@
 import type { CommitBatch } from "@aethertwin/command-bus";
+import { SaxesParser } from "saxes";
 import {
   AssetPolicyError,
   assertAssetImportRequest,
@@ -26,7 +27,27 @@ import type {
 } from "./backend";
 
 const SANDBOX_APP_VERSION = "0.1.0";
-const SVG_FORBIDDEN = /<\s*(?:script|foreignObject)\b|\son[a-z]+\s*=|<\s*link\b|(?:href|src)\s*=\s*["'](?!#)|url\(\s*["']?(?!#)/i;
+const SANDBOX_MAX_BUFFERED_ASSET_BYTES = 32 * 1024 * 1024;
+const SVG_MAX_AXIS = 16_384;
+const SVG_MAX_PIXELS = 268_435_456;
+const SVG_FORBIDDEN_ELEMENTS = new Set([
+  "script", "foreignobject", "iframe", "object", "embed", "image", "audio", "video",
+  "style", "animate", "animatemotion", "animatetransform", "set", "link", "meta", "base",
+]);
+const SVG_PRESENTATION_ATTRIBUTES = new Set([
+  "alignment-baseline", "baseline-shift", "clip", "clip-path", "color-profile", "clip-rule",
+  "color", "color-interpolation", "color-interpolation-filters", "color-rendering", "cursor",
+  "direction", "enable-background", "display", "dominant-baseline", "fill", "fill-opacity",
+  "fill-rule", "filter", "flood-color", "flood-opacity", "font-family", "font-size",
+  "font-stretch", "font-style", "font-size-adjust", "font-variant", "font-weight",
+  "image-rendering", "letter-spacing", "lighting-color", "glyph-orientation-horizontal",
+  "glyph-orientation-vertical", "marker-end", "marker-mid", "marker-start", "kerning", "mask",
+  "opacity", "overflow", "paint-order", "pointer-events", "shape-rendering", "stop-color",
+  "stop-opacity", "stroke", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap",
+  "stroke-linejoin", "stroke-miterlimit", "stroke-opacity", "stroke-width", "text-anchor",
+  "text-decoration", "text-rendering", "unicode-bidi", "vector-effect", "visibility",
+  "word-spacing", "writing-mode",
+]);
 
 interface InspectedSandboxMedia {
   readonly mediaType: AssetMediaType;
@@ -76,31 +97,138 @@ function jpegFacts(bytes: Uint8Array): AssetMediaFacts | null {
   return null;
 }
 
+function svgLocalName(name: string): string {
+  if ([...name].some((character) => character.codePointAt(0)! > 0x7f)) throw new Error("unsafe SVG");
+  return name.toLowerCase().split(":").at(-1)!;
+}
+
+function isLocalSvgFragment(value: string): boolean {
+  return /^#[A-Za-z0-9_.:-]+$/.test(value);
+}
+
+function validateSvgUrlFunctions(value: string): void {
+  let remaining = value;
+  while (true) {
+    const start = remaining.indexOf("url(");
+    if (start < 0) return;
+    remaining = remaining.slice(start + 4);
+    const end = remaining.indexOf(")");
+    if (end < 0) throw new Error("unsafe SVG");
+    const target = remaining.slice(0, end).trim().replace(/^(['"])(.*)\1$/, "$2");
+    if (!isLocalSvgFragment(target) || /[\s\x00-\x1f\x7f]/.test(target)) {
+      throw new Error("unsafe SVG");
+    }
+    remaining = remaining.slice(end + 1);
+  }
+}
+
+function validateSvgPresentationValue(value: string): void {
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  if (trimmed.length === 0 || trimmed.includes("\\") || lower.includes("/*") ||
+    lower.includes("*/") || lower.includes("@import") || lower.includes("expression") ||
+    /[\x00-\x1f\x7f]/.test(trimmed)) throw new Error("unsafe SVG");
+  if (/^url\(#[A-Za-z0-9_.:-]+\)$/.test(trimmed)) return;
+  if (lower.includes("url") || /[():]/.test(lower) || lower.includes("//")) {
+    throw new Error("unsafe SVG");
+  }
+}
+
+function validateSvgAttribute(name: string, value: string): void {
+  const lower = value.toLowerCase();
+  if (["javascript:", "data:", "file:", "http:", "https:", "expression("].some((part) =>
+    lower.includes(part)) || lower.startsWith("//") || lower.startsWith("/")) {
+    throw new Error("unsafe SVG");
+  }
+  if ((name === "href" || name === "src") && !isLocalSvgFragment(value)) {
+    throw new Error("unsafe SVG");
+  }
+  validateSvgUrlFunctions(lower);
+}
+
+function parseSvgAxis(value: string): number {
+  const number = value.endsWith("px") ? value.slice(0, -2) : value;
+  if (!/^[0-9]+$/.test(number)) throw new Error("invalid SVG dimensions");
+  const parsed = Number(number);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > SVG_MAX_AXIS) {
+    throw new Error("invalid SVG dimensions");
+  }
+  return parsed;
+}
+
+function requireSvgValue(value: string | null): string {
+  if (value === null) throw new Error("invalid SVG dimensions");
+  return value;
+}
+
+function validateSvgDimensions(width: number, height: number): AssetMediaFacts {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0 ||
+    width > SVG_MAX_AXIS || height > SVG_MAX_AXIS || width * height > SVG_MAX_PIXELS) {
+    throw new Error("invalid SVG dimensions");
+  }
+  return { kind: "image", width, height };
+}
+
 function svgFacts(bytes: Uint8Array): AssetMediaFacts | null {
-  let text: string;
+  if ((bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) || bytes.includes(0x26)) {
+    return null;
+  }
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    let depth = 0;
+    let rootCount = 0;
+    let width: string | null = null;
+    let height: string | null = null;
+    let viewBox: string | null = null;
+    const parser = new SaxesParser();
+    const reject = (): never => { throw new Error("unsafe SVG"); };
+    parser.on("error", reject);
+    parser.on("xmldecl", reject);
+    parser.on("processinginstruction", reject);
+    parser.on("doctype", reject);
+    parser.on("text", (value) => { if (depth === 0 && value.trim() !== "") reject(); });
+    parser.on("cdata", (value) => { if (depth === 0 && value.trim() !== "") reject(); });
+    parser.on("opentag", (tag) => {
+      const isRoot = depth === 0;
+      const elementName = svgLocalName(tag.name);
+      if (isRoot) {
+        rootCount += 1;
+        if (rootCount !== 1 || elementName !== "svg") reject();
+      } else if (SVG_FORBIDDEN_ELEMENTS.has(elementName)) reject();
+      const normalized = new Set<string>();
+      for (const [rawName, rawValue] of Object.entries(tag.attributes)) {
+        const fullName = svgLocalName(rawName.includes(":") ? rawName : `:${rawName}`);
+        const lowerRawName = rawName.toLowerCase();
+        if (lowerRawName === "xmlns" || lowerRawName.startsWith("xmlns:")) continue;
+        const value = rawValue.trim();
+        if (fullName === "style" || fullName.startsWith("on") || normalized.has(fullName)) reject();
+        normalized.add(fullName);
+        if (SVG_PRESENTATION_ATTRIBUTES.has(fullName)) validateSvgPresentationValue(value);
+        validateSvgAttribute(fullName, value);
+        if (isRoot) {
+          if (fullName === "width") width = value;
+          if (fullName === "height") height = value;
+          if (fullName === "viewbox") viewBox = value;
+        }
+      }
+      depth += 1;
+    });
+    parser.on("closetag", () => { depth -= 1; if (depth < 0) reject(); });
+    parser.write(text).close();
+    if (rootCount !== 1 || depth !== 0) reject();
+
+    if (width !== null || height !== null) {
+      return validateSvgDimensions(
+        parseSvgAxis(requireSvgValue(width)),
+        parseSvgAxis(requireSvgValue(height)),
+      );
+    }
+    const values = requireSvgValue(viewBox).split(/[\s,]+/).filter(Boolean).map(Number);
+    if (values.length !== 4 || values.some((value) => !Number.isFinite(value))) reject();
+    return validateSvgDimensions(values[2]!, values[3]!);
   } catch {
     return null;
   }
-  const svg = text.match(/<svg\b[^>]*>/i)?.[0];
-  if (svg === undefined || SVG_FORBIDDEN.test(text)) return null;
-  const numberAttribute = (name: string): number | null => {
-    const value = svg.match(new RegExp(`\\s${name}\\s*=\\s*["']([0-9]+(?:\\.[0-9]+)?)`, "i"))?.[1];
-    if (value === undefined) return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-  let width = numberAttribute("width");
-  let height = numberAttribute("height");
-  if (width === null || height === null) {
-    const viewBox = svg.match(/\sviewBox\s*=\s*["']\s*[-+0-9.e]+\s+[-+0-9.e]+\s+([-+0-9.e]+)\s+([-+0-9.e]+)/i);
-    width = viewBox === null ? null : Number(viewBox[1]);
-    height = viewBox === null ? null : Number(viewBox[2]);
-  }
-  return width === null || height === null
-    ? null
-    : { kind: "image", width, height };
 }
 
 function inspectSandboxMedia(bytes: Uint8Array, displayName: string): InspectedSandboxMedia {
@@ -209,6 +337,12 @@ export class SandboxProjectBackend implements ProjectBackend {
     if (request.source.kind !== "sandbox-blob" || !(request.source.blob instanceof Blob)) {
       throw new AssetPolicyError("INVALID_ASSET_SOURCE", "Sandbox imports require a Blob source.");
     }
+    if (request.source.blob.size > SANDBOX_MAX_BUFFERED_ASSET_BYTES) {
+      throw new AssetPolicyError(
+        "ASSET_TOO_LARGE",
+        "The sandbox asset exceeds the buffered import limit.",
+      );
+    }
     const key = `${projectPath}\u0000${request.operationId}`;
     if (this.activeImports.has(key)) {
       throw new AssetPolicyError("ASSET_IMPORT_OPERATION_EXISTS", "The import operation already exists.");
@@ -218,16 +352,20 @@ export class SandboxProjectBackend implements ProjectBackend {
     try {
       const bytes = new Uint8Array(await request.source.blob.arrayBuffer());
       const totalBytes = bytes.byteLength;
-      const emit = (stage: AssetImportProgress["stage"], completedBytes: number): void => {
+      const assertNotCancelled = (): void => {
         if (active.cancelled) {
           throw new AssetPolicyError("ASSET_IMPORT_CANCELLED", "Asset import cancelled.");
         }
+      };
+      const emit = (stage: AssetImportProgress["stage"], completedBytes: number): void => {
+        assertNotCancelled();
         onProgress(Object.freeze({
           operationId: request.operationId,
           stage,
           completedBytes,
           totalBytes,
         }));
+        assertNotCancelled();
       };
       emit("capture", 0);
       const inspected = inspectSandboxMedia(bytes, request.source.displayName);
@@ -255,6 +393,7 @@ export class SandboxProjectBackend implements ProjectBackend {
         facts: Object.freeze({ ...inspected.facts }),
       });
       emit("complete", totalBytes);
+      assertNotCancelled();
       return result;
     } finally {
       this.activeImports.delete(key);

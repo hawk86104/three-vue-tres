@@ -217,6 +217,9 @@ importers:
       '@aethertwin/plan-engine':
         specifier: workspace:*
         version: link:../plan-engine
+      saxes:
+        specifier: 6.0.0
+        version: 6.0.0
 
   packages/render-plan-2d:
     dependencies:

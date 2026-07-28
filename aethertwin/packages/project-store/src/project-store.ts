@@ -95,6 +95,15 @@ function assetIssueCode(value: unknown): AssetIssueCode | null {
     : null;
 }
 
+function safeAssetResolutionError(code: AssetIssueCode): Error & { readonly code: AssetIssueCode } {
+  const error = new Error("Asset resolution failed.") as Error & { readonly code: AssetIssueCode };
+  Object.defineProperty(error, "code", {
+    value: code,
+    enumerable: true,
+  });
+  return error;
+}
+
 function isImportCancellation(value: unknown): boolean {
   return value !== null && typeof value === "object" &&
     (value as { readonly code?: unknown }).code === "ASSET_IMPORT_CANCELLED";
@@ -268,8 +277,11 @@ export class ProjectStore {
     );
   }
 
-  async resolveAsset(assetId: string): Promise<ProjectAssetSource> {
-    if (this.disposed) throw new Error("ProjectStore is disposed");
+  resolveAsset(assetId: string): Promise<ProjectAssetSource> {
+    return this.enqueueOperation(() => this.performResolveAsset(assetId));
+  }
+
+  private async performResolveAsset(assetId: string): Promise<ProjectAssetSource> {
     const projectPath = this.state.projectPath;
     const snapshot = this.state.snapshot;
     if (projectPath === null || snapshot === null) {
@@ -301,7 +313,10 @@ export class ProjectStore {
       return Object.freeze({ assetId, url: source.url, mediaType: asset.mediaType });
     } catch (error) {
       const code = assetIssueCode(error);
-      if (code !== null) this.setAssetIssue({ assetId, code });
+      if (code !== null) {
+        this.setAssetIssue({ assetId, code });
+        throw safeAssetResolutionError(code);
+      }
       throw error;
     }
   }
@@ -533,6 +548,7 @@ export class ProjectStore {
         error: null,
         canUndo: bus.canUndo(),
         canRedo: bus.canRedo(),
+        assetIssues: this.reconcileAssetIssues(snapshot),
       });
       this.scheduleAutosave();
     } catch (error) {
@@ -629,6 +645,15 @@ export class ProjectStore {
       ...this.state,
       assetIssues: this.state.assetIssues.filter((issue) => issue.assetId !== assetId),
     });
+  }
+
+  private reconcileAssetIssues(snapshot: ProjectSnapshot): readonly AssetIssue[] {
+    const assetIds = new Set(snapshot.assets.map(({ id }) => id));
+    const referencedAssetIds = new Set(
+      snapshot.project.planReferences.map(({ assetId }) => assetId),
+    );
+    return this.state.assetIssues.filter(({ assetId }) =>
+      assetIds.has(assetId) && referencedAssetIds.has(assetId));
   }
 
   private scheduleAutosave(): void {

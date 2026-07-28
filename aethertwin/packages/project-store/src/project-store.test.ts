@@ -267,9 +267,14 @@ class ControlledAssetBackend extends SandboxProjectBackend {
     readonly projectPath: string;
     readonly operationId: string;
   }> = [];
+  readonly resolveCalls: Array<{
+    readonly projectPath: string;
+    readonly assetId: string;
+  }> = [];
   nextImportResult: AssetImportResult = nativeImportResult();
   importImplementation: (() => Promise<AssetImportResult>) | null = null;
   cancelImplementation: (() => Promise<void>) | null = null;
+  resolveImplementation: (() => Promise<BackendAssetSource>) | null = null;
   resolvedSource: BackendAssetSource = {
     assetId: ASSET_A,
     url: `aethertwin-asset://asset/session/${ASSET_A}`,
@@ -295,7 +300,9 @@ class ControlledAssetBackend extends SandboxProjectBackend {
     }
   }
 
-  async resolveAsset(_projectPath: string, _assetId: string): Promise<BackendAssetSource> {
+  async resolveAsset(projectPath: string, assetId: string): Promise<BackendAssetSource> {
+    this.resolveCalls.push({ projectPath, assetId });
+    if (this.resolveImplementation !== null) return this.resolveImplementation();
     if (this.resolveFailure !== null) {
       throw this.resolveFailure;
     }
@@ -510,7 +517,10 @@ describe("ProjectStore asset import orchestration", () => {
       sourcePath: PRIVATE_SOURCE_PATH,
     });
     backend.resolveFailure = missing;
-    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(missing);
+    await expect(store.resolveAsset(ASSET_A)).rejects.toMatchObject({
+      code: "ASSET_MISSING",
+      message: "Asset resolution failed.",
+    });
     expect(store.getState().assetIssues).toEqual([{
       assetId: ASSET_A,
       code: "ASSET_MISSING",
@@ -664,7 +674,22 @@ describe("ProjectStore asset import orchestration", () => {
       },
     );
     backend.resolveFailure = corruption;
-    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    let exposedFailure: unknown;
+    try {
+      await store.resolveAsset(ASSET_A);
+    } catch (error) {
+      exposedFailure = error;
+    }
+    expect(exposedFailure).toBeInstanceOf(Error);
+    expect(exposedFailure).not.toBe(corruption);
+    expect(exposedFailure).toMatchObject({
+      code: "ASSET_CORRUPT",
+      message: "Asset resolution failed.",
+    });
+    expect(Object.keys(exposedFailure as object)).toEqual(["code"]);
+    expect(JSON.stringify(exposedFailure)).not.toContain(PRIVATE_SOURCE_PATH);
+    expect(String(exposedFailure)).not.toContain(PRIVATE_SOURCE_PATH);
+    expect((exposedFailure as Error).stack).not.toContain(PRIVATE_SOURCE_PATH);
     expect(store.getState().assetIssues).toEqual([{
       assetId: ASSET_A,
       code: "ASSET_CORRUPT",
@@ -677,7 +702,10 @@ describe("ProjectStore asset import orchestration", () => {
     expect(store.getState().assetIssues).toEqual([]);
 
     backend.resolveFailure = corruption;
-    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    await expect(store.resolveAsset(ASSET_A)).rejects.toMatchObject({
+      code: "ASSET_CORRUPT",
+      message: "Asset resolution failed.",
+    });
     await baseStore.create({ name: "Replacement", location: "sandbox", profile: "market" });
     expect(store.getState().assetIssues).toEqual([]);
 
@@ -686,14 +714,189 @@ describe("ProjectStore asset import orchestration", () => {
       referenceSeed(store.getState().snapshot!, REFERENCE_B),
       vi.fn(),
     );
-    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    await expect(store.resolveAsset(ASSET_A)).rejects.toMatchObject({
+      code: "ASSET_CORRUPT",
+      message: "Asset resolution failed.",
+    });
     expect(store.getState().assetIssues).toHaveLength(1);
     await baseStore.close();
     expect(store.getState().assetIssues).toEqual([]);
   });
+
+  it("serializes resolution with queued undo so returned media identity stays coherent", async () => {
+    const backend = new ControlledAssetBackend();
+    const pendingResolution = cancellable<BackendAssetSource>();
+    backend.resolveImplementation = () => pendingResolution.promise;
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Queued resolve", location: "sandbox", profile: "showroom" });
+    await store.importPlanReference(nativeImportRequest(), referenceSeed(store.getState().snapshot!), vi.fn());
+
+    const resolving = store.resolveAsset(ASSET_A);
+    await vi.waitFor(() => expect(backend.resolveCalls).toHaveLength(1));
+    let undoFinished = false;
+    const undoing = baseStore.undo().then(() => { undoFinished = true; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(undoFinished).toBe(false);
+    expect(store.getState().snapshot!.assets).toHaveLength(1);
+
+    pendingResolution.resolve({ assetId: ASSET_A, url: "blob:https://aethertwin.invalid/queued-asset-a" });
+    await expect(resolving).resolves.toEqual({
+      assetId: ASSET_A,
+      url: "blob:https://aethertwin.invalid/queued-asset-a",
+      mediaType: "image/png",
+    });
+    await undoing;
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([]);
+    await baseStore.close();
+  });
+
+  it("drops repair authorization across delete, undo, and redo snapshot mutations", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Transient issues", location: "sandbox", profile: "showroom" });
+    const reference = await store.importPlanReference(
+      nativeImportRequest(), referenceSeed(store.getState().snapshot!), vi.fn(),
+    );
+    const asset = store.getState().snapshot!.assets[0]!;
+    backend.resolveFailure = Object.assign(new Error(`Missing at ${PRIVATE_SOURCE_PATH}`), {
+      code: "ASSET_MISSING",
+      sourcePath: PRIVATE_SOURCE_PATH,
+    });
+    await expect(store.resolveAsset(asset.id)).rejects.toMatchObject({ code: "ASSET_MISSING" });
+    expect(store.getState().assetIssues).toEqual([{ assetId: asset.id, code: "ASSET_MISSING" }]);
+
+    await baseStore.applySnapshotRecordPatches([
+      { collection: "planReferences", changes: [{ id: reference.id, before: reference, after: null }] },
+      { collection: "assets", changes: [{ id: asset.id, before: asset, after: null }] },
+    ]);
+    expect(store.getState().assetIssues).toEqual([]);
+    await baseStore.undo();
+    expect(store.getState().assetIssues).toEqual([]);
+    await expect(store.replaceBrokenPlanReference(
+      reference.id, nativeImportRequest(IMPORT_OPERATION_B), vi.fn(),
+    )).rejects.toThrow(/broken|issue|repair/i);
+    expect(backend.importCalls).toHaveLength(1);
+    await baseStore.redo();
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([]);
+    expect(store.getState().assetIssues).toEqual([]);
+    await baseStore.close();
+  });
 });
 
 describe("SandboxProjectBackend asset equivalence", () => {
+  it("rejects an oversized Blob before allocating or reading its bytes", async () => {
+    const arrayBuffer = vi.fn(async (): Promise<ArrayBuffer> => {
+      throw new Error("oversized Blob bytes must not be read");
+    });
+    class OversizedBlob extends Blob {
+      constructor() {
+        super();
+        Object.defineProperty(this, "size", { value: 32 * 1024 * 1024 + 1 });
+      }
+
+      override arrayBuffer(): Promise<ArrayBuffer> {
+        return arrayBuffer();
+      }
+    }
+
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Oversized Blob", location: "sandbox", profile: "showroom" });
+    const before = baseStore.getState();
+    const commit = vi.spyOn(backend, "commit");
+    const request: AssetImportRequest = {
+      operationId: IMPORT_OPERATION_A,
+      role: "plan-reference",
+      source: {
+        kind: "sandbox-blob",
+        blob: new OversizedBlob(),
+        displayName: "oversized-floor-plan.png",
+      },
+    };
+
+    await expect(task8Backend(backend).importAsset(
+      before.projectPath!,
+      request,
+      vi.fn(),
+    )).rejects.toMatchObject({ code: "ASSET_TOO_LARGE" });
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+    expect(baseStore.getState()).toEqual(before);
+    await baseStore.close();
+  });
+
+  it("cancels from the complete callback without committing snapshot or journal state", async () => {
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Cancel complete", location: "sandbox", profile: "showroom" });
+    const before = structuredClone(store.getState());
+    const commit = vi.spyOn(backend, "commit");
+    let cancellation: Promise<void> | null = null;
+
+    const importing = store.importPlanReference(
+      sandboxImportRequest(pngBytes(10, 11), IMPORT_OPERATION_A),
+      referenceSeed(store.getState().snapshot!),
+      (event) => {
+        if (event.stage === "complete") cancellation = store.cancelAssetImport(IMPORT_OPERATION_A);
+      },
+    );
+    await expect(importing).rejects.toMatchObject({ code: "ASSET_IMPORT_CANCELLED" });
+    await cancellation;
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual(before);
+    await baseStore.close();
+  });
+
+  it.each([
+    ["UTF-8 BOM", "\uFEFF<svg width=\"16\" height=\"8\"/>"] ,
+    ["entity reference", "<svg width=\"16\" height=\"8\"><text>&amp;</text></svg>"],
+    ["XML declaration", "<?xml version=\"1.0\"?><svg width=\"16\" height=\"8\"/>"] ,
+    ["processing instruction", "<svg width=\"16\" height=\"8\"><?unsafe data?></svg>"],
+    ["doctype", "<!DOCTYPE svg><svg width=\"16\" height=\"8\"/>"] ,
+    ["forbidden element", "<svg width=\"16\" height=\"8\"><image href=\"#local\"/></svg>"],
+    ["event attribute", "<svg width=\"16\" height=\"8\" onload=\"alert(1)\"/>"] ,
+    ["style attribute", "<svg width=\"16\" height=\"8\" style=\"fill:red\"/>"] ,
+    ["unsafe href", "<svg width=\"16\" height=\"8\"><use href=\"https://example.test/x\"/></svg>"],
+    ["absolute local href", "<svg width=\"16\" height=\"8\"><use href=\"/x\"/></svg>"],
+    ["unsafe presentation URL", "<svg width=\"16\" height=\"8\"><rect fill=\"url(https://example.test/x)\"/></svg>"],
+    ["CSS comment trick", "<svg width=\"16\" height=\"8\"><rect fill=\"red/**/blue\"/></svg>"],
+    ["duplicate normalized attributes", "<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"16\" height=\"8\"><use href=\"#a\" xlink:href=\"#a\"/></svg>"],
+    ["second root", "<svg width=\"16\" height=\"8\"/><svg width=\"16\" height=\"8\"/>"] ,
+    ["fractional dimensions", "<svg width=\"16.5\" height=\"8\"/>"] ,
+    ["oversized dimensions", "<svg width=\"16385\" height=\"8\"/>"] ,
+  ])("rejects native-rejected SVG input: %s", async (_caseName, svg) => {
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "SVG parity", location: "sandbox", profile: "showroom" });
+    await expect(task8Backend(backend).importAsset(
+      baseStore.getState().projectPath!,
+      sandboxImportRequest(new TextEncoder().encode(svg), IMPORT_OPERATION_A, "unsafe.svg"),
+      vi.fn(),
+    )).rejects.toThrow();
+    await baseStore.close();
+  });
+
+  it("accepts a well-formed SVG with a safe local fragment presentation URL", async () => {
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "SVG local fragment", location: "sandbox", profile: "showroom" });
+    const svg = "<svg width=\"16px\" height=\"8\"><defs><linearGradient id=\"g\"/></defs><rect fill=\"url(#g)\"/></svg>";
+    await expect(task8Backend(backend).importAsset(
+      baseStore.getState().projectPath!,
+      sandboxImportRequest(new TextEncoder().encode(svg), IMPORT_OPERATION_A, "safe.svg"),
+      vi.fn(),
+    )).resolves.toMatchObject({
+      asset: { mediaType: "image/svg+xml" },
+      facts: { kind: "image", width: 16, height: 8 },
+    });
+    await baseStore.close();
+  });
+
   it("hashes real Blob bytes with Web Crypto, deduplicates the canonical Blob, and reuses one owned URL", async () => {
     const urls = installObjectUrlRecorder();
     const bytes = pngBytes(37, 23);

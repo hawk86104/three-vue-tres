@@ -15,6 +15,7 @@
     "@aethertwin/asset-pipeline": "workspace:*",
     "@aethertwin/command-bus": "workspace:*",
     "@aethertwin/core-model": "workspace:*",
-    "@aethertwin/plan-engine": "workspace:*"
+    "@aethertwin/plan-engine": "workspace:*",
+    "saxes": "6.0.0"
   }
 }
