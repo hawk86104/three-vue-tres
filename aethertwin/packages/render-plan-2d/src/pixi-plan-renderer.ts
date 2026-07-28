@@ -59,6 +59,22 @@ interface SharedTextureLease {
 }
 
 const sharedTextureEntries = new Map<string, SharedTextureEntry>();
+const sharedTextureOperations = new Set<Promise<void>>();
+let activePixiPortCount = 0;
+let pixiPortGeneration = 0;
+
+function trackSharedTextureOperation<T>(operation: Promise<T>): Promise<T> {
+  const settlement = operation.then(() => undefined, () => undefined);
+  sharedTextureOperations.add(settlement);
+  void settlement.then(() => sharedTextureOperations.delete(settlement));
+  return operation;
+}
+
+async function waitForSharedTextureIdle(): Promise<void> {
+  while (sharedTextureOperations.size > 0) {
+    await Promise.all([...sharedTextureOperations]);
+  }
+}
 
 async function acquireSharedTexture(url: string): Promise<SharedTextureLease> {
   while (true) {
@@ -125,7 +141,7 @@ function releaseSharedTexture(
       },
     );
   entry.retirement = retirement;
-  return retirement;
+  return trackSharedTextureOperation(retirement);
 }
 
 interface LayerContainers {
@@ -250,9 +266,14 @@ function restoreLayerOrder(container: Container): void {
   }
 }
 
-function destroyApplication(application: Application): void {
+function destroyApplication(
+  application: Application,
+  releaseGlobalResources = false,
+): void {
   application.destroy(
-    { removeView: true },
+    releaseGlobalResources
+      ? { removeView: true, releaseGlobalResources: true }
+      : { removeView: true },
     { children: true, texture: false, textureSource: false },
   );
 }
@@ -426,6 +447,7 @@ class PixiRenderPort implements PlanRenderPort {
   #interactionBounds: Rectangle | null = null;
   #inputBridge: PointerInputBridge | null = null;
   #initialization: Promise<void> | null = null;
+  #activeGeneration: number | null = null;
   #destroyed = false;
 
   constructor(private readonly sourcePort: PlanAssetSourcePort) {}
@@ -506,6 +528,8 @@ class PixiRenderPort implements PlanRenderPort {
       this.#layers = { grid, reference, content, annotation, overlay, interaction };
       this.#interactionBounds = interactionBounds;
       this.#inputBridge = inputBridge;
+      activePixiPortCount += 1;
+      this.#activeGeneration = ++pixiPortGeneration;
     } catch (error) {
       inputBridge?.destroy();
       tryDestroyApplication(application);
@@ -676,14 +700,14 @@ class PixiRenderPort implements PlanRenderPort {
         // The existing Graphics leaf is the safe degraded representation.
       }
     };
-    resource.pending = operation().finally(() => {
+    resource.pending = trackSharedTextureOperation(operation().finally(() => {
         resource.pending = null;
         if (resource.references.size === 0) {
           if (this.#resources.get(resource.assetId) === resource) {
             this.#resources.delete(resource.assetId);
           }
         }
-      });
+      }));
   }
 
   #extendRetirement(assetId: string, retirement: Promise<void>): void {
@@ -770,6 +794,9 @@ class PixiRenderPort implements PlanRenderPort {
   destroy(): void {
     if (this.#destroyed) return;
     this.#destroyed = true;
+    const activeGeneration = this.#activeGeneration;
+    this.#activeGeneration = null;
+    if (activeGeneration !== null) activePixiPortCount -= 1;
     for (const key of [...this.#entries.keys()]) this.remove(key);
     for (const resource of this.#resources.values()) {
       resource.invalidated = true;
@@ -787,7 +814,17 @@ class PixiRenderPort implements PlanRenderPort {
     this.#layers = null;
     this.#interactionBounds = null;
     this.#inputBridge = null;
-    if (application !== null) destroyApplication(application);
+    if (application === null) return;
+    if (activeGeneration === null || activePixiPortCount > 0) {
+      destroyApplication(application);
+      return;
+    }
+    void waitForSharedTextureIdle().then(() => {
+      destroyApplication(
+        application,
+        activePixiPortCount === 0 && pixiPortGeneration === activeGeneration,
+      );
+    });
   }
 
   #requireApplication(): Application {
@@ -803,20 +840,23 @@ class PixiRenderPort implements PlanRenderPort {
   }
 }
 
-export function createPixiRenderPort(sourcePort: PlanAssetSourcePort): PlanRenderPort {
-  return new PixiRenderPort(sourcePort);
-}
-
 const unavailableAssetSourcePort: PlanAssetSourcePort = {
   async resolve() {
     throw new Error('No plan asset source port is configured.');
   },
 };
 
+export function createPixiRenderPort(
+  sourcePort: PlanAssetSourcePort = unavailableAssetSourcePort,
+): PlanRenderPort & { invalidateAsset(assetId: string): void } {
+  return new PixiRenderPort(sourcePort);
+}
+
 export class PixiPlanRenderer implements PlanRenderer {
   readonly #port: PlanRenderPort;
   readonly #fingerprints = new Map<string, string>();
   readonly #assetIdsByKey = new Map<string, string>();
+  readonly #forceUpsertKeys = new Set<string>();
   #initialized = false;
   #initialization: Promise<void> | null = null;
   #destroyed = false;
@@ -870,7 +910,10 @@ export class PixiPlanRenderer implements PlanRenderer {
       if (node.geometry.kind === 'image') {
         nextAssetIdsByKey.set(node.key, node.geometry.assetId);
       }
-      if (this.#fingerprints.get(node.key) === nextFingerprint) continue;
+      if (
+        !this.#forceUpsertKeys.has(node.key)
+        && this.#fingerprints.get(node.key) === nextFingerprint
+      ) continue;
       this.#port.upsert(node);
       dirty = true;
     }
@@ -883,14 +926,15 @@ export class PixiPlanRenderer implements PlanRenderer {
     for (const [key, value] of nextFingerprints) this.#fingerprints.set(key, value);
     this.#assetIdsByKey.clear();
     for (const [key, value] of nextAssetIdsByKey) this.#assetIdsByKey.set(key, value);
+    this.#forceUpsertKeys.clear();
     if (dirty) this.#port.render();
   }
 
   invalidateAsset(assetId: string): void {
     this.#requireActive();
-    this.#port.invalidateAsset(assetId);
+    this.#port.invalidateAsset?.(assetId);
     for (const [key, currentAssetId] of this.#assetIdsByKey) {
-      if (currentAssetId === assetId) this.#fingerprints.delete(key);
+      if (currentAssetId === assetId) this.#forceUpsertKeys.add(key);
     }
   }
 
@@ -905,6 +949,7 @@ export class PixiPlanRenderer implements PlanRenderer {
     this.#destroyed = true;
     this.#fingerprints.clear();
     this.#assetIdsByKey.clear();
+    this.#forceUpsertKeys.clear();
     this.#port.destroy();
   }
 

@@ -305,6 +305,17 @@ class FakePlanRenderPort implements PlanRenderPort {
   }
 }
 
+function legacyPlanRenderPort(): PlanRenderPort {
+  return {
+    init: async () => undefined,
+    upsert: () => undefined,
+    remove: () => undefined,
+    resize: () => undefined,
+    render: () => undefined,
+    destroy: () => undefined,
+  };
+}
+
 function deferred<T = void>(): {
   readonly promise: Promise<T>;
   readonly resolve: (value: T) => void;
@@ -492,6 +503,50 @@ beforeEach(() => {
 const unusedSourcePort: PlanAssetSourcePort = {
   resolve: async (assetId) => projectAssetSource(assetId),
 };
+
+describe('Pixi resource ownership compatibility', () => {
+  it('releases Pixi global resources only after the final render port exits', async () => {
+    const firstPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    const secondPort = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await firstPort.init(document.createElement('div'), { handle: () => undefined });
+    const firstApplication = latestApplication();
+    await secondPort.init(document.createElement('div'), { handle: () => undefined });
+    const secondApplication = latestApplication();
+    firstPort.destroy();
+    await settleResources();
+    expect(firstApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true },
+      { children: true, texture: false, textureSource: false },
+    );
+    expect(secondApplication.destroy).not.toHaveBeenCalled();
+    secondPort.destroy();
+    await vi.waitFor(() => expect(secondApplication.destroy).toHaveBeenCalledOnce());
+    expect(secondApplication.destroy).toHaveBeenCalledWith(
+      { removeView: true, releaseGlobalResources: true },
+      { children: true, texture: false, textureSource: false },
+    );
+  });
+
+  it('keeps the legacy no-source port and factory surfaces callable', async () => {
+    const directPort = pixiRendererModule.createPixiRenderPort();
+    await directPort.init(document.createElement('div'), { handle: () => undefined });
+    directPort.destroy();
+    const renderer = new PixiPlanRenderer(() => legacyPlanRenderPort());
+    await renderer.init({} as HTMLElement, { handle: () => undefined });
+    renderer.destroy();
+  });
+
+  it('removes an invalidated reference when the next projection omits it', async () => {
+    const port = new FakePlanRenderPort();
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
+    await renderer.init({} as HTMLElement, { handle: () => undefined });
+    renderer.update(rendererInputWithReference());
+    renderer.invalidateAsset(rendererAssetId);
+    renderer.update(rendererInput());
+    expect(port.invalidatedAssetIds).toEqual([rendererAssetId]);
+    expect(port.removedKeys).toEqual([rendererReference.id]);
+  });
+});
 
 describe("Pixi reference resources", () => {
   it("leases one cached URL across different asset IDs in the same render port", async () => {

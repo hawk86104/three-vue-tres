@@ -93,7 +93,7 @@ export interface PlanRenderPort {
   init(host: HTMLElement, sink: PlanRendererEventSink): Promise<void>;
   upsert(node: RenderNode): void;
   remove(key: string): void;
-  invalidateAsset(assetId: string): void;
+  invalidateAsset?(assetId: string): void;
   resize(width: number, height: number, resolution: number): void;
   render(): void;
   destroy(): void;
