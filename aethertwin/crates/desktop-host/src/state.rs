@@ -8,7 +8,10 @@ use crate::{
     },
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
 };
-use asset_io::{ImportObserver, ImportProgress, ImportRequest, ImportStage, import_project_asset};
+use asset_io::{
+    AssetIssue, AssetIssueRecord, AssetResolver, ImportObserver, ImportProgress, ImportRequest,
+    ImportStage, VerifiedAsset, import_project_asset,
+};
 use project_io::{
     CheckpointResult, CommitBatch, OpenedProject, ProjectIoError, ProjectManifest, ProjectSession,
     ProjectSnapshot, SaveState, create_project, open_session, validate_commit_batch,
@@ -202,6 +205,15 @@ pub struct OpenedProjectDto {
     pub manifest: ProjectManifest,
     pub snapshot: ProjectSnapshot,
     pub recovered: bool,
+    #[serde(default)]
+    pub asset_issues: Vec<AssetIssueDto>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetIssueDto {
+    pub asset_id: Uuid,
+    pub issue: String,
 }
 
 pub struct AppService {
@@ -209,6 +221,7 @@ pub struct AppService {
     session_lifecycle_gate: RwLock<()>,
     asset_imports: Mutex<HashMap<Uuid, ActiveAssetImport>>,
     asset_imports_changed: Condvar,
+    pub(crate) asset_resolver: AssetResolver,
     session_shutdown_complete: AtomicBool,
     log_sink: Arc<dyn NativeLogSink>,
 }
@@ -227,6 +240,7 @@ impl AppService {
             session_shutdown_complete: AtomicBool::new(false),
             asset_imports: Mutex::new(HashMap::new()),
             asset_imports_changed: Condvar::new(),
+            asset_resolver: AssetResolver::default(),
             log_sink,
         }
     }
@@ -396,6 +410,69 @@ impl AppService {
         self.finish("session_count", self.registry_len())
     }
 
+    pub(crate) fn resolve_asset_ids(
+        &self,
+        session_id: Uuid,
+        asset_id: Uuid,
+    ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
+        let session = self
+            .lookup_session(session_id)
+            .map_err(|error| match error {
+                HostError::SessionNotFound => AssetIssue::NotFound,
+                _ => AssetIssue::Unavailable,
+            })?;
+        let session = session.lock().map_err(|_| AssetIssue::Unavailable)?;
+        self.asset_resolver.resolve(
+            session_id,
+            session.project_path(),
+            session.snapshot(),
+            asset_id,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resolve_asset(
+        &self,
+        session_id: &str,
+        asset_id: Uuid,
+    ) -> Result<Arc<VerifiedAsset>, AssetIssue> {
+        let session_id = Uuid::parse_str(session_id).map_err(|_| AssetIssue::NotFound)?;
+        self.resolve_asset_ids(session_id, asset_id)
+    }
+
+    pub fn asset_issues(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<AssetIssueRecord>, crate::NativeErrorDto> {
+        let result = (|| {
+            let session_id = validate_session_id(session_id)?;
+            let session = self.lookup_session(session_id)?;
+            let session = session
+                .lock()
+                .map_err(|_| HostError::SessionStateUnavailable)?;
+            Ok(self.asset_resolver.preflight(
+                session_id,
+                session.project_path(),
+                session.snapshot(),
+            ))
+        })();
+        self.finish("asset_issues", result)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cached_asset_count(
+        &self,
+        session_id: &str,
+    ) -> Result<usize, crate::NativeErrorDto> {
+        let result = (|| {
+            let session_id = validate_session_id(session_id)?;
+            self.asset_resolver
+                .cached_count(session_id)
+                .map_err(|_| HostError::HostStateUnavailable)
+        })();
+        self.finish("cached_asset_count", result)
+    }
+
     pub fn create_project(
         &self,
         request: CreateProjectDto,
@@ -414,7 +491,7 @@ impl AppService {
             let created = create_project(request)?;
             let publication = open_session(&created.project_path, false)
                 .map_err(HostError::from)
-                .and_then(|session| self.track_session(session));
+                .and_then(|session| self.track_session_with_preflight(session));
             finalize_created_publication(&created, publication)
         })();
         self.finish(operation, result)
@@ -436,7 +513,7 @@ impl AppService {
             let _operation_lease = self.session_operation_lease()?;
             let path = validate_absolute_path(&request.path)?;
             let session = open_session(&path, request.recover_stale_lock)?;
-            self.track_session(session)
+            self.track_session_with_preflight(session)
         })();
         self.finish(operation, result)
     }
@@ -458,7 +535,7 @@ impl AppService {
             let path = validate_absolute_path(&request.path)?;
             require_recovery_confirmation(request.confirm)?;
             let session = open_session(&path, true)?;
-            self.track_session(session)
+            self.track_session_with_preflight(session)
         })();
         self.finish(operation, result)
     }
@@ -469,6 +546,24 @@ impl AppService {
         batch: CommitBatch,
     ) -> Result<(), crate::NativeErrorDto> {
         self.commit_project_for("commit_project", session_id, batch)
+    }
+
+    fn track_session_with_preflight(
+        &self,
+        session: ProjectSession,
+    ) -> Result<OpenedProjectDto, HostError> {
+        let issues = self
+            .asset_resolver
+            .preflight(Uuid::nil(), session.project_path(), session.snapshot())
+            .into_iter()
+            .map(|issue| AssetIssueDto {
+                asset_id: issue.asset_id,
+                issue: issue.issue.code().into(),
+            })
+            .collect();
+        let mut opened = self.track_session(session)?;
+        opened.asset_issues = issues;
+        Ok(opened)
     }
 
     pub(crate) fn commit_request(
@@ -492,10 +587,14 @@ impl AppService {
             let session_id = validate_session_id(session_id)?;
             validate_commit_batch(&batch).map_err(|_| HostError::IpcInvalidRequest)?;
             let session = self.lookup_session(session_id)?;
-            session
-                .lock()
-                .map_err(|_| HostError::SessionStateUnavailable)?
-                .commit(batch)?;
+            let snapshot = {
+                let mut session = session
+                    .lock()
+                    .map_err(|_| HostError::SessionStateUnavailable)?;
+                session.commit(batch)?;
+                session.snapshot().clone()
+            };
+            self.asset_resolver.reconcile_session(session_id, &snapshot);
             Ok(())
         })();
         self.finish(operation, result)
@@ -577,11 +676,13 @@ impl AppService {
                     .map_err(|_| HostError::SessionStateUnavailable)
                     .and_then(|mut session| session.close().map_err(HostError::from));
                 match close_result {
-                    Ok(()) => {
-                        if let Err(error) = self.remove_if_same(session_id, &session) {
+                    Ok(()) => match self.remove_if_same(session_id, &session) {
+                        Ok(true) => self.asset_resolver.invalidate_session(session_id),
+                        Ok(false) => {}
+                        Err(error) => {
                             first_failure.get_or_insert(error);
                         }
-                    }
+                    },
                     Err(error) => {
                         first_failure.get_or_insert(error);
                     }
@@ -623,7 +724,9 @@ impl AppService {
                     .map_err(|_| HostError::SessionStateUnavailable)?
                     .close()?;
             }
-            self.remove_if_same(session_id, &session)?;
+            if self.remove_if_same(session_id, &session)? {
+                self.asset_resolver.invalidate_session(session_id);
+            }
             Ok(())
         })();
         self.finish(operation, result)
@@ -676,6 +779,7 @@ pub(crate) fn opened_project_dto(
         manifest: session.manifest().clone(),
         snapshot: session.snapshot().clone(),
         recovered: session.save_state() == SaveState::Recovered,
+        asset_issues: Vec::new(),
     })
 }
 

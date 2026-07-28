@@ -7,14 +7,15 @@ use crate::{
     OpenProjectDto,
     error::{HostError, host_error_code},
 };
-use asset_io::{ImportProgress, ImportStage};
+use asset_io::{AssetIssue, ImportProgress, ImportStage, sha256_hex};
 use project_io::{
-    CommitBatch, CreateProjectRequest, JournalOperation, ProjectIoError, ProjectProfile,
-    create_project, open_session,
+    AssetRecord, CommitBatch, CreateProjectRequest, JournalAction, JournalOperation,
+    ProjectIoError, ProjectProfile, create_project, open_session,
 };
 use rusqlite::Connection;
 use serde_json::json;
 use std::{
+    fs,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Barrier, Mutex,
@@ -55,6 +56,58 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     bytes.extend_from_slice(b"IEND");
     bytes.extend_from_slice(&[0; 4]);
     bytes
+}
+
+fn verified_asset(bytes: &[u8]) -> AssetRecord {
+    let sha256 = sha256_hex(bytes);
+    AssetRecord {
+        id: Uuid::new_v4(),
+        relative_path: format!("assets/sha256/{}/{sha256}.png", &sha256[..2]),
+        sha256,
+        media_type: "image/png".into(),
+        size: bytes.len() as u64,
+    }
+}
+
+fn publish_asset(project_path: &str, asset: &AssetRecord, bytes: &[u8]) {
+    let destination = std::path::Path::new(project_path).join(&asset.relative_path);
+    fs::create_dir_all(destination.parent().unwrap()).unwrap();
+    fs::write(destination, bytes).unwrap();
+}
+
+fn asset_record_batch(
+    before: &project_io::ProjectSnapshot,
+    previous: Option<&AssetRecord>,
+    next: Option<&AssetRecord>,
+) -> CommitBatch {
+    let mut after = before.clone();
+    after.sequence += 1;
+    after.assets = next.into_iter().cloned().collect();
+    let change = json!({
+        "id": previous.or(next).unwrap().id,
+        "before": previous.map(|asset| serde_json::to_value(asset).unwrap()),
+        "after": next.map(|asset| serde_json::to_value(asset).unwrap()),
+        "index": 0
+    });
+    let inverse = json!({
+        "id": previous.or(next).unwrap().id,
+        "before": next.map(|asset| serde_json::to_value(asset).unwrap()),
+        "after": previous.map(|asset| serde_json::to_value(asset).unwrap()),
+        "index": 0
+    });
+    CommitBatch {
+        before: before.clone(),
+        after,
+        journal: vec![JournalOperation {
+            sequence: before.sequence + 1,
+            transaction_id: Uuid::new_v4().to_string(),
+            command_type: "snapshot.records.patch".into(),
+            payload: json!({ "collection": "assets", "changes": [change] }),
+            inverse_payload: json!({ "collection": "assets", "changes": [inverse] }),
+            action: JournalAction::Apply,
+            timestamp: "2026-07-28T00:00:00Z".into(),
+        }],
+    }
 }
 
 struct BlockingProgressSink {
@@ -732,4 +785,97 @@ fn close_project_waits_for_the_session_locked_asset_import() {
     close_finished_rx.recv().unwrap().unwrap();
     close.join().unwrap();
     assert_eq!(service.session_count().unwrap(), 0);
+}
+
+#[test]
+fn open_preflights_degraded_assets_but_defers_digest_verification_until_resolve() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Asset Preflight".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let missing = verified_asset(b"missing");
+    let add_missing = asset_record_batch(&opened.snapshot, None, Some(&missing));
+    service
+        .commit_project(&opened.session_id, add_missing.clone())
+        .unwrap();
+    service.close_project(&opened.session_id).unwrap();
+
+    let reopened = service
+        .open_project(OpenProjectDto {
+            path: opened.project_path.clone(),
+            recover_stale_lock: false,
+        })
+        .unwrap();
+    assert_eq!(reopened.asset_issues.len(), 1);
+    assert_eq!(reopened.asset_issues[0].asset_id, missing.id);
+    assert_eq!(reopened.asset_issues[0].issue, AssetIssue::Missing.code());
+
+    let mut corrupt = verified_asset(b"good");
+    corrupt.id = missing.id;
+    publish_asset(&opened.project_path, &corrupt, b"evil");
+    let replace = asset_record_batch(&reopened.snapshot, Some(&missing), Some(&corrupt));
+    service
+        .commit_project(&reopened.session_id, replace)
+        .unwrap();
+    assert!(
+        service
+            .asset_issues(&reopened.session_id)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        service
+            .resolve_asset(&reopened.session_id, corrupt.id)
+            .unwrap_err(),
+        AssetIssue::DigestMismatch
+    );
+    service.close_project(&reopened.session_id).unwrap();
+}
+
+#[test]
+fn commit_and_close_invalidate_verified_asset_handles() {
+    let root = tempdir().unwrap();
+    let service = AppService::default();
+    let opened = service
+        .create_project(CreateProjectDto {
+            parent: root.path().to_string_lossy().into_owned(),
+            name: "Asset Lifecycle".into(),
+            profile: "showroom".into(),
+        })
+        .unwrap();
+    let bytes = b"lifecycle";
+    let asset = verified_asset(bytes);
+    publish_asset(&opened.project_path, &asset, bytes);
+    let add = asset_record_batch(&opened.snapshot, None, Some(&asset));
+    service
+        .commit_project(&opened.session_id, add.clone())
+        .unwrap();
+
+    let first = service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    let reused = service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    assert!(Arc::ptr_eq(&first, &reused));
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 1);
+
+    let remove = asset_record_batch(&add.after, Some(&asset), None);
+    service
+        .commit_project(&opened.session_id, remove.clone())
+        .unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
+    drop(reused);
+    drop(first);
+
+    let add_again = asset_record_batch(&remove.after, None, Some(&asset));
+    service
+        .commit_project(&opened.session_id, add_again)
+        .unwrap();
+    let final_handle = service.resolve_asset(&opened.session_id, asset.id).unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 1);
+    drop(final_handle);
+    service.close_project(&opened.session_id).unwrap();
+    assert_eq!(service.cached_asset_count(&opened.session_id).unwrap(), 0);
 }

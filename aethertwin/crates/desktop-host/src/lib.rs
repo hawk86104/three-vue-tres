@@ -1,5 +1,8 @@
 //! AetherTwin's least-privilege desktop host boundary.
 
+mod asset_protocol;
+#[cfg(test)]
+mod asset_protocol_tests;
 mod boundary;
 pub mod commands;
 mod dto;
@@ -14,6 +17,10 @@ pub use dto::{
 };
 pub use error::{NativeErrorDto, NativeLogSink, SanitizedLogRecord};
 pub use state::{AppService, OpenedProjectDto};
+
+pub fn with_asset_protocol<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    asset_protocol::with_asset_protocol(builder)
+}
 
 pub fn with_invoke_handler<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![

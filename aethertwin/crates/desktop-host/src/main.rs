@@ -13,7 +13,7 @@ fn show_close_failure<R: tauri::Runtime>(target: &impl DialogExt<R>, error: Nati
 }
 
 fn run() -> tauri::Result<()> {
-    let app = desktop_host::with_invoke_handler(
+    let app = desktop_host::with_asset_protocol(desktop_host::with_invoke_handler(
         tauri::Builder::default()
             .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
                 if let Some(window) = app.get_webview_window("main") {
@@ -30,7 +30,7 @@ fn run() -> tauri::Result<()> {
                     }
                 }
             }),
-    )
+    ))
     .build(tauri::generate_context!())?;
     app.run(|app, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {

@@ -3,6 +3,7 @@
 mod error;
 mod import;
 mod media;
+mod resolver;
 mod source;
 mod svg;
 
@@ -13,3 +14,4 @@ pub use import::{
 };
 pub use media::{AssetMediaFacts, AssetMediaType, InspectedMedia, inspect_asset_media};
 pub use project_io::AssetRecord;
+pub use resolver::{AssetIssue, AssetIssueRecord, AssetResolver, VerifiedAsset, sha256_hex};
