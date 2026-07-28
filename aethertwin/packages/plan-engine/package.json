@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vitest run --root ../.. packages/plan-engine/src/units.test.ts packages/plan-engine/src/coordinates.test.ts packages/plan-engine/src/transforms.test.ts",
+    "test": "vitest run --root ../.. packages/plan-engine/src/units.test.ts packages/plan-engine/src/coordinates.test.ts packages/plan-engine/src/transforms.test.ts packages/plan-engine/src/calibration.test.ts packages/plan-engine/src/plan-references.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit"
   },

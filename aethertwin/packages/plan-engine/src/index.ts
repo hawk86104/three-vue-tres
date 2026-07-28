@@ -1,4 +1,9 @@
-export type { Bounds2, Point2, SpatialEntity, Transform2D } from "@aethertwin/core-model";
+export type { Bounds2, PlanReference, Point2, SpatialEntity, Transform2D } from "@aethertwin/core-model";
+export {
+  previewCalibration,
+  type CalibrationInput,
+  type CalibrationPreview,
+} from "./calibration";
 export { entityWorldBounds, entityWorldVertices } from "./bounds";
 export { screenToWorld, worldToScreen, type ViewportTransform } from "./coordinates";
 export {
@@ -28,6 +33,16 @@ export {
   type RectangularArrayInput,
 } from "./operations";
 export { boxSelect, hitTest, type BoxSelectOptions, type HitTestOptions } from "./selection";
+export {
+  applyPlanReferenceTransform,
+  hitTestPlan,
+  planReferenceSourceToWorld,
+  planReferenceWorldBounds,
+  planReferenceWorldPolygon,
+  planReferenceWorldToSource,
+  type HitTestPlanOptions,
+  type PlanHit,
+} from "./plan-references";
 export {
   alignmentGuides,
   findAngleSnap,
