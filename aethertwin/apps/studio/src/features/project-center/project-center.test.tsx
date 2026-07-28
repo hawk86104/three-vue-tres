@@ -312,6 +312,13 @@ function createDesktopBackend(projects = new Map<string, OpenedProject>()): Proj
     createProject,
     openProject,
     recoverProject,
+    importAsset: vi.fn<ProjectBackend["importAsset"]>(async () => {
+      throw new Error("Asset import is unavailable in the project-center test backend");
+    }),
+    cancelAssetImport: vi.fn<ProjectBackend["cancelAssetImport"]>(async () => undefined),
+    resolveAsset: vi.fn<ProjectBackend["resolveAsset"]>(async () => {
+      throw new Error("Asset resolution is unavailable in the project-center test backend");
+    }),
     commit,
     checkpoint,
     closeProject: vi.fn<ProjectBackend["closeProject"]>(async () => undefined),

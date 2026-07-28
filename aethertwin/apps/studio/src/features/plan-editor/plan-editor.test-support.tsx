@@ -273,6 +273,7 @@ export function renderPlanEditorFixture(
     error: null,
     canUndo: false,
     canRedo: false,
+    assetIssues: Object.freeze([]),
   });
   const listeners = new Set<() => void>();
 

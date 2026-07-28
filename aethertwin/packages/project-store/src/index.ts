@@ -1,4 +1,8 @@
 export {
+  type AssetImportProgress,
+  type AssetImportRequest,
+  type AssetImportResult,
+  type BackendAssetSource,
   type CheckpointResult,
   type CreateProjectRequest,
   type OpenedProject,
@@ -24,6 +28,7 @@ export type {
 } from "@aethertwin/plan-engine";
 export {
   ProjectStore,
+  type ProjectAssetSource,
   type ProjectStoreOptions,
   type ProjectStoreState,
 } from "./project-store";

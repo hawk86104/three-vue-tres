@@ -3,10 +3,19 @@ import {
   createInitialSnapshot,
   identityTransform2D,
   parseSnapshot,
+  type AssetRecord,
   type Boundary,
   type Fixture,
+  type PlanReference,
   type ProjectSnapshot,
 } from "@aethertwin/core-model";
+import type {
+  AssetImportProgress,
+  AssetImportRequest,
+  AssetImportResult,
+  AssetIssue,
+  ComposeInitialPlanReferenceInput,
+} from "@aethertwin/asset-pipeline";
 import { rectangularArray, type FloorChange, type PlanEditIntent } from "@aethertwin/plan-engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -21,6 +30,7 @@ import {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 class MemoryStorage implements KeyValueStorage {
@@ -54,6 +64,794 @@ function fixtureFor(snapshot: ProjectSnapshot, id = "00000000-0000-4000-8000-000
     size: { width: 1000, height: 500 },
   };
 }
+
+type PlanReferenceSeed = Omit<
+  ComposeInitialPlanReferenceInput,
+  "asset" | "facts"
+>;
+
+interface ProjectAssetSource {
+  readonly assetId: string;
+  readonly url: string;
+  readonly mediaType: AssetRecord["mediaType"];
+}
+
+interface Task8ProjectStoreState {
+  readonly assetIssues: readonly AssetIssue[];
+}
+
+interface Task8ProjectStore {
+  importPlanReference(
+    request: AssetImportRequest,
+    reference: PlanReferenceSeed,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<PlanReference>;
+  cancelAssetImport(operationId: string): Promise<void>;
+  replaceBrokenPlanReference(
+    referenceId: string,
+    request: AssetImportRequest,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<PlanReference>;
+  resolveAsset(assetId: string): Promise<ProjectAssetSource>;
+  getState(): ReturnType<ProjectStore["getState"]> & Task8ProjectStoreState;
+}
+
+interface BackendAssetSource {
+  readonly assetId: string;
+  readonly url: string;
+}
+
+interface Task8ProjectBackend {
+  importAsset(
+    projectPath: string,
+    request: AssetImportRequest,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<AssetImportResult>;
+  cancelAssetImport(projectPath: string, operationId: string): Promise<void>;
+  resolveAsset(projectPath: string, assetId: string): Promise<BackendAssetSource>;
+  dispose(): Promise<void>;
+}
+
+const PRIVATE_SOURCE_PATH = "E:\\Private\\native-floor-plan.png";
+const IMPORT_OPERATION_A = "30000000-0000-4000-8000-000000000001";
+const IMPORT_OPERATION_B = "30000000-0000-4000-8000-000000000002";
+const ASSET_A = "40000000-0000-4000-8000-000000000001";
+const ASSET_B = "40000000-0000-4000-8000-000000000002";
+const REFERENCE_A = "50000000-0000-4000-8000-000000000001";
+const REFERENCE_B = "50000000-0000-4000-8000-000000000002";
+
+function task8Store(store: ProjectStore): Task8ProjectStore {
+  return store as unknown as Task8ProjectStore;
+}
+
+function task8Backend(backend: SandboxProjectBackend): Task8ProjectBackend {
+  return backend as unknown as Task8ProjectBackend;
+}
+
+function projectAssetDelegates(backend: SandboxProjectBackend) {
+  const task8 = task8Backend(backend);
+  return {
+    importAsset: (...args: Parameters<Task8ProjectBackend["importAsset"]>) =>
+      task8.importAsset(...args),
+    cancelAssetImport: (...args: Parameters<Task8ProjectBackend["cancelAssetImport"]>) =>
+      task8.cancelAssetImport(...args),
+    resolveAsset: (...args: Parameters<Task8ProjectBackend["resolveAsset"]>) =>
+      task8.resolveAsset(...args),
+  };
+}
+
+function nativeAsset(
+  id: string,
+  character: string,
+  mediaType: AssetRecord["mediaType"] = "image/png",
+  size = 42,
+): AssetRecord {
+  const sha256 = character.repeat(64);
+  const extension: Record<AssetRecord["mediaType"], string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/svg+xml": "svg",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+  };
+  return {
+    id,
+    sha256,
+    relativePath: `assets/sha256/${sha256.slice(0, 2)}/${sha256}.${extension[mediaType]}`,
+    mediaType,
+    size,
+  };
+}
+
+function nativeImportResult(
+  asset = nativeAsset(ASSET_A, "a"),
+  width = 640,
+  height = 480,
+): AssetImportResult {
+  return { asset, facts: { kind: "image", width, height } };
+}
+
+function nativeImportRequest(
+  operationId = IMPORT_OPERATION_A,
+  displayName = "native-floor-plan.png",
+): AssetImportRequest {
+  return {
+    operationId,
+    role: "plan-reference",
+    source: {
+      kind: "native-path",
+      path: PRIVATE_SOURCE_PATH,
+      displayName,
+    },
+  };
+}
+
+function referenceSeed(
+  snapshot: ProjectSnapshot,
+  id = REFERENCE_A,
+  name = "Ground floor",
+): PlanReferenceSeed {
+  const floor = snapshot.project.floors[0]!;
+  return {
+    id,
+    name,
+    tags: ["imported"],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+  };
+}
+
+function pngBytes(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(45);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  new DataView(bytes.buffer).setUint32(8, 13);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  new DataView(bytes.buffer).setUint32(16, width);
+  new DataView(bytes.buffer).setUint32(20, height);
+  bytes.set([8, 6, 0, 0, 0], 24);
+  bytes.set([0x49, 0x45, 0x4e, 0x44], 37);
+  return bytes;
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const ownedBytes = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", ownedBytes);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("");
+}
+
+function sandboxImportRequest(
+  bytes: Uint8Array,
+  operationId: string,
+  displayName = "floor-plan.png",
+): AssetImportRequest {
+  return {
+    operationId,
+    role: "plan-reference",
+    source: {
+      kind: "sandbox-blob",
+      blob: new Blob([
+        bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer,
+      ], { type: "application/octet-stream" }),
+      displayName,
+    },
+  };
+}
+
+function cancellable<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+class ControlledAssetBackend extends SandboxProjectBackend {
+  readonly importCalls: Array<{
+    readonly projectPath: string;
+    readonly request: AssetImportRequest;
+  }> = [];
+  readonly cancelCalls: Array<{
+    readonly projectPath: string;
+    readonly operationId: string;
+  }> = [];
+  nextImportResult: AssetImportResult = nativeImportResult();
+  importImplementation: (() => Promise<AssetImportResult>) | null = null;
+  cancelImplementation: (() => Promise<void>) | null = null;
+  resolvedSource: BackendAssetSource = {
+    assetId: ASSET_A,
+    url: `aethertwin-asset://asset/session/${ASSET_A}`,
+  };
+  resolveFailure: unknown = null;
+
+  async importAsset(
+    projectPath: string,
+    request: AssetImportRequest,
+    _onProgress: (value: AssetImportProgress) => void,
+  ): Promise<AssetImportResult> {
+    this.importCalls.push({ projectPath, request });
+    if (this.importImplementation !== null) {
+      return this.importImplementation();
+    }
+    return structuredClone(this.nextImportResult);
+  }
+
+  async cancelAssetImport(projectPath: string, operationId: string): Promise<void> {
+    this.cancelCalls.push({ projectPath, operationId });
+    if (this.cancelImplementation !== null) {
+      return this.cancelImplementation();
+    }
+  }
+
+  async resolveAsset(_projectPath: string, _assetId: string): Promise<BackendAssetSource> {
+    if (this.resolveFailure !== null) {
+      throw this.resolveFailure;
+    }
+    return { ...this.resolvedSource };
+  }
+}
+
+function installObjectUrlRecorder(): {
+  readonly createObjectURL: ReturnType<typeof vi.fn>;
+  readonly revokeObjectURL: ReturnType<typeof vi.fn>;
+} {
+  const NativeUrl = URL;
+  let nextUrl = 1;
+  const createObjectURL = vi.fn(() => `blob:aethertwin-owned-${nextUrl++}`);
+  const revokeObjectURL = vi.fn();
+  class TestUrl extends NativeUrl {
+    static createObjectURL = createObjectURL;
+    static revokeObjectURL = revokeObjectURL;
+  }
+  vi.stubGlobal("URL", TestUrl);
+  return { createObjectURL, revokeObjectURL };
+}
+
+async function importSandboxReference(
+  baseStore: ProjectStore,
+  bytes: Uint8Array,
+  operationId: string,
+  referenceId: string,
+  onProgress: (value: AssetImportProgress) => void = () => undefined,
+): Promise<PlanReference> {
+  const store = task8Store(baseStore);
+  return store.importPlanReference(
+    sandboxImportRequest(bytes, operationId),
+    referenceSeed(store.getState().snapshot!, referenceId),
+    onProgress,
+  );
+}
+
+describe("ProjectStore asset import orchestration", () => {
+  it("commits adjacent asset and reference rows atomically and undoes and redoes them as one history step", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Import", location: "sandbox", profile: "showroom" });
+    const initial = store.getState().snapshot!;
+    const seed = referenceSeed(initial);
+    const commit = vi.spyOn(backend, "commit");
+
+    const created = await store.importPlanReference(
+      nativeImportRequest(),
+      seed,
+      vi.fn(),
+    );
+
+    const expectedReference: PlanReference = {
+      ...seed,
+      assetId: ASSET_A,
+      intrinsicSize: { width: 640, height: 480 },
+      transform: {
+        translation: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      opacity: 0.65,
+      locked: false,
+      calibration: null,
+    };
+    expect(created).toEqual(expectedReference);
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: initial.sequence + 2,
+      assets: [nativeImportResult().asset],
+      project: { planReferences: [expectedReference] },
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    const applyBatch = commit.mock.calls[0]![1];
+    expect(applyBatch.journal).toHaveLength(2);
+    expect(applyBatch.journal.map((row) => row.payload)).toEqual([
+      {
+        collection: "assets",
+        changes: [{ id: ASSET_A, before: null, after: nativeImportResult().asset }],
+      },
+      {
+        collection: "planReferences",
+        changes: [{ id: REFERENCE_A, before: null, after: expectedReference }],
+      },
+    ]);
+    expect(applyBatch.journal[0]!.sequence + 1).toBe(applyBatch.journal[1]!.sequence);
+    expect(new Set(applyBatch.journal.map((row) => row.transactionId)).size).toBe(1);
+    expect(JSON.stringify(applyBatch)).not.toContain(PRIVATE_SOURCE_PATH);
+    expect(JSON.stringify(applyBatch)).not.toContain("native-floor-plan.png");
+
+    await baseStore.undo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [],
+      project: { planReferences: [] },
+    });
+    expect(store.getState()).toMatchObject({ canUndo: false, canRedo: true });
+    expect(commit.mock.calls[1]![1].journal.map((row) => row.action)).toEqual([
+      "undo",
+      "undo",
+    ]);
+
+    await baseStore.redo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [nativeImportResult().asset],
+      project: { planReferences: [expectedReference] },
+    });
+    expect(store.getState()).toMatchObject({ canUndo: true, canRedo: false });
+    expect(commit.mock.calls[2]![1].journal.map((row) => row.action)).toEqual([
+      "redo",
+      "redo",
+    ]);
+    await baseStore.close();
+  });
+
+  it("leaves no durable or in-memory record when the combined journal commit fails", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Atomic failure", location: "sandbox", profile: "market" });
+    const projectPath = store.getState().projectPath!;
+    const before = store.getState().snapshot!;
+    const failure = new Error("journal fsync failed");
+    backend.failNextCommit = failure;
+    const commit = vi.spyOn(backend, "commit");
+
+    await expect(store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(before),
+      vi.fn(),
+    )).rejects.toBe(failure);
+
+    expect(commit).toHaveBeenCalledOnce();
+    expect(store.getState().snapshot).toEqual(before);
+    expect(store.getState()).toMatchObject({
+      saveState: "error",
+      canUndo: false,
+      canRedo: false,
+    });
+    const reopened = await backend.openProject(projectPath);
+    expect(reopened.snapshot.assets).toEqual([]);
+    expect(reopened.snapshot.project.planReferences).toEqual([]);
+    await baseStore.close();
+  });
+
+  it("cancels an active import without committing records or changing project state", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    const cancellation = Object.assign(new Error("Asset import cancelled"), {
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    backend.importImplementation = () => pending.promise;
+    backend.cancelImplementation = async () => pending.reject(cancellation);
+    const commit = vi.spyOn(backend, "commit");
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Cancel", location: "sandbox", profile: "showroom" });
+    const before = store.getState();
+
+    const importing = store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(before.snapshot!),
+      vi.fn(),
+    );
+    const rejected = expect(importing).rejects.toBe(cancellation);
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+    await expect(store.cancelAssetImport(IMPORT_OPERATION_A)).resolves.toBeUndefined();
+    await rejected;
+
+    expect(backend.cancelCalls).toEqual([{
+      projectPath: before.projectPath,
+      operationId: IMPORT_OPERATION_A,
+    }]);
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual(before);
+    await baseStore.close();
+  });
+
+  it("reimports only a broken reference while retaining the old immutable asset and clearing calibration", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Repair", location: "sandbox", profile: "showroom" });
+    const first = await store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(store.getState().snapshot!),
+      vi.fn(),
+    );
+    const customized: PlanReference = {
+      ...first,
+      name: "Placed and calibrated",
+      tags: ["surveyed"],
+      transform: {
+        translation: { x: 1200, y: 800 },
+        rotation: 0.25,
+        scale: { x: 2, y: 2 },
+      },
+      opacity: 0.4,
+      locked: true,
+      calibration: {
+        sourcePointA: { x: 10, y: 20 },
+        sourcePointB: { x: 110, y: 20 },
+        measuredDistanceMm: 200,
+      },
+    };
+    await baseStore.applySnapshotRecordPatches([{
+      collection: "planReferences",
+      changes: [{ id: first.id, before: first, after: customized }],
+    }]);
+    const missing = Object.assign(new Error(`Missing bytes at ${PRIVATE_SOURCE_PATH}`), {
+      code: "ASSET_MISSING",
+      sourcePath: PRIVATE_SOURCE_PATH,
+    });
+    backend.resolveFailure = missing;
+    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(missing);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId: ASSET_A,
+      code: "ASSET_MISSING",
+    }]);
+
+    backend.resolveFailure = null;
+    backend.nextImportResult = nativeImportResult(
+      nativeAsset(ASSET_B, "b"),
+      1200,
+      900,
+    );
+    const commit = vi.spyOn(backend, "commit");
+    const repaired = await store.replaceBrokenPlanReference(
+      REFERENCE_A,
+      nativeImportRequest(IMPORT_OPERATION_B, "replacement.png"),
+      vi.fn(),
+    );
+
+    const expected: PlanReference = {
+      ...customized,
+      assetId: ASSET_B,
+      intrinsicSize: { width: 1200, height: 900 },
+      calibration: null,
+    };
+    expect(repaired).toEqual(expected);
+    expect(store.getState().snapshot!.assets).toEqual([
+      nativeImportResult().asset,
+      backend.nextImportResult.asset,
+    ]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([expected]);
+    expect(store.getState().assetIssues).toEqual([]);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![1].journal.map((row) =>
+      (row.payload as { collection: string }).collection)).toEqual([
+      "assets",
+      "planReferences",
+    ]);
+    expect(commit.mock.calls[0]![1].journal[1]!.payload).toEqual({
+      collection: "planReferences",
+      changes: [{ id: REFERENCE_A, before: customized, after: expected }],
+    });
+    expect(JSON.stringify(commit.mock.calls[0]![1])).not.toContain(PRIVATE_SOURCE_PATH);
+
+    await baseStore.undo();
+    expect(store.getState().snapshot!.assets).toEqual([nativeImportResult().asset]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([customized]);
+    await baseStore.close();
+  });
+
+  it("rejects repair before importing unless the target reference has a broken or missing issue", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Safe repair", location: "sandbox", profile: "market" });
+    const created = await store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(store.getState().snapshot!),
+      vi.fn(),
+    );
+    backend.importCalls.length = 0;
+
+    await expect(store.replaceBrokenPlanReference(
+      created.id,
+      nativeImportRequest(IMPORT_OPERATION_B),
+      vi.fn(),
+    )).rejects.toThrow(/broken|missing|issue/i);
+    await expect(store.replaceBrokenPlanReference(
+      REFERENCE_B,
+      nativeImportRequest(IMPORT_OPERATION_B),
+      vi.fn(),
+    )).rejects.toThrow(/reference|not found/i);
+
+    expect(backend.importCalls).toEqual([]);
+    expect(store.getState().snapshot!.assets).toEqual([nativeImportResult().asset]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([created]);
+    await baseStore.close();
+  });
+
+  it("saves, closes, and reopens the exact imported asset and plan reference", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Reopen import", location: "sandbox", profile: "showroom" });
+    const projectPath = store.getState().projectPath!;
+    const created = await store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(store.getState().snapshot!),
+      vi.fn(),
+    );
+    const expectedAsset = store.getState().snapshot!.assets[0]!;
+
+    await baseStore.save();
+    await baseStore.close();
+    await baseStore.open(projectPath);
+
+    expect(store.getState()).toMatchObject({
+      saveState: "saved",
+      assetIssues: [],
+      canUndo: false,
+      canRedo: false,
+    });
+    expect(store.getState().snapshot!.assets).toEqual([expectedAsset]);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([created]);
+    expect(store.getState().snapshot!.checkpointSequence).toBe(
+      store.getState().snapshot!.sequence,
+    );
+    await baseStore.close();
+  });
+
+  it("joins a validated backend URL with snapshot media type and keeps asset issues safe and transient", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Resolve", location: "sandbox", profile: "showroom" });
+    await store.importPlanReference(
+      nativeImportRequest(),
+      referenceSeed(store.getState().snapshot!),
+      vi.fn(),
+    );
+    const ownedUrl = "blob:https://aethertwin.invalid/owned-asset-a";
+    backend.resolvedSource = { assetId: ASSET_A, url: ownedUrl };
+
+    await expect(store.resolveAsset(ASSET_A)).resolves.toEqual({
+      assetId: ASSET_A,
+      url: ownedUrl,
+      mediaType: "image/png",
+    });
+    expect(Object.keys(await store.resolveAsset(ASSET_A)).sort()).toEqual([
+      "assetId",
+      "mediaType",
+      "url",
+    ]);
+
+    backend.resolvedSource = {
+      assetId: ASSET_A,
+      url: `file:///${PRIVATE_SOURCE_PATH.replaceAll("\\", "/")}`,
+    };
+    await expect(store.resolveAsset(ASSET_A)).rejects.toThrow(/url|scheme|safe/i);
+    expect(store.getState().assetIssues).toEqual([]);
+
+    backend.resolvedSource = { assetId: ASSET_B, url: ownedUrl };
+    await expect(store.resolveAsset(ASSET_A)).rejects.toThrow(/asset|identity|match/i);
+    expect(store.getState().assetIssues).toEqual([]);
+
+    const corruption = Object.assign(
+      new Error(`Digest mismatch at ${PRIVATE_SOURCE_PATH}`),
+      {
+        code: "ASSET_CORRUPT",
+        sourcePath: PRIVATE_SOURCE_PATH,
+        details: { nativePath: PRIVATE_SOURCE_PATH },
+      },
+    );
+    backend.resolveFailure = corruption;
+    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId: ASSET_A,
+      code: "ASSET_CORRUPT",
+    }]);
+    expect(JSON.stringify(store.getState().assetIssues)).not.toContain(PRIVATE_SOURCE_PATH);
+
+    backend.resolveFailure = null;
+    backend.resolvedSource = { assetId: ASSET_A, url: ownedUrl };
+    await store.resolveAsset(ASSET_A);
+    expect(store.getState().assetIssues).toEqual([]);
+
+    backend.resolveFailure = corruption;
+    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    await baseStore.create({ name: "Replacement", location: "sandbox", profile: "market" });
+    expect(store.getState().assetIssues).toEqual([]);
+
+    await store.importPlanReference(
+      nativeImportRequest(IMPORT_OPERATION_B),
+      referenceSeed(store.getState().snapshot!, REFERENCE_B),
+      vi.fn(),
+    );
+    await expect(store.resolveAsset(ASSET_A)).rejects.toBe(corruption);
+    expect(store.getState().assetIssues).toHaveLength(1);
+    await baseStore.close();
+    expect(store.getState().assetIssues).toEqual([]);
+  });
+});
+
+describe("SandboxProjectBackend asset equivalence", () => {
+  it("hashes real Blob bytes with Web Crypto, deduplicates the canonical Blob, and reuses one owned URL", async () => {
+    const urls = installObjectUrlRecorder();
+    const bytes = pngBytes(37, 23);
+    const expectedDigest = await sha256Hex(bytes);
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Sandbox dedup", location: "sandbox", profile: "showroom" });
+    const firstProgress: AssetImportProgress[] = [];
+    const secondProgress: AssetImportProgress[] = [];
+
+    const firstReference = await importSandboxReference(
+      baseStore,
+      bytes,
+      IMPORT_OPERATION_A,
+      REFERENCE_A,
+      (value) => firstProgress.push(value),
+    );
+    const secondReference = await importSandboxReference(
+      baseStore,
+      bytes,
+      IMPORT_OPERATION_B,
+      REFERENCE_B,
+      (value) => secondProgress.push(value),
+    );
+
+    const assets = store.getState().snapshot!.assets;
+    expect(assets).toHaveLength(2);
+    expect(assets[0]!.id).not.toBe(assets[1]!.id);
+    expect(assets.map(({ sha256, relativePath, mediaType, size }) => ({
+      sha256,
+      relativePath,
+      mediaType,
+      size,
+    }))).toEqual([0, 1].map(() => ({
+      sha256: expectedDigest,
+      relativePath: `assets/sha256/${expectedDigest.slice(0, 2)}/${expectedDigest}.png`,
+      mediaType: "image/png",
+      size: bytes.byteLength,
+    })));
+    expect(firstReference).toMatchObject({
+      assetId: assets[0]!.id,
+      intrinsicSize: { width: 37, height: 23 },
+    });
+    expect(secondReference).toMatchObject({
+      assetId: assets[1]!.id,
+      intrinsicSize: { width: 37, height: 23 },
+    });
+    for (const [operationId, events] of [
+      [IMPORT_OPERATION_A, firstProgress],
+      [IMPORT_OPERATION_B, secondProgress],
+    ] as const) {
+      expect(events.map((event) => event.stage)).toEqual([
+        "capture",
+        "validate",
+        "hash",
+        "publish",
+        "complete",
+      ]);
+      expect(events.every((event) =>
+        event.operationId === operationId &&
+        event.totalBytes === bytes.byteLength &&
+        event.completedBytes >= 0 &&
+        event.completedBytes <= event.totalBytes)).toBe(true);
+      expect(events.every((event, index) =>
+        index === 0 || event.completedBytes >= events[index - 1]!.completedBytes)).toBe(true);
+    }
+
+    const firstSource = await store.resolveAsset(assets[0]!.id);
+    const secondSource = await store.resolveAsset(assets[1]!.id);
+    expect(firstSource.url).toBe("blob:aethertwin-owned-1");
+    expect(secondSource.url).toBe(firstSource.url);
+    expect(urls.createObjectURL).toHaveBeenCalledOnce();
+    const ownedBlob = urls.createObjectURL.mock.calls[0]![0] as Blob;
+    expect(new Uint8Array(await ownedBlob.arrayBuffer())).toEqual(bytes);
+    expect(JSON.stringify(store.getState().snapshot)).not.toContain("blob:aethertwin-owned");
+    await baseStore.close();
+  });
+
+  it("keeps a shared URL while one canonical asset remains and revokes it when the last record is invalidated", async () => {
+    const urls = installObjectUrlRecorder();
+    const bytes = pngBytes(8, 9);
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Invalidate", location: "sandbox", profile: "market" });
+    await importSandboxReference(baseStore, bytes, IMPORT_OPERATION_A, REFERENCE_A);
+    await importSandboxReference(baseStore, bytes, IMPORT_OPERATION_B, REFERENCE_B);
+    const [firstAsset, secondAsset] = store.getState().snapshot!.assets;
+    const source = await store.resolveAsset(firstAsset!.id);
+    await store.resolveAsset(secondAsset!.id);
+
+    await baseStore.undo();
+    expect(store.getState().snapshot!.assets).toEqual([firstAsset]);
+    expect(urls.revokeObjectURL).not.toHaveBeenCalled();
+    expect((await store.resolveAsset(firstAsset!.id)).url).toBe(source.url);
+
+    await baseStore.undo();
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(urls.revokeObjectURL).toHaveBeenCalledOnce();
+    expect(urls.revokeObjectURL).toHaveBeenCalledWith(source.url);
+    await baseStore.close();
+  });
+
+  it("revokes project-owned URLs on project replacement and explicit close", async () => {
+    const urls = installObjectUrlRecorder();
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "First blobs", location: "sandbox", profile: "showroom" });
+    const firstReference = await importSandboxReference(
+      baseStore,
+      pngBytes(10, 11),
+      IMPORT_OPERATION_A,
+      REFERENCE_A,
+    );
+    const firstUrl = (await store.resolveAsset(firstReference.assetId)).url;
+
+    await baseStore.create({ name: "Second blobs", location: "sandbox", profile: "market" });
+    expect(urls.revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(urls.revokeObjectURL).toHaveBeenNthCalledWith(1, firstUrl);
+
+    const secondReference = await importSandboxReference(
+      baseStore,
+      pngBytes(12, 13),
+      IMPORT_OPERATION_B,
+      REFERENCE_B,
+    );
+    const secondUrl = (await store.resolveAsset(secondReference.assetId)).url;
+    expect(secondUrl).not.toBe(firstUrl);
+
+    await baseStore.close();
+    expect(urls.revokeObjectURL).toHaveBeenCalledTimes(2);
+    expect(urls.revokeObjectURL).toHaveBeenNthCalledWith(2, secondUrl);
+  });
+
+  it("revokes every owned URL when the sandbox backend is disposed", async () => {
+    const urls = installObjectUrlRecorder();
+    const backend = new SandboxProjectBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    const store = task8Store(baseStore);
+    await baseStore.create({ name: "Dispose blobs", location: "sandbox", profile: "showroom" });
+    const reference = await importSandboxReference(
+      baseStore,
+      pngBytes(14, 15),
+      IMPORT_OPERATION_A,
+      REFERENCE_A,
+    );
+    const source = await store.resolveAsset(reference.assetId);
+
+    await expect(task8Backend(backend).dispose()).resolves.toBeUndefined();
+
+    expect(urls.revokeObjectURL).toHaveBeenCalledOnce();
+    expect(urls.revokeObjectURL).toHaveBeenCalledWith(source.url);
+    await expect(task8Backend(backend).dispose()).resolves.toBeUndefined();
+    expect(urls.revokeObjectURL).toHaveBeenCalledOnce();
+  });
+});
 
 describe("ProjectStore", () => {
   it("creates only showroom or market projects", async () => {
@@ -329,6 +1127,7 @@ describe("ProjectStore", () => {
     const opened = await sandbox.createProject({ name: "Recovered", location: "sandbox", profile: "showroom" });
     const backend: ProjectBackend = {
       mode: "sandbox",
+      ...projectAssetDelegates(sandbox),
       createProject: (request) => sandbox.createProject(request),
       openProject: async () => ({ ...opened, recovered: true }),
       recoverProject: (path, confirmation) => sandbox.recoverProject(path, confirmation),
@@ -366,6 +1165,7 @@ describe("ProjectStore", () => {
       .mockRejectedValueOnce(recoveryFailure);
     const backend: ProjectBackend = {
       mode: "desktop",
+      ...projectAssetDelegates(sandbox),
       createProject: (request) => sandbox.createProject(request),
       openProject: async () => current,
       recoverProject,
@@ -418,6 +1218,7 @@ describe("ProjectStore", () => {
       error: null,
       canUndo: false,
       canRedo: false,
+      assetIssues: [],
     });
   });
 
@@ -691,6 +1492,7 @@ describe("ProjectStore", () => {
     const closeProject = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
     const backend: ProjectBackend = {
       mode: "sandbox",
+      ...projectAssetDelegates(sandbox),
       createProject: (request) => sandbox.createProject(request),
       openProject: async () => {
         const valid = await sandbox.createProject({
@@ -782,6 +1584,7 @@ describe("ProjectStore", () => {
     });
     const backend: ProjectBackend = {
       mode: "sandbox",
+      ...projectAssetDelegates(sandbox),
       createProject: async (request) => {
         await gate;
         return sandbox.createProject(request);

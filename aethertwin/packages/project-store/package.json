@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aethertwin/asset-pipeline": "workspace:*",
     "@aethertwin/command-bus": "workspace:*",
     "@aethertwin/core-model": "workspace:*",
     "@aethertwin/plan-engine": "workspace:*"

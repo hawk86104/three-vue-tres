@@ -1299,6 +1299,14 @@ describe("TauriProjectBackend", () => {
       importRequest(IMPORT_OPERATION, "content-video"),
     ],
     [
+      "non-canonical asset id",
+      (() => {
+        const result = importResult();
+        return { ...result, asset: { ...result.asset, id: "not-an-asset-id" } };
+      })(),
+      importRequest(),
+    ],
+    [
       "sha256 and relative path mismatch",
       (() => {
         const result = importResult();
@@ -1435,6 +1443,63 @@ describe("TauriProjectBackend", () => {
       "import_project_asset",
       "cancel_project_asset_import",
     ]);
+  });
+
+  it("resolves a validated asset id to an exact session-bound custom-protocol URL without paths or native invocation", async () => {
+    const opened = fixture();
+    const assetId = importResult().asset.id;
+    invoke.mockResolvedValueOnce(opened);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    invoke.mockClear();
+
+    await expect(backend.resolveAsset(PROJECT_A, assetId)).resolves.toEqual({
+      assetId,
+      url: `aethertwin-asset://asset/${SESSION_A}/${assetId}`,
+    });
+
+    const resolved = await backend.resolveAsset(PROJECT_A, assetId);
+    expect(Object.keys(resolved).sort()).toEqual(["assetId", "url"]);
+    expect(JSON.stringify(resolved)).not.toContain(PROJECT_A);
+    expect(JSON.stringify(resolved)).not.toContain(SOURCE_PATH);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["non-UUID", "not-an-asset-id"],
+    ["nil UUID", "00000000-0000-0000-0000-000000000000"],
+    ["uppercase UUID", "40000000-0000-4000-8000-00000000000A"],
+  ])("rejects a %s before constructing an asset URL", async (_label, assetId) => {
+    const opened = fixture();
+    invoke.mockResolvedValueOnce(opened);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    invoke.mockClear();
+
+    await expect(backend.resolveAsset(PROJECT_A, assetId)).rejects.toThrow(
+      /asset|uuid|invalid/i,
+    );
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve an asset after its project session has closed", async () => {
+    const opened = fixture();
+    const assetId = importResult().asset.id;
+    invoke
+      .mockResolvedValueOnce(opened)
+      .mockResolvedValueOnce(undefined);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    await backend.closeProject(PROJECT_A);
+    invoke.mockClear();
+
+    await expect(backend.resolveAsset(PROJECT_A, assetId)).rejects.toThrow(
+      /session|project/i,
+    );
+    expect(invoke).not.toHaveBeenCalled();
   });
 });
 

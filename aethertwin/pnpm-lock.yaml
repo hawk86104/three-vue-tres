@@ -205,6 +205,9 @@ importers:
 
   packages/project-store:
     dependencies:
+      '@aethertwin/asset-pipeline':
+        specifier: workspace:*
+        version: link:../asset-pipeline
       '@aethertwin/command-bus':
         specifier: workspace:*
         version: link:../command-bus

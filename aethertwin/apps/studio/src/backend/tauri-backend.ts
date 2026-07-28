@@ -692,6 +692,26 @@ export class TauriProjectBackend implements ProjectBackend {
     });
   }
 
+  resolveAsset(
+    projectPath: string,
+    assetId: string,
+  ): Promise<{ readonly assetId: string; readonly url: string }> {
+    if (!SESSION_ID_PATTERN.test(assetId)) {
+      return Promise.reject(
+        new Error("Invalid asset id: expected a canonical UUID"),
+      );
+    }
+    try {
+      const sessionId = this.requireSession(projectPath);
+      return Promise.resolve(Object.freeze({
+        assetId,
+        url: `aethertwin-asset://asset/${sessionId}/${assetId}`,
+      }));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
   closeProject(projectPath: string): Promise<void> {
     return this.enqueue(() => this.closeProjectNow(projectPath));
   }

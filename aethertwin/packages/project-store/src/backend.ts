@@ -1,5 +1,15 @@
 import type { CommitBatch } from "@aethertwin/command-bus";
 import type { ProjectManifest, ProjectProfile, ProjectSnapshot } from "@aethertwin/core-model";
+import type {
+  AssetImportProgress,
+  AssetImportRequest,
+  AssetImportResult,
+} from "@aethertwin/asset-pipeline";
+
+export interface BackendAssetSource {
+  readonly assetId: string;
+  readonly url: string;
+}
 
 export interface CreateProjectRequest {
   name: string;
@@ -31,7 +41,20 @@ export interface ProjectBackend {
     projectPath: string,
     confirmation: RecoveryConfirmation,
   ): Promise<OpenedProject>;
+  importAsset(
+    projectPath: string,
+    request: AssetImportRequest,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<AssetImportResult>;
+  cancelAssetImport(projectPath: string, operationId: string): Promise<void>;
+  resolveAsset(projectPath: string, assetId: string): Promise<BackendAssetSource>;
   commit(projectPath: string, batch: CommitBatch<ProjectSnapshot>): Promise<void>;
   checkpoint(projectPath: string, snapshot: ProjectSnapshot): Promise<CheckpointResult>;
   closeProject(projectPath: string): Promise<void>;
 }
+
+export type {
+  AssetImportProgress,
+  AssetImportRequest,
+  AssetImportResult,
+} from "@aethertwin/asset-pipeline";
