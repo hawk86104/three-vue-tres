@@ -190,6 +190,7 @@ describe("PlanCanvas production asset source", () => {
     const harness = createPlanEditorTestHarness();
     const props = createPlanCanvasProps(harness, new FakePlanRenderer());
     const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    void _injectedRendererFactory;
     const firstResolve = vi.fn(async (assetId: string) => ({
       assetId, url: `blob:first/${assetId}`, mediaType: "image/png" as const,
     }));
@@ -235,6 +236,7 @@ describe("PlanCanvas production asset source", () => {
     const harness = createPlanEditorTestHarness();
     const props = createPlanCanvasProps(harness, new FakePlanRenderer());
     const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    void _injectedRendererFactory;
     const resolved = {
       assetId: "asset-a",
       url: "blob:aethertwin/asset-a",
@@ -261,6 +263,7 @@ describe("PlanCanvas production asset source", () => {
     const harness = createPlanEditorTestHarness();
     const props = createPlanCanvasProps(harness, new FakePlanRenderer());
     const { rendererFactory: _injectedRendererFactory, ...productionProps } = props;
+    void _injectedRendererFactory;
     const failure = Object.assign(new Error("Asset resolution failed."), {
       code: "ASSET_MISSING" as const,
     });

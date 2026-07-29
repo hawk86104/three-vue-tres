@@ -247,6 +247,7 @@ function parseImportProgress(
       `Invalid native asset import progress transition: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
   return next;
@@ -346,6 +347,7 @@ function parseImportResult(
       `Invalid native asset import result media policy: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
   return Object.freeze({ asset, facts });

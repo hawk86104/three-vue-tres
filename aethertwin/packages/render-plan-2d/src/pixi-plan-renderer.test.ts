@@ -776,7 +776,7 @@ describe("Pixi reference resources", () => {
   it("loads one verified source per pending asset and keeps reference sprites as layer leaves", async () => {
     const sourceGate = deferred<ProjectAssetSource>();
     const textureGate = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
-    const resolve = vi.fn((_assetId: string) => sourceGate.promise);
+    const resolve = vi.fn(() => sourceGate.promise);
     const sourcePort: PlanAssetSourcePort = { resolve };
     pixiHarness.load.mockReturnValue(textureGate.promise);
     const port = pixiRendererModule.createPixiRenderPort(sourcePort);

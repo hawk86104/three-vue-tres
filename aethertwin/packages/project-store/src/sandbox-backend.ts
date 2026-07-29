@@ -106,6 +106,13 @@ function isLocalSvgFragment(value: string): boolean {
   return /^#[A-Za-z0-9_.:-]+$/.test(value);
 }
 
+function containsAsciiControl(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0)!;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+}
+
 function validateSvgUrlFunctions(value: string): void {
   let remaining = value;
   while (true) {
@@ -115,7 +122,7 @@ function validateSvgUrlFunctions(value: string): void {
     const end = remaining.indexOf(")");
     if (end < 0) throw new Error("unsafe SVG");
     const target = remaining.slice(0, end).trim().replace(/^(['"])(.*)\1$/, "$2");
-    if (!isLocalSvgFragment(target) || /[\s\x00-\x1f\x7f]/.test(target)) {
+    if (!isLocalSvgFragment(target) || /\s/.test(target) || containsAsciiControl(target)) {
       throw new Error("unsafe SVG");
     }
     remaining = remaining.slice(end + 1);
@@ -127,7 +134,7 @@ function validateSvgPresentationValue(value: string): void {
   const lower = trimmed.toLowerCase();
   if (trimmed.length === 0 || trimmed.includes("\\") || lower.includes("/*") ||
     lower.includes("*/") || lower.includes("@import") || lower.includes("expression") ||
-    /[\x00-\x1f\x7f]/.test(trimmed)) throw new Error("unsafe SVG");
+    containsAsciiControl(trimmed)) throw new Error("unsafe SVG");
   if (/^url\(#[A-Za-z0-9_.:-]+\)$/.test(trimmed)) return;
   if (lower.includes("url") || /[():]/.test(lower) || lower.includes("//")) {
     throw new Error("unsafe SVG");

@@ -286,6 +286,7 @@ class ControlledAssetBackend extends SandboxProjectBackend {
     request: AssetImportRequest,
     _onProgress: (value: AssetImportProgress) => void,
   ): Promise<AssetImportResult> {
+    void _onProgress;
     this.importCalls.push({ projectPath, request });
     if (this.importImplementation !== null) {
       return this.importImplementation();
@@ -2424,7 +2425,10 @@ describe("ProjectStore plan-reference patches", () => {
   });
 
   it.each([
-    ["delete", (reference: PlanReference): PlanReference | null => null],
+    ["delete", (reference: PlanReference): PlanReference | null => {
+      void reference;
+      return null;
+    }],
     ["properties", (reference: PlanReference) => ({
       ...reference,
       name: "Changed while locked",
