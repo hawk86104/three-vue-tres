@@ -3,7 +3,11 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Fixture } from "@aethertwin/core-model";
+import type {
+  AssetRecord,
+  Fixture,
+  PlanReference,
+} from "@aethertwin/core-model";
 import {
   ProjectStore,
   SandboxProjectBackend,
@@ -1440,5 +1444,80 @@ describe("PlanEditor exact unit editing", () => {
     const after = applyPlanEdit.mock.calls[0]?.[0].changes[0]?.after;
     expect(after?.transform.rotation).toBeCloseTo(Math.PI / 2, 12);
     expect(applyPlanEdit.mock.calls[0]?.[0].reason).toBe("transform");
+  });
+});
+
+describe("PlanEditor Task 12 plan-reference selection", () => {
+  it("selects a locked visible reference row and shares that selection with Inspector", async () => {
+    const { store } = await sandboxProject("Reference selection");
+    const snapshot = store.getState().snapshot!;
+    const floor = snapshot.project.floors[0]!;
+    const asset: AssetRecord = {
+      id: "00000000-0000-4000-8000-000000000030",
+      sha256: "a".repeat(64),
+      relativePath: `assets/sha256/aa/${"a".repeat(64)}.png`,
+      mediaType: "image/png",
+      size: 42,
+    };
+    const reference: PlanReference = {
+      id: "00000000-0000-4000-8000-000000000031",
+      name: "Locked floor plan",
+      tags: ["reference"],
+      floorId: floor.id,
+      layerId: floor.layers[0]!.id,
+      assetId: asset.id,
+      intrinsicSize: { width: 640, height: 480 },
+      transform: {
+        translation: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      opacity: 0.65,
+      locked: true,
+      calibration: null,
+    };
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "assets",
+        changes: [{ id: asset.id, before: null, after: asset }],
+      },
+      {
+        collection: "planReferences",
+        changes: [{ id: reference.id, before: null, after: reference }],
+      },
+    ]);
+    render(<PlanEditor
+      store={store}
+      dependencies={{ assetPicker: null }}
+    />);
+    const user = userEvent.setup();
+
+    const row = rowByData("data-reference-id", reference.id);
+    expect(row).toBeVisible();
+    expect(row).toHaveAttribute("aria-selected", "false");
+    expect(row).toHaveTextContent("Locked floor plan");
+    expect(row).toHaveTextContent("\u5df2\u9501\u5b9a");
+
+    await user.click(row);
+
+    expect(row).toHaveAttribute("aria-selected", "true");
+    const inspector = screen.getByRole("complementary", { name: "\u68c0\u67e5\u5668" });
+    expect(within(inspector).getByRole("heading", {
+      name: "\u5e73\u9762\u53c2\u8003",
+    })).toBeVisible();
+    expect(within(inspector).getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"))
+      .toHaveValue(reference.name);
+    expect(within(inspector).getByRole("button", {
+      name: "\u5220\u9664\u5e73\u9762\u53c2\u8003",
+    })).toBeDisabled();
+
+    await store.undo();
+
+    await waitFor(() => expect(document.querySelector(
+      `[data-reference-id="${reference.id}"]`,
+    )).not.toBeInTheDocument());
+    await waitFor(() => expect(within(inspector).getByLabelText(
+      "\u9879\u76ee\u540d\u79f0",
+    )).toHaveValue("Reference selection"));
   });
 });

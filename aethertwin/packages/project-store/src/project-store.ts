@@ -145,6 +145,44 @@ function parseCheckpointResult(
   return Object.freeze({ manifest, snapshot });
 }
 
+function samePlanReferenceIdentity(
+  before: PlanReference,
+  after: PlanReference,
+): boolean {
+  return before.id === after.id
+    && before.floorId === after.floorId
+    && before.layerId === after.layerId
+    && before.assetId === after.assetId
+    && before.intrinsicSize.width === after.intrinsicSize.width
+    && before.intrinsicSize.height === after.intrinsicSize.height;
+}
+
+function isExactPlanReferenceUnlock(
+  before: PlanReference,
+  after: PlanReference,
+): boolean {
+  const sameCalibration = before.calibration === null
+    ? after.calibration === null
+    : after.calibration !== null
+      && before.calibration.sourcePointA.x === after.calibration.sourcePointA.x
+      && before.calibration.sourcePointA.y === after.calibration.sourcePointA.y
+      && before.calibration.sourcePointB.x === after.calibration.sourcePointB.x
+      && before.calibration.sourcePointB.y === after.calibration.sourcePointB.y
+      && before.calibration.measuredDistanceMm === after.calibration.measuredDistanceMm;
+  return after.locked === false
+    && samePlanReferenceIdentity(before, after)
+    && before.name === after.name
+    && before.tags.length === after.tags.length
+    && before.tags.every((tag, index) => tag === after.tags[index])
+    && before.transform.translation.x === after.transform.translation.x
+    && before.transform.translation.y === after.transform.translation.y
+    && before.transform.rotation === after.transform.rotation
+    && before.transform.scale.x === after.transform.scale.x
+    && before.transform.scale.y === after.transform.scale.y
+    && before.opacity === after.opacity
+    && sameCalibration;
+}
+
 export class ProjectStore {
   private readonly listeners = new Set<StateListener>();
   private readonly autosaveDelayMs: number;
@@ -245,6 +283,38 @@ export class ProjectStore {
         bus.transaction(ownedPatches.map((patch) =>
           commandIntent(patchSnapshotRecordsCommand, patch))),
       ),
+    );
+  }
+
+  applyPlanReferencePatch(
+    before: PlanReference,
+    after: PlanReference | null,
+  ): Promise<void> {
+    const ownedBefore = structuredClone(before);
+    const ownedAfter = after === null ? null : structuredClone(after);
+    if (ownedAfter !== null && !samePlanReferenceIdentity(ownedBefore, ownedAfter)) {
+      return Promise.reject(
+        new Error("Plan reference identity cannot be changed by an ordinary patch."),
+      );
+    }
+    if (
+      ownedBefore.locked
+      && (ownedAfter === null || !isExactPlanReferenceUnlock(ownedBefore, ownedAfter))
+    ) {
+      return Promise.reject(
+        new Error("A locked plan reference can only be unlocked."),
+      );
+    }
+    return this.enqueueMutation(() =>
+      this.mutate((bus) =>
+        bus.execute(patchSnapshotRecordsCommand, {
+          collection: "planReferences",
+          changes: [{
+            id: ownedBefore.id,
+            before: ownedBefore,
+            after: ownedAfter,
+          }],
+        })),
     );
   }
 

@@ -1,6 +1,7 @@
 import type {
   Floor,
   PlanLayer,
+  PlanReference,
   ProjectSnapshot,
   SaveState,
   SpatialEntity,
@@ -21,11 +22,13 @@ import type { ProjectBackend } from "@aethertwin/project-store";
 import { useEffect, useId, useState } from "react";
 import { validateProjectName } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
+import { ReferenceInspector } from "./reference-inspector";
 
 export type InspectorContext =
   | { readonly kind: "project" }
   | { readonly kind: "floor"; readonly floorId: string }
   | { readonly kind: "layer"; readonly floorId: string; readonly layerId: string }
+  | { readonly kind: "plan-reference"; readonly referenceId: string }
   | { readonly kind: "entity"; readonly entityId: string }
   | { readonly kind: "multi"; readonly entityIds: readonly string[] };
 
@@ -919,6 +922,10 @@ export interface PlanInspectorProps {
   readonly onSetProjectTags: (tags: readonly string[]) => Promise<void>;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
   readonly onApplyPlanEdit: (intent: PlanEditIntent) => Promise<void>;
+  readonly onApplyPlanReferencePatch?: (
+    before: PlanReference,
+    after: PlanReference | null,
+  ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
 
@@ -936,6 +943,7 @@ export function PlanInspector({
   onSetProjectTags,
   onApplyFloorPatch,
   onApplyPlanEdit,
+  onApplyPlanReferencePatch,
   onError,
 }: PlanInspectorProps) {
   if (context.kind === "project") {
@@ -984,6 +992,36 @@ export function PlanInspector({
         layer={layer}
         order={order}
         onApplyFloorPatch={onApplyFloorPatch}
+      />
+    );
+  }
+
+  if (context.kind === "plan-reference") {
+    const reference = snapshot.project.planReferences.find(
+      (candidate) => candidate.id === context.referenceId,
+    );
+    const floor = reference === undefined
+      ? undefined
+      : snapshot.project.floors.find(({ id }) => id === reference.floorId);
+    const layer = reference === undefined
+      ? undefined
+      : floor?.layers.find(({ id }) => id === reference.layerId);
+    if (reference === undefined || layer === undefined) {
+      return (
+        <StatusNotice tone="error">{"\u5e73\u9762\u53c2\u8003\u4e0d\u5b58\u5728"}</StatusNotice>
+      );
+    }
+    return (
+      <ReferenceInspector
+        reference={reference}
+        layer={layer}
+        onApplyPlanReferencePatch={async (before, after) => {
+          if (onApplyPlanReferencePatch === undefined) {
+            throw new Error("Plan-reference mutations are unavailable.");
+          }
+          await onApplyPlanReferencePatch(before, after);
+        }}
+        onError={onError}
       />
     );
   }

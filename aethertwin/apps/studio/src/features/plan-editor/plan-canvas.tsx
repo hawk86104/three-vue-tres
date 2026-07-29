@@ -47,13 +47,31 @@ function isTextInputTarget(target: EventTarget | null): boolean {
     || target.closest('[contenteditable]:not([contenteditable="false"])') !== null;
 }
 
+function snapshotWithReferencePreview(
+  snapshot: ProjectSnapshot,
+  state: PlanEditorState,
+): ProjectSnapshot {
+  if (state.draft?.kind !== "reference-transform") return snapshot;
+  const preview = state.draft.preview;
+  return {
+    ...snapshot,
+    project: {
+      ...snapshot.project,
+      planReferences: snapshot.project.planReferences.map((reference) => (
+        reference.id === preview.id ? preview : reference
+      )),
+    },
+  };
+}
+
 function rendererInput(
   snapshot: ProjectSnapshot,
   activeFloorId: string,
   state: PlanEditorState,
 ): PlanRendererInput {
+  const renderSnapshot = snapshotWithReferencePreview(snapshot, state);
   return {
-    snapshot,
+    snapshot: renderSnapshot,
     activeFloorId,
     viewport: state.viewport,
     selectedIds: state.selectedIds,

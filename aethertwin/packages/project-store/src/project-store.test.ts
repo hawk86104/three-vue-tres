@@ -2303,3 +2303,178 @@ describe("RecentProjects", () => {
     expect(JSON.stringify(opened.manifest)).not.toContain(opened.projectPath);
   });
 });
+
+interface Task12ProjectStore {
+  applyPlanReferencePatch(
+    before: PlanReference,
+    after: PlanReference | null,
+  ): Promise<void>;
+}
+
+function task12Store(store: ProjectStore): ProjectStore & Task12ProjectStore {
+  return store as ProjectStore & Task12ProjectStore;
+}
+
+async function createEditablePlanReferenceStore(): Promise<{
+  readonly backend: ControlledAssetBackend;
+  readonly store: ProjectStore & Task12ProjectStore;
+  readonly reference: PlanReference;
+}> {
+  const backend = new ControlledAssetBackend();
+  const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+  const store = task12Store(baseStore);
+  await store.create({ name: "Reference edits", location: "sandbox", profile: "showroom" });
+  const reference = await task8Store(store).importPlanReference(
+    nativeImportRequest(),
+    referenceSeed(store.getState().snapshot!),
+    vi.fn(),
+  );
+  return { backend, store, reference };
+}
+
+describe("ProjectStore plan-reference patches", () => {
+  it("durably edits placement and properties in one reversible record intent", async () => {
+    const { backend, store, reference } = await createEditablePlanReferenceStore();
+    const commit = vi.spyOn(backend, "commit");
+    const after: PlanReference = {
+      ...reference,
+      name: "North concourse",
+      tags: ["north", "surveyed"],
+      opacity: 0.4,
+      locked: true,
+      transform: {
+        ...reference.transform,
+        translation: { x: 1250, y: -375 },
+        rotation: Math.PI / 6,
+      },
+    };
+
+    await store.applyPlanReferencePatch(reference, after);
+
+    expect(store.getState().snapshot!.project.planReferences).toEqual([after]);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![1].journal).toEqual([
+      expect.objectContaining({
+        commandType: "snapshot.records.patch",
+        payload: {
+          collection: "planReferences",
+          changes: [{ id: reference.id, before: reference, after }],
+        },
+        action: "apply",
+      }),
+    ]);
+
+    await store.undo();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([reference]);
+    await store.redo();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([after]);
+
+    await store.dispose();
+  });
+
+  it("deletes one unlocked reference and restores its exact position through undo and redo", async () => {
+    const { backend, store, reference } = await createEditablePlanReferenceStore();
+    backend.nextImportResult = nativeImportResult(nativeAsset(ASSET_B, "b"));
+    const second = await task8Store(store).importPlanReference(
+      nativeImportRequest(IMPORT_OPERATION_B),
+      referenceSeed(store.getState().snapshot!, REFERENCE_B, "Second"),
+      vi.fn(),
+    );
+
+    await store.applyPlanReferencePatch(reference, null);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([second]);
+
+    await store.undo();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([reference, second]);
+    await store.redo();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([second]);
+
+    await store.dispose();
+  });
+
+  it.each([
+    ["id", (reference: PlanReference) => ({
+      ...reference,
+      id: "50000000-0000-4000-8000-000000000099",
+    })],
+    ["floorId", (reference: PlanReference) => ({
+      ...reference,
+      floorId: "50000000-0000-4000-8000-000000000098",
+    })],
+    ["layerId", (reference: PlanReference) => ({
+      ...reference,
+      layerId: "50000000-0000-4000-8000-000000000097",
+    })],
+    ["assetId", (reference: PlanReference) => ({
+      ...reference,
+      assetId: "50000000-0000-4000-8000-000000000096",
+    })],
+    ["intrinsicSize", (reference: PlanReference) => ({
+      ...reference,
+      intrinsicSize: { width: reference.intrinsicSize.width + 1, height: 480 },
+    })],
+  ] as const)("rejects an ordinary patch that changes immutable %s", async (_field, change) => {
+    const { store, reference } = await createEditablePlanReferenceStore();
+
+    await expect(store.applyPlanReferencePatch(reference, change(reference)))
+      .rejects.toThrow();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([reference]);
+
+    await store.dispose();
+  });
+
+  it.each([
+    ["delete", (reference: PlanReference): PlanReference | null => null],
+    ["properties", (reference: PlanReference) => ({
+      ...reference,
+      name: "Changed while locked",
+    })],
+    ["transform", (reference: PlanReference) => ({
+      ...reference,
+      transform: {
+        ...reference.transform,
+        translation: { x: 100, y: 0 },
+      },
+    })],
+    ["calibration", (reference: PlanReference) => ({
+      ...reference,
+      transform: {
+        ...reference.transform,
+        scale: { x: 2, y: 2 },
+      },
+      calibration: {
+        sourcePointA: { x: 0, y: 0 },
+        sourcePointB: { x: 10, y: 0 },
+        measuredDistanceMm: 20,
+      },
+    })],
+  ] as const)("rejects locked-reference %s mutation without publishing state", async (_kind, change) => {
+    const { store, reference } = await createEditablePlanReferenceStore();
+    const locked = { ...reference, locked: true };
+    await store.applyPlanReferencePatch(reference, locked);
+    const sequence = store.getState().snapshot!.sequence;
+
+    await expect(store.applyPlanReferencePatch(locked, change(locked)))
+      .rejects.toThrow();
+    expect(store.getState().snapshot!.sequence).toBe(sequence);
+    expect(store.getState().snapshot!.project.planReferences).toEqual([locked]);
+
+    await store.dispose();
+  });
+
+  it("allows only an otherwise-identical unlock transition from a locked reference", async () => {
+    const { store, reference } = await createEditablePlanReferenceStore();
+    const locked = { ...reference, locked: true };
+    await store.applyPlanReferencePatch(reference, locked);
+    const { name, ...lockedWithoutName } = locked;
+    const unlocked: PlanReference = { name, ...lockedWithoutName, locked: false };
+
+    await store.applyPlanReferencePatch(locked, unlocked);
+
+    expect(store.getState().snapshot!.project.planReferences).toEqual([unlocked]);
+    await store.undo();
+    expect(store.getState().snapshot!.project.planReferences).toEqual([locked]);
+
+    await store.dispose();
+  });
+});

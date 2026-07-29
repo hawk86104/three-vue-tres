@@ -1,4 +1,5 @@
 import type { SnapMode } from "@aethertwin/plan-engine";
+import type { PlanReference } from "@aethertwin/core-model";
 import { describe, expect, it } from "vitest";
 import type { PlanDraft } from "./editor-session";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
@@ -97,5 +98,51 @@ describe("plan editor session", () => {
     expect(Object.isFrozen(state.viewport)).toBe(true);
     expect(state).not.toHaveProperty("snapshot");
     expect(state).not.toHaveProperty("project");
+  });
+
+  it("owns a transient plan-reference transform draft without storing a snapshot", () => {
+    const { store, floorA } = createPlanEditorTestHarness();
+    const preview: PlanReference = {
+      id: "00000000-0000-4000-8000-000000000030",
+      name: "Floor plan",
+      tags: ["reference"],
+      floorId: floorA.id,
+      layerId: floorA.layers[0]!.id,
+      assetId: "00000000-0000-4000-8000-000000000031",
+      intrinsicSize: { width: 100, height: 100 },
+      transform: {
+        translation: { x: 20, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      opacity: 0.65,
+      locked: false,
+      calibration: null,
+    };
+    const draft: PlanDraft = {
+      kind: "reference-transform",
+      origin: { x: 25, y: 25 },
+      preview,
+    };
+
+    store.getState().beginGesture(draft);
+    const mutablePreview = preview as {
+      name: string;
+      transform: { translation: { x: number } };
+    };
+    mutablePreview.name = "Mutated outside";
+    mutablePreview.transform.translation.x = 999;
+
+    expect(store.getState().draft).toMatchObject({
+      kind: "reference-transform",
+      origin: { x: 25, y: 25 },
+      preview: {
+        name: "Floor plan",
+        transform: { translation: { x: 20, y: 0 } },
+      },
+    });
+    expect(Object.isFrozen(store.getState().draft)).toBe(true);
+    expect(store.getState()).not.toHaveProperty("snapshot");
+    expect(store.getState()).not.toHaveProperty("project");
   });
 });

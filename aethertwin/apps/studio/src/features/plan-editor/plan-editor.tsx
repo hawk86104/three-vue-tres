@@ -191,6 +191,7 @@ export function PlanEditor({
       store: sessionStore,
       makeId,
       applyPlanEdit: (intent) => store.applyPlanEdit(intent),
+      applyPlanReferencePatch: (before, after) => store.applyPlanReferencePatch(before, after),
       onError: (error) => setActionError(errorValue(error)),
     })
   ));
@@ -202,24 +203,37 @@ export function PlanEditor({
   }, [state.error]);
 
   useEffect(() => {
+    const snapshot = state.snapshot;
     const selectedIds = [...sessionStore.getState().selectedIds];
+    const entityIds = new Set(
+      snapshot?.project.entities.map(({ id }) => id) ?? [],
+    );
+    const referenceIds = new Set(
+      snapshot?.project.planReferences.map(({ id }) => id) ?? [],
+    );
+    if (
+      selectedIds.length === 1
+      && !entityIds.has(selectedIds[0]!)
+      && !referenceIds.has(selectedIds[0]!)
+    ) {
+      sessionStore.getState().setSelection([]);
+      return;
+    }
     setContext((current) => {
       if (selectedIds.length === 1) {
         const selectedId = selectedIds[0]!;
-        const planReferenceSelected = store.getState().snapshot?.project.planReferences
-          .some(({ id }) => id === selectedId) ?? false;
-        return planReferenceSelected
-          ? { kind: "project" }
+        return referenceIds.has(selectedId)
+          ? { kind: "plan-reference", referenceId: selectedId }
           : { kind: "entity", entityId: selectedId };
       }
       if (selectedIds.length > 1) {
         return { kind: "multi", entityIds: selectedIds };
       }
-      return current.kind === "entity" || current.kind === "multi"
+      return current.kind === "entity" || current.kind === "multi" || current.kind === "plan-reference"
         ? { kind: "project" }
         : current;
     });
-  }, [selectionKey, sessionStore, store]);
+  }, [selectionKey, sessionStore, state.snapshot]);
 
   async function runAction(action: () => Promise<void>): Promise<void> {
     setActionError(null);
@@ -334,7 +348,7 @@ export function PlanEditor({
         );
       }
       sessionStore.getState().setSelection([imported.id]);
-      setContext({ kind: "project" });
+      setContext({ kind: "plan-reference", referenceId: imported.id });
     } catch (error) {
       if (!isAssetImportCancellation(error)) setActionError(safeAssetImportError(error));
     } finally {
@@ -364,7 +378,7 @@ export function PlanEditor({
 
   function selectPlanReference(referenceId: string): void {
     sessionStore.getState().setSelection([referenceId]);
-    setContext({ kind: "project" });
+    setContext({ kind: "plan-reference", referenceId });
   }
 
   function selectFloor(floorId: string) {
@@ -386,10 +400,12 @@ export function PlanEditor({
   function selectEntity(entityId: string, additive: boolean) {
     const current = sessionStore.getState();
     const existing = [...current.selectedIds];
+    const entityIds = new Set(snapshot.project.entities.map(({ id }) => id));
+    const existingEntities = existing.filter((id) => entityIds.has(id));
     const next = additive
       ? current.selectedIds.has(entityId)
-        ? existing.filter((id) => id !== entityId)
-        : [...existing, entityId]
+        ? existingEntities.filter((id) => id !== entityId)
+        : [...existingEntities, entityId]
       : [entityId];
     current.setSelection(next);
     setContext(
@@ -434,6 +450,7 @@ export function PlanEditor({
       onFloorSelect={selectFloor}
       onLayerSelect={selectLayer}
       onEntitySelect={selectEntity}
+      onReferenceSelect={selectPlanReference}
       onApplyFloorPatch={(change: FloorChange) => runAction(
         () => store.applyFloorPatch(change),
       )}
@@ -555,6 +572,16 @@ export function PlanEditor({
             () => store.applyFloorPatch(change),
           )}
           onApplyPlanEdit={(intent: PlanEditIntent) => store.applyPlanEdit(intent)}
+          onApplyPlanReferencePatch={async (before, after) => {
+            await store.applyPlanReferencePatch(before, after);
+            if (
+              after === null
+              && sessionStore.getState().selectedIds.has(before.id)
+            ) {
+              sessionStore.getState().setSelection([]);
+              setContext({ kind: "project" });
+            }
+          }}
           onError={(error) => setActionError(errorValue(error))}
         />
       }

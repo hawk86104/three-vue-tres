@@ -1,4 +1,4 @@
-import type { Point2, SpatialEntity } from "@aethertwin/core-model";
+import type { PlanReference, Point2, SpatialEntity } from "@aethertwin/core-model";
 import type { SnapMode, ViewportTransform } from "@aethertwin/plan-engine";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
@@ -26,6 +26,11 @@ export type PlanDraft =
       readonly kind: "transform";
       readonly origin: Point2;
       readonly preview: readonly SpatialEntity[];
+    }
+  | {
+      readonly kind: "reference-transform";
+      readonly origin: Point2;
+      readonly preview: PlanReference;
     }
   | { readonly kind: "box-select"; readonly start: Point2; readonly current: Point2 };
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { parseSnapshotV3 } from "@aethertwin/core-model";
+import { parseSnapshotV3, type PlanReference } from "@aethertwin/core-model";
 import type {
   PlanAssetSourcePort,
   PlanPointerEvent,
@@ -12,6 +12,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanCanvas } from "./plan-canvas";
+import type { PlanDraft } from "./editor-session";
 import {
   createPlanCanvasProps,
   createPlanEditorTestHarness,
@@ -506,5 +507,79 @@ describe("PlanCanvas host capability boundary", () => {
     ));
     view.unmount();
     expect(renderer.destroyCount).toBe(1);
+  });
+});
+
+describe("PlanCanvas plan-reference transform preview", () => {
+  it("projects only the transient reference override into the renderer snapshot", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const reference: PlanReference = {
+      id: "00000000-0000-4000-8000-000000000030",
+      name: "Floor plan",
+      tags: ["reference"],
+      floorId: harness.floorA.id,
+      layerId: harness.floorA.layers[0]!.id,
+      assetId: "00000000-0000-4000-8000-000000000031",
+      intrinsicSize: { width: 100, height: 100 },
+      transform: {
+        translation: { x: 0, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      opacity: 0.65,
+      locked: false,
+      calibration: null,
+    };
+    const preview: PlanReference = {
+      ...reference,
+      transform: {
+        ...reference.transform,
+        translation: { x: 20, y: 0 },
+      },
+    };
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      assets: [{
+        id: reference.assetId,
+        sha256: "a".repeat(64),
+        relativePath: `assets/sha256/aa/${"a".repeat(64)}.png`,
+        mediaType: "image/png",
+        size: 42,
+      }],
+      project: {
+        ...harness.snapshot.project,
+        planReferences: [reference],
+      },
+    });
+    const props = {
+      ...createPlanCanvasProps(harness, renderer),
+      snapshot,
+    };
+    render(<PlanCanvas {...props} />);
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    await waitFor(() => expect(renderer.updateInputs.at(-1)?.snapshot).toBe(snapshot));
+
+    const draft: PlanDraft = {
+      kind: "reference-transform",
+      origin: { x: 25, y: 25 },
+      preview,
+    };
+    act(() => harness.store.getState().beginGesture(draft));
+
+    await waitFor(() => expect(
+      renderer.updateInputs.at(-1)?.snapshot.project.planReferences,
+    ).toEqual([preview]));
+    const previewInput = renderer.updateInputs.at(-1)!;
+    expect(previewInput.snapshot).not.toBe(snapshot);
+    expect(previewInput.snapshot.project.entities).toBe(snapshot.project.entities);
+    expect(previewInput.draft).toBeNull();
+    expect(previewInput.calibrationPreview).toBeNull();
+    expect(snapshot.project.planReferences).toEqual([reference]);
+
+    act(() => harness.store.getState().cancelDraft());
+
+    await waitFor(() => expect(renderer.updateInputs.at(-1)?.snapshot).toBe(snapshot));
+    expect(renderer.updateInputs.at(-1)?.snapshot.project.planReferences).toEqual([reference]);
   });
 });

@@ -1,4 +1,9 @@
-import { parseSnapshotV3, type ProjectSnapshot } from "@aethertwin/core-model";
+import {
+  parseSnapshotV3,
+  type AssetRecord,
+  type PlanReference,
+  type ProjectSnapshot,
+} from "@aethertwin/core-model";
 import {
   screenToWorld,
   type PlanEditIntent,
@@ -59,6 +64,14 @@ function createSnapshotController(
     void intent;
     return undefined;
   });
+  const applyPlanReferencePatch = vi.fn(async (
+    before: PlanReference,
+    after: PlanReference | null,
+  ) => {
+    void before;
+    void after;
+    return undefined;
+  });
   const errors: unknown[] = [];
   let nextId = 100;
   const controller = createInteractionController({
@@ -68,18 +81,88 @@ function createSnapshotController(
       () => `00000000-0000-4000-8000-${(nextId++).toString().padStart(12, "0")}`
     ),
     applyPlanEdit,
+    applyPlanReferencePatch,
     onError: (error) => errors.push(error),
+  } as Parameters<typeof createInteractionController>[0] & {
+    readonly applyPlanReferencePatch: (
+      before: PlanReference,
+      after: PlanReference | null,
+    ) => Promise<void>;
   });
   return {
     snapshot,
     store,
     controller,
     applyPlanEdit,
+    applyPlanReferencePatch,
     errors,
   };
 }
 
 describe("plan editor interaction controller", () => {
+
+function planReference(
+  snapshot: ProjectSnapshot,
+  overrides: Partial<PlanReference> = {},
+): PlanReference {
+  const floor = snapshot.project.floors[0]!;
+  return {
+    id: "00000000-0000-4000-8000-000000000030",
+    name: "Floor plan",
+    tags: ["reference"],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    assetId: "00000000-0000-4000-8000-000000000031",
+    intrinsicSize: { width: 100, height: 100 },
+    transform: {
+      translation: { x: 0, y: 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    opacity: 0.65,
+    locked: false,
+    calibration: null,
+    ...overrides,
+  };
+}
+
+function snapshotWithReferences(
+  base: ProjectSnapshot,
+  references: readonly PlanReference[],
+  entities = base.project.entities,
+): ProjectSnapshot {
+  return parseSnapshotV3({
+    ...base,
+    assets: assetsForReferences(base, references),
+    project: {
+      ...base.project,
+      entities,
+      planReferences: references,
+    },
+  });
+}
+
+function assetsForReferences(
+  base: ProjectSnapshot,
+  references: readonly PlanReference[],
+): readonly AssetRecord[] {
+  const existingIds = new Set(base.assets.map(({ id }) => id));
+  const missingIds = [...new Set(references.map(({ assetId }) => assetId))]
+    .filter((assetId) => !existingIds.has(assetId));
+  return [
+    ...base.assets,
+    ...missingIds.map((assetId, index): AssetRecord => {
+      const sha256 = (index + 1).toString(16).repeat(64);
+      return {
+        id: assetId,
+        sha256,
+        relativePath: `assets/sha256/${sha256.slice(0, 2)}/${sha256}.png`,
+        mediaType: "image/png",
+        size: 1,
+      };
+    }),
+  ];
+}
   it("creates one boundary intent after three snapped clicks and Enter", async () => {
     const harness = createPlanEditorTestHarness();
     harness.store.getState().setActiveTool("boundary");
@@ -267,6 +350,274 @@ describe("plan editor interaction controller", () => {
     expect(harness.applyPlanEdit).not.toHaveBeenCalled();
   });
 
+
+  it("selects a visible active-floor plan reference from the canvas without committing", async () => {
+    const base = createPlanEditorTestHarness();
+    const reference = planReference(base.snapshot);
+    const harness = createSnapshotController(snapshotWithReferences(
+      base.snapshot,
+      [reference],
+      [],
+    ));
+
+    await click(harness.controller, 75, 25);
+
+    expect([...harness.store.getState().selectedIds]).toEqual([reference.id]);
+    expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+    expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+  });
+
+  it("replaces an existing reference selection with the one canvas-selected reference", async () => {
+    const base = createPlanEditorTestHarness();
+    const first = planReference(base.snapshot);
+    const second = planReference(base.snapshot, {
+      id: "00000000-0000-4000-8000-000000000032",
+      transform: {
+        translation: { x: 500, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    });
+    const harness = createSnapshotController(snapshotWithReferences(
+      base.snapshot,
+      [first, second],
+      [],
+    ));
+    harness.store.getState().setSelection([second.id]);
+
+    await click(harness.controller, 75, 25);
+
+    expect([...harness.store.getState().selectedIds]).toEqual([first.id]);
+    expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+  });
+
+  it("gives a business entity priority over an overlapping plan reference", async () => {
+    const base = createPlanEditorTestHarness();
+    const reference = planReference(base.snapshot);
+    const harness = createSnapshotController(snapshotWithReferences(
+      base.snapshot,
+      [reference],
+      [base.fixture],
+    ));
+
+    await click(harness.controller, 75, 25);
+
+    expect([...harness.store.getState().selectedIds]).toEqual([base.fixture.id]);
+    expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["reference-locked", true, false],
+    ["layer-locked", false, true],
+  ] as const)(
+    "keeps a visible %s plan reference canvas-selectable for inspection",
+    async (_kind, referenceLocked, layerLocked) => {
+      const base = createPlanEditorTestHarness();
+      const layer = {
+        ...base.floorA.layers[0]!,
+        locked: layerLocked,
+      };
+      const snapshot = parseSnapshotV3({
+        ...base.snapshot,
+        assets: assetsForReferences(base.snapshot, [planReference(base.snapshot)]),
+        project: {
+          ...base.snapshot.project,
+          floors: [
+            { ...base.floorA, layers: [layer] },
+            base.floorB,
+          ],
+          entities: [],
+          planReferences: [planReference(base.snapshot, {
+            layerId: layer.id,
+            locked: referenceLocked,
+          })],
+        },
+      });
+      const reference = snapshot.project.planReferences[0]!;
+      const harness = createSnapshotController(snapshot);
+
+      await click(harness.controller, 75, 25);
+
+      expect([...harness.store.getState().selectedIds]).toEqual([reference.id]);
+      expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not canvas-select a plan reference on a hidden layer", async () => {
+    const base = createPlanEditorTestHarness();
+    const hiddenLayer = {
+      ...base.floorA.layers[0]!,
+      visible: false,
+    };
+    const snapshot = parseSnapshotV3({
+      ...base.snapshot,
+      assets: assetsForReferences(base.snapshot, [planReference(base.snapshot)]),
+      project: {
+        ...base.snapshot.project,
+        floors: [
+          { ...base.floorA, layers: [hiddenLayer] },
+          base.floorB,
+        ],
+        entities: [],
+        planReferences: [planReference(base.snapshot, {
+          layerId: hiddenLayer.id,
+        })],
+      },
+    });
+    const harness = createSnapshotController(snapshot);
+
+    await click(harness.controller, 75, 25);
+
+    expect([...harness.store.getState().selectedIds]).toEqual([]);
+    expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+  });
+
+  it("previews reference translation transiently and commits one exact patch on pointer up", async () => {
+    const base = createPlanEditorTestHarness();
+    const reference = planReference(base.snapshot);
+    const harness = createSnapshotController(snapshotWithReferences(
+      base.snapshot,
+      [reference],
+      [],
+    ));
+    harness.store.getState().setSelection([reference.id]);
+
+    await harness.controller.handle(eventAt("pointerdown", 75, 25, { altKey: true }));
+    await harness.controller.handle(eventAt("pointermove", 95, 25, { altKey: true }));
+
+    expect(harness.store.getState().draft).toMatchObject({
+      kind: "reference-transform",
+      origin: { x: 25, y: 25 },
+      preview: {
+        id: reference.id,
+        transform: { translation: { x: 20, y: 0 } },
+      },
+    });
+    expect(harness.snapshot.project.planReferences[0]).toEqual(reference);
+    expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+
+    await harness.controller.handle(eventAt("pointerup", 95, 25, {
+      altKey: true,
+      buttons: 0,
+    }));
+
+    expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+    expect(harness.applyPlanReferencePatch).toHaveBeenCalledOnce();
+    expect(harness.applyPlanReferencePatch).toHaveBeenCalledWith(reference, {
+      ...reference,
+      transform: {
+        ...reference.transform,
+        translation: { x: 20, y: 0 },
+      },
+    });
+    expect(harness.store.getState()).toMatchObject({
+      draft: null,
+      gestureActive: false,
+    });
+  });
+
+  it.each(["Escape", "pointercancel", "blur"] as const)(
+    "discards a transient reference translation on %s",
+    async (cancelKind) => {
+      const base = createPlanEditorTestHarness();
+      const reference = planReference(base.snapshot);
+      const harness = createSnapshotController(snapshotWithReferences(
+        base.snapshot,
+        [reference],
+        [],
+      ));
+      harness.store.getState().setSelection([reference.id]);
+
+      await harness.controller.handle(eventAt("pointerdown", 75, 25, { altKey: true }));
+      await harness.controller.handle(eventAt("pointermove", 95, 25, { altKey: true }));
+      expect(harness.store.getState().draft).toMatchObject({
+        kind: "reference-transform",
+      });
+
+      if (cancelKind === "Escape") {
+        await harness.controller.keyDown("Escape");
+      } else if (cancelKind === "pointercancel") {
+        await harness.controller.handle(eventAt("pointercancel", 95, 25, {
+          altKey: true,
+          buttons: 0,
+        }));
+      } else {
+        harness.controller.cancel();
+      }
+
+      expect(harness.store.getState()).toMatchObject({
+        draft: null,
+        gestureActive: false,
+      });
+      expect(harness.snapshot.project.planReferences[0]).toEqual(reference);
+      expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("deletes one unlocked selected reference through an exact record patch", async () => {
+    const base = createPlanEditorTestHarness();
+    const reference = planReference(base.snapshot);
+    const harness = createSnapshotController(snapshotWithReferences(
+      base.snapshot,
+      [reference],
+      [],
+    ));
+    harness.store.getState().setSelection([reference.id]);
+
+    await harness.controller.keyDown("Delete");
+
+    expect(harness.applyPlanReferencePatch).toHaveBeenCalledOnce();
+    expect(harness.applyPlanReferencePatch).toHaveBeenCalledWith(reference, null);
+    expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+    expect([...harness.store.getState().selectedIds]).toEqual([]);
+  });
+
+  it.each([
+    ["reference-locked", true, false],
+    ["layer-locked", false, true],
+  ] as const)(
+    "blocks drag, keyboard movement, and deletion for a selected %s reference",
+    async (_kind, referenceLocked, layerLocked) => {
+      const base = createPlanEditorTestHarness();
+      const layer = {
+        ...base.floorA.layers[0]!,
+        locked: layerLocked,
+      };
+      const snapshot = parseSnapshotV3({
+        ...base.snapshot,
+        assets: assetsForReferences(base.snapshot, [planReference(base.snapshot)]),
+        project: {
+          ...base.snapshot.project,
+          floors: [
+            { ...base.floorA, layers: [layer] },
+            base.floorB,
+          ],
+          entities: [],
+          planReferences: [planReference(base.snapshot, {
+            layerId: layer.id,
+            locked: referenceLocked,
+          })],
+        },
+      });
+      const reference = snapshot.project.planReferences[0]!;
+      const harness = createSnapshotController(snapshot);
+      harness.store.getState().setSelection([reference.id]);
+
+      await harness.controller.handle(eventAt("pointerdown", 75, 25, { altKey: true }));
+      await harness.controller.handle(eventAt("pointermove", 95, 25, { altKey: true }));
+      await harness.controller.handle(eventAt("pointerup", 95, 25, {
+        altKey: true,
+        buttons: 0,
+      }));
+      await harness.controller.keyDown("ArrowRight");
+      await harness.controller.keyDown("Delete");
+
+      expect([...harness.store.getState().selectedIds]).toEqual([reference.id]);
+      expect(harness.store.getState().draft).toBeNull();
+      expect(harness.applyPlanReferencePatch).not.toHaveBeenCalled();
+      expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+    },
+  );
   it("replaces selection from an empty-origin drag box without committing", async () => {
     const harness = createPlanEditorTestHarness();
     harness.store.getState().setSelection(["00000000-0000-4000-8000-000000000099"]);

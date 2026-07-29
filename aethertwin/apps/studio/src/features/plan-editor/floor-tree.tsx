@@ -1,6 +1,7 @@
 import type {
   Floor,
   PlanLayer,
+  PlanReference,
   ProjectSnapshot,
   SpatialEntity,
 } from "@aethertwin/core-model";
@@ -14,9 +15,11 @@ interface LayerTreeItemProps {
   readonly index: number;
   readonly activeFloor: boolean;
   readonly entities: readonly SpatialEntity[];
+  readonly references: readonly PlanReference[];
   readonly selectedIds: ReadonlySet<string>;
   readonly onSelect: () => void;
   readonly onEntitySelect: (entityId: string, additive: boolean) => void;
+  readonly onReferenceSelect: (referenceId: string) => void;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
 }
 
@@ -30,9 +33,11 @@ function LayerTreeItem({
   index,
   activeFloor,
   entities,
+  references,
   selectedIds,
   onSelect,
   onEntitySelect,
+  onReferenceSelect,
   onApplyFloorPatch,
 }: LayerTreeItemProps) {
   const [name, setName] = useState(layer.name);
@@ -157,8 +162,40 @@ function LayerTreeItem({
           </Button>
         </div>
       </div>
-      {activeFloor && layer.visible && entities.length > 0 ? (
+      {activeFloor && layer.visible && (entities.length > 0 || references.length > 0) ? (
         <ul role="group" className="studio-floor-tree__entities">
+          {references.map((reference) => (
+            <li
+              key={reference.id}
+              role="treeitem"
+              aria-label={reference.name}
+              aria-selected={selectedIds.has(reference.id)}
+              className={
+                selectedIds.has(reference.id)
+                  ? "studio-floor-tree__entity studio-floor-tree__entity--selected"
+                  : "studio-floor-tree__entity"
+              }
+              data-reference-id={reference.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                onReferenceSelect(reference.id);
+              }}
+            >
+              <button
+                type="button"
+                className="studio-floor-tree__selection studio-floor-tree__entity-selection"
+                aria-label={`${"\u9009\u62e9\u5e73\u9762\u53c2\u8003\uff1a"}${reference.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onReferenceSelect(reference.id);
+                }}
+              >
+                <span>{reference.name}</span>
+                <small>{"\u5e73\u9762\u53c2\u8003"}</small>
+                {reference.locked ? <small>{"\u5df2\u9501\u5b9a"}</small> : null}
+              </button>
+            </li>
+          ))}
           {entities.map((entity) => (
             <li
               key={entity.id}
@@ -204,6 +241,7 @@ export interface FloorTreeProps {
   readonly onFloorSelect: (floorId: string) => void;
   readonly onLayerSelect: (floorId: string, layerId: string) => void;
   readonly onEntitySelect: (entityId: string, additive: boolean) => void;
+  readonly onReferenceSelect?: (referenceId: string) => void;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
 }
 
@@ -214,10 +252,14 @@ export function FloorTree({
   onFloorSelect,
   onLayerSelect,
   onEntitySelect,
+  onReferenceSelect = () => undefined,
   onApplyFloorPatch,
 }: FloorTreeProps) {
   const activeEntities = snapshot.project.entities.filter(
     (entity) => entity.floorId === activeFloorId,
+  );
+  const activeReferences = snapshot.project.planReferences.filter(
+    (reference) => reference.floorId === activeFloorId,
   );
 
   return (
@@ -267,9 +309,13 @@ export function FloorTree({
                     entities={activeEntities.filter(
                       (entity) => entity.layerId === layer.id,
                     )}
+                    references={activeReferences.filter(
+                      (reference) => reference.layerId === layer.id,
+                    )}
                     selectedIds={selectedIds}
                     onSelect={() => onLayerSelect(floor.id, layer.id)}
                     onEntitySelect={onEntitySelect}
+                    onReferenceSelect={onReferenceSelect}
                     onApplyFloorPatch={onApplyFloorPatch}
                   />
                 ))}

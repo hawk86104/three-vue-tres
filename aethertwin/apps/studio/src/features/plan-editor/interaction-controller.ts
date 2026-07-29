@@ -2,17 +2,19 @@ import {
   parseSnapshotV3,
   type DimensionAnchor,
   type PlanLayer,
+  type PlanReference,
   type Point2,
   type ProjectSnapshot,
   type SpatialEntity,
 } from "@aethertwin/core-model";
 import {
   alignmentGuides,
+  applyPlanReferenceTransform,
   boxSelect,
   duplicateEntities,
   entityWorldVertices,
   findSnap,
-  hitTest,
+  hitTestPlan,
   screenToWorld,
   translateEntities,
   UniformGridSpatialIndex,
@@ -31,6 +33,10 @@ export interface InteractionControllerDeps {
   readonly store: StoreApi<PlanEditorState>;
   readonly makeId: () => string;
   readonly applyPlanEdit: (intent: PlanEditIntent) => Promise<void>;
+  readonly applyPlanReferencePatch?: (
+    before: PlanReference,
+    after: PlanReference | null,
+  ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
 
@@ -68,6 +74,8 @@ interface ActiveContext {
   readonly editableLayerIds: ReadonlySet<string>;
   readonly entities: readonly SpatialEntity[];
   readonly creationLayer: PlanLayer | null;
+  readonly references: readonly PlanReference[];
+  readonly editableReferenceIds: ReadonlySet<string>;
 }
 
 interface EntitySeed {
@@ -120,6 +128,15 @@ type ControllerGesture =
       readonly selectionBefore: readonly string[];
     }
   | {
+      readonly kind: "reference-transform";
+      readonly tool: "select";
+      readonly pointerId: number;
+      readonly origin: Point2;
+      readonly originScreen: Point2;
+      readonly referenceBefore: PlanReference;
+      readonly selectionBefore: readonly string[];
+    }
+  | {
       readonly kind: "box-select";
       readonly tool: "select";
       readonly pointerId: number;
@@ -157,6 +174,9 @@ function activeContext(
   const editableLayerIds = new Set(
     visibleLayers.filter((layer) => !layer.locked).map((layer) => layer.id),
   );
+  const references = snapshot.project.planReferences.filter((reference) => (
+    reference.floorId === state.activeFloorId && visibleLayerIds.has(reference.layerId)
+  ));
   return {
     snapshot,
     activeFloorId: state.activeFloorId,
@@ -165,6 +185,10 @@ function activeContext(
     entities: snapshot.project.entities.filter((entity) => (
       entity.floorId === state.activeFloorId && visibleLayerIds.has(entity.layerId)
     )),
+    references,
+    editableReferenceIds: new Set(references.filter((reference) => (
+      !reference.locked && editableLayerIds.has(reference.layerId)
+    )).map((reference) => reference.id)),
     creationLayer: visibleLayers.find((layer) => !layer.locked) ?? null,
   };
 }
@@ -290,14 +314,19 @@ function selectableEntities(
   ));
 }
 
-function hitEntity(context: ActiveContext, state: PlanEditorState, point: Point2): string | null {
+function hitPlan(context: ActiveContext, state: PlanEditorState, point: Point2) {
   const entities = context.entities;
-  const result = hitTest({
+  const selectableIds = new Set([
+    ...selectableEntities(context).map((entity) => entity.id),
+    ...context.references.map((reference) => reference.id),
+  ]);
+  const result = hitTestPlan({
     point,
     tolerance: SNAP_TOLERANCE_PIXELS / state.viewport.pixelsPerMillimetre,
     entities,
     index: UniformGridSpatialIndex.from(entities),
-    selectableIds: new Set(selectableEntities(context).map((entity) => entity.id)),
+    references: context.references,
+    selectableIds,
   });
   if (!result.ok) throw result.issue;
   return result.value;
@@ -585,6 +614,46 @@ export function createInteractionController(
     }
     return true;
   };
+  const commitReferencePatch = async (
+    before: PlanReference,
+    after: PlanReference | null,
+    selectionBefore: readonly string[],
+    selectionAfter?: readonly string[],
+  ): Promise<boolean> => {
+    if (commitToken !== null) return false;
+
+    const token = Symbol("plan-reference-commit");
+    const commitStartSelection = [...deps.store.getState().selectedIds];
+    commitToken = token;
+    gesture = null;
+    deps.store.getState().finishGesture();
+
+    try {
+      if (deps.applyPlanReferencePatch === undefined) {
+        throw new Error("Plan-reference mutations are unavailable.");
+      }
+      await deps.applyPlanReferencePatch(before, after);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (sameSelection(state.selectedIds, commitStartSelection)) {
+        state.setSelection(selectionBefore);
+      }
+      deps.onError(error);
+      return false;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (
+      selectionAfter !== undefined
+      && sameSelection(state.selectedIds, commitStartSelection)
+    ) {
+      state.setSelection(selectionAfter);
+    }
+    return true;
+  };
+
 
   const commitCreation = async (
     entity: SpatialEntity | null,
@@ -721,7 +790,7 @@ export function createInteractionController(
   ): void => {
     const state = deps.store.getState();
     const world = screenToWorld(event.screen, state.viewport);
-    const hit = hitEntity(context, state, world);
+    const hit = hitPlan(context, state, world);
     if (hit === null) {
       gesture = {
         kind: "box-select",
@@ -734,18 +803,49 @@ export function createInteractionController(
       return;
     }
 
+    if (hit.kind === "plan-reference") {
+      const reference = context.references.find(({ id }) => id === hit.referenceId);
+      if (reference === undefined) {
+        gesture = null;
+        return;
+      }
+      state.setSelection([reference.id]);
+      if (!context.editableReferenceIds.has(reference.id)) {
+        gesture = null;
+        return;
+      }
+      gesture = {
+        kind: "reference-transform",
+        tool: "select",
+        pointerId: event.pointerId,
+        origin: world,
+        originScreen: { ...event.screen },
+        referenceBefore: reference,
+        selectionBefore: [reference.id],
+      };
+      state.beginGesture({
+        kind: "reference-transform",
+        origin: world,
+        preview: reference,
+      });
+      return;
+    }
+
+    const entityId = hit.entityId;
     const current = [...state.selectedIds];
     if (event.shiftKey) {
+      const entityIds = new Set(context.entities.map(({ id }) => id));
+      const currentEntities = current.filter((id) => entityIds.has(id));
       state.setSelection(
-        state.selectedIds.has(hit)
-          ? current.filter((id) => id !== hit)
-          : [...current, hit],
+        state.selectedIds.has(entityId)
+          ? currentEntities.filter((id) => id !== entityId)
+          : [...currentEntities, entityId],
       );
       gesture = null;
       return;
     }
 
-    if (!state.selectedIds.has(hit)) state.setSelection([hit]);
+    if (!state.selectedIds.has(entityId)) state.setSelection([entityId]);
     const selectedIds = [...deps.store.getState().selectedIds];
     const selected = selectableEntities(context, new Set(selectedIds));
     if (selected.length === 0) {
@@ -828,6 +928,36 @@ export function createInteractionController(
       preview: transformPreview(result.value),
     });
   };
+  const previewReferenceTransform = (
+    event: PlanPointerEvent,
+    currentGesture: Extract<ControllerGesture, { kind: "reference-transform" }>,
+    context: ActiveContext,
+  ): void => {
+    if (!context.editableReferenceIds.has(currentGesture.referenceBefore.id)) {
+      clearGesture();
+      return;
+    }
+    const point = snappedPoint(event, context, deps.store.getState()).point;
+    const delta = {
+      x: point.x - currentGesture.origin.x,
+      y: point.y - currentGesture.origin.y,
+    };
+    const reference = currentGesture.referenceBefore;
+    const result = applyPlanReferenceTransform(reference, {
+      ...reference.transform,
+      translation: {
+        x: reference.transform.translation.x + delta.x,
+        y: reference.transform.translation.y + delta.y,
+      },
+    });
+    if (!result.ok) throw result.issue;
+    deps.store.getState().updateDraft({
+      kind: "reference-transform",
+      origin: currentGesture.origin,
+      preview: result.value,
+    });
+  };
+
 
   const handlePointerMove = (event: PlanPointerEvent): void => {
     if (gesture === null) return;
@@ -880,6 +1010,8 @@ export function createInteractionController(
       );
     } else if (gesture.kind === "transform") {
       previewTransform(event, gesture, context);
+    } else if (gesture.kind === "reference-transform") {
+      previewReferenceTransform(event, gesture, context);
     } else if (gesture.kind === "box-select") {
       const current = screenToWorld(event.screen, deps.store.getState().viewport);
       gesture = { ...gesture, current };
@@ -917,6 +1049,43 @@ export function createInteractionController(
     }
     await commit(result.value, currentGesture.selectionBefore);
   };
+  const finishReferenceTransform = async (
+    event: PlanPointerEvent,
+    currentGesture: Extract<ControllerGesture, { kind: "reference-transform" }>,
+    context: ActiveContext,
+  ): Promise<void> => {
+    if (samePoint(event.screen, currentGesture.originScreen)) {
+      clearGesture();
+      return;
+    }
+    if (!context.editableReferenceIds.has(currentGesture.referenceBefore.id)) {
+      clearGesture();
+      return;
+    }
+    const point = snappedPoint(event, context, deps.store.getState()).point;
+    const delta = {
+      x: point.x - currentGesture.origin.x,
+      y: point.y - currentGesture.origin.y,
+    };
+    if (delta.x === 0 && delta.y === 0) {
+      clearGesture();
+      return;
+    }
+    const reference = currentGesture.referenceBefore;
+    const result = applyPlanReferenceTransform(reference, {
+      ...reference.transform,
+      translation: {
+        x: reference.transform.translation.x + delta.x,
+        y: reference.transform.translation.y + delta.y,
+      },
+    });
+    if (!result.ok) {
+      fail(result.issue, currentGesture.selectionBefore);
+      return;
+    }
+    await commitReferencePatch(reference, result.value, currentGesture.selectionBefore);
+  };
+
 
   const finishBoxSelection = (
     event: PlanPointerEvent,
@@ -967,6 +1136,8 @@ export function createInteractionController(
       }
     } else if (gesture.kind === "transform") {
       await finishTransform(event, gesture, context);
+    } else if (gesture.kind === "reference-transform") {
+      await finishReferenceTransform(event, gesture, context);
     } else if (gesture.kind === "box-select") {
       finishBoxSelection(event, gesture, context);
     }
@@ -975,6 +1146,15 @@ export function createInteractionController(
   const deleteSelection = async (): Promise<void> => {
     const context = contextNow();
     const selectionBefore = [...deps.store.getState().selectedIds];
+    if (selectionBefore.length === 1) {
+      const reference = context.references.find(({ id }) => id === selectionBefore[0]);
+      if (reference !== undefined) {
+        if (!context.editableReferenceIds.has(reference.id)) return;
+        await commitReferencePatch(reference, null, selectionBefore, []);
+        return;
+      }
+    }
+
     const entities = selectableEntities(context, new Set(selectionBefore));
     if (entities.length === 0 || entities.length !== selectionBefore.length) {
       return;
@@ -1039,11 +1219,6 @@ export function createInteractionController(
           || key === "ArrowDown"
         ) {
           const context = contextNow();
-          const selected = selectableEntities(
-            context,
-            deps.store.getState().selectedIds,
-          );
-          if (selected.length === 0 || selected.length !== selectionBefore.length) return;
           const delta = key === "ArrowLeft"
             ? { x: -GRID_SIZE_MILLIMETRES, y: 0 }
             : key === "ArrowRight"
@@ -1051,6 +1226,32 @@ export function createInteractionController(
               : key === "ArrowUp"
                 ? { x: 0, y: GRID_SIZE_MILLIMETRES }
                 : { x: 0, y: -GRID_SIZE_MILLIMETRES };
+
+          if (selectionBefore.length === 1) {
+            const reference = context.references.find(({ id }) => id === selectionBefore[0]);
+            if (reference !== undefined) {
+              if (!context.editableReferenceIds.has(reference.id)) return;
+              const result = applyPlanReferenceTransform(reference, {
+                ...reference.transform,
+                translation: {
+                  x: reference.transform.translation.x + delta.x,
+                  y: reference.transform.translation.y + delta.y,
+                },
+              });
+              if (!result.ok) {
+                fail(result.issue, selectionBefore);
+                return;
+              }
+              await commitReferencePatch(reference, result.value, selectionBefore);
+              return;
+            }
+          }
+
+          const selected = selectableEntities(
+            context,
+            deps.store.getState().selectedIds,
+          );
+          if (selected.length === 0 || selected.length !== selectionBefore.length) return;
           const result = translateEntities(selected, delta);
           if (!result.ok) {
             fail(result.issue, selectionBefore);
