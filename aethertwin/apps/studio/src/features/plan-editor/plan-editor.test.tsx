@@ -1135,6 +1135,43 @@ describe("PlanEditor tree keyboard activation", () => {
   );
 });
 
+describe("PlanEditor Task 11 asset entry points", () => {
+  it("shows Tree and Asset Library tabs plus Import floor plan only when a picker exists", async () => {
+    const user = userEvent.setup();
+    const picker = { pick: vi.fn(async () => null) };
+    renderPlanEditorFixture({ profile: "showroom", assetPicker: picker });
+
+    const navigation = screen.getByRole("navigation", { name: "\u9879\u76ee\u6811" });
+    expect(within(navigation).getByRole("tablist", { name: "\u5de6\u4fa7\u9762\u677f" })).toBeVisible();
+    expect(within(navigation).getByRole("tab", { name: "\u9879\u76ee\u6811" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tree", { name: "\u697c\u5c42\u548c\u7a7a\u95f4" })).toBeVisible();
+    expect(
+      within(screen.getByRole("group", { name: "\u5efa\u7b51" })).getByRole("button", {
+        name: "\u5bfc\u5165\u5e73\u9762\u56fe",
+      }),
+    ).toBeVisible();
+
+    await user.click(within(navigation).getByRole("tab", { name: "\u8d44\u4ea7\u5e93" }));
+    expect(within(navigation).getByRole("tab", { name: "\u8d44\u4ea7\u5e93" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(navigation).getByRole("region", { name: "\u8d44\u4ea7\u5e93" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|\u5185\u5bb9|\u8def\u7ebf|3D|\u5bfc\u51fa/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps Task 11 controls absent when the import picker capability is unavailable", () => {
+    renderPlanEditorFixture({ profile: "showroom", assetPicker: null });
+
+    expect(screen.queryByRole("tablist", { name: "\u5de6\u4fa7\u9762\u677f" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "\u8d44\u4ea7\u5e93" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "\u5bfc\u5165\u5e73\u9762\u56fe" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tree", { name: "\u697c\u5c42\u548c\u7a7a\u95f4" })).toBeVisible();
+  });
+});
 describe("renderPlanEditorFixture Task 11 compatibility", () => {
   it("returns the rendered default primary fixture with its stable treeitem name", () => {
     const { fixture } = renderPlanEditorFixture();

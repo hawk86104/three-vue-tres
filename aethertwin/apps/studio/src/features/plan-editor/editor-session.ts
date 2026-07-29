@@ -13,6 +13,8 @@ export type PlanTool =
   | "dimension"
   | "pan";
 
+
+export type PlanSidePanel = "tree" | "assets";
 export type PlanDraft =
   | {
       readonly kind: "create";
@@ -30,6 +32,7 @@ export type PlanDraft =
 export interface PlanEditorState {
   readonly activeFloorId: string;
   readonly activeTool: PlanTool;
+  readonly sidePanel: PlanSidePanel;
   readonly selectedIds: ReadonlySet<string>;
   readonly viewport: ViewportTransform;
   readonly snapModes: ReadonlySet<SnapMode>;
@@ -38,6 +41,7 @@ export interface PlanEditorState {
   readonly clipboard: readonly SpatialEntity[];
   setActiveFloor(id: string): boolean;
   setActiveTool(tool: PlanTool): void;
+  setSidePanel(panel: PlanSidePanel): void;
   setSelection(ids: readonly string[]): void;
   setViewport(viewport: ViewportTransform): void;
   setSnapModes(modes: readonly SnapMode[]): void;
@@ -112,6 +116,7 @@ export function createPlanEditorStore(
   return createStore<PlanEditorState>((set, get) => ({
     activeFloorId: options.activeFloorId,
     activeTool: "select",
+    sidePanel: "tree",
     selectedIds: ownReadonlySet([]),
     viewport: initialViewport,
     snapModes: ownReadonlySet(DEFAULT_SNAP_MODES),
@@ -132,6 +137,10 @@ export function createPlanEditorStore(
 
     setActiveTool(tool) {
       set({ activeTool: tool, draft: null, gestureActive: false });
+    },
+
+    setSidePanel(panel) {
+      set({ sidePanel: panel });
     },
 
     setSelection(ids) {

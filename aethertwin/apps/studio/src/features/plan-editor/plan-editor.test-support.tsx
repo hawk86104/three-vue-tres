@@ -164,6 +164,7 @@ export interface RenderPlanEditorFixtureOptions {
   readonly invalidSelection?: InvalidSelectionKind;
   readonly invalidGeneratedIds?: boolean;
   readonly primaryEntityType?: "fixture" | "wall" | "poi" | "dimension";
+  readonly assetPicker?: PlanEditorDependencies["assetPicker"];
   readonly workspace?: PlanEditorDependencies["workspace"];
   readonly renderer?: FakePlanRenderer;
 }
@@ -340,6 +341,7 @@ export function renderPlanEditorFixture(
 
   const projectStore = {
     getState: () => projectState,
+    getAssetSourceEpoch: () => 0,
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -415,6 +417,7 @@ export function renderPlanEditorFixture(
         sessionStore,
         controller,
         makeId,
+        assetPicker: options.assetPicker ?? null,
         ...(workspace === undefined
           ? {}
           : { workspace }),

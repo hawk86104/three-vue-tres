@@ -57,12 +57,16 @@ export interface PlanToolbarProps {
   readonly profile: ProjectProfile;
   readonly activeTool: PlanTool;
   readonly onToolChange: (tool: PlanTool) => void;
+  readonly onImportFloorPlan?: (initiator: HTMLButtonElement) => void;
+  readonly importFloorPlanDisabled?: boolean;
 }
 
 export function PlanToolbar({
   profile,
   activeTool,
   onToolChange,
+  onImportFloorPlan,
+  importFloorPlanDisabled = false,
 }: PlanToolbarProps) {
   return (
     <div className="studio-plan-toolbar" data-profile={profile}>
@@ -97,6 +101,17 @@ export function PlanToolbar({
                 </Button>
               );
             })}
+            {onImportFloorPlan !== undefined &&
+            group.tools.some(({ tool }) => tool === "boundary") ? (
+              <Button
+                variant="secondary"
+                className="studio-plan-toolbar__action"
+                disabled={importFloorPlanDisabled}
+                onClick={(event) => onImportFloorPlan(event.currentTarget)}
+              >
+                {"\u5bfc\u5165\u5e73\u9762\u56fe"}
+              </Button>
+            ) : null}
           </div>
         </div>
       ))}
