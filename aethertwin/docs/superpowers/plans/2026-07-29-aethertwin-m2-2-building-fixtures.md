@@ -85,6 +85,7 @@ export interface WallMetricSegment {
   readonly length: number;
   readonly cumulativeStart: number;
   readonly cumulativeEnd: number;
+  readonly effectiveThickness: number;
 }
 
 export type OpeningGeometryIssueCode =
@@ -98,7 +99,7 @@ export type OpeningGeometryIssueCode =
   | "OPENING_TARGET_LOCKED";
 
 export function wallMetricSegments(wall: Wall): readonly WallMetricSegment[];
-export function effectiveWallThickness(wall: Wall): number;
+export function effectiveWallThickness(wall: Wall, segmentIndex: number): number | undefined;
 export function locateOpening(wall: Wall, opening: Opening): OpeningProjection | undefined;
 export function validateOpeningGeometry(
   walls: readonly Wall[],
