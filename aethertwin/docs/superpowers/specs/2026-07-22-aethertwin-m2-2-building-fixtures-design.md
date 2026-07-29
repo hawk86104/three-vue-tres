@@ -60,7 +60,7 @@ type FixtureKind =
 
 Before M2.2, the application could not create openings through Studio. M2.2 therefore makes the geometric opening rules below normative for schema v3 without a migration. A hand-authored or corrupted v3 project containing an invalid opening fails explicitly; the application never silently moves, clips, or deletes it.
 
-Seven-kind fixtures require a finite positive `spatial3D.height`. A legacy `generic` fixture may omit `spatial3D`.
+Schema v3 continues to allow `spatial3D` to be absent on any fixture so the existing v2 `display-case` contract and the already-published lossless v2-to-v3 migration remain valid. Every fixture newly created from the M2.2 showroom catalogue writes a finite positive `spatial3D.height`. M2.4 uses the matching catalogue default when a legacy standard fixture has no stored height. A legacy `generic` fixture may also omit `spatial3D`.
 
 ## 3. Coordinate and numeric contract
 
@@ -383,7 +383,7 @@ The showroom Fixtures group opens seven buttons showing label and width/depth/he
 
 The preview is a zero-rotation rectangle centred on the snapped point. Stored translation is `center - (width / 2, depth / 2)`. Click creates one fixture through `plan.entities.patch`, selects it, and retains the kind. Failure retains preview/choice. `Escape` clears choice and returns to Select.
 
-The Inspector shows read-only kind, name, X/Y, rotation, layer, lock, tags, width, depth, and vertical height. One submission updates dimensions atomically. Standard kinds require positive height. A generic fixture may leave height blank; entering height adds `{ elevation: 0, height }`, and clearing a legacy generic height removes optional `spatial3D`.
+The Inspector shows read-only kind, name, X/Y, rotation, layer, lock, tags, width, depth, and vertical height. One submission updates dimensions atomically. A standard fixture with stored `spatial3D` displays that height. A legacy standard fixture without `spatial3D` displays its catalogue default without mutating the snapshot; the first successful Apply materializes `{ elevation: 0, height }`. A generic fixture may leave height blank; entering height adds `{ elevation: 0, height }`, and clearing a legacy generic height removes optional `spatial3D`.
 
 Existing move, rotate, duplicate, copy/paste, array, align, distribute, lock, delete, undo, and redo remain authoritative. 2D resize changes width/depth, not vertical height. Copy/paste and array preserve kind and `spatial3D`.
 
@@ -424,7 +424,7 @@ M2.2 adds no public host error code, Tauri command, or capability. Existing reda
 
 Required evidence:
 
-- core-model: opening geometry, deterministic issues, standard fixture height, generic compatibility, immutability;
+- core-model: opening geometry, deterministic issues, legacy missing-height compatibility, and immutability;
 - plan-engine: opening projection/effective thickness, transformed and degenerate walls, room crossings/T-junctions/clustering/overlaps/order/filter/limit, room intents;
 - mode-showroom: seven descriptors, dimensions, parts, freezing, tool policy, no generic;
 - ProjectStore/CommandBus: building apply/inverse/undo/redo, before/index rejection, failed commit non-publication, save/reopen/recovery, one-command Confirm All;
@@ -445,6 +445,7 @@ M2.2 is complete only when actual evidence proves:
 - the acceptance project contains at least four confirmed rooms or zones;
 - every catalogue kind can be placed and edited;
 - at least twenty catalogue fixtures survive save, close, reopen, and dirty recovery;
+- a legacy standard fixture without `spatial3D` opens unchanged, uses its catalogue default for display/projection, and materializes height only after explicit Apply;
 - legacy generic round-trips and remains editable;
 - market generic creation does not regress;
 - schema stays v3 and the Tauri application command count stays eight;
