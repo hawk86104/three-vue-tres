@@ -88,13 +88,14 @@ export interface WallMetricSegment {
 }
 
 export type OpeningGeometryIssueCode =
-  | "OPENING_WALL_MISSING"
-  | "OPENING_WALL_DEGENERATE"
-  | "OPENING_OUTSIDE_SEGMENT"
+  | "OPENING_WALL_NOT_FOUND"
+  | "OPENING_WALL_GEOMETRY_INVALID"
+  | "OPENING_SPAN_CROSSES_JOINT"
   | "OPENING_ENDPOINT_CLEARANCE"
   | "OPENING_OVERLAP"
+  | "OPENING_HEIGHT_EXCEEDED"
   | "OPENING_DOOR_SILL_NONZERO"
-  | "OPENING_VERTICAL_EXTENT_EXCEEDS_WALL";
+  | "OPENING_TARGET_LOCKED";
 
 export function wallMetricSegments(wall: Wall): readonly WallMetricSegment[];
 export function effectiveWallThickness(wall: Wall): number;
@@ -235,11 +236,6 @@ git commit -m "feat: enforce opening geometry in project io"
 **Interfaces:**
 
 ```ts
-export type BuildingStructurePatchReason =
-  | "wall-delete"
-  | "wall-reshape"
-  | "opening-repair";
-
 export interface BuildingWallChange {
   readonly id: string;
   readonly before: Wall | null;
@@ -248,7 +244,7 @@ export interface BuildingWallChange {
 }
 
 export interface BuildingStructurePatch {
-  readonly reason: BuildingStructurePatchReason;
+  readonly reason: PlanEditReason;
   readonly wallChanges: readonly BuildingWallChange[];
   readonly openingChanges: readonly SnapshotRecordChange<Opening>[];
 }
@@ -318,7 +314,7 @@ git commit -m "feat: patch building structure atomically"
 ```rust
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BuildingStructurePatch {
-    reason: BuildingStructurePatchReason,
+    reason: PlanEditReason,
     wall_changes: Vec<BuildingWallChange>,
     opening_changes: Vec<OpeningRecordChange>,
 }
