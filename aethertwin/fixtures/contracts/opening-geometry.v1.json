@@ -1,0 +1,592 @@
+{
+  "version": 1,
+  "geometryEpsilonMm": 1e-7,
+  "metricCases": [
+    {
+      "name": "identity horizontal segment",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000101",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      },
+      "expectedSegments": [
+        {
+          "segmentIndex": 0,
+          "start": { "x": 0, "y": 0 },
+          "end": { "x": 4000, "y": 0 },
+          "length": 4000,
+          "cumulativeStart": 0,
+          "cumulativeEnd": 4000,
+          "tangent": { "x": 1, "y": 0 },
+          "effectiveThickness": 120
+        }
+      ]
+    },
+    {
+      "name": "anisotropic scale rotation and translation",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000102",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 3, "y": 4 }],
+        "thickness": 100,
+        "transform": {
+          "translation": { "x": 100, "y": -50 },
+          "rotation": 1.5707963267948966,
+          "scale": { "x": 2, "y": 3 }
+        }
+      },
+      "expectedSegments": [
+        {
+          "segmentIndex": 0,
+          "start": { "x": 100, "y": -50 },
+          "end": { "x": 88, "y": -44 },
+          "length": 13.416407864998739,
+          "cumulativeStart": 0,
+          "cumulativeEnd": 13.416407864998739,
+          "tangent": { "x": -0.8944271909999159, "y": 0.4472135954999579 },
+          "effectiveThickness": 223.60679774997897
+        }
+      ]
+    },
+    {
+      "name": "zero length source segment is skipped and thickness is per segment",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000103",
+        "centerLine": [
+          { "x": 0, "y": 0 },
+          { "x": 1000, "y": 0 },
+          { "x": 1000, "y": 0 },
+          { "x": 1000, "y": 1000 }
+        ],
+        "thickness": 100,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 2, "y": 3 }
+        }
+      },
+      "expectedSegments": [
+        {
+          "segmentIndex": 0,
+          "start": { "x": 0, "y": 0 },
+          "end": { "x": 2000, "y": 0 },
+          "length": 2000,
+          "cumulativeStart": 0,
+          "cumulativeEnd": 2000,
+          "tangent": { "x": 1, "y": 0 },
+          "effectiveThickness": 300
+        },
+        {
+          "segmentIndex": 2,
+          "start": { "x": 2000, "y": 0 },
+          "end": { "x": 2000, "y": 3000 },
+          "length": 3000,
+          "cumulativeStart": 2000,
+          "cumulativeEnd": 5000,
+          "tangent": { "x": 0, "y": 1 },
+          "effectiveThickness": 200
+        }
+      ]
+    },
+    {
+      "name": "tiny nonzero local segment survives large world scale",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000104",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 0.00000005, "y": 0 }],
+        "thickness": 100,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 100000000, "y": 1 }
+        }
+      },
+      "expectedSegments": [
+        {
+          "segmentIndex": 0,
+          "start": { "x": 0, "y": 0 },
+          "end": { "x": 5, "y": 0 },
+          "length": 5,
+          "cumulativeStart": 0,
+          "cumulativeEnd": 5,
+          "tangent": { "x": 1, "y": 0 },
+          "effectiveThickness": 100
+        }
+      ]
+    }
+  ],
+  "projectionCases": [
+    {
+      "name": "locates an opening on an identity wall",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000101",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      },
+      "opening": {
+        "id": "00000000-0000-4000-8000-000000000201",
+        "wallId": "00000000-0000-4000-8000-000000000101",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      },
+      "expected": {
+        "segmentIndex": 0,
+        "center": { "x": 2000, "y": 0 },
+        "tangent": { "x": 1, "y": 0 },
+        "distanceAlongSegment": 2000,
+        "effectiveThickness": 120
+      }
+    },
+    {
+      "name": "locates after a skipped zero length segment",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000103",
+        "centerLine": [
+          { "x": 0, "y": 0 },
+          { "x": 1000, "y": 0 },
+          { "x": 1000, "y": 0 },
+          { "x": 1000, "y": 1000 }
+        ],
+        "thickness": 100,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 2, "y": 3 }
+        }
+      },
+      "opening": {
+        "id": "00000000-0000-4000-8000-000000000202",
+        "wallId": "00000000-0000-4000-8000-000000000103",
+        "kind": "window",
+        "distanceAlongWall": 2500,
+        "width": 400,
+        "height": 1200,
+        "sillHeight": 900
+      },
+      "expected": {
+        "segmentIndex": 2,
+        "center": { "x": 2000, "y": 500 },
+        "tangent": { "x": 0, "y": 1 },
+        "distanceAlongSegment": 500,
+        "effectiveThickness": 200
+      }
+    },
+    {
+      "name": "locates on a rotated anisotropic wall",
+      "wall": {
+        "id": "00000000-0000-4000-8000-000000000102",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 3, "y": 4 }],
+        "thickness": 100,
+        "transform": {
+          "translation": { "x": 100, "y": -50 },
+          "rotation": 1.5707963267948966,
+          "scale": { "x": 2, "y": 3 }
+        }
+      },
+      "opening": {
+        "id": "00000000-0000-4000-8000-000000000203",
+        "wallId": "00000000-0000-4000-8000-000000000102",
+        "kind": "door",
+        "distanceAlongWall": 5,
+        "width": 1,
+        "height": 2,
+        "sillHeight": 0
+      },
+      "expected": {
+        "segmentIndex": 0,
+        "center": { "x": 95.52786404500043, "y": -47.76393202250021 },
+        "tangent": { "x": -0.8944271909999159, "y": 0.4472135954999579 },
+        "distanceAlongSegment": 5,
+        "effectiveThickness": 223.60679774997897
+      }
+    }
+  ],
+  "validationCases": [
+    {
+      "name": "accepts a valid door with explicit wall height",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000111",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "height": 2800,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000211",
+        "wallId": "00000000-0000-4000-8000-000000000111",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": []
+    },
+    {
+      "name": "accepts a valid window with default wall height",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000112",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000212",
+        "wallId": "00000000-0000-4000-8000-000000000112",
+        "kind": "window",
+        "distanceAlongWall": 2000,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+      }],
+      "expectedIssues": []
+    },
+    {
+      "name": "locked wall does not invalidate a durable opening",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000113",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "locked": true,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000213",
+        "wallId": "00000000-0000-4000-8000-000000000113",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": []
+    },
+    {
+      "name": "rejects a missing supporting wall",
+      "walls": [],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000214",
+        "wallId": "00000000-0000-4000-8000-000000000199",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": [{
+        "code": "OPENING_WALL_NOT_FOUND",
+        "openingId": "00000000-0000-4000-8000-000000000214",
+        "wallId": "00000000-0000-4000-8000-000000000199"
+      }]
+    },
+    {
+      "name": "rejects a wall without a finite nonzero world segment",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000114",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 0, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000215",
+        "wallId": "00000000-0000-4000-8000-000000000114",
+        "kind": "door",
+        "distanceAlongWall": 0,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": [{
+        "code": "OPENING_WALL_GEOMETRY_INVALID",
+        "openingId": "00000000-0000-4000-8000-000000000215",
+        "wallId": "00000000-0000-4000-8000-000000000114"
+      }]
+    },
+    {
+      "name": "rejects an opening span across a joint",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000115",
+        "centerLine": [
+          { "x": 0, "y": 0 },
+          { "x": 2000, "y": 0 },
+          { "x": 2000, "y": 3000 }
+        ],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000216",
+        "wallId": "00000000-0000-4000-8000-000000000115",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": [{
+        "code": "OPENING_SPAN_CROSSES_JOINT",
+        "openingId": "00000000-0000-4000-8000-000000000216",
+        "wallId": "00000000-0000-4000-8000-000000000115"
+      }]
+    },
+    {
+      "name": "admits endpoint clearance within epsilon",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000116",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000217",
+        "wallId": "00000000-0000-4000-8000-000000000116",
+        "kind": "door",
+        "distanceAlongWall": 509.99999995,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": []
+    },
+    {
+      "name": "rejects endpoint clearance beyond epsilon",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000117",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000218",
+        "wallId": "00000000-0000-4000-8000-000000000117",
+        "kind": "door",
+        "distanceAlongWall": 509.9999998,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+      }],
+      "expectedIssues": [{
+        "code": "OPENING_ENDPOINT_CLEARANCE",
+        "openingId": "00000000-0000-4000-8000-000000000218",
+        "wallId": "00000000-0000-4000-8000-000000000117"
+      }]
+    },
+    {
+      "name": "accepts an exact one millimetre opening gap",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000118",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 20,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [
+        {
+          "id": "00000000-0000-4000-8000-000000000220",
+          "wallId": "00000000-0000-4000-8000-000000000118",
+          "kind": "door",
+          "distanceAlongWall": 1901,
+          "width": 900,
+          "height": 2100,
+          "sillHeight": 0
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000219",
+          "wallId": "00000000-0000-4000-8000-000000000118",
+          "kind": "door",
+          "distanceAlongWall": 1000,
+          "width": 900,
+          "height": 2100,
+          "sillHeight": 0
+        }
+      ],
+      "expectedIssues": []
+    },
+    {
+      "name": "rejects a sub-millimetre opening gap and sorts issues by opening id",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000119",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 20,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [
+        {
+          "id": "00000000-0000-4000-8000-000000000222",
+          "wallId": "00000000-0000-4000-8000-000000000119",
+          "kind": "window",
+          "distanceAlongWall": 1900.9999998,
+          "width": 900,
+          "height": 1200,
+          "sillHeight": 900
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000221",
+          "wallId": "00000000-0000-4000-8000-000000000119",
+          "kind": "door",
+          "distanceAlongWall": 1000,
+          "width": 900,
+          "height": 2100,
+          "sillHeight": 0
+        }
+      ],
+      "expectedIssues": [
+        {
+          "code": "OPENING_OVERLAP",
+          "openingId": "00000000-0000-4000-8000-000000000221",
+          "wallId": "00000000-0000-4000-8000-000000000119",
+          "relatedOpeningId": "00000000-0000-4000-8000-000000000222"
+        },
+        {
+          "code": "OPENING_OVERLAP",
+          "openingId": "00000000-0000-4000-8000-000000000222",
+          "wallId": "00000000-0000-4000-8000-000000000119",
+          "relatedOpeningId": "00000000-0000-4000-8000-000000000221"
+        }
+      ]
+    },
+    {
+      "name": "admits wall height boundaries within epsilon",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000120",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 5000, "y": 0 }],
+        "thickness": 120,
+        "height": 2800,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [
+        {
+          "id": "00000000-0000-4000-8000-000000000223",
+          "wallId": "00000000-0000-4000-8000-000000000120",
+          "kind": "door",
+          "distanceAlongWall": 1200,
+          "width": 900,
+          "height": 2800.00000005,
+          "sillHeight": 0
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000224",
+          "wallId": "00000000-0000-4000-8000-000000000120",
+          "kind": "window",
+          "distanceAlongWall": 3000,
+          "width": 1200,
+          "height": 1200.00000005,
+          "sillHeight": 1600
+        }
+      ],
+      "expectedIssues": []
+    },
+    {
+      "name": "reports door sill and height violations in code order",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000121",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "height": 2800,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000225",
+        "wallId": "00000000-0000-4000-8000-000000000121",
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2800.0000002,
+        "sillHeight": 1
+      }],
+      "expectedIssues": [
+        {
+          "code": "OPENING_DOOR_SILL_NONZERO",
+          "openingId": "00000000-0000-4000-8000-000000000225",
+          "wallId": "00000000-0000-4000-8000-000000000121"
+        },
+        {
+          "code": "OPENING_HEIGHT_EXCEEDED",
+          "openingId": "00000000-0000-4000-8000-000000000225",
+          "wallId": "00000000-0000-4000-8000-000000000121"
+        }
+      ]
+    },
+    {
+      "name": "rejects a window top above the wall",
+      "walls": [{
+        "id": "00000000-0000-4000-8000-000000000122",
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120,
+        "transform": {
+          "translation": { "x": 0, "y": 0 },
+          "rotation": 0,
+          "scale": { "x": 1, "y": 1 }
+        }
+      }],
+      "openings": [{
+        "id": "00000000-0000-4000-8000-000000000226",
+        "wallId": "00000000-0000-4000-8000-000000000122",
+        "kind": "window",
+        "distanceAlongWall": 2000,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 1800.0000002
+      }],
+      "expectedIssues": [{
+        "code": "OPENING_HEIGHT_EXCEEDED",
+        "openingId": "00000000-0000-4000-8000-000000000226",
+        "wallId": "00000000-0000-4000-8000-000000000122"
+      }]
+    }
+  ]
+}

@@ -279,6 +279,18 @@ function expectModelIssue(action: () => unknown, code: ModelIssueCode, path: str
   expect(thrown).toMatchObject({ code, path });
 }
 
+function expectOpeningGeometryIssue(
+  action: () => unknown,
+  issueCode: string,
+  path: string,
+): void {
+  let thrown: unknown;
+  try { action(); } catch (error) { thrown = error; }
+  expect(thrown).toBeInstanceOf(ModelValidationError);
+  expect(thrown).toMatchObject({ code: "DEGENERATE_GEOMETRY", path });
+  expect((thrown as Error).message).toContain(issueCode);
+}
+
 describe("core model", () => {
   it.each(["showroom", "market"] as const)("creates a %s project", (profile) => {
     const ids = [
@@ -817,7 +829,7 @@ describe("schema v3 validation and migration", () => {
     const input = asV3Input(completeSnapshotInput());
     input.project.openings = [{
       id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door",
-      distanceAlongWall: 500, width: 900, height: 2100, sillHeight: 0,
+      distanceAlongWall: 510, width: 900, height: 2100, sillHeight: 0,
     }];
     input.project.guidedRoutes = [{
       id: contractId(31), name: "Tour", tags: [], routeNetworkId: contractId(14),
@@ -839,6 +851,86 @@ describe("schema v3 validation and migration", () => {
     expect(parsed.project.materialAssignments).toEqual(input.project.materialAssignments);
   });
 
+  it("accepts and freezes an opening that satisfies final wall geometry", () => {
+    const input = asV3Input(completeSnapshotInput());
+    input.project.openings = [{
+      id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door",
+      distanceAlongWall: 2000, width: 900, height: 2100, sillHeight: 0,
+    }];
+
+    const parsed = parseSnapshotV3(input);
+
+    expect(parsed.project.openings).toEqual(input.project.openings);
+    expect(Object.isFrozen(parsed.project.openings)).toBe(true);
+    expect(Object.isFrozen(parsed.project.openings[0])).toBe(true);
+  });
+
+  it("rejects insufficient endpoint clearance during final snapshot validation", () => {
+    const input = asV3Input(completeSnapshotInput());
+    input.project.openings = [{
+      id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door",
+      distanceAlongWall: 509.9999998, width: 900, height: 2100, sillHeight: 0,
+    }];
+
+    expectOpeningGeometryIssue(
+      () => parseSnapshotV3(input),
+      "OPENING_ENDPOINT_CLEARANCE",
+      "project.openings[0].distanceAlongWall",
+    );
+  });
+
+  it("rejects an opening span that crosses a transformed wall joint", () => {
+    const input = asV3Input(completeSnapshotInput());
+    const wall = input.project.entities.find((entity) => entity.type === "wall")!;
+    wall.centerLine = [{ x: 0, y: 0 }, { x: 2000, y: 0 }, { x: 2000, y: 3000 }];
+    wall.transform = {
+      translation: { x: 100, y: 200 },
+      rotation: Math.PI / 2,
+      scale: { x: 2, y: 3 },
+    };
+    input.project.openings = [{
+      id: contractId(30), name: "Door", tags: [], wallId: wall.id, kind: "door",
+      distanceAlongWall: 4000, width: 900, height: 2100, sillHeight: 0,
+    }];
+
+    expectOpeningGeometryIssue(
+      () => parseSnapshotV3(input),
+      "OPENING_SPAN_CROSSES_JOINT",
+      "project.openings[0].distanceAlongWall",
+    );
+  });
+
+  it("uses opening id and issue code order for the first final geometry error", () => {
+    const input = asV3Input(completeSnapshotInput());
+    input.project.openings = [
+      {
+        id: contractId(31), name: "Late id", tags: [], wallId: contractId(7), kind: "door",
+        distanceAlongWall: 2000, width: 900, height: 2800.0000002, sillHeight: 1,
+      },
+      {
+        id: contractId(30), name: "Early id", tags: [], wallId: contractId(7), kind: "door",
+        distanceAlongWall: 509.9999998, width: 900, height: 2100, sillHeight: 0,
+      },
+    ];
+
+    expectOpeningGeometryIssue(
+      () => parseSnapshotV3(input),
+      "OPENING_ENDPOINT_CLEARANCE",
+      "project.openings[1].distanceAlongWall",
+    );
+  });
+
+  it("keeps a legacy standard fixture without spatial3D unchanged", () => {
+    const input = asV3Input(cloneFixture());
+    const fixtureBefore = cloneJson(input.project.entities[0]);
+
+    const parsed = parseSnapshotV3(input);
+
+    expect(parsed.project.entities[0]).toEqual(fixtureBefore);
+    expect(parsed.project.entities[0]).not.toHaveProperty("spatial3D");
+    expect(input.project.entities[0]).toEqual(fixtureBefore);
+  });
+
   it.each([
     ["opening wall", jsonMutation(["project","openings",0,"wallId"], contractId(4)), "project.openings[0].wallId"],
     ["guided route network", jsonMutation(["project","guidedRoutes",0,"routeNetworkId"], contractId(90)), "project.guidedRoutes[0].routeNetworkId"],
@@ -846,7 +938,7 @@ describe("schema v3 validation and migration", () => {
     ["material assignment", jsonMutation(["project","materialAssignments",0,"materialId"], contractId(90)), "project.materialAssignments[0].materialId"],
   ] satisfies readonly HostileCase[])("rejects an invalid normalized %s reference", (_name, mutate, path) => {
     const input = asV3Input(completeSnapshotInput());
-    input.project.openings = [{ id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door", distanceAlongWall: 500, width: 900, height: 2100, sillHeight: 0 }];
+    input.project.openings = [{ id: contractId(30), name: "Door", tags: [], wallId: contractId(7), kind: "door", distanceAlongWall: 510, width: 900, height: 2100, sillHeight: 0 }];
     input.project.guidedRoutes = [{ id: contractId(31), name: "Tour", tags: [], routeNetworkId: contractId(14), stopNodeIds: [contractId(15), contractId(16)] }];
     input.project.materials = [{ id: contractId(32), name: "Paint", tags: [], baseColor: "#5f8f96", roughness: 0.4, metalness: 0, opacity: 1, assetId: contractId(20) }];
     input.project.materialAssignments = [{ id: contractId(33), name: "Case material", tags: [], materialId: contractId(32), targetKind: "fixture", targetId: contractId(4) }];

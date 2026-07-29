@@ -23,6 +23,17 @@ export {
   type Spatial3D,
   type Transform2D,
 } from "./geometry";
+export {
+  GEOMETRY_EPSILON_MM,
+  effectiveWallThickness,
+  locateOpening,
+  validateOpeningGeometry,
+  wallMetricSegments,
+  type OpeningGeometryIssue,
+  type OpeningGeometryIssueCode,
+  type OpeningProjection,
+  type WallMetricSegment,
+} from "./opening-geometry";
 export type {
   Boundary,
   DimensionAnchor,

@@ -19,6 +19,10 @@ import type {
 import { parsePoint, polygon, polyline } from "./geometry-validation";
 import type { Point2, Size2, Spatial3D, Transform2D } from "./geometry";
 import { deepFreeze } from "./immutability";
+import {
+  validateOpeningGeometry,
+  type OpeningGeometryIssueCode,
+} from "./opening-geometry";
 import type {
   AssetRecord,
   AssetMediaType,
@@ -1070,6 +1074,41 @@ function validateV3References(snapshot: ProjectSnapshot): void {
   });
 }
 
+const OPENING_ISSUE_FIELD: Readonly<Record<OpeningGeometryIssueCode, string>> =
+  Object.freeze({
+    OPENING_WALL_NOT_FOUND: "wallId",
+    OPENING_WALL_GEOMETRY_INVALID: "wallId",
+    OPENING_SPAN_CROSSES_JOINT: "distanceAlongWall",
+    OPENING_ENDPOINT_CLEARANCE: "distanceAlongWall",
+    OPENING_OVERLAP: "distanceAlongWall",
+    OPENING_HEIGHT_EXCEEDED: "height",
+    OPENING_DOOR_SILL_NONZERO: "sillHeight",
+    OPENING_TARGET_LOCKED: "wallId",
+  });
+
+function validateV3OpeningGeometry(snapshot: ProjectSnapshot): void {
+  const walls = snapshot.project.entities.filter(
+    (entity) => entity.type === "wall",
+  );
+  const firstIssue = validateOpeningGeometry(
+    walls,
+    snapshot.project.openings,
+  )[0];
+  if (firstIssue === undefined) return;
+
+  const openingIndex = snapshot.project.openings.findIndex(
+    (opening) => opening.id === firstIssue.openingId,
+  );
+  const related = firstIssue.relatedOpeningId === undefined
+    ? ""
+    : `; related opening ${firstIssue.relatedOpeningId}`;
+  fail(
+    "DEGENERATE_GEOMETRY",
+    `project.openings[${openingIndex}].${OPENING_ISSUE_FIELD[firstIssue.code]}`,
+    `${firstIssue.code} on wall ${firstIssue.wallId}${related}`,
+  );
+}
+
 export function parseManifest(value: unknown): ProjectManifest {
   const source = record(value, "manifest");
   return deepFreeze({
@@ -1149,6 +1188,7 @@ export function parseSnapshotV3(value: unknown): ProjectSnapshot {
 
   validateV2References(candidate);
   validateV3References(candidate);
+  validateV3OpeningGeometry(candidate);
   return deepFreeze(candidate);
 }
 
