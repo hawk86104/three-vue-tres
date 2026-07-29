@@ -7,6 +7,16 @@ export interface PlanAccessibilityProps {
   readonly activeFloorId: string;
   readonly selectedIds: ReadonlySet<string>;
   readonly sessionStore: StoreApi<PlanEditorState>;
+  readonly onStartCalibration?: (
+    referenceId: string,
+    initiator: HTMLButtonElement,
+  ) => void;
+}
+
+function metric(value: number): string {
+  return Number.isInteger(value)
+    ? String(value)
+    : String(Number(value.toPrecision(12)));
 }
 
 export function PlanAccessibility({
@@ -14,6 +24,7 @@ export function PlanAccessibility({
   activeFloorId,
   selectedIds,
   sessionStore,
+  onStartCalibration,
 }: PlanAccessibilityProps) {
   const floor = snapshot.project.floors.find((candidate) => (
     candidate.id === activeFloorId
@@ -26,6 +37,9 @@ export function PlanAccessibility({
   const entities = snapshot.project.entities.filter((entity) => (
     entity.floorId === activeFloorId && visibleLayers.has(entity.layerId)
   ));
+  const references = snapshot.project.planReferences.filter((reference) => (
+    reference.floorId === activeFloorId && visibleLayers.has(reference.layerId)
+  ));
 
   return (
     <section
@@ -33,7 +47,7 @@ export function PlanAccessibility({
       className="studio-plan-accessibility"
     >
       <h2>平面对象</h2>
-      {entities.length === 0 ? (
+      {entities.length === 0 && references.length === 0 ? (
         <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
       ) : (
         <ul>
@@ -52,6 +66,41 @@ export function PlanAccessibility({
                   onClick={() => sessionStore.getState().setSelection([entity.id])}
                 >
                   选择
+                </button>
+              </li>
+            );
+          })}
+          {references.map((reference) => {
+            const selected = selectedIds.has(reference.id);
+            const locked = reference.locked
+              || visibleLayers.get(reference.layerId) === true;
+            const calibrated = reference.calibration !== null;
+            return (
+              <li
+                key={reference.id}
+                data-testid={`accessible-reference-${reference.id}`}
+                data-reference-id={reference.id}
+              >
+                <span>
+                  平面参考 · {reference.name} · {reference.id} · {selected ? "已选择" : "未选择"} · {calibrated ? "已校准" : "未缩放"} · {calibrated ? `${metric(reference.transform.scale.x)} mm/px · ` : ""}{locked ? "已锁定" : "未锁定"} · {metric(reference.opacity * 100)}%
+                </span>
+                <button
+                  type="button"
+                  aria-label={`选择平面参考：${reference.name}`}
+                  aria-pressed={selected}
+                  onClick={() => sessionStore.getState().setSelection([reference.id])}
+                >
+                  选择
+                </button>
+                <button
+                  type="button"
+                  aria-label={`校准平面参考：${reference.name}`}
+                  disabled={locked || onStartCalibration === undefined}
+                  onClick={(event) => {
+                    onStartCalibration?.(reference.id, event.currentTarget);
+                  }}
+                >
+                  校准
                 </button>
               </li>
             );

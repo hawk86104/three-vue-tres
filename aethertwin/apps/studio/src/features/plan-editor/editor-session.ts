@@ -1,5 +1,9 @@
 import type { PlanReference, Point2, SpatialEntity } from "@aethertwin/core-model";
-import type { SnapMode, ViewportTransform } from "@aethertwin/plan-engine";
+import type {
+  CalibrationPreview,
+  SnapMode,
+  ViewportTransform,
+} from "@aethertwin/plan-engine";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 export type PlanTool =
@@ -13,8 +17,16 @@ export type PlanTool =
   | "dimension"
   | "pan";
 
-
 export type PlanSidePanel = "tree" | "assets";
+
+export interface CalibrationDraft {
+  readonly referenceId: string;
+  readonly sourcePointA: Point2 | null;
+  readonly sourcePointB: Point2 | null;
+  readonly distanceText: string;
+  readonly preview: CalibrationPreview | null;
+}
+
 export type PlanDraft =
   | {
       readonly kind: "create";
@@ -42,6 +54,7 @@ export interface PlanEditorState {
   readonly viewport: ViewportTransform;
   readonly snapModes: ReadonlySet<SnapMode>;
   readonly draft: PlanDraft | null;
+  readonly calibrationDraft: CalibrationDraft | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
   setActiveFloor(id: string): boolean;
@@ -55,6 +68,9 @@ export interface PlanEditorState {
   updateDraft(draft: PlanDraft): void;
   finishGesture(): void;
   cancelDraft(): void;
+  beginCalibration(referenceId: string): void;
+  updateCalibration(draft: CalibrationDraft): void;
+  cancelCalibration(): void;
 }
 
 const DEFAULT_VIEWPORT: ViewportTransform = {
@@ -103,11 +119,19 @@ function ownReadonlySet<T>(values: Iterable<T>): ReadonlySet<T> {
   return Object.freeze(result);
 }
 
+function sameValues<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
 function ownedViewport(viewport: ViewportTransform): ViewportTransform {
   return ownValue(viewport);
 }
 
 function ownedDraft(draft: PlanDraft): PlanDraft {
+  return ownValue(draft);
+}
+
+function ownedCalibrationDraft(draft: CalibrationDraft): CalibrationDraft {
   return ownValue(draft);
 }
 
@@ -126,6 +150,7 @@ export function createPlanEditorStore(
     viewport: initialViewport,
     snapModes: ownReadonlySet(DEFAULT_SNAP_MODES),
     draft: null,
+    calibrationDraft: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
 
@@ -136,12 +161,26 @@ export function createPlanEditorStore(
       floorViewports.set(state.activeFloorId, ownedViewport(state.viewport));
       const restored = ownedViewport(floorViewports.get(id) ?? DEFAULT_VIEWPORT);
       floorViewports.set(id, restored);
-      set({ activeFloorId: id, viewport: restored });
+      set({
+        activeFloorId: id,
+        viewport: restored,
+        calibrationDraft: id === state.activeFloorId
+          ? state.calibrationDraft
+          : null,
+      });
       return true;
     },
 
     setActiveTool(tool) {
-      set({ activeTool: tool, draft: null, gestureActive: false });
+      const state = get();
+      set({
+        activeTool: tool,
+        draft: null,
+        gestureActive: false,
+        calibrationDraft: tool === state.activeTool
+          ? state.calibrationDraft
+          : null,
+      });
     },
 
     setSidePanel(panel) {
@@ -149,7 +188,14 @@ export function createPlanEditorStore(
     },
 
     setSelection(ids) {
-      set({ selectedIds: ownReadonlySet(ids) });
+      const state = get();
+      const selectedIds = ownReadonlySet(ids);
+      set({
+        selectedIds,
+        calibrationDraft: sameValues(state.selectedIds, selectedIds)
+          ? state.calibrationDraft
+          : null,
+      });
     },
 
     setViewport(viewport) {
@@ -165,7 +211,11 @@ export function createPlanEditorStore(
     },
 
     beginGesture(draft) {
-      set({ draft: ownedDraft(draft), gestureActive: true });
+      set({
+        draft: ownedDraft(draft),
+        calibrationDraft: null,
+        gestureActive: true,
+      });
     },
 
     updateDraft(draft) {
@@ -178,6 +228,29 @@ export function createPlanEditorStore(
 
     cancelDraft() {
       set({ draft: null, gestureActive: false });
+    },
+
+    beginCalibration(referenceId) {
+      set({
+        draft: null,
+        gestureActive: false,
+        calibrationDraft: ownedCalibrationDraft({
+          referenceId,
+          sourcePointA: null,
+          sourcePointB: null,
+          distanceText: "",
+          preview: null,
+        }),
+      });
+    },
+
+    updateCalibration(draft) {
+      if (get().calibrationDraft === null) return;
+      set({ calibrationDraft: ownedCalibrationDraft(draft) });
+    },
+
+    cancelCalibration() {
+      if (get().calibrationDraft !== null) set({ calibrationDraft: null });
     },
   }));
 }

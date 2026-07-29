@@ -39,6 +39,7 @@ import {
 } from "./plan-inspector";
 import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
+import { CalibrationPanel } from "./calibration-panel";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -138,6 +139,27 @@ function referenceName(source: PlanAssetSource): string {
     : "\u5e73\u9762\u53c2\u8003";
 }
 
+function editableCalibrationReference(
+  snapshot: ProjectSnapshot | null,
+  activeFloorId: string,
+  referenceId: string,
+): PlanReference | null {
+  const floor = snapshot?.project.floors.find(({ id }) => id === activeFloorId);
+  const reference = snapshot?.project.planReferences.find(
+    ({ id }) => id === referenceId,
+  );
+  if (
+    floor === undefined
+    || reference === undefined
+    || reference.floorId !== activeFloorId
+    || reference.locked
+  ) return null;
+  const layer = floor.layers.find(({ id }) => id === reference.layerId);
+  return layer !== undefined && layer.visible && !layer.locked
+    ? reference
+    : null;
+}
+
 export function PlanEditor({
   store,
   backendMode,
@@ -157,6 +179,7 @@ export function PlanEditor({
     readonly operationId: string;
     readonly initiator: HTMLButtonElement;
   } | null>(null);
+  const calibrationInitiator = useRef<HTMLButtonElement | null>(null);
   const assetPickerPending = useRef(false);
   const treeTabRef = useRef<HTMLButtonElement>(null);
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
@@ -172,6 +195,10 @@ export function PlanEditor({
     })
   ));
   const [makeId] = useState(() => dependencies?.makeId ?? productionId);
+  const calibrationProjectId = useRef<string | null>(
+    state.snapshot?.project.id ?? null,
+  );
+
   const assetPicker = useMemo<PlanAssetPicker | null>(() => {
     if (dependencies !== undefined && Object.hasOwn(dependencies, "assetPicker")) {
       return dependencies.assetPicker ?? null;
@@ -197,6 +224,35 @@ export function PlanEditor({
   ));
   const sessionState = useSessionState(sessionStore);
   const selectionKey = [...sessionState.selectedIds].join("\u0000");
+
+  const activeCalibrationReferenceId =
+    sessionState.calibrationDraft?.referenceId ?? null;
+
+  useEffect(() => {
+    const nextProjectId = state.snapshot?.project.id ?? null;
+    if (calibrationProjectId.current !== nextProjectId) {
+      sessionStore.getState().cancelCalibration();
+      calibrationProjectId.current = nextProjectId;
+    }
+  }, [sessionStore, state.snapshot?.project.id]);
+
+  useEffect(() => {
+    if (activeCalibrationReferenceId === null) return;
+    if (
+      editableCalibrationReference(
+        state.snapshot,
+        sessionState.activeFloorId,
+        activeCalibrationReferenceId,
+      ) === null
+    ) {
+      sessionStore.getState().cancelCalibration();
+    }
+  }, [
+    activeCalibrationReferenceId,
+    sessionState.activeFloorId,
+    sessionStore,
+    state.snapshot,
+  ]);
 
   useEffect(() => {
     if (state.error === null) setHandledStoreError(null);
@@ -287,6 +343,22 @@ export function PlanEditor({
     ?? (state.error !== handledStoreError ? state.error : null);
   const selectedIds = sessionState.selectedIds;
 
+  const selectedId = selectedIds.size === 1 ? [...selectedIds][0]! : null;
+  const selectedCalibrationReference = selectedId === null
+    ? null
+    : editableCalibrationReference(
+      snapshot,
+      sessionState.activeFloorId,
+      selectedId,
+    );
+  const activeCalibrationReference = activeCalibrationReferenceId === null
+    ? null
+    : editableCalibrationReference(
+      snapshot,
+      sessionState.activeFloorId,
+      activeCalibrationReferenceId,
+    );
+
   async function runPlanAssetImport(
     initiator: HTMLButtonElement,
     replacing?: PlanReference,
@@ -374,6 +446,29 @@ export function PlanEditor({
     } catch (error) {
       setActionError(safeAssetImportError(error));
     }
+  }
+
+  function startCalibration(
+    referenceId: string,
+    initiator: HTMLButtonElement,
+  ): void {
+    const current = sessionStore.getState();
+    const currentReference = editableCalibrationReference(
+      store.getState().snapshot,
+      current.activeFloorId,
+      referenceId,
+    );
+    if (currentReference === null) return;
+    calibrationInitiator.current = initiator;
+    current.setSelection([referenceId]);
+    current.beginCalibration(referenceId);
+    setContext({ kind: "plan-reference", referenceId });
+  }
+
+  function returnCalibrationFocus(): void {
+    const initiator = calibrationInitiator.current;
+    calibrationInitiator.current = null;
+    if (initiator?.isConnected) initiator.focus();
   }
 
   function selectPlanReference(referenceId: string): void {
@@ -526,6 +621,11 @@ export function PlanEditor({
           profile={snapshot.project.profile}
           activeTool={sessionState.activeTool}
           onToolChange={(tool) => sessionStore.getState().setActiveTool(tool)}
+          {...(selectedCalibrationReference === null ? {} : {
+            onCalibrate: (initiator: HTMLButtonElement) => {
+              startCalibration(selectedCalibrationReference.id, initiator);
+            },
+          })}
           {...(assetPicker === null ? {} : {
             importFloorPlanDisabled: assetImportBusy,
             onImportFloorPlan: (initiator: HTMLButtonElement) => {
@@ -542,6 +642,17 @@ export function PlanEditor({
           data-selected-count={selectedIds.size}
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
+          {activeCalibrationReference === null ? null : (
+            <CalibrationPanel
+              reference={activeCalibrationReference}
+              sessionStore={sessionStore}
+              onConfirm={(before, after) => (
+                store.applyPlanReferencePatch(before, after)
+              )}
+              onCancel={() => undefined}
+              onReturnFocus={returnCalibrationFocus}
+            />
+          )}
           {dependencies?.workspace?.(workspaceContext) ?? (
             <PlanCanvas
               store={store}
@@ -551,6 +662,7 @@ export function PlanEditor({
               sessionStore={sessionStore}
               controller={controller}
               onError={(error) => setActionError(errorValue(error))}
+              onStartCalibration={startCalibration}
             />
           )}
         </div>

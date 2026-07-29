@@ -1,4 +1,10 @@
-import type { ProjectSnapshot } from "@aethertwin/core-model";
+import type { PlanReference, Point2, ProjectSnapshot } from "@aethertwin/core-model";
+import {
+  planReferenceSourceToWorld,
+  planReferenceWorldToSource,
+  screenToWorld,
+  worldToScreen,
+} from "@aethertwin/plan-engine";
 import {
   PixiPlanRenderer,
   type PlanAssetSourcePort,
@@ -17,7 +23,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import type { StoreApi } from "zustand/vanilla";
-import type { PlanEditorState } from "./editor-session";
+import type { CalibrationDraft, PlanEditorState } from "./editor-session";
 import type { InteractionController } from "./interaction-controller";
 import { PlanAccessibility } from "./plan-accessibility";
 
@@ -30,6 +36,10 @@ export interface PlanCanvasProps {
   readonly controller: InteractionController;
   readonly rendererFactory?: PlanRendererFactory;
   readonly onError: (error: unknown) => void;
+  readonly onStartCalibration?: (
+    referenceId: string,
+    initiator: HTMLButtonElement,
+  ) => void;
 }
 
 interface ActiveRenderer {
@@ -78,8 +88,94 @@ function rendererInput(
     draft: state.draft?.kind === "create" || state.draft?.kind === "transform"
       ? state.draft.preview
       : null,
-    calibrationPreview: null,
+    calibrationPreview: state.calibrationDraft?.preview ?? null,
   };
+}
+
+function editableCalibrationReference(
+  snapshot: ProjectSnapshot,
+  activeFloorId: string,
+  referenceId: string,
+): PlanReference | null {
+  const floor = snapshot.project.floors.find(({ id }) => id === activeFloorId);
+  const reference = snapshot.project.planReferences.find(({ id }) => id === referenceId);
+  if (
+    floor === undefined
+    || reference === undefined
+    || reference.floorId !== activeFloorId
+    || reference.locked
+  ) return null;
+  const layer = floor.layers.find(({ id }) => id === reference.layerId);
+  return layer !== undefined && layer.visible && !layer.locked ? reference : null;
+}
+
+function clampedSourcePoint(reference: PlanReference, point: Point2): Point2 {
+  return {
+    x: Math.max(0, Math.min(reference.intrinsicSize.width, point.x)),
+    y: Math.max(0, Math.min(reference.intrinsicSize.height, point.y)),
+  };
+}
+
+function overlayPoint(
+  reference: PlanReference,
+  source: Point2 | null,
+  state: PlanEditorState,
+): Point2 | null {
+  if (source === null) return null;
+  const world = planReferenceSourceToWorld(reference, source);
+  if (!world.ok) return null;
+  try {
+    return worldToScreen(world.value, state.viewport);
+  } catch {
+    return null;
+  }
+}
+
+function CalibrationOverlay({
+  draft,
+  reference,
+  state,
+}: {
+  readonly draft: CalibrationDraft;
+  readonly reference: PlanReference;
+  readonly state: PlanEditorState;
+}) {
+  const displayReference = draft.preview?.after ?? reference;
+  const pointA = overlayPoint(displayReference, draft.sourcePointA, state);
+  const pointB = overlayPoint(displayReference, draft.sourcePointB, state);
+  if (pointA === null && pointB === null) return null;
+
+  return (
+    <svg
+      className="studio-calibration-overlay"
+      data-testid="calibration-overlay"
+      viewBox={`0 0 ${state.viewport.width} ${state.viewport.height}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {pointA !== null && pointB !== null ? (
+        <line
+          data-testid="calibration-measurement-line"
+          x1={pointA.x}
+          y1={pointA.y}
+          x2={pointB.x}
+          y2={pointB.y}
+        />
+      ) : null}
+      {pointA === null ? null : (
+        <g data-testid="calibration-point-a">
+          <circle cx={pointA.x} cy={pointA.y} r="6" />
+          <text x={pointA.x + 9} y={pointA.y - 9}>A</text>
+        </g>
+      )}
+      {pointB === null ? null : (
+        <g data-testid="calibration-point-b">
+          <circle cx={pointB.x} cy={pointB.y} r="6" />
+          <text x={pointB.x + 9} y={pointB.y - 9}>B</text>
+        </g>
+      )}
+    </svg>
+  );
 }
 
 export function PlanCanvas({
@@ -91,11 +187,16 @@ export function PlanCanvas({
   controller,
   rendererFactory,
   onError,
+  onStartCalibration,
 }: PlanCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeRendererRef = useRef<ActiveRenderer | null>(null);
   const onErrorRef = useRef(onError);
+  const snapshotRef = useRef(snapshot);
+  const activeFloorIdRef = useRef(activeFloorId);
   onErrorRef.current = onError;
+  snapshotRef.current = snapshot;
+  activeFloorIdRef.current = activeFloorId;
   const productionRendererFactory = useCallback<PlanRendererFactory>(() => {
     const sourcePort: PlanAssetSourcePort = {
       async resolve(assetId) {
@@ -167,11 +268,54 @@ export function PlanCanvas({
       onErrorRef.current(new Error("ResizeObserver is not available."));
     }
 
+    function handleCalibrationPointer(event: PlanPointerEvent): boolean {
+      const state = sessionStore.getState();
+      const draft = state.calibrationDraft;
+      if (
+        draft === null
+        || event.type !== "pointerdown"
+        || (event.buttons & 1) === 0
+      ) return false;
+
+      const reference = editableCalibrationReference(
+        snapshotRef.current,
+        activeFloorIdRef.current,
+        draft.referenceId,
+      );
+      if (reference === null) {
+        state.cancelCalibration();
+        return true;
+      }
+      if (draft.sourcePointA !== null && draft.sourcePointB !== null) {
+        if (draft.preview !== null) {
+          state.updateCalibration({ ...draft, preview: null });
+        }
+        return true;
+      }
+
+      const world = screenToWorld(event.screen, state.viewport);
+      const source = planReferenceWorldToSource(reference, world);
+      if (!source.ok) {
+        onErrorRef.current(new Error(source.issue.message));
+        return true;
+      }
+      const point = clampedSourcePoint(reference, source.value);
+      state.updateCalibration({
+        ...draft,
+        ...(draft.sourcePointA === null
+          ? { sourcePointA: point }
+          : { sourcePointB: point }),
+        preview: null,
+      });
+      return true;
+    }
+
     const sink = {
       handle(event: PlanPointerEvent): void {
         if (disposed) return;
         if (event.type === "pointerdown" && (event.buttons & 1) !== 0) host.focus();
         try {
+          if (handleCalibrationPointer(event)) return;
           const completion = controller.handle(event);
           void Promise.resolve(completion).catch((error: unknown) => {
             if (!disposed) onErrorRef.current(error);
@@ -209,7 +353,7 @@ export function PlanCanvas({
       if (activeRendererRef.current === active) activeRendererRef.current = null;
       renderer.destroy();
     };
-  }, [activeRendererFactory, controller]);
+  }, [activeRendererFactory, controller, sessionStore]);
 
   function reportPromise(action: () => Promise<void>): void {
     try {
@@ -262,6 +406,13 @@ export function PlanCanvas({
     }
   }
 
+  const calibrationDraft = sessionState.calibrationDraft;
+  const calibrationReference = calibrationDraft === null
+    ? null
+    : snapshot.project.planReferences.find(
+      ({ id }) => id === calibrationDraft.referenceId,
+    ) ?? null;
+
   return (
     <div
       ref={hostRef}
@@ -272,11 +423,19 @@ export function PlanCanvas({
       onKeyDown={handleKeyDown}
       onBlur={handleBlur}
     >
+      {calibrationDraft === null || calibrationReference === null ? null : (
+        <CalibrationOverlay
+          draft={calibrationDraft}
+          reference={calibrationReference}
+          state={sessionState}
+        />
+      )}
       <PlanAccessibility
         snapshot={snapshot}
         activeFloorId={activeFloorId}
         selectedIds={sessionState.selectedIds}
         sessionStore={sessionStore}
+        {...(onStartCalibration === undefined ? {} : { onStartCalibration })}
       />
     </div>
   );
