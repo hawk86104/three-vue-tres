@@ -84,7 +84,7 @@ test("workspace exposes only the two product profiles", () => {
   assert.doesNotMatch(spec, /third profile/i);
 });
 
-test("active Rust workspace member is executable and locked", () => {
+test("active Rust workspace members include the M2.1 asset boundary", () => {
   const workspace = readFileSync(join(root, "Cargo.toml"), "utf8");
   const projectIo = readFileSync(
     join(root, "crates/project-io/Cargo.toml"),
@@ -97,7 +97,7 @@ test("active Rust workspace member is executable and locked", () => {
 
   assert.match(
     workspace,
-    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host"\]/,
+    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host",\s*"crates\/asset-io"\]/,
   );
   assert.match(projectIo, /name\s*=\s*"project-io"/);
   assert.match(desktopHost, /name\s*=\s*"desktop-host"/);
@@ -123,4 +123,44 @@ test("product scope describes the implemented M1 2D editor", () => {
   assert.match(spec, /one active floor/i);
   assert.match(spec, /six editable business entity kinds/i);
   assert.doesNotMatch(spec, /Until M1 plan editing exists/i);
+});
+test("M2.1 asset boundaries have real manifests and production implementations", () => {
+  const manifest = JSON.parse(
+    readFileSync(join(root, "packages/asset-pipeline/package.json"), "utf8"),
+  );
+  const pipelineIndex = readFileSync(
+    join(root, "packages/asset-pipeline/src/index.ts"),
+    "utf8",
+  );
+  const mediaPolicy = readFileSync(
+    join(root, "packages/asset-pipeline/src/media-policy.ts"),
+    "utf8",
+  );
+  const assetIoManifest = readFileSync(
+    join(root, "crates/asset-io/Cargo.toml"),
+    "utf8",
+  );
+  const assetIoLib = readFileSync(join(root, "crates/asset-io/src/lib.rs"), "utf8");
+  const assetImport = readFileSync(join(root, "crates/asset-io/src/import.rs"), "utf8");
+  const assetResolver = readFileSync(join(root, "crates/asset-io/src/resolver.rs"), "utf8");
+
+  assert.equal(manifest.exports["."], "./src/index.ts");
+  assert.match(pipelineIndex, /classifyAssetMedia/);
+  assert.match(pipelineIndex, /composeInitialPlanReference/);
+  assert.match(mediaPolicy, /export function assertAssetImportRequest/);
+  assert.match(assetIoManifest, /name\s*=\s*"asset-io"/);
+  assert.match(assetIoLib, /pub use import::[\s\S]*import_project_asset/);
+  assert.match(assetImport, /pub fn import_project_asset/);
+  assert.match(assetImport, /assets\/sha256/);
+  assert.match(assetResolver, /pub struct AssetResolver/);
+  assert.match(assetResolver, /fn canonical_path/);
+  for (const [name, source] of [
+    ["asset-pipeline media policy", mediaPolicy],
+    ["asset-io import", assetImport],
+    ["asset-io resolver", assetResolver],
+  ]) {
+    assert.ok(source.trim().length > 0, `${name} implementation is empty`);
+  }
+  assert.equal(existsSync(join(root, "packages/asset-pipeline/.gitkeep")), false);
+  assert.equal(existsSync(join(root, "crates/asset-io/.gitkeep")), false);
 });

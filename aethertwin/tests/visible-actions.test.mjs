@@ -93,7 +93,7 @@ test("M1 exposes exactly nine authoring tools through the live session handler",
   );
 });
 
-test("M1 runtime source contains no deferred authoring claims", () => {
+test("M2.1 runtime source contains no later authoring claims", () => {
   for (const label of [
     "BIM",
     "IoT",
@@ -103,9 +103,32 @@ test("M1 runtime source contains no deferred authoring claims", () => {
     "添加摊位",
     "添加路线",
     "发布",
-    "预览",
     "导出",
   ]) {
     assert.doesNotMatch(runtime, new RegExp(label), `forbidden deferred action: ${label}`);
+  }
+});
+test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls", () => {
+  assert.match(planToolbar, /readonly onImportFloorPlan\?:/);
+  assert.match(planToolbar, /onClick=\{\(event\) => onImportFloorPlan\(event\.currentTarget\)\}/);
+  assert.match(planToolbar, /readonly onCalibrate\?:/);
+  assert.match(planToolbar, /onClick=\{\(event\) => onCalibrate\(event\.currentTarget\)\}/);
+  assert.match(planEditor, /onImportFloorPlan:\s*\(initiator: HTMLButtonElement\) =>/);
+  assert.match(planEditor, /onCalibrate:\s*\(initiator: HTMLButtonElement\) =>/);
+
+  const m21ActionSurface = `${planToolbar}\n${planEditor}`;
+  for (const deferredHandler of [
+    "onAddOpening",
+    "onAddContent",
+    "onAddRoute",
+    "onOpen3D",
+    "onExport",
+    "onPublish",
+  ]) {
+    assert.doesNotMatch(
+      m21ActionSurface,
+      new RegExp(`\\b${deferredHandler}\\b`),
+      `forbidden later-M2 action: ${deferredHandler}`,
+    );
   }
 });

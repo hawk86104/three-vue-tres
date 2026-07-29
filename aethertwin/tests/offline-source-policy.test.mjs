@@ -12,6 +12,7 @@ const runtimeFiles = globSync(
   {
     exclude: [
       "**/*.test.*",
+      "**/*_tests.rs",
       "**/__tests__/**",
       "**/e2e/**",
       "**/dev/**",
@@ -119,4 +120,42 @@ test("Playwright blocks remote HTTP and WebSocket connections", () => {
     acceptanceSpec,
     /await page\.routeWebSocket\(\s*\(url\) => !localHosts\.has\(url\.hostname\),\s*\(ws\) => ws\.close\(\{ code: 1008, reason: "blockedbyclient" \}\),\s*\);/s,
   );
+});
+test("offline scanning includes the M2.1 asset boundaries", () => {
+  const normalized = runtimeFiles.map((file) => file.replaceAll("\\", "/"));
+  for (const prefix of [
+    "packages/asset-pipeline/src/",
+    "crates/asset-io/src/",
+  ]) {
+    assert.ok(normalized.some((file) => file.startsWith(prefix)), `missing ${prefix}`);
+  }
+});
+
+test("desktop M2.1 keeps exactly eight invokes, a custom protocol, and two permissions", () => {
+  const host = readFileSync("crates/desktop-host/src/lib.rs", "utf8");
+  const main = readFileSync("crates/desktop-host/src/main.rs", "utf8");
+  const capability = JSON.parse(
+    readFileSync("crates/desktop-host/capabilities/default.json", "utf8"),
+  );
+  const handler = host.match(/generate_handler!\[([\s\S]*?)\]/)?.[1];
+  assert.ok(handler, "Tauri generate_handler list must exist");
+  const commands = [...handler.matchAll(/commands::([a-z_]+)/g)].map((match) => match[1]);
+  assert.deepEqual(commands, [
+    "create_project",
+    "open_project",
+    "commit_project",
+    "checkpoint_project",
+    "close_project",
+    "recover_project",
+    "import_project_asset",
+    "cancel_project_asset_import",
+  ]);
+  assert.match(host, /pub fn with_asset_protocol/);
+  assert.match(main, /with_asset_protocol/);
+  assert.deepEqual(capability.windows, ["main"]);
+  assert.deepEqual(
+    capability.permissions,
+    ["core:window:default", "dialog:allow-open"],
+  );
+  assert.equal(tauriConfig.app.security.assetProtocol, undefined);
 });

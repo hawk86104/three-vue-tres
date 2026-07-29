@@ -77,3 +77,26 @@ test("core model keeps exactly two profiles", () => {
   assert.match(model, /export type ProjectProfile = "showroom" \| "market";/);
   assert.doesNotMatch(model, /export type ProjectProfile =[^;]+\|[^;]+\|/);
 });
+test("M2.1 TypeScript and Rust derive the same canonical asset paths", () => {
+  const assetImport = readFileSync("crates/asset-io/src/import.rs", "utf8");
+  const assetResolver = readFileSync("crates/asset-io/src/resolver.rs", "utf8");
+
+  assert.match(rustModel, /pub\(crate\) fn canonical_asset_path/);
+  assert.match(rustModel, /assets\/sha256\/\{\}\/\{\}\.\{\}/);
+  assert.match(assetImport, /assets\/sha256\/\{\}\/\{\}\.\{\}/);
+  assert.match(assetResolver, /fn canonical_path\(project_root: &Path, record: &AssetRecord\)/);
+  for (const [mediaType, extension] of [
+    ["image/png", "png"],
+    ["image/jpeg", "jpg"],
+    ["image/svg+xml", "svg"],
+    ["video/mp4", "mp4"],
+    ["video/webm", "webm"],
+  ]) {
+    assert.ok(
+      assetResolver.includes(`"${mediaType}" => "${extension}"`),
+      `${mediaType} must map to .${extension}`,
+    );
+  }
+  assert.match(assetResolver, /\.join\("assets"\)[\s\S]*\.join\("sha256"\)/);
+  assert.doesNotMatch(assetResolver, /\.join\(&?record\.relative_path\)/);
+});

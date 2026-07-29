@@ -1,41 +1,47 @@
 # Decisions
 
-## Isolated workspace
+## Isolated workspace and fixed profiles
 
-AetherTwin is implemented in the isolated `aethertwin/` workspace because the parent repository contains unrelated applications and uncommitted work. The active M1 workspace contains two apps (`studio`, `player`), seven implemented TypeScript packages, and two Rust crates (`project-io`, `desktop-host`). Other named package/crate directories remain explicit future boundaries rather than implementation evidence.
-
-## Two fixed profiles
-
-The product accepts only `showroom` and `market`. Profile is validated in both TypeScript and Rust contracts and cannot be changed after creation. Conversion is a future explicit migration workflow, not a hidden profile mutation.
+AetherTwin is implemented in the isolated `aethertwin/` workspace because the parent repository contains unrelated work. The product accepts only `showroom` and `market`; profile is validated in TypeScript and Rust and cannot be changed after creation.
 
 ## Local-first, desktop-first persistence
 
-Project creation/opening, SQLite, locks, recovery, and filesystem paths stay inside `project-io` behind typed Tauri commands. Studio's native adapter validates all returned DTOs and never exposes raw native errors. Recents are application-local preferences; they are not project data.
+Project creation/opening, SQLite, locks, recovery, import publication, and verified filesystem access remain inside Rust behind typed boundaries. Studio validates every native DTO and never exposes raw native errors. The web sandbox is in-memory and Vite-development-only; production web without Tauri fails closed.
 
-The web sandbox is deliberately in-memory and Vite-development-only. Production web without Tauri fails closed rather than suggesting a persistent browser implementation.
+## One durable model and transient projections
 
-## Recovery is explicit and non-destructive
+Tree, canvas, accessible mirror, Inspector, and Asset Library project one schema-v3 snapshot. Zustand stores transient UI state only. Pixi objects, textures, Blob/native handles, progress, selection, placement previews, and calibration previews are never project records.
 
-The lock marks dirty sessions; a clean close writes `cleanShutdown=true`, checkpoints/WAL-truncates, closes SQLite, and removes the lock. Stale/crash state requires a structured native `STALE_PROJECT_LOCK` response and explicit UI confirmation; sandbox and unstructured errors never expose recovery. If confirmed recovery fails, the new error is requalified before the action is shown again, so `PROJECT_LOCKED` and every other ineligible result clear the stale recovery path. Recovery uses verified copies and detects post-publish replacement mismatch. On Linux/Android an unverified replacement stays under a hidden quarantine leaf, so cleanup cannot make it look like a completed recovery artifact.
+M1 entity edits use `plan.entities.patch`; M2.1 records use the typed `snapshot.records.patch` collection allowlist. Both retain exact inverse values and publish only after the same SQLite transaction commits. There is no arbitrary JSON Pointer mutation path.
 
-## Checkpoint acknowledgement and shutdown
+## Deterministic schema-v3 migration
 
-Native checkpoint returns one authoritative manifest/snapshot envelope. ProjectStore rejects an incoherent envelope, then CommandBus rebases the current state and every undo/redo endpoint with the durable checkpoint metadata while preserving sequence and history. The Rust session does not publish its new in-memory manifest/snapshot until the database checkpoint and manifest rewrite have both succeeded.
+New projects are v3. Coherent v1 projects migrate through v2; coherent v2 projects migrate directly to v3. The v2 -> v3 step preserves all existing IDs, values, order, sequence, and checkpoint sequence while adding only deterministic v3 state. Native checkpoint completes before the editor session is published, and failure restores the previous coherent pair.
 
-Desktop window close and process exit both attempt `close_all`. Create/open/recover hold a shared lifecycle lease through session publication; `close_all` takes the exclusive lease, waits for those producers, drains the registry, and verifies it is empty before returning success. It records successful shutdown while still exclusive, causing waiting and later producers to fail instead of publishing after the drain. A failed shutdown does not set that closed state and releases the lease for normal production and retry. Each native session is closed without holding the registry lock; successful entries are removed, failures remain retryable, and any failure prevents the requested close/exit while exposing only a sanitized message and log reference.
+## Immutable content-addressed assets
 
-## Schema v3 and deterministic migration
+Persisted asset paths are derived only from SHA-256 and canonical media extension. Native import uses unique staging, streaming validation/hash, flush/fsync, and no-replace publication. Existing destinations are reused only after identity, length, and digest match. A collision never overwrites existing bytes.
 
-Schema v3 is the only newly created project format. A schema-v1 project is upgraded deterministically through v2, which derives one default layer per floor and initializes v2 collections, then v3, which adds only its deterministic collections and approved scene environment. The native checkpoint must persist that exact transition before Studio publishes an editor session. This preserves one migration contract across TypeScript, Tauri, and Rust.
+Record commit is deliberately separate from byte publication. If metadata commit fails, immutable unreferenced bytes can remain and the same import/commit can safely retry. Undo removes records, not bytes. This avoids destructive rollback races; orphan pruning is a later explicit operation.
 
-## One model and one durable 2D editing path
+## Verified custom-protocol reads
 
-The plan tree, canvas, accessible DOM mirror, and Inspector are projections of the same schema-v3 snapshot and transient editor session. They do not own duplicate business models. Studio renders one active floor at a time through the five Pixi layers (`grid`, `content`, `annotation`, `overlay`, `interaction`).
+Asset bytes are resolved by `(sessionId, assetId)`, not by a renderer-supplied path. The resolver re-derives the canonical path, verifies identity/size/digest, and returns an owner-bound handle. The custom protocol provides GET/HEAD and one bounded Range; corrupt bytes are never served. Session close, commit reconciliation, replacement, and recovery invalidate affected handles.
 
-All durable plan changes use generic `plan.entities.patch` or exact floor patches through ProjectStore and CommandBus. Millimetres and radians are the storage contract; explicit input units are normalized at the editor boundary. Undo, redo, arrays, transforms, save, and reopen therefore share the same journal and checkpoint path.
+This keeps the native surface at exactly eight invokes. The `main` window retains only `core:window:default` and `dialog:allow-open`; broad filesystem permission is rejected.
 
-## Honest current UI boundary
+## Atomic plan references and calibration
 
-M1 exposes only working project actions and the nine working 2D tools. The editor does not display BIM, IoT, point-cloud, 3DGS, export, publish, route, import, or 3D-preview controls.
+Importing a floor plan commits the `AssetRecord` and initial `PlanReference` in one reversible transaction. Reference transform maps source-image coordinates into world millimetres. Two-point calibration stores both source points and measured millimetres and updates the uniform scale in the same patch. Lock state blocks ordinary property/transform/calibration mutation until explicitly unlocked.
 
-M2.1 Tasks 1?4 are implemented and independently accepted; Task 4's independent review is complete. Asset import, resolution, and calibration remain unimplemented, as do Task 5+ capabilities. Native invokes remain exactly six. Real runtime, browser, GPU, Player/media, and M5 performance evidence are not claimed.
+Missing/corrupt assets preserve the durable reference and show a placeholder. Reimport creates new immutable content, retargets the reference, preserves transform/property state, and always clears calibration so the replacement must be measured again. The old asset record remains for history and later pruning policy.
+
+## Explicit recovery and shutdown
+
+Stale/crash state requires structured `STALE_PROJECT_LOCK` data and explicit user confirmation. Recovery works on a verified copy and never mutates the source on a refused attempt. Checkpoint returns one authoritative manifest/snapshot pair. Clean close checkpoints, marks clean shutdown, truncates WAL, closes SQLite, invalidates asset handles, and removes the held lock.
+
+Create/open/recover/import work participates in session lifecycle coordination. `close_all` waits for in-flight work, drains successful sessions, keeps failures retryable, and prevents publication after successful shutdown.
+
+## Honest milestone boundary
+
+M1 and M2.1 are accepted. The environment-limited Windows reparse test was explicitly waived without being claimed as passing. Only working Import and Calibrate controls were added. Openings/rooms, fixture catalogues, content UI, routes, 3D, export, Player/media, and market workflow remain deferred. Task 14 claims source/test/type/lint/Rust evidence only; it does not claim build, browser, packaged-runtime, screenshot, real-GPU, or performance evidence.

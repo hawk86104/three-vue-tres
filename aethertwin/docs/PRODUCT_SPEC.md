@@ -1,39 +1,38 @@
 # Product specification
 
-AetherTwin M1 supports exactly two immutable project profiles: `showroom` and `market`. The selected profile cannot change after creation; any future conversion requires an explicit migration workflow.
+AetherTwin supports exactly two immutable project profiles: `showroom` and `market`. Profile cannot change after creation; any future conversion requires an explicit migration workflow.
 
-M2.1 Tasks 1?4 are implemented and independently accepted, and Task 4 has completed independent review. This status does not imply asset I/O: import, resolution, and calibration are not implemented, and Task 5+ capabilities remain unimplemented.
+M0, M1, and M2.1 are accepted. The environment-limited Windows reparse test was explicitly waived without being claimed as passing. M2.1 closes the vertical path from safe asset import through durable asset/reference records, 2D rendering, calibration, save/reopen, and recovery.
 
-## Implemented M1 authoring surface
+## Implemented 2D-first editor
 
-Studio opens a project directly in a 2D-first editor. The editor shows one active floor at a time and keeps the floor tree, Pixi canvas, accessible DOM mirror, and Inspector on the same selection. Project, floor, layer, single-entity, and multi-selection Inspector contexts use the durable ProjectStore/CommandBus path.
+Studio opens a project directly in a 2D-first editor. The editor shows one active floor at a time and keeps the floor tree, Pixi canvas, accessible DOM mirror, Asset Library, and Inspector on the same durable snapshot and transient selection.
 
-The nine visible M1 tools are:
+The nine visible M1 tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture, POI, and Dimension. M1 has six editable business entity kinds: boundary, wall, zone, space unit, fixture, and POI. Dimension is a separate annotation entity. Property edits, transforms, arrays, delete, undo, redo, save, reopen, lock, and recovery are durable.
 
-1. Select
-2. Pan
-3. Boundary
-4. Wall
-5. Zone
-6. Space unit
-7. Fixture
-8. POI
-9. Dimension
+All stored plan distances are millimetres and rotations are radians. One `PlanReference.transform` maps source-image coordinates into world millimetres.
 
-M1 has six editable business entity kinds: boundary, wall, zone, space unit, fixture, and POI. Dimension annotation is implemented as a separate annotation entity. Property edits, transforms, rectangular arrays, delete, undo, redo, save, and reopen are durable. Locked objects remain inspectable but cannot be transformed or deleted until unlocked through an editable layer.
+## Implemented M2.1 asset and plan-reference workflow
 
-All stored plan distances are millimetres and rotations are radians. Inspector input accepts explicit supported units and converts to the stored contract. Rendering is 2D only and isolates entities to the active floor and visible layers.
+- Import accepts PNG, JPEG, sanitized SVG, MP4, and WebM under the documented byte/media limits.
+- Floor-plan references accept only PNG, JPEG, and sanitized SVG.
+- Native import publishes immutable content-addressed bytes and returns an `AssetRecord`; ProjectStore commits the record and its initial plan reference atomically.
+- Asset Library exposes real import progress, cancellation, selection, typed failures, and reimport repair.
+- Plan references can be selected, placed, renamed, tagged, transformed, faded, locked, deleted, undone, and redone through the durable record-patch path.
+- Two-point calibration is keyboard operable. The user selects two source-image points, enters a measured millimetre distance, confirms once, and receives an exact uniform scale update plus calibration record in the same reversible patch.
+- Missing or corrupt bytes are never rendered as trusted content. The editor shows a placeholder, keeps the durable reference, and permits reimport without mutating the old immutable asset record.
+- Save, close/reopen, and confirmed recovery preserve canonical relative identity, reference transform, calibration, and lock state.
 
-## Deliberate M1 exclusions
+## Deliberate exclusions
 
-The schema contains opening, product content, vendor, route network, theme, camera shot, and story sequence contracts, but M1 does not provide authoring UI for those records. Asset-pipeline, 3D scene, route, label, mode, theme, story, import, exporter, and plugin package directories remain contract boundaries or deferred placeholders unless their current source says otherwise.
+Schema v3 contains contracts for openings, product content, media assets, route networks, guided routes, materials, assignments, and scene environment, but M2.1 exposes no authoring claims for later workflow.
 
-M1 does not claim:
+M2.1 does not claim:
 
-- a synchronized 3D preview;
-- route authoring, accessible routing, search, or vendor/data import;
+- openings/room recognition or a parametric fixture catalogue;
+- content placement UI, guided routes, or synchronized 3D preview;
 - export, publish, screenshots, PNG/MP4 output, or `.twinpack` sharing;
-- a real Player, media workflow, visitor theme, or kiosk mode;
-- real-browser or GPU profiling, or an M5 performance result.
+- a real Player, visitor theme, kiosk mode, or market workflow;
+- real-browser, packaged-runtime, GPU, or performance evidence.
 
-These deferred capabilities are not exposed as working controls. There is no runtime, browser, or GPU evidence claim.
+Only working Import and Calibrate actions were added to the M1 surface. Deferred controls remain absent.
