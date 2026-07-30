@@ -197,6 +197,12 @@ importers:
         specifier: 29.1.1
         version: 29.1.1
 
+  packages/mode-showroom:
+    dependencies:
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
+
   packages/plan-engine:
     dependencies:
       '@aethertwin/core-model':

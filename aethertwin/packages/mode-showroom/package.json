@@ -1,0 +1,17 @@
+{
+  "name": "@aethertwin/mode-showroom",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. packages/mode-showroom/src/catalogue.test.ts packages/mode-showroom/src/tool-policy.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aethertwin/core-model": "workspace:*"
+  }
+}
