@@ -7,6 +7,31 @@ import type {
 } from "@aethertwin/core-model";
 import type { CalibrationPreview, ViewportTransform } from "@aethertwin/plan-engine";
 
+export interface PlanRoomCandidate {
+  readonly key: string;
+  readonly footprint: readonly Point2[];
+  readonly represented: boolean;
+  readonly selected: boolean;
+}
+
+export interface RenderOpeningSymbol {
+  readonly key: string;
+  readonly openingId: string;
+  readonly kind: "door" | "window";
+  readonly center: Point2;
+  readonly angle: number;
+  readonly width: number;
+  readonly wallThickness: number;
+  readonly selected: boolean;
+}
+
+export interface RenderRoomCandidate {
+  readonly key: string;
+  readonly ring: readonly Point2[];
+  readonly represented: boolean;
+  readonly selected: boolean;
+}
+
 export interface PlanRendererInput {
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
@@ -14,6 +39,7 @@ export interface PlanRendererInput {
   readonly selectedIds: ReadonlySet<string>;
   readonly draft: readonly SpatialEntity[] | null;
   readonly calibrationPreview?: CalibrationPreview | null;
+  readonly roomCandidates?: readonly PlanRoomCandidate[];
 }
 
 export interface ProjectAssetSource {
@@ -67,6 +93,8 @@ export type RenderGeometry =
       readonly label: Point2;
       readonly millimetres: number;
     }
+  | { readonly kind: "opening"; readonly symbol: RenderOpeningSymbol }
+  | { readonly kind: "room-candidate"; readonly candidate: RenderRoomCandidate }
   | {
       readonly kind: "image";
       readonly assetId: string;

@@ -341,6 +341,20 @@ function paintFor(node: RenderNode): {
   if (node.styleToken.startsWith("draft-")) {
     return { color: 0xf2b84b, alpha: 0.9, width: 2, fillAlpha: 0.1 };
   }
+  if (node.styleToken.startsWith("room-candidate")) {
+    if (node.styleToken === "room-candidate-represented") {
+      return { color: 0x7f92aa, alpha: 0.65, width: 1.5, fillAlpha: 0.04 };
+    }
+    return {
+      color: node.styleToken === "room-candidate-selected" ? 0x58d7ff : 0x67d5b5,
+      alpha: 0.95,
+      width: node.styleToken === "room-candidate-selected" ? 3 : 2,
+      fillAlpha: 0.08,
+    };
+  }
+  if (node.styleToken.startsWith("opening-")) {
+    return { color: 0xe7f3ff, alpha: node.locked ? 0.55 : 0.95, width: 2, fillAlpha: 0 };
+  }
   if (node.styleToken === "dimension") {
     return { color: 0x9fb4ce, alpha: 0.95, width: 1.5, fillAlpha: 0 };
   }
@@ -395,6 +409,56 @@ function drawNode(graphics: Graphics, node: RenderNode): void {
         .circle(geometry.label.x, geometry.label.y, 2.5)
         .fill({ color: paint.color, alpha: paint.alpha });
       break;
+    case "opening": {
+      const { symbol } = geometry;
+      const tangent = { x: Math.cos(symbol.angle), y: Math.sin(symbol.angle) };
+      const normal = { x: -tangent.y, y: tangent.x };
+      const halfWidth = symbol.width / 2;
+      const start = {
+        x: symbol.center.x - tangent.x * halfWidth,
+        y: symbol.center.y - tangent.y * halfWidth,
+      };
+      const end = {
+        x: symbol.center.x + tangent.x * halfWidth,
+        y: symbol.center.y + tangent.y * halfWidth,
+      };
+      graphics.moveTo(start.x, start.y).lineTo(end.x, end.y).stroke(stroke);
+      if (symbol.kind === "door") {
+        graphics.moveTo(start.x, start.y)
+          .lineTo(
+            start.x + normal.x * symbol.width,
+            start.y + normal.y * symbol.width,
+          )
+          .stroke(stroke)
+          .arc(
+            start.x,
+            start.y,
+            symbol.width,
+            symbol.angle,
+            symbol.angle + Math.PI / 2,
+          )
+          .stroke(stroke);
+      } else {
+        for (const direction of [-1, 1]) {
+          const offset = direction * symbol.wallThickness / 4;
+          graphics.moveTo(
+            start.x + normal.x * offset,
+            start.y + normal.y * offset,
+          ).lineTo(
+            end.x + normal.x * offset,
+            end.y + normal.y * offset,
+          ).stroke(stroke);
+        }
+      }
+      break;
+    }
+    case "room-candidate": {
+      const coordinates = geometry.candidate.ring.flatMap((point) => [point.x, point.y]);
+      graphics.poly(coordinates, true)
+        .fill({ color: paint.color, alpha: paint.fillAlpha })
+        .stroke(stroke);
+      break;
+    }
     case "image": {
       const coordinates = geometry.corners.flatMap((point) => [point.x, point.y]);
       graphics.poly(coordinates, true)

@@ -639,3 +639,209 @@ describe("projectScene 2,000-entity culling fixture", () => {
     expect(actualIds).not.toContain(hidden.id);
   });
 });
+describe("projectScene M2.2 building overlays", () => {
+  it("projects visible openings with stable keys, symbols, selection, and culling", () => {
+    const supportingWall: Wall = {
+      ...entityBase(80),
+      type: "wall",
+      centerLine: [{ x: -200, y: 0 }, { x: 200, y: 0 }],
+      thickness: 20,
+    };
+    const hiddenWall: Wall = {
+      ...supportingWall,
+      id: uuid(81),
+      layerId: hiddenLayer.id,
+    };
+    const offscreenWall: Wall = {
+      ...supportingWall,
+      id: uuid(82),
+      transform: {
+        ...supportingWall.transform,
+        translation: { x: 10_000, y: 0 },
+      },
+    };
+    const door = {
+      id: uuid(83),
+      name: "Door",
+      tags: [],
+      wallId: supportingWall.id,
+      kind: "door" as const,
+      distanceAlongWall: 100,
+      width: 50,
+      height: 2100,
+      sillHeight: 0,
+    };
+    const windowOpening = {
+      id: uuid(84),
+      name: "Window",
+      tags: [],
+      wallId: supportingWall.id,
+      kind: "window" as const,
+      distanceAlongWall: 300,
+      width: 50,
+      height: 1200,
+      sillHeight: 900,
+    };
+    const hiddenOpening = {
+      ...door,
+      id: uuid(85),
+      wallId: hiddenWall.id,
+      distanceAlongWall: 200,
+    };
+    const offscreenOpening = {
+      ...door,
+      id: uuid(86),
+      wallId: offscreenWall.id,
+      distanceAlongWall: 200,
+    };
+    const structural = snapshotWith([supportingWall, hiddenWall, offscreenWall]);
+    const valid = parseSnapshotV3({
+      ...structural,
+      project: {
+        ...structural.project,
+        openings: [door, windowOpening, hiddenOpening, offscreenOpening],
+      },
+    });
+    const invalidReference = {
+      ...door,
+      id: uuid(87),
+      wallId: uuid(999),
+    };
+    const corrupted: ProjectSnapshot = {
+      ...valid,
+      project: {
+        ...valid.project,
+        openings: [...valid.project.openings, invalidReference],
+      },
+    };
+
+    const scene = projectScene(inputFor(corrupted, {
+      selectedIds: new Set([door.id]),
+    }));
+    const openingNodes = scene.nodes.filter(
+      (node) => node.geometry.kind === "opening",
+    );
+    const baseSymbols = openingNodes.filter(
+      (node) => node.layer === "content",
+    );
+
+    expect(baseSymbols.map(({ key }) => key)).toEqual([door.id, windowOpening.id]);
+    expect(baseSymbols.map(({ styleToken }) => styleToken)).toEqual([
+      "opening-door",
+      "opening-window",
+    ]);
+    expect(baseSymbols[0]?.geometry).toEqual({
+      kind: "opening",
+      symbol: {
+        key: door.id,
+        openingId: door.id,
+        kind: "door",
+        center: { x: 300, y: 300 },
+        angle: 0,
+        width: 50,
+        wallThickness: 20,
+        selected: true,
+      },
+    });
+    expect(openingNodes.some(
+      (node) => node.key === `__aethertwin:selection:${door.id}`,
+    )).toBe(true);
+    expect(openingNodes.some(({ entityId }) => entityId === hiddenOpening.id)).toBe(false);
+    expect(openingNodes.some(({ entityId }) => entityId === offscreenOpening.id)).toBe(false);
+    expect(openingNodes.some(({ entityId }) => entityId === invalidReference.id)).toBe(false);
+  });
+
+  it("uses explicit fixture-kind style tokens for all eight durable kinds", () => {
+    const kinds = [
+      "display-case",
+      "display-table",
+      "shelf",
+      "checkout",
+      "screen",
+      "partition",
+      "signage",
+      "generic",
+    ] as const;
+    const fixtures = kinds.map((kind, index) => ({
+      ...fixtureAt(uuid(100 + index), floorA, -350 + index * 90),
+      kind,
+      size: { width: 60, height: 60 },
+    }));
+    const scene = projectScene(inputFor(snapshotWith(fixtures)));
+    const fixtureTokens = scene.nodes
+      .filter((node) => node.layer === "content")
+      .map(({ styleToken }) => styleToken)
+      .sort();
+
+    expect(fixtureTokens).toEqual(
+      kinds.map((kind) => `entity-fixture-${kind}`).sort(),
+    );
+  });
+
+  it("projects, culls, and deterministically orders transient room candidates", () => {
+    const input = inputFor(snapshotWith([]), {
+      roomCandidates: [
+        {
+          key: "z-room",
+          footprint: [
+            { x: 0, y: 0 },
+            { x: 50, y: 0 },
+            { x: 50, y: 50 },
+            { x: 0, y: 50 },
+          ],
+          represented: true,
+          selected: false,
+        },
+        {
+          key: "a-room",
+          footprint: [
+            { x: -100, y: -100 },
+            { x: -50, y: -100 },
+            { x: -50, y: -50 },
+            { x: -100, y: -50 },
+          ],
+          represented: false,
+          selected: true,
+        },
+        {
+          key: "offscreen-room",
+          footprint: [
+            { x: 10_000, y: 10_000 },
+            { x: 10_050, y: 10_000 },
+            { x: 10_050, y: 10_050 },
+          ],
+          represented: false,
+          selected: false,
+        },
+      ],
+    });
+    const first = projectScene(input);
+    const repeated = projectScene(input);
+    const candidates = first.nodes.filter(
+      (node) => node.geometry.kind === "room-candidate",
+    );
+
+    expect(candidates.map((node) => (
+      node.geometry.kind === "room-candidate"
+        ? node.geometry.candidate.key
+        : ""
+    ))).toEqual(["a-room", "z-room"]);
+    expect(candidates[0]?.geometry).toEqual({
+      kind: "room-candidate",
+      candidate: {
+        key: "a-room",
+        ring: [
+          { x: 300, y: 400 },
+          { x: 350, y: 400 },
+          { x: 350, y: 350 },
+          { x: 300, y: 350 },
+        ],
+        represented: false,
+        selected: true,
+      },
+    });
+    expect(repeated.nodes.map(({ key }) => key)).toEqual(
+      first.nodes.map(({ key }) => key),
+    );
+  });
+});

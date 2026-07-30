@@ -1,10 +1,13 @@
 import type {
   Bounds2,
   Floor,
+  Opening,
   PlanReference,
   Point2,
   SpatialEntity,
+  Wall,
 } from "@aethertwin/core-model";
+import { locateOpening } from "@aethertwin/core-model";
 import {
   applyTransform,
   dimensionGeometry,
@@ -25,6 +28,7 @@ import type {
 const GRID_NAMESPACE = "__aethertwin:grid:";
 const DRAFT_NAMESPACE = "__aethertwin:draft:";
 const SELECTION_NAMESPACE = "__aethertwin:selection:";
+const ROOM_CANDIDATE_NAMESPACE = "__aethertwin:room-candidate:";
 const GRID_TARGET_PIXELS = 32;
 const POI_MIN_MARKER_PIXELS = 6;
 const POI_POLYGON_SEGMENTS = 32;
@@ -261,7 +265,9 @@ function entityProjection(
 }
 
 function styleTokenFor(entity: SpatialEntity): string {
-  return entity.type === "dimension" ? "dimension" : `entity-${entity.type}`;
+  if (entity.type === "dimension") return "dimension";
+  if (entity.type === "fixture") return `entity-fixture-${entity.kind}`;
+  return `entity-${entity.type}`;
 }
 
 function projectEntity(
@@ -286,6 +292,135 @@ function projectEntity(
     styleToken,
     selected,
     locked: entity.locked || layerLocked,
+  };
+}
+
+function openingWorldCorners(
+  center: Point2,
+  tangent: Point2,
+  width: number,
+  thickness: number,
+): readonly Point2[] {
+  const halfWidth = width / 2;
+  const halfThickness = thickness / 2;
+  const normal = { x: -tangent.y, y: tangent.x };
+  return [
+    {
+      x: center.x - tangent.x * halfWidth - normal.x * halfThickness,
+      y: center.y - tangent.y * halfWidth - normal.y * halfThickness,
+    },
+    {
+      x: center.x + tangent.x * halfWidth - normal.x * halfThickness,
+      y: center.y + tangent.y * halfWidth - normal.y * halfThickness,
+    },
+    {
+      x: center.x + tangent.x * halfWidth + normal.x * halfThickness,
+      y: center.y + tangent.y * halfWidth + normal.y * halfThickness,
+    },
+    {
+      x: center.x - tangent.x * halfWidth + normal.x * halfThickness,
+      y: center.y - tangent.y * halfWidth + normal.y * halfThickness,
+    },
+  ];
+}
+
+function projectOpening(
+  opening: Opening,
+  wall: Wall,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  layerLocked: boolean,
+  selected: boolean,
+): readonly [RenderNode, RenderNode | null] | null {
+  if (!Number.isFinite(opening.width) || opening.width <= 0) return null;
+  const projection = locateOpening(wall, opening);
+  if (projection === undefined) return null;
+  const worldCorners = openingWorldCorners(
+    projection.center,
+    projection.tangent,
+    opening.width,
+    projection.effectiveThickness,
+  );
+  const worldBounds = boundsFromPoints(worldCorners);
+  if (!intersects(worldBounds, viewportBounds)) return null;
+  const corners = screenPoints(worldCorners, viewport);
+  const key = opening.id;
+  const symbol = {
+    key,
+    openingId: opening.id,
+    kind: opening.kind,
+    center: worldToScreen(projection.center, viewport),
+    angle: canonicalNumber(
+      Math.atan2(-projection.tangent.y, projection.tangent.x),
+    ),
+    width: opening.width * viewport.pixelsPerMillimetre,
+    wallThickness: projection.effectiveThickness * viewport.pixelsPerMillimetre,
+    selected,
+  } as const;
+  const locked = wall.locked || layerLocked;
+  const node: RenderNode = {
+    key,
+    entityId: opening.id,
+    layer: "content",
+    geometry: { kind: "opening", symbol },
+    bounds: boundsFromPoints(corners),
+    styleToken: `opening-${opening.kind}`,
+    selected,
+    locked,
+  };
+  if (!selected) return [node, null];
+  const selectionKey = `${SELECTION_NAMESPACE}${opening.id}`;
+  return [
+    node,
+    {
+      ...node,
+      key: selectionKey,
+      layer: "overlay",
+      geometry: {
+        kind: "opening",
+        symbol: { ...symbol, key: selectionKey, selected: true },
+      },
+      styleToken: `selection-opening-${opening.kind}`,
+    },
+  ];
+}
+
+function projectRoomCandidate(
+  candidate: NonNullable<PlanRendererInput["roomCandidates"]>[number],
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+): RenderNode | null {
+  if (
+    candidate.footprint.length < 3
+    || candidate.footprint.some(
+      (point) => !Number.isFinite(point.x) || !Number.isFinite(point.y),
+    )
+  ) return null;
+  const worldBounds = boundsFromPoints(candidate.footprint);
+  if (!intersects(worldBounds, viewportBounds)) return null;
+  const ring = screenPoints(candidate.footprint, viewport);
+  const key = `${ROOM_CANDIDATE_NAMESPACE}${candidate.key}`;
+  return {
+    key,
+    entityId: candidate.key,
+    layer: "overlay",
+    geometry: {
+      kind: "room-candidate",
+      candidate: {
+        key: candidate.key,
+        ring,
+        represented: candidate.represented,
+        selected: candidate.selected,
+      },
+    },
+    bounds: boundsFromPoints(ring),
+    styleToken: candidate.selected
+      ? "room-candidate-selected"
+      : candidate.represented
+        ? "room-candidate-represented"
+        : "room-candidate",
+    selected: candidate.selected,
+    locked: false,
   };
 }
 
@@ -433,6 +568,24 @@ export function projectScene(input: PlanRendererInput): RenderScene {
     }
   }
 
+  for (const opening of input.snapshot.project.openings) {
+    const wall = snapshotEntitiesById.get(opening.wallId);
+    if (wall?.type !== "wall" || wall.floorId !== input.activeFloorId) continue;
+    const layerLocked = visibleLayers.get(wall.layerId);
+    if (layerLocked === undefined) continue;
+    const projected = projectOpening(
+      opening,
+      wall,
+      input.viewport,
+      viewportBounds,
+      layerLocked,
+      input.selectedIds.has(opening.id),
+    );
+    if (projected === null) continue;
+    content.push(projected[0]);
+    if (projected[1] !== null) overlay.push(projected[1]);
+  }
+
   if (input.draft !== null) {
     const draftEntitiesById = new Map(snapshotEntitiesById);
     for (const entity of input.draft) draftEntitiesById.set(entity.id, entity);
@@ -457,6 +610,11 @@ export function projectScene(input: PlanRendererInput): RenderScene {
       );
       if (node !== null) overlay.push(node);
     }
+  }
+
+  for (const candidate of input.roomCandidates ?? []) {
+    const node = projectRoomCandidate(candidate, input.viewport, viewportBounds);
+    if (node !== null) overlay.push(node);
   }
 
   return {

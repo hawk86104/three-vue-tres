@@ -72,14 +72,16 @@ const pixiHarness = vi.hoisted(() => {
   }
 
   class TestGraphics extends TestContainer {
-    clear(): this { return this; }
-    poly(): this { return this; }
-    fill(): this { return this; }
-    stroke(): this { return this; }
-    moveTo(): this { return this; }
-    lineTo(): this { return this; }
-    closePath(): this { return this; }
-    circle(): this { return this; }
+    readonly commands: Array<{ readonly method: string; readonly args: readonly unknown[] }> = [];
+    clear(): this { this.commands.length = 0; return this; }
+    poly(...args: readonly unknown[]): this { this.commands.push({ method: "poly", args }); return this; }
+    fill(...args: readonly unknown[]): this { this.commands.push({ method: "fill", args }); return this; }
+    stroke(...args: readonly unknown[]): this { this.commands.push({ method: "stroke", args }); return this; }
+    moveTo(...args: readonly unknown[]): this { this.commands.push({ method: "moveTo", args }); return this; }
+    lineTo(...args: readonly unknown[]): this { this.commands.push({ method: "lineTo", args }); return this; }
+    closePath(...args: readonly unknown[]): this { this.commands.push({ method: "closePath", args }); return this; }
+    circle(...args: readonly unknown[]): this { this.commands.push({ method: "circle", args }); return this; }
+    arc(...args: readonly unknown[]): this { this.commands.push({ method: "arc", args }); return this; }
   }
 
   class TestTexture {
@@ -1258,5 +1260,92 @@ describe("PixiPlanRenderer", () => {
     expect(port.resizeCalls).toEqual([[640, 480, 2]]);
     expect(port.renderCalls).toBe(1);
     expect(port.destroyCalls).toBe(1);
+  });
+});
+describe("Pixi M2.2 opening symbols", () => {
+  function openingNode(
+    key: string,
+    kind: "door" | "window",
+  ): RenderNode {
+    return {
+      key,
+      entityId: key,
+      layer: "content",
+      geometry: {
+        kind: "opening",
+        symbol: {
+          key,
+          openingId: key,
+          kind,
+          center: { x: 100, y: 100 },
+          angle: 0,
+          width: 40,
+          wallThickness: 12,
+          selected: false,
+        },
+      },
+      bounds: {
+        min: { x: 80, y: 94 },
+        max: { x: 120, y: 106 },
+      },
+      styleToken: `opening-${kind}`,
+      selected: false,
+      locked: false,
+    };
+  }
+
+  it("draws the door width line, leaf, and one 90-degree swing arc", async () => {
+    const port = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    port.upsert(openingNode("door-symbol", "door"));
+    const content = latestApplication().stage.children.find(
+      ({ label }) => label === "content",
+    );
+    const graphics = content?.children[0] as
+      | InstanceType<typeof pixiHarness.TestGraphics>
+      | undefined;
+
+    expect(graphics?.commands.filter(({ method }) => method === "moveTo")).toHaveLength(2);
+    expect(graphics?.commands.filter(({ method }) => method === "lineTo")).toHaveLength(2);
+    const arcs = graphics?.commands.filter(({ method }) => method === "arc") ?? [];
+    expect(arcs).toHaveLength(1);
+    expect(Number(arcs[0]?.args[4]) - Number(arcs[0]?.args[3])).toBeCloseTo(Math.PI / 2);
+    port.destroy();
+  });
+
+  it("draws the window width line plus two parallel lines without an arc", async () => {
+    const port = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    port.upsert(openingNode("window-symbol", "window"));
+    const content = latestApplication().stage.children.find(
+      ({ label }) => label === "content",
+    );
+    const graphics = content?.children[0] as
+      | InstanceType<typeof pixiHarness.TestGraphics>
+      | undefined;
+
+    expect(graphics?.commands.filter(({ method }) => method === "moveTo")).toHaveLength(3);
+    expect(graphics?.commands.filter(({ method }) => method === "lineTo")).toHaveLength(3);
+    expect(graphics?.commands.some(({ method }) => method === "arc")).toBe(false);
+    port.destroy();
+  });
+
+  it("detaches and destroys an opening Graphics leaf when it is removed", async () => {
+    const port = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    port.upsert(openingNode("removed-opening", "door"));
+    const content = latestApplication().stage.children.find(
+      ({ label }) => label === "content",
+    );
+    const graphics = content?.children[0] as
+      | InstanceType<typeof pixiHarness.TestGraphics>
+      | undefined;
+
+    port.remove("removed-opening");
+
+    expect(content?.children).toHaveLength(0);
+    expect(graphics?.destroyed).toBe(true);
+    expect(graphics?.destroyedWhileParented).toBe(false);
+    port.destroy();
   });
 });
