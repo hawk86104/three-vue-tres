@@ -32,6 +32,12 @@ export {
   type LinearArrayInput,
   type RectangularArrayInput,
 } from "./operations";
+export {
+  hitTestOpening,
+  nearestOpeningPlacement,
+  type NearestOpeningPlacementInput,
+  type OpeningPlacementCandidate,
+} from "./openings";
 export { boxSelect, hitTest, type BoxSelectOptions, type HitTestOptions } from "./selection";
 export {
   applyPlanReferenceTransform,
