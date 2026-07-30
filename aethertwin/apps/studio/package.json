@@ -12,6 +12,7 @@
     "@aethertwin/core-model": "workspace:*",
     "@aethertwin/design-system": "workspace:*",
     "@aethertwin/editor-shell": "workspace:*",
+    "@aethertwin/mode-showroom": "workspace:*",
     "@aethertwin/plan-engine": "workspace:*",
     "@aethertwin/project-store": "workspace:*",
     "@aethertwin/render-plan-2d": "workspace:*",

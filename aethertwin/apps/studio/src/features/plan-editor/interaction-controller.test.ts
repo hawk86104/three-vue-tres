@@ -1,14 +1,17 @@
 import {
   parseSnapshotV3,
   type AssetRecord,
+  type Opening,
   type PlanReference,
   type ProjectSnapshot,
+  type Wall,
 } from "@aethertwin/core-model";
 import {
   screenToWorld,
   type PlanEditIntent,
   type SpatialEntity,
 } from "@aethertwin/plan-engine";
+import type { AnySnapshotRecordsPatch } from "@aethertwin/project-store";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
 import { describe, expect, it, vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
@@ -56,6 +59,9 @@ function createSnapshotController(
   options: {
     readonly getSnapshot?: () => ProjectSnapshot;
     readonly makeId?: () => string;
+    readonly applySnapshotRecordPatches?: (
+      patches: readonly AnySnapshotRecordsPatch[],
+    ) => Promise<void>;
   } = {},
 ) {
   const activeFloorId = snapshot.project.floors[0]!.id;
@@ -72,6 +78,11 @@ function createSnapshotController(
     void after;
     return undefined;
   });
+  const applySnapshotRecordPatches = options.applySnapshotRecordPatches
+    ?? vi.fn(async (patches: readonly AnySnapshotRecordsPatch[]) => {
+      void patches;
+      return undefined;
+    });
   const errors: unknown[] = [];
   let nextId = 100;
   const controller = createInteractionController({
@@ -82,11 +93,15 @@ function createSnapshotController(
     ),
     applyPlanEdit,
     applyPlanReferencePatch,
+    applySnapshotRecordPatches,
     onError: (error) => errors.push(error),
   } as Parameters<typeof createInteractionController>[0] & {
     readonly applyPlanReferencePatch: (
       before: PlanReference,
       after: PlanReference | null,
+    ) => Promise<void>;
+    readonly applySnapshotRecordPatches: (
+      patches: readonly AnySnapshotRecordsPatch[],
     ) => Promise<void>;
   });
   return {
@@ -95,6 +110,7 @@ function createSnapshotController(
     controller,
     applyPlanEdit,
     applyPlanReferencePatch,
+    applySnapshotRecordPatches,
     errors,
   };
 }
@@ -1392,4 +1408,363 @@ describe("InteractionController keyboard grid movement", () => {
       expect(harness.errors).toEqual([]);
     },
   );
+});
+function openingWall(
+  snapshot: ProjectSnapshot,
+  id: string,
+  options: {
+    readonly floorId?: string;
+    readonly layerId?: string;
+    readonly locked?: boolean;
+    readonly y?: number;
+    readonly startX?: number;
+    readonly endX?: number;
+  } = {},
+): Wall {
+  const floor = snapshot.project.floors[0]!;
+  return {
+    type: "wall",
+    id,
+    name: `Wall ${id.slice(-2)}`,
+    tags: [],
+    floorId: options.floorId ?? floor.id,
+    layerId: options.layerId ?? floor.layers[0]!.id,
+    locked: options.locked ?? false,
+    transform: {
+      translation: { x: 0, y: options.y ?? 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    centerLine: [
+      { x: options.startX ?? -2_000, y: 0 },
+      { x: options.endX ?? 2_000, y: 0 },
+    ],
+    thickness: 100,
+  };
+}
+
+function snapshotForOpeningCreation(
+  base: ProjectSnapshot,
+  walls: readonly Wall[],
+  overrides: Partial<ProjectSnapshot["project"]> = {},
+): ProjectSnapshot {
+  return parseSnapshotV3({
+    ...base,
+    project: {
+      ...base.project,
+      profile: "showroom",
+      entities: walls,
+      openings: [],
+      ...overrides,
+    },
+  });
+}
+
+describe("InteractionController Task 8 opening creation", () => {
+  it("filters ineligible walls and deterministically previews the lowest tied wall id", async () => {
+    const base = createPlanEditorTestHarness();
+    const editableLayer = base.floorA.layers[0]!;
+    const hiddenLayer = {
+      id: "00000000-0000-4000-8000-000000000040",
+      name: "Hidden",
+      tags: [],
+      visible: false,
+      locked: false,
+    };
+    const lockedLayer = {
+      id: "00000000-0000-4000-8000-000000000041",
+      name: "Locked",
+      tags: [],
+      visible: true,
+      locked: true,
+    };
+    const floorA = {
+      ...base.floorA,
+      layers: [editableLayer, hiddenLayer, lockedLayer],
+    };
+    const eligibleLow = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+      { y: -54 },
+    );
+    const eligibleHigh = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000031",
+      { y: 54 },
+    );
+    const snapshot = snapshotForOpeningCreation(base.snapshot, [
+      eligibleHigh,
+      openingWall(base.snapshot, "00000000-0000-4000-8000-000000000020", {
+        layerId: hiddenLayer.id,
+      }),
+      openingWall(base.snapshot, "00000000-0000-4000-8000-000000000021", {
+        layerId: lockedLayer.id,
+      }),
+      openingWall(base.snapshot, "00000000-0000-4000-8000-000000000022", {
+        locked: true,
+      }),
+      openingWall(base.snapshot, "00000000-0000-4000-8000-000000000023", {
+        floorId: base.floorB.id,
+        layerId: base.floorB.layers[0]!.id,
+      }),
+      eligibleLow,
+    ], { floors: [floorA, base.floorB] });
+    const makeId = vi.fn(() => "00000000-0000-4000-8000-000000000100");
+    const harness = createSnapshotController(snapshot, { makeId });
+    harness.store.getState().setViewport({
+      ...harness.store.getState().viewport,
+      pixelsPerMillimetre: 2,
+    });
+    harness.store.getState().setActiveTool("door");
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+
+    expect(harness.store.getState().openingPreview).toMatchObject({
+      sessionId: harness.store.getState().sessionId,
+      tool: "door",
+      width: 900,
+      height: 2_100,
+      sillHeight: 0,
+      candidate: {
+        wallId: eligibleLow.id,
+        distanceAlongWall: 2_000,
+        valid: true,
+      },
+    });
+    expect(makeId).not.toHaveBeenCalled();
+  });
+
+  it("converts the shared eight-pixel tolerance to world units", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+      { y: 54 },
+    );
+    const snapshot = snapshotForOpeningCreation(base.snapshot, [wall]);
+    const harness = createSnapshotController(snapshot);
+    harness.store.getState().setViewport({
+      ...harness.store.getState().viewport,
+      pixelsPerMillimetre: 2,
+    });
+    harness.store.getState().setActiveTool("door");
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    expect(harness.store.getState().openingPreview?.candidate.wallId).toBe(wall.id);
+
+    await harness.controller.handle(eventAt("pointermove", 50, 51, { buttons: 0 }));
+    expect(harness.store.getState().openingPreview).toBeNull();
+  });
+
+  it("retains an invalid default-span preview without allocating or persisting", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+      { startX: -499.5, endX: 499.5 },
+    );
+    const snapshot = snapshotForOpeningCreation(base.snapshot, [wall]);
+    const makeId = vi.fn(() => "00000000-0000-4000-8000-000000000100");
+    const applySnapshotRecordPatches = vi.fn(async (
+      patches: readonly AnySnapshotRecordsPatch[],
+    ) => { void patches; });
+    const harness = createSnapshotController(snapshot, {
+      makeId,
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool("door");
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    expect(harness.store.getState().openingPreview).toMatchObject({
+      candidate: {
+        wallId: wall.id,
+        valid: false,
+        issue: { code: "OPENING_ENDPOINT_CLEARANCE" },
+      },
+    });
+
+    await click(harness.controller, 50, 50);
+    expect(makeId).not.toHaveBeenCalled();
+    expect(applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(harness.store.getState().activeTool).toBe("door");
+    expect(harness.store.getState().openingPreview?.candidate.valid).toBe(false);
+
+    await harness.controller.keyDown("Escape");
+    expect(harness.store.getState().activeTool).toBe("select");
+    expect(harness.store.getState().openingPreview).toBeNull();
+  });
+
+  it("persists one opening record per click, selects it, and keeps the tool for repetition", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+    );
+    let current = snapshotForOpeningCreation(base.snapshot, [wall]);
+    const ids = [
+      "00000000-0000-4000-8000-000000000100",
+      "00000000-0000-4000-8000-000000000101",
+    ];
+    const makeId = vi.fn(() => ids.shift()!);
+    const applySnapshotRecordPatches = vi.fn(async (
+      patches: readonly AnySnapshotRecordsPatch[],
+    ) => {
+      const patch = patches[0];
+      const created = patch?.collection === "openings"
+        ? patch.changes[0]?.after as Opening | null | undefined
+        : undefined;
+      if (created === undefined || created === null) {
+        throw new Error("Expected one created opening patch.");
+      }
+      current = parseSnapshotV3({
+        ...current,
+        sequence: current.sequence + 1,
+        project: {
+          ...current.project,
+          openings: [...current.project.openings, created],
+        },
+      });
+    });
+    const harness = createSnapshotController(current, {
+      getSnapshot: () => current,
+      makeId,
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool("door");
+
+    await harness.controller.handle(eventAt("pointermove", -550, 50, { buttons: 0 }));
+    expect(makeId).not.toHaveBeenCalled();
+    await click(harness.controller, -550, 50);
+
+    expect(applySnapshotRecordPatches).toHaveBeenCalledTimes(1);
+    expect(applySnapshotRecordPatches).toHaveBeenLastCalledWith([{
+      collection: "openings",
+      changes: [{
+        id: "00000000-0000-4000-8000-000000000100",
+        before: null,
+        after: {
+          id: "00000000-0000-4000-8000-000000000100",
+          name: "Door",
+          tags: [],
+          wallId: wall.id,
+          kind: "door",
+          distanceAlongWall: 1_400,
+          width: 900,
+          height: 2_100,
+          sillHeight: 0,
+        },
+      }],
+    }]);
+    expect([...harness.store.getState().selectedIds]).toEqual([
+      "00000000-0000-4000-8000-000000000100",
+    ]);
+    expect(harness.store.getState().activeTool).toBe("door");
+    expect(harness.store.getState().openingPreview).toBeNull();
+
+    await harness.controller.handle(eventAt("pointermove", 650, 50, { buttons: 0 }));
+    await click(harness.controller, 650, 50);
+
+    expect(applySnapshotRecordPatches).toHaveBeenCalledTimes(2);
+    expect(makeId).toHaveBeenCalledTimes(2);
+    expect([...harness.store.getState().selectedIds]).toEqual([
+      "00000000-0000-4000-8000-000000000101",
+    ]);
+    expect(harness.store.getState().activeTool).toBe("door");
+  });
+
+  it("retains tool, selection, preview, and persistence error after a rejected patch", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+    );
+    const snapshot = snapshotForOpeningCreation(base.snapshot, [wall]);
+    const rejection = new Error("checkpoint unavailable");
+    const applySnapshotRecordPatches = vi.fn(async () => {
+      throw rejection;
+    });
+    const harness = createSnapshotController(snapshot, { applySnapshotRecordPatches });
+    harness.store.getState().setActiveTool("window");
+    harness.store.getState().setSelection([base.fixture.id]);
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    await click(harness.controller, 50, 50);
+
+    expect(harness.store.getState().activeTool).toBe("window");
+    expect([...harness.store.getState().selectedIds]).toEqual([base.fixture.id]);
+    expect(harness.store.getState().openingPreview).toMatchObject({
+      tool: "window",
+      width: 1_200,
+      height: 1_200,
+      sillHeight: 900,
+      persistenceError: "checkpoint unavailable",
+      candidate: { wallId: wall.id, valid: true },
+    });
+    expect(harness.errors).toEqual([rejection]);
+  });
+
+  it("ignores a late completion after session replacement and clears previews on cancel", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+    );
+    const snapshot = snapshotForOpeningCreation(base.snapshot, [wall]);
+    let resolvePatch!: () => void;
+    const applySnapshotRecordPatches = vi.fn(() => new Promise<void>((resolve) => {
+      resolvePatch = resolve;
+    }));
+    const harness = createSnapshotController(snapshot, { applySnapshotRecordPatches });
+    harness.store.getState().setActiveTool("door");
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    harness.controller.cancel();
+    expect(harness.store.getState().openingPreview).toBeNull();
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    await harness.controller.handle(eventAt("pointerdown", 50, 50));
+    const completion = harness.controller.handle(eventAt("pointerup", 50, 50, { buttons: 0 }));
+    expect(applySnapshotRecordPatches).toHaveBeenCalledOnce();
+
+    harness.store.getState().replaceSession("replacement-session", base.floorA.id);
+    resolvePatch();
+    await completion;
+
+    expect(harness.store.getState()).toMatchObject({
+      sessionId: "replacement-session",
+      activeTool: "select",
+      openingPreview: null,
+    });
+    expect([...harness.store.getState().selectedIds]).toEqual([]);
+    expect(harness.errors).toEqual([]);
+  });
+
+  it("does not preview or persist showroom openings for a Market snapshot", async () => {
+    const base = createPlanEditorTestHarness();
+    const wall = openingWall(
+      base.snapshot,
+      "00000000-0000-4000-8000-000000000030",
+    );
+    const snapshot = parseSnapshotV3({
+      ...base.snapshot,
+      project: {
+        ...base.snapshot.project,
+        profile: "market",
+        entities: [wall],
+      },
+    });
+    const makeId = vi.fn(() => "00000000-0000-4000-8000-000000000100");
+    const applySnapshotRecordPatches = vi.fn(async () => undefined);
+    const harness = createSnapshotController(snapshot, {
+      makeId,
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool("door");
+
+    await harness.controller.handle(eventAt("pointermove", 50, 50, { buttons: 0 }));
+    await click(harness.controller, 50, 50);
+
+    expect(harness.store.getState().openingPreview).toBeNull();
+    expect(makeId).not.toHaveBeenCalled();
+    expect(applySnapshotRecordPatches).not.toHaveBeenCalled();
+  });
 });

@@ -1,11 +1,14 @@
 import {
   parseSnapshotV3,
+  validateOpeningGeometry,
   type DimensionAnchor,
+  type Opening,
   type PlanLayer,
   type PlanReference,
   type Point2,
   type ProjectSnapshot,
   type SpatialEntity,
+  type Wall,
 } from "@aethertwin/core-model";
 import {
   alignmentGuides,
@@ -15,6 +18,7 @@ import {
   entityWorldVertices,
   findSnap,
   hitTestPlan,
+  nearestOpeningPlacement,
   screenToWorld,
   translateEntities,
   UniformGridSpatialIndex,
@@ -24,9 +28,15 @@ import {
   type SnapResult,
   type ViewportTransform,
 } from "@aethertwin/plan-engine";
+import type { AnySnapshotRecordsPatch } from "@aethertwin/project-store";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
 import type { StoreApi } from "zustand/vanilla";
-import type { PlanEditorState, PlanTool } from "./editor-session";
+import type {
+  OpeningCreationTool,
+  OpeningPreviewState,
+  PlanEditorState,
+  PlanTool,
+} from "./editor-session";
 
 export interface InteractionControllerDeps {
   readonly getSnapshot: () => ProjectSnapshot;
@@ -36,6 +46,9 @@ export interface InteractionControllerDeps {
   readonly applyPlanReferencePatch?: (
     before: PlanReference,
     after: PlanReference | null,
+  ) => Promise<void>;
+  readonly applySnapshotRecordPatches?: (
+    patches: readonly AnySnapshotRecordsPatch[],
   ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
@@ -63,6 +76,15 @@ const GRID_SIZE_MILLIMETRES = 100;
 const MIN_PIXELS_PER_MILLIMETRE = 0.0001;
 const MAX_PIXELS_PER_MILLIMETRE = 10_000;
 const WHEEL_ZOOM_SENSITIVITY = 0.001;
+const PREVIEW_OPENING_ID = "00000000-0000-4000-8000-000000000000";
+const OPENING_DEFAULTS: Readonly<Record<OpeningCreationTool, {
+  readonly width: number;
+  readonly height: number;
+  readonly sillHeight: number;
+}>> = Object.freeze({
+  door: Object.freeze({ width: 900, height: 2_100, sillHeight: 0 }),
+  window: Object.freeze({ width: 1_200, height: 1_200, sillHeight: 900 }),
+});
 
 type CreationTool = Exclude<PlanTool, "select" | "pan">;
 type PointCreationTool = Extract<CreationTool, "boundary" | "wall" | "zone">;
@@ -507,6 +529,77 @@ function dimensionAnchor(
   return { kind: "point", point: snapped.point };
 }
 
+function isOpeningCreationTool(tool: PlanTool): tool is OpeningCreationTool {
+  return tool === "door" || tool === "window";
+}
+
+function eligibleOpeningWalls(context: ActiveContext): readonly Wall[] {
+  if (context.snapshot.project.profile !== "showroom") return [];
+  return context.entities.filter((entity): entity is Wall => (
+    entity.type === "wall"
+    && !entity.locked
+    && context.editableLayerIds.has(entity.layerId)
+  ));
+}
+
+function openingPreviewAt(
+  event: PlanPointerEvent,
+  context: ActiveContext,
+  state: PlanEditorState,
+): OpeningPreviewState | null {
+  if (!isOpeningCreationTool(state.activeTool)) return null;
+  const walls = eligibleOpeningWalls(context);
+  if (walls.length === 0) return null;
+  const dimensions = OPENING_DEFAULTS[state.activeTool];
+  const candidate = nearestOpeningPlacement({
+    point: screenToWorld(event.screen, state.viewport),
+    walls,
+    width: dimensions.width,
+    height: dimensions.height,
+    sillHeight: dimensions.sillHeight,
+    kind: state.activeTool,
+    hitToleranceWorld: SNAP_TOLERANCE_PIXELS / state.viewport.pixelsPerMillimetre,
+  });
+  if (candidate === undefined) return null;
+
+  const previewOpening: Opening = {
+    id: PREVIEW_OPENING_ID,
+    name: "",
+    tags: [],
+    wallId: candidate.wallId,
+    kind: state.activeTool,
+    distanceAlongWall: candidate.distanceAlongWall,
+    width: dimensions.width,
+    height: dimensions.height,
+    sillHeight: dimensions.sillHeight,
+  };
+  const allWalls = context.snapshot.project.entities.filter(
+    (entity): entity is Wall => entity.type === "wall",
+  );
+  const issue = validateOpeningGeometry(
+    allWalls,
+    [...context.snapshot.project.openings, previewOpening],
+  ).find(({ openingId }) => openingId === PREVIEW_OPENING_ID);
+  const resolvedCandidate = issue === undefined
+    ? { ...candidate, valid: true as const }
+    : { ...candidate, valid: false as const, issue };
+  return {
+    sessionId: state.sessionId,
+    tool: state.activeTool,
+    candidate: resolvedCandidate,
+    ...dimensions,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error !== null && typeof error === "object" && "message" in error) {
+    const message = error.message;
+    if (typeof message === "string") return message;
+  }
+  return String(error);
+}
+
 function cursorCentredZoom(
   event: PlanPointerEvent,
   viewport: ViewportTransform,
@@ -549,6 +642,14 @@ export function createInteractionController(
   const contextNow = (): ActiveContext => (
     activeContext(deps.getSnapshot(), deps.store.getState())
   );
+
+  const publishOpeningPreview = (event: PlanPointerEvent): OpeningPreviewState | null => {
+    const state = deps.store.getState();
+    const preview = openingPreviewAt(event, contextNow(), state);
+    if (preview === null) state.clearOpeningPreview();
+    else state.setOpeningPreview(preview);
+    return preview;
+  };
 
   const creationSeed = (context: ActiveContext): EntitySeed | null => {
     if (context.creationLayer === null) {
@@ -654,6 +755,58 @@ export function createInteractionController(
     return true;
   };
 
+
+  const commitOpening = async (event: PlanPointerEvent): Promise<void> => {
+    if (commitToken !== null) return;
+    const preview = publishOpeningPreview(event);
+    if (preview === null || !preview.candidate.valid) return;
+
+    const openingId = deps.makeId();
+    const opening: Opening = {
+      id: openingId,
+      name: preview.tool === "door" ? "Door" : "Window",
+      tags: [],
+      wallId: preview.candidate.wallId,
+      kind: preview.tool,
+      distanceAlongWall: preview.candidate.distanceAlongWall,
+      width: preview.width,
+      height: preview.height,
+      sillHeight: preview.sillHeight,
+    };
+    const token = Symbol("opening-commit");
+    const commitStartSelection = [...deps.store.getState().selectedIds];
+    commitToken = token;
+
+    try {
+      if (deps.applySnapshotRecordPatches === undefined) {
+        throw new Error("Opening mutations are unavailable.");
+      }
+      await deps.applySnapshotRecordPatches([{
+        collection: "openings",
+        changes: [{ id: openingId, before: null, after: opening }],
+      }]);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (state.sessionId !== preview.sessionId) return;
+      state.setOpeningPreview({
+        ...preview,
+        persistenceError: errorMessage(error),
+      });
+      deps.onError(error);
+      return;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (state.sessionId !== preview.sessionId) return;
+    if (sameSelection(state.selectedIds, commitStartSelection)) {
+      state.setSelection([openingId]);
+    }
+    if (state.openingPreview?.sessionId === preview.sessionId) {
+      state.clearOpeningPreview();
+    }
+  };
 
   const commitCreation = async (
     entity: SpatialEntity | null,
@@ -1176,6 +1329,23 @@ export function createInteractionController(
         synchronizeGesture();
         if (commitToken !== null) return;
 
+        const activeTool = deps.store.getState().activeTool;
+        if (isOpeningCreationTool(activeTool)) {
+          if (event.type === "pointercancel") {
+            deps.store.getState().clearOpeningPreview();
+            return;
+          }
+          if (event.type === "pointermove") {
+            publishOpeningPreview(event);
+            return;
+          }
+          if (event.type === "pointerdown") return;
+          if (event.type === "pointerup") {
+            await commitOpening(event);
+            return;
+          }
+        }
+
         if (event.type === "pointercancel") {
           if (gesture !== null && gesture.pointerId !== event.pointerId) return;
           clearGesture();
@@ -1205,7 +1375,12 @@ export function createInteractionController(
         if (commitToken !== null) return;
 
         if (key === "Escape") {
+          const state = deps.store.getState();
           clearGesture();
+          state.clearOpeningPreview();
+          if (isOpeningCreationTool(state.activeTool)) {
+            state.setActiveTool("select");
+          }
           return;
         }
         if (key === "Delete") {
@@ -1339,6 +1514,7 @@ export function createInteractionController(
       synchronizeGesture();
       if (commitToken !== null) return;
       clearGesture();
+      deps.store.getState().clearOpeningPreview();
     },
   };
 }

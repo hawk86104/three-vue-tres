@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
+import { createPlanEditorStore, type OpeningPreviewState } from "./editor-session";
 import { PlanEditor } from "./plan-editor";
 import { renderPlanEditorFixture } from "./plan-editor.test-support";
 
@@ -572,11 +573,25 @@ describe("PlanEditor M0 behavior contract", () => {
 });
 
 
-const toolLabels = [
+const marketToolLabels = [
   "选择",
   "平移",
   "边界",
   "墙体",
+  "区域",
+  "空间单元",
+  "展具",
+  "兴趣点",
+  "尺寸",
+] as const;
+
+const showroomToolLabels = [
+  "选择",
+  "平移",
+  "边界",
+  "墙体",
+  "门",
+  "窗",
   "区域",
   "空间单元",
   "展具",
@@ -605,11 +620,11 @@ describe("PlanEditor Task 10 shell", () => {
   });
 
   it.each([
-    ["market", ["选择", "场地", "空间单元", "标记"]],
-    ["showroom", ["选择", "建筑", "展具", "标记"]],
+    ["market", ["选择", "场地", "空间单元", "标记"], marketToolLabels],
+    ["showroom", ["选择", "建筑", "展具", "标记"], showroomToolLabels],
   ] as const)(
-    "groups the same nine implemented tools for the %s profile",
-    (profile, groupLabels) => {
+    "groups the implemented tools for the %s profile",
+    (profile, groupLabels, expectedToolLabels) => {
       renderPlanEditorFixture({ profile });
 
       const toolbar = screen.getByRole("toolbar", { name: "平面工具" });
@@ -622,7 +637,7 @@ describe("PlanEditor Task 10 shell", () => {
         within(toolbar)
           .getAllByRole("button")
           .map((button) => button.textContent),
-      ).toEqual(toolLabels);
+      ).toEqual(expectedToolLabels);
     },
   );
 
@@ -642,7 +657,7 @@ describe("PlanEditor Task 10 shell", () => {
     ] as const;
 
     for (const [index, tool] of tools.entries()) {
-      const label = toolLabels[index]!;
+      const label = marketToolLabels[index]!;
       await user.click(screen.getByRole("button", { name: label }));
       expect(sessionStore.getState().activeTool).toBe(tool);
       expect(screen.getByRole("button", { name: label })).toHaveAttribute(
@@ -1519,5 +1534,116 @@ describe("PlanEditor Task 12 plan-reference selection", () => {
     await waitFor(() => expect(within(inspector).getByLabelText(
       "\u9879\u76ee\u540d\u79f0",
     )).toHaveValue("Reference selection"));
+  });
+});
+function openingPreview(
+  sessionId: string,
+  overrides: Partial<OpeningPreviewState> = {},
+): OpeningPreviewState {
+  return {
+    sessionId,
+    tool: "door",
+    candidate: {
+      wallId: "00000000-0000-4000-8000-000000000030",
+      distanceAlongWall: 500,
+      worldCenter: { x: 0, y: 0 },
+      tangent: { x: 1, y: 0 },
+      effectiveThickness: 100,
+      valid: false,
+      issue: {
+        code: "OPENING_ENDPOINT_CLEARANCE",
+        openingId: "00000000-0000-4000-8000-000000000000",
+        wallId: "00000000-0000-4000-8000-000000000030",
+      },
+    },
+    width: 900,
+    height: 2_100,
+    sillHeight: 0,
+    ...overrides,
+  };
+}
+
+describe("PlanEditor Task 8 opening creation UI", () => {
+  it("maps Door and Window only into the showroom toolbar and returns focus to the canvas", async () => {
+    const user = userEvent.setup();
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+    const canvas = screen.getByRole("region", { name: "二维平面画布" });
+
+    const door = screen.getByRole("button", { name: "门" });
+    await user.click(door);
+
+    expect(sessionStore.getState().activeTool).toBe("door");
+    expect(door).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(canvas).toHaveFocus());
+
+    fireEvent.keyDown(canvas, { key: "Escape" });
+    await waitFor(() => expect(sessionStore.getState().activeTool).toBe("select"));
+    await waitFor(() => expect(door).toHaveFocus());
+
+    cleanup();
+    renderPlanEditorFixture({ profile: "market" });
+    expect(screen.queryByRole("button", { name: "门" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "窗" })).not.toBeInTheDocument();
+  });
+
+  it("shows all dimensions, along-wall distance, validity, first issue, and persistence error", () => {
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+    const sessionId = sessionStore.getState().sessionId;
+
+    act(() => {
+      sessionStore.getState().setActiveTool("door");
+      sessionStore.getState().setOpeningPreview(openingPreview(sessionId, {
+        persistenceError: "checkpoint unavailable",
+      }));
+    });
+
+    const preview = screen.getByRole("status", { name: "门窗放置预览" });
+    expect(preview).toHaveAttribute("data-valid", "false");
+    expect(preview).toHaveTextContent("门");
+    expect(preview).toHaveTextContent("900 × 2100 mm");
+    expect(preview).toHaveTextContent("窗台高度 0 mm");
+    expect(preview).toHaveTextContent("沿墙距离 500 mm");
+    expect(preview).toHaveTextContent("无效：距墙端过近");
+    expect(preview).toHaveTextContent("保存失败：checkpoint unavailable");
+  });
+
+  it("replaces the transient session and clears its opening preview when the project changes", async () => {
+    const { store } = await sandboxProject("Opening session A");
+    const firstFloorId = store.getState().snapshot!.project.floors[0]!.id;
+    const sessionStore = createPlanEditorStore({
+      activeFloorId: firstFloorId,
+      sessionId: "session-a",
+    });
+    render(<PlanEditor
+      store={store}
+      dependencies={{ sessionStore, assetPicker: null }}
+    />);
+
+    act(() => {
+      sessionStore.getState().setActiveTool("window");
+      sessionStore.getState().setOpeningPreview(openingPreview("session-a", {
+        tool: "window",
+        width: 1_200,
+        height: 1_200,
+        sillHeight: 900,
+      }));
+    });
+    expect(sessionStore.getState().openingPreview).not.toBeNull();
+
+    await act(async () => {
+      await store.close();
+      await store.create({
+        name: "Opening session B",
+        location: "sandbox",
+        profile: "showroom",
+      });
+    });
+
+    await waitFor(() => expect(sessionStore.getState().openingPreview).toBeNull());
+    expect(sessionStore.getState().activeTool).toBe("select");
+    expect(sessionStore.getState().sessionId).not.toBe("session-a");
+    expect(sessionStore.getState().activeFloorId).toBe(
+      store.getState().snapshot!.project.floors[0]!.id,
+    );
   });
 });

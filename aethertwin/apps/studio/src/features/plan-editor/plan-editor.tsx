@@ -20,7 +20,12 @@ import {
   type ReactNode,
 } from "react";
 import type { StoreApi } from "zustand/vanilla";
-import { createPlanEditorStore, type PlanEditorState } from "./editor-session";
+import {
+  createPlanEditorStore,
+  type OpeningPreviewState,
+  type PlanEditorState,
+  type PlanTool,
+} from "./editor-session";
 import { FloorTree } from "./floor-tree";
 import { AssetLibrary } from "./asset-library";
 import {
@@ -139,6 +144,43 @@ function referenceName(source: PlanAssetSource): string {
     : "\u5e73\u9762\u53c2\u8003";
 }
 
+const openingIssueLabels = {
+  OPENING_WALL_NOT_FOUND: "支撑墙不存在",
+  OPENING_WALL_GEOMETRY_INVALID: "墙体几何无效",
+  OPENING_SPAN_CROSSES_JOINT: "跨越墙体转角",
+  OPENING_ENDPOINT_CLEARANCE: "距墙端过近",
+  OPENING_OVERLAP: "与其他门窗重叠",
+  OPENING_HEIGHT_EXCEEDED: "超出墙体高度",
+  OPENING_DOOR_SILL_NONZERO: "门的窗台高度必须为 0",
+  OPENING_TARGET_LOCKED: "支撑墙已锁定",
+} as const;
+
+function OpeningPreview({ preview }: { readonly preview: OpeningPreviewState }) {
+  const issue = preview.candidate.issue;
+  return (
+    <section
+      className="studio-opening-preview"
+      role="status"
+      aria-label="门窗放置预览"
+      data-valid={preview.candidate.valid ? "true" : "false"}
+      {...(issue === undefined ? {} : { "data-issue-code": issue.code })}
+    >
+      <strong>{preview.tool === "door" ? "门" : "窗"}</strong>
+      <span>{`${preview.width} × ${preview.height} mm`}</span>
+      <span>{`窗台高度 ${preview.sillHeight} mm`}</span>
+      <span>{`沿墙距离 ${preview.candidate.distanceAlongWall} mm`}</span>
+      <span>
+        {preview.candidate.valid
+          ? "有效"
+          : `无效：${issue === undefined ? "未知几何问题" : openingIssueLabels[issue.code]}`}
+      </span>
+      {preview.persistenceError === undefined ? null : (
+        <span>{`保存失败：${preview.persistenceError}`}</span>
+      )}
+    </section>
+  );
+}
+
 function editableCalibrationReference(
   snapshot: ProjectSnapshot | null,
   activeFloorId: string,
@@ -183,6 +225,8 @@ export function PlanEditor({
   const assetPickerPending = useRef(false);
   const treeTabRef = useRef<HTMLButtonElement>(null);
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const projectSessionGeneration = useRef(0);
   const sidePanelId = useId();
   const treeTabId = `${sidePanelId}-tree-tab`;
   const assetTabId = `${sidePanelId}-asset-tab`;
@@ -195,6 +239,8 @@ export function PlanEditor({
     })
   ));
   const [makeId] = useState(() => dependencies?.makeId ?? productionId);
+  const openingToolInitiator = useRef<HTMLButtonElement | null>(null);
+  const previousActiveTool = useRef<PlanTool>(sessionStore.getState().activeTool);
   const calibrationProjectId = useRef<string | null>(
     state.snapshot?.project.id ?? null,
   );
@@ -219,6 +265,7 @@ export function PlanEditor({
       makeId,
       applyPlanEdit: (intent) => store.applyPlanEdit(intent),
       applyPlanReferencePatch: (before, after) => store.applyPlanReferencePatch(before, after),
+      applySnapshotRecordPatches: (patches) => store.applySnapshotRecordPatches(patches),
       onError: (error) => setActionError(errorValue(error)),
     })
   ));
@@ -229,12 +276,32 @@ export function PlanEditor({
     sessionState.calibrationDraft?.referenceId ?? null;
 
   useEffect(() => {
+    const previous = previousActiveTool.current;
+    previousActiveTool.current = sessionState.activeTool;
+    if (
+      (previous === "door" || previous === "window")
+      && sessionState.activeTool === "select"
+    ) {
+      const initiator = openingToolInitiator.current;
+      openingToolInitiator.current = null;
+      queueMicrotask(() => {
+        if (initiator?.isConnected) initiator.focus();
+      });
+    }
+  }, [sessionState.activeTool]);
+
+  useEffect(() => {
     const nextProjectId = state.snapshot?.project.id ?? null;
     if (calibrationProjectId.current !== nextProjectId) {
-      sessionStore.getState().cancelCalibration();
+      openingToolInitiator.current = null;
+      projectSessionGeneration.current += 1;
+      sessionStore.getState().replaceSession(
+        `plan-editor-project-session-${projectSessionGeneration.current}`,
+        state.snapshot?.project.floors[0]?.id ?? "",
+      );
       calibrationProjectId.current = nextProjectId;
     }
-  }, [sessionStore, state.snapshot?.project.id]);
+  }, [sessionStore, state.snapshot]);
 
   useEffect(() => {
     if (activeCalibrationReferenceId === null) return;
@@ -476,6 +543,20 @@ export function PlanEditor({
     setContext({ kind: "plan-reference", referenceId });
   }
 
+  function selectTool(tool: PlanTool, initiator: HTMLButtonElement): void {
+    sessionStore.getState().setActiveTool(tool);
+    if (tool !== "door" && tool !== "window") {
+      openingToolInitiator.current = null;
+      return;
+    }
+    openingToolInitiator.current = initiator;
+    queueMicrotask(() => {
+      workspaceRef.current
+        ?.querySelector<HTMLElement>(".studio-plan-canvas")
+        ?.focus();
+    });
+  }
+
   function selectFloor(floorId: string) {
     const current = sessionStore.getState();
     if (!current.setActiveFloor(floorId)) {
@@ -620,7 +701,7 @@ export function PlanEditor({
         <PlanToolbar
           profile={snapshot.project.profile}
           activeTool={sessionState.activeTool}
-          onToolChange={(tool) => sessionStore.getState().setActiveTool(tool)}
+          onToolChange={selectTool}
           {...(selectedCalibrationReference === null ? {} : {
             onCalibrate: (initiator: HTMLButtonElement) => {
               startCalibration(selectedCalibrationReference.id, initiator);
@@ -637,11 +718,15 @@ export function PlanEditor({
       tree={treePanel}
       workspace={
         <div
+          ref={workspaceRef}
           className="studio-plan-workspace"
           data-active-floor-id={sessionState.activeFloorId}
           data-selected-count={selectedIds.size}
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
+          {sessionState.openingPreview === null ? null : (
+            <OpeningPreview preview={sessionState.openingPreview} />
+          )}
           {activeCalibrationReference === null ? null : (
             <CalibrationPanel
               reference={activeCalibrationReference}

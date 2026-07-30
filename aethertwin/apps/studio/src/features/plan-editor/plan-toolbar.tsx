@@ -1,5 +1,6 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { Button } from "@aethertwin/design-system";
+import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
 import type { PlanTool } from "./editor-session";
 
 interface ToolDefinition {
@@ -17,12 +18,22 @@ const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
   pan: { tool: "pan", label: "平移" },
   boundary: { tool: "boundary", label: "边界" },
   wall: { tool: "wall", label: "墙体" },
+  door: { tool: "door", label: "门" },
+  window: { tool: "window", label: "窗" },
   zone: { tool: "zone", label: "区域" },
   "space-unit": { tool: "space-unit", label: "空间单元" },
   fixture: { tool: "fixture", label: "展具" },
   poi: { tool: "poi", label: "兴趣点" },
   dimension: { tool: "dimension", label: "尺寸" },
 };
+
+const showroomOpeningTools: readonly ToolDefinition[] = Object.freeze(
+  SHOWROOM_TOOL_GROUPS
+    .find(({ id }) => id === "building")
+    ?.actions.flatMap(({ id }) => (
+      id === "door" || id === "window" ? [toolById[id]] : []
+    )) ?? [],
+);
 
 const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
   market: [
@@ -44,6 +55,7 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
       tools: [
         toolById.boundary,
         toolById.wall,
+        ...showroomOpeningTools,
         toolById.zone,
         toolById["space-unit"],
       ],
@@ -56,7 +68,7 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
 export interface PlanToolbarProps {
   readonly profile: ProjectProfile;
   readonly activeTool: PlanTool;
-  readonly onToolChange: (tool: PlanTool) => void;
+  readonly onToolChange: (tool: PlanTool, initiator: HTMLButtonElement) => void;
   readonly onImportFloorPlan?: (initiator: HTMLButtonElement) => void;
   readonly importFloorPlanDisabled?: boolean;
   readonly onCalibrate?: (initiator: HTMLButtonElement) => void;
@@ -97,7 +109,7 @@ export function PlanToolbar({
                   aria-pressed={active}
                   data-active={active ? "true" : undefined}
                   data-tool={tool}
-                  onClick={() => onToolChange(tool)}
+                  onClick={(event) => onToolChange(tool, event.currentTarget)}
                 >
                   {label}
                 </Button>

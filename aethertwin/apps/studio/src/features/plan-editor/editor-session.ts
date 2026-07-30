@@ -1,6 +1,7 @@
 import type { PlanReference, Point2, SpatialEntity } from "@aethertwin/core-model";
 import type {
   CalibrationPreview,
+  OpeningPlacementCandidate,
   SnapMode,
   ViewportTransform,
 } from "@aethertwin/plan-engine";
@@ -10,12 +11,26 @@ export type PlanTool =
   | "select"
   | "boundary"
   | "wall"
+  | "door"
+  | "window"
   | "zone"
   | "space-unit"
   | "fixture"
   | "poi"
   | "dimension"
   | "pan";
+
+export type OpeningCreationTool = "door" | "window";
+
+export interface OpeningPreviewState {
+  readonly sessionId: string;
+  readonly tool: OpeningCreationTool;
+  readonly candidate: OpeningPlacementCandidate;
+  readonly width: number;
+  readonly height: number;
+  readonly sillHeight: number;
+  readonly persistenceError?: string;
+}
 
 export type PlanSidePanel = "tree" | "assets";
 
@@ -47,6 +62,7 @@ export type PlanDraft =
   | { readonly kind: "box-select"; readonly start: Point2; readonly current: Point2 };
 
 export interface PlanEditorState {
+  readonly sessionId: string;
   readonly activeFloorId: string;
   readonly activeTool: PlanTool;
   readonly sidePanel: PlanSidePanel;
@@ -55,9 +71,11 @@ export interface PlanEditorState {
   readonly snapModes: ReadonlySet<SnapMode>;
   readonly draft: PlanDraft | null;
   readonly calibrationDraft: CalibrationDraft | null;
+  readonly openingPreview: OpeningPreviewState | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
   setActiveFloor(id: string): boolean;
+  replaceSession(sessionId: string, activeFloorId: string): void;
   setActiveTool(tool: PlanTool): void;
   setSidePanel(panel: PlanSidePanel): void;
   setSelection(ids: readonly string[]): void;
@@ -71,6 +89,8 @@ export interface PlanEditorState {
   beginCalibration(referenceId: string): void;
   updateCalibration(draft: CalibrationDraft): void;
   cancelCalibration(): void;
+  setOpeningPreview(preview: OpeningPreviewState): boolean;
+  clearOpeningPreview(): void;
 }
 
 const DEFAULT_VIEWPORT: ViewportTransform = {
@@ -135,14 +155,31 @@ function ownedCalibrationDraft(draft: CalibrationDraft): CalibrationDraft {
   return ownValue(draft);
 }
 
+function ownedOpeningPreview(preview: OpeningPreviewState): OpeningPreviewState {
+  return ownValue(preview);
+}
+
+let nextSessionNumber = 1;
+
+function transientSessionId(): string {
+  const sessionId = `plan-editor-session-${nextSessionNumber}`;
+  nextSessionNumber += 1;
+  return sessionId;
+}
+
 export function createPlanEditorStore(
-  options: { readonly activeFloorId: string },
+  options: {
+    readonly activeFloorId: string;
+    readonly sessionId?: string;
+  },
 ): StoreApi<PlanEditorState> {
   const floorViewports = new Map<string, ViewportTransform>();
+  const initialSessionId = options.sessionId ?? transientSessionId();
   const initialViewport = ownedViewport(DEFAULT_VIEWPORT);
   floorViewports.set(options.activeFloorId, initialViewport);
 
   return createStore<PlanEditorState>((set, get) => ({
+    sessionId: initialSessionId,
     activeFloorId: options.activeFloorId,
     activeTool: "select",
     sidePanel: "tree",
@@ -151,6 +188,7 @@ export function createPlanEditorStore(
     snapModes: ownReadonlySet(DEFAULT_SNAP_MODES),
     draft: null,
     calibrationDraft: null,
+    openingPreview: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
 
@@ -167,8 +205,31 @@ export function createPlanEditorStore(
         calibrationDraft: id === state.activeFloorId
           ? state.calibrationDraft
           : null,
+        openingPreview: id === state.activeFloorId
+          ? state.openingPreview
+          : null,
       });
       return true;
+    },
+
+    replaceSession(sessionId, activeFloorId) {
+      floorViewports.clear();
+      const viewport = ownedViewport(DEFAULT_VIEWPORT);
+      floorViewports.set(activeFloorId, viewport);
+      set({
+        sessionId,
+        activeFloorId,
+        activeTool: "select",
+        sidePanel: "tree",
+        selectedIds: ownReadonlySet([]),
+        viewport,
+        snapModes: ownReadonlySet(DEFAULT_SNAP_MODES),
+        draft: null,
+        calibrationDraft: null,
+        openingPreview: null,
+        gestureActive: false,
+        clipboard: deepFreeze([] as SpatialEntity[]),
+      });
     },
 
     setActiveTool(tool) {
@@ -179,6 +240,9 @@ export function createPlanEditorStore(
         gestureActive: false,
         calibrationDraft: tool === state.activeTool
           ? state.calibrationDraft
+          : null,
+        openingPreview: tool === state.activeTool
+          ? state.openingPreview
           : null,
       });
     },
@@ -251,6 +315,20 @@ export function createPlanEditorStore(
 
     cancelCalibration() {
       if (get().calibrationDraft !== null) set({ calibrationDraft: null });
+    },
+
+    setOpeningPreview(preview) {
+      const state = get();
+      if (
+        preview.sessionId !== state.sessionId
+        || preview.tool !== state.activeTool
+      ) return false;
+      set({ openingPreview: ownedOpeningPreview(preview) });
+      return true;
+    },
+
+    clearOpeningPreview() {
+      if (get().openingPreview !== null) set({ openingPreview: null });
     },
   }));
 }

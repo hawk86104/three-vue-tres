@@ -1,7 +1,11 @@
 import type { SnapMode } from "@aethertwin/plan-engine";
 import type { PlanReference } from "@aethertwin/core-model";
 import { describe, expect, it } from "vitest";
-import type { PlanDraft } from "./editor-session";
+import {
+  createPlanEditorStore,
+  type OpeningPreviewState,
+  type PlanDraft,
+} from "./editor-session";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
 
 describe("plan editor session", () => {
@@ -144,5 +148,65 @@ describe("plan editor session", () => {
     expect(Object.isFrozen(store.getState().draft)).toBe(true);
     expect(store.getState()).not.toHaveProperty("snapshot");
     expect(store.getState()).not.toHaveProperty("project");
+  });
+  it("owns opening previews and clears them at tool, floor, and session boundaries", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "session-a",
+    });
+    const preview: OpeningPreviewState = {
+      sessionId: "session-a",
+      tool: "door",
+      candidate: {
+        wallId: "00000000-0000-4000-8000-000000000020",
+        distanceAlongWall: 2_000,
+        worldCenter: { x: 0, y: 0 },
+        tangent: { x: 1, y: 0 },
+        effectiveThickness: 100,
+        valid: true,
+      },
+      width: 900,
+      height: 2_100,
+      sillHeight: 0,
+    };
+
+    store.getState().setActiveTool("door");
+    expect(store.getState().setOpeningPreview(preview)).toBe(true);
+    (preview.candidate.worldCenter as { x: number }).x = 999;
+
+    expect(store.getState().openingPreview).toMatchObject({
+      sessionId: "session-a",
+      candidate: { worldCenter: { x: 0, y: 0 } },
+    });
+    expect(Object.isFrozen(store.getState().openingPreview)).toBe(true);
+    expect(store.getState().setOpeningPreview({
+      ...preview,
+      sessionId: "stale-session",
+    })).toBe(false);
+    expect(store.getState().openingPreview?.sessionId).toBe("session-a");
+
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(store.getState().activeTool).toBe("door");
+    expect(store.getState().openingPreview).toBeNull();
+
+    expect(store.getState().setOpeningPreview({
+      ...preview,
+      sessionId: "session-a",
+      tool: "door",
+    })).toBe(true);
+    store.getState().setActiveTool("window");
+    expect(store.getState().openingPreview).toBeNull();
+
+    store.getState().setSelection(["00000000-0000-4000-8000-000000000099"]);
+    store.getState().replaceSession("session-b", floorA.id);
+    expect(store.getState()).toMatchObject({
+      sessionId: "session-b",
+      activeFloorId: floorA.id,
+      activeTool: "select",
+      openingPreview: null,
+      gestureActive: false,
+    });
+    expect([...store.getState().selectedIds]).toEqual([]);
   });
 });

@@ -81,6 +81,9 @@ importers:
       '@aethertwin/editor-shell':
         specifier: workspace:*
         version: link:../../packages/editor-shell
+      '@aethertwin/mode-showroom':
+        specifier: workspace:*
+        version: link:../../packages/mode-showroom
       '@aethertwin/plan-engine':
         specifier: workspace:*
         version: link:../../packages/plan-engine
