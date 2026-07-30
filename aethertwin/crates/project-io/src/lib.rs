@@ -3,6 +3,7 @@
 mod error;
 mod lock;
 mod model;
+mod opening_geometry;
 mod paths;
 mod project;
 mod schema;

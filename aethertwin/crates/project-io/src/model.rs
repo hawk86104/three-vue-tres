@@ -1,4 +1,13 @@
-use crate::{ProjectIoError, validate_relative_resource_path};
+#[cfg(test)]
+use crate::opening_geometry::{
+    GEOMETRY_EPSILON_MM, WallGeometry, effective_wall_thickness, locate_opening,
+    wall_metric_segments,
+};
+use crate::{
+    ProjectIoError,
+    opening_geometry::{validate_opening_geometry, wall_geometry_from_entity},
+    validate_relative_resource_path,
+};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use serde_json::Value;
@@ -811,6 +820,7 @@ impl ProjectSnapshot {
 
         let mut entity_types = BTreeMap::new();
         let mut entity_geometries = BTreeMap::new();
+        let mut wall_geometries = Vec::new();
         for entity in &self.project.entities {
             let source = entity
                 .as_object()
@@ -840,6 +850,9 @@ impl ProjectSnapshot {
                 "wall" => EntityReferenceGeometry::Open(json_array_len(source, "centerLine")?),
                 _ => EntityReferenceGeometry::OriginOnly,
             };
+            if entity_type == "wall" {
+                wall_geometries.push(wall_geometry_from_entity(source)?);
+            }
             entity_types.insert(id, entity_type.to_owned());
             entity_geometries.insert(id, geometry);
         }
@@ -918,6 +931,10 @@ impl ProjectSnapshot {
                 {
                     return Err(ProjectIoError::InvalidProjectStructure);
                 }
+            }
+
+            if !validate_opening_geometry(&wall_geometries, &self.project.openings).is_empty() {
+                return Err(ProjectIoError::InvalidProjectStructure);
             }
 
             for route in &self.project.guided_routes {
@@ -1666,3 +1683,7 @@ pub(crate) fn valid_timestamp(value: &str) -> bool {
         .to_rfc3339_opts(SecondsFormat::Millis, true);
     value == canonical || (canonical.ends_with(".000Z") && value == canonical.replace(".000Z", "Z"))
 }
+
+#[cfg(test)]
+#[path = "opening_geometry_contract_tests.rs"]
+mod opening_geometry_contract_tests;
