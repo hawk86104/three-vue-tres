@@ -2045,3 +2045,291 @@ fn snapshot_record_patch_rejects_claimed_after_mismatch_without_publication() {
         .unwrap();
     assert_eq!((journal_count, asset_count), (0, 0));
 }
+
+fn building_wall(snapshot: &ProjectSnapshot, id: &str, name: &str) -> Value {
+    let floor = &snapshot.project.floors[0];
+    json!({
+        "type": "wall",
+        "id": id,
+        "name": name,
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "spatial3D": { "elevation": 0, "height": 2800 },
+        "locked": false,
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120
+    })
+}
+
+fn building_opening(wall_id: &Value, id: &str) -> Value {
+    json!({
+        "id": id,
+        "name": "Door",
+        "tags": [],
+        "wallId": wall_id,
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+    })
+}
+
+fn inverse_building_changes(changes: &[Value]) -> Vec<Value> {
+    changes
+        .iter()
+        .rev()
+        .map(|change| {
+            let mut inverse = json!({
+                "id": change["id"],
+                "before": change["after"],
+                "after": change["before"]
+            });
+            if let Some(index) = change.get("index") {
+                inverse["index"] = index.clone();
+            }
+            inverse
+        })
+        .collect()
+}
+
+fn building_patch_payload(
+    reason: &str,
+    wall_changes: Vec<Value>,
+    opening_changes: Vec<Value>,
+) -> Value {
+    json!({
+        "reason": reason,
+        "wallChanges": wall_changes,
+        "openingChanges": opening_changes
+    })
+}
+
+#[test]
+fn building_structure_patch_replays_apply_undo_redo_checkpoint_and_reopen() {
+    let opened = create("Building Replay", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let wall = building_wall(&initial, "00000000-0000-4000-8000-000000000080", "Wall");
+    let opening = building_opening(&wall["id"], "00000000-0000-4000-8000-000000000081");
+    let second_wall = building_wall(
+        &initial,
+        "00000000-0000-4000-8000-000000000082",
+        "Second wall",
+    );
+    let second_opening =
+        building_opening(&second_wall["id"], "00000000-0000-4000-8000-000000000083");
+    let wall_changes = vec![
+        json!({
+            "id": wall["id"],
+            "before": null,
+            "after": wall,
+            "index": 0
+        }),
+        json!({
+            "id": second_wall["id"],
+            "before": null,
+            "after": second_wall,
+            "index": 1
+        }),
+    ];
+    let opening_changes = vec![
+        json!({
+            "id": opening["id"],
+            "before": null,
+            "after": opening,
+            "index": 0
+        }),
+        json!({
+            "id": second_opening["id"],
+            "before": null,
+            "after": second_opening,
+            "index": 1
+        }),
+    ];
+    let payload = building_patch_payload("create", wall_changes.clone(), opening_changes.clone());
+    let inverse = building_patch_payload(
+        "create",
+        inverse_building_changes(&wall_changes),
+        inverse_building_changes(&opening_changes),
+    );
+    let mut applied = initial.clone();
+    applied.project.entities = vec![wall.clone(), second_wall.clone()];
+    applied.project.openings = vec![
+        serde_json::from_value(opening.clone()).unwrap(),
+        serde_json::from_value(second_opening.clone()).unwrap(),
+    ];
+    applied.sequence = 1;
+    session
+        .commit(patch_batch(
+            &initial,
+            &applied,
+            plan_operation(
+                1,
+                "00000000-0000-4000-8000-000000000801",
+                "building.structure.patch",
+                payload.clone(),
+                inverse.clone(),
+                JournalAction::Apply,
+            ),
+        ))
+        .unwrap();
+
+    let mut undone = initial.clone();
+    undone.sequence = 2;
+    session
+        .commit(patch_batch(
+            &applied,
+            &undone,
+            plan_operation(
+                2,
+                "00000000-0000-4000-8000-000000000802",
+                "building.structure.patch",
+                payload.clone(),
+                inverse.clone(),
+                JournalAction::Undo,
+            ),
+        ))
+        .unwrap();
+    assert!(session.snapshot().project.entities.is_empty());
+    assert!(session.snapshot().project.openings.is_empty());
+
+    let mut redone = applied;
+    redone.sequence = 3;
+    session
+        .commit(patch_batch(
+            &undone,
+            &redone,
+            plan_operation(
+                3,
+                "00000000-0000-4000-8000-000000000803",
+                "building.structure.patch",
+                payload,
+                inverse,
+                JournalAction::Redo,
+            ),
+        ))
+        .unwrap();
+    let checkpoint = session
+        .checkpoint(session.snapshot().clone())
+        .unwrap()
+        .snapshot;
+    assert_eq!(checkpoint.checkpoint_sequence, 3);
+    session.close().unwrap();
+
+    let mut reopened = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(reopened.snapshot(), &checkpoint);
+    reopened.close().unwrap();
+}
+#[test]
+fn building_structure_patch_rejects_malformed_partial_and_disagreeing_rows_atomically() {
+    let opened = create("Building Rejections", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let wall = building_wall(&initial, "00000000-0000-4000-8000-000000000090", "Wall");
+    let opening = building_opening(&wall["id"], "00000000-0000-4000-8000-000000000091");
+    let wall_changes = vec![json!({
+        "id": wall["id"],
+        "before": null,
+        "after": wall,
+        "index": 0
+    })];
+    let opening_changes = vec![json!({
+        "id": opening["id"],
+        "before": null,
+        "after": opening,
+        "index": 0
+    })];
+    let payload = building_patch_payload("create", wall_changes.clone(), opening_changes.clone());
+    let inverse = building_patch_payload(
+        "create",
+        inverse_building_changes(&wall_changes),
+        inverse_building_changes(&opening_changes),
+    );
+    let mut claimed_after = initial.clone();
+    claimed_after.project.entities = vec![wall.clone()];
+    claimed_after.project.openings = vec![serde_json::from_value(opening).unwrap()];
+    claimed_after.sequence = 1;
+
+    let mut extra = payload.clone();
+    extra["extra"] = json!(true);
+    let mut bad_reason = payload.clone();
+    bad_reason["reason"] = json!("repair");
+    let mut wrong_wall = payload.clone();
+    wrong_wall["wallChanges"][0]["after"]["type"] = json!("fixture");
+    let mut wrong_opening = payload.clone();
+    wrong_opening["openingChanges"][0]["after"]["type"] = json!("door");
+    let mut duplicate = payload.clone();
+    duplicate["wallChanges"]
+        .as_array_mut()
+        .unwrap()
+        .push(payload["wallChanges"][0].clone());
+    let mut null_index = payload.clone();
+    null_index["wallChanges"][0]["index"] = Value::Null;
+    let mut stale_before = payload.clone();
+    stale_before["wallChanges"][0]["before"] = wall;
+    let mut partial = payload.clone();
+    partial["wallChanges"] = json!([]);
+    let mut partial_inverse = inverse.clone();
+    partial_inverse["wallChanges"] = json!([]);
+    let empty = building_patch_payload("create", vec![], vec![]);
+    let mut disagreeing_inverse = inverse.clone();
+    disagreeing_inverse["wallChanges"][0]["index"] = json!(1);
+
+    let cases = vec![
+        ("extra", extra, inverse.clone(), "DATABASE_ERROR"),
+        ("reason", bad_reason, inverse.clone(), "DATABASE_ERROR"),
+        ("wall type", wrong_wall, inverse.clone(), "DATABASE_ERROR"),
+        (
+            "opening type",
+            wrong_opening,
+            inverse.clone(),
+            "DATABASE_ERROR",
+        ),
+        ("duplicate", duplicate, inverse.clone(), "DATABASE_ERROR"),
+        ("null index", null_index, inverse.clone(), "DATABASE_ERROR"),
+        (
+            "before mismatch",
+            stale_before,
+            inverse.clone(),
+            "DATABASE_ERROR",
+        ),
+        (
+            "partial",
+            partial,
+            partial_inverse,
+            "INVALID_PROJECT_STRUCTURE",
+        ),
+        ("empty", empty.clone(), empty, "DATABASE_ERROR"),
+        ("inverse", payload, disagreeing_inverse, "DATABASE_ERROR"),
+    ];
+    for (name, invalid_payload, invalid_inverse, expected_code) in cases {
+        let error = session
+            .commit(patch_batch(
+                &initial,
+                &claimed_after,
+                plan_operation(
+                    1,
+                    "00000000-0000-4000-8000-000000000804",
+                    "building.structure.patch",
+                    invalid_payload,
+                    invalid_inverse,
+                    JournalAction::Apply,
+                ),
+            ))
+            .unwrap_err();
+        assert_eq!(error.code(), expected_code, "{name}");
+        assert_eq!(session.snapshot(), &initial, "{name}");
+    }
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let journal_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM command_journal", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(journal_count, 0);
+}

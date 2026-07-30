@@ -347,3 +347,95 @@ fn failed_checkpoint_keeps_the_previous_durable_project_reopenable() {
     assert_eq!(recovered.snapshot, durable_snapshot);
     assert_eq!(fs::read(&manifest_path).unwrap(), manifest_before);
 }
+
+#[test]
+fn dirty_building_structure_patch_recovers_wall_and_opening_together() {
+    let opened = create("Building Dirty Recovery");
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let floor = &initial.project.floors[0];
+    let wall = json!({
+        "type": "wall",
+        "id": "00000000-0000-4000-8000-000000000180",
+        "name": "Wall",
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "spatial3D": { "elevation": 0, "height": 2800 },
+        "locked": false,
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120
+    });
+    let opening = json!({
+        "id": "00000000-0000-4000-8000-000000000181",
+        "name": "Door",
+        "tags": [],
+        "wallId": wall["id"],
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+    });
+    let wall_change = json!({
+        "id": wall["id"],
+        "before": null,
+        "after": wall,
+        "index": 0
+    });
+    let opening_change = json!({
+        "id": opening["id"],
+        "before": null,
+        "after": opening,
+        "index": 0
+    });
+    let payload = json!({
+        "reason": "create",
+        "wallChanges": [wall_change.clone()],
+        "openingChanges": [opening_change.clone()]
+    });
+    let inverse = json!({
+        "reason": "create",
+        "wallChanges": [{
+            "id": wall_change["id"],
+            "before": wall_change["after"],
+            "after": wall_change["before"],
+            "index": 0
+        }],
+        "openingChanges": [{
+            "id": opening_change["id"],
+            "before": opening_change["after"],
+            "after": opening_change["before"],
+            "index": 0
+        }]
+    });
+    let mut dirty = initial.clone();
+    dirty.project.entities = vec![wall];
+    dirty.project.openings = vec![serde_json::from_value(opening).unwrap()];
+    dirty.sequence = 1;
+    session
+        .commit(CommitBatch {
+            before: initial,
+            after: dirty.clone(),
+            journal: vec![JournalOperation {
+                sequence: 1,
+                transaction_id: "00000000-0000-4000-8000-000000000182".into(),
+                command_type: "building.structure.patch".into(),
+                payload,
+                inverse_payload: inverse,
+                action: JournalAction::Apply,
+                timestamp: "2026-07-29T00:00:00.000Z".into(),
+            }],
+        })
+        .unwrap();
+    drop(session);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert!(recovered.recovered);
+    assert_eq!(recovered.snapshot, dirty);
+}

@@ -216,6 +216,9 @@ fn validate_payload_shapes(batch: &CommitBatch) -> Result<(), HostError> {
                 exact_entity_patch_pair(&operation.payload, &operation.inverse_payload)
             }
             "snapshot.records.patch" => true,
+            "building.structure.patch" => {
+                exact_building_patch_pair(&operation.payload, &operation.inverse_payload)
+            }
             "plan.floor.patch" => {
                 exact_floor_patch_pair(&operation.payload, &operation.inverse_payload)
             }
@@ -332,6 +335,130 @@ fn exact_entity_patch_pair(payload: &Value, inverse: &Value) -> bool {
             })
 }
 
+fn exact_building_wall_side(value: &Value, id: &str) -> bool {
+    if value.is_null() {
+        return true;
+    }
+    let Some(source) = value.as_object() else {
+        return false;
+    };
+    let required = [
+        "type",
+        "id",
+        "name",
+        "tags",
+        "floorId",
+        "layerId",
+        "transform",
+        "locked",
+        "centerLine",
+        "thickness",
+    ];
+    required.iter().all(|key| source.contains_key(*key))
+        && source
+            .keys()
+            .all(|key| required.contains(&key.as_str()) || key == "spatial3D")
+        && source.get("type").and_then(Value::as_str) == Some("wall")
+        && source
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|side_id| side_id == id && canonical_uuid(side_id).is_ok())
+}
+
+fn exact_building_opening_side(value: &Value, id: &str) -> bool {
+    value.is_null()
+        || (exact_object(
+            value,
+            &[
+                "id",
+                "name",
+                "tags",
+                "wallId",
+                "kind",
+                "distanceAlongWall",
+                "width",
+                "height",
+                "sillHeight",
+            ],
+        ) && value
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|side_id| side_id == id && canonical_uuid(side_id).is_ok()))
+}
+
+fn exact_building_change(value: &Value, side: fn(&Value, &str) -> bool) -> Option<String> {
+    if !exact_entity_change(value) {
+        return None;
+    }
+    let id = value.get("id")?.as_str()?;
+    if canonical_uuid(id).is_err()
+        || (value["before"].is_null() && value["after"].is_null())
+        || !side(&value["before"], id)
+        || !side(&value["after"], id)
+    {
+        return None;
+    }
+    Some(id.to_owned())
+}
+
+fn building_patch_parts(value: &Value) -> Option<(&str, &[Value], &[Value])> {
+    if !exact_object(value, &["reason", "wallChanges", "openingChanges"])
+        || !plan_reason(&value["reason"])
+    {
+        return None;
+    }
+    let walls = value["wallChanges"].as_array()?.as_slice();
+    let openings = value["openingChanges"].as_array()?.as_slice();
+    if walls.is_empty() && openings.is_empty() {
+        return None;
+    }
+    Some((value["reason"].as_str()?, walls, openings))
+}
+
+fn exact_building_patch(value: &Value) -> bool {
+    let Some((_, walls, openings)) = building_patch_parts(value) else {
+        return false;
+    };
+    let mut ids = std::collections::BTreeSet::new();
+    walls
+        .iter()
+        .filter_map(|change| exact_building_change(change, exact_building_wall_side))
+        .chain(
+            openings
+                .iter()
+                .filter_map(|change| exact_building_change(change, exact_building_opening_side)),
+        )
+        .all(|id| ids.insert(id))
+        && ids.len() == walls.len() + openings.len()
+}
+
+fn exact_building_change_pairs(changes: &[Value], inverse: &[Value]) -> bool {
+    changes.len() == inverse.len()
+        && changes.iter().rev().zip(inverse).all(|(change, reversed)| {
+            change["id"] == reversed["id"]
+                && change["before"] == reversed["after"]
+                && change["after"] == reversed["before"]
+                && change
+                    .get("index")
+                    .is_none_or(|index| reversed.get("index") == Some(index))
+        })
+}
+
+fn exact_building_patch_pair(payload: &Value, inverse: &Value) -> bool {
+    if !exact_building_patch(payload) || !exact_building_patch(inverse) {
+        return false;
+    }
+    let Some((reason, walls, openings)) = building_patch_parts(payload) else {
+        return false;
+    };
+    let Some((inverse_reason, inverse_walls, inverse_openings)) = building_patch_parts(inverse)
+    else {
+        return false;
+    };
+    reason == inverse_reason
+        && exact_building_change_pairs(walls, inverse_walls)
+        && exact_building_change_pairs(openings, inverse_openings)
+}
 fn strict_floor(value: &Value) -> Option<Floor> {
     serde_json::from_value::<FloorDto>(value.clone())
         .ok()?

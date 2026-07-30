@@ -778,6 +778,13 @@ struct EntityPatchChange {
     #[serde(default, deserialize_with = "deserialize_present_entity_index")]
     index: Option<u64>,
 }
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BuildingStructurePatch {
+    reason: PlanEditReason,
+    wall_changes: Vec<EntityPatchChange>,
+    opening_changes: Vec<RecordChange<Opening>>,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -837,11 +844,9 @@ fn canonical_patch_id(value: &str) -> Result<Uuid, ProjectIoError> {
     Ok(id)
 }
 
-fn entity_patch(value: &Value) -> Result<EntityPatchPayload, ProjectIoError> {
+fn validate_entity_patch_payload(payload: &EntityPatchPayload) -> Result<(), ProjectIoError> {
     const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
-    let payload: EntityPatchPayload =
-        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
     let mut ids = BTreeSet::new();
     for change in &payload.changes {
         canonical_patch_id(&change.id)?;
@@ -869,6 +874,13 @@ fn entity_patch(value: &Value) -> Result<EntityPatchPayload, ProjectIoError> {
             }
         }
     }
+    Ok(())
+}
+
+fn entity_patch(value: &Value) -> Result<EntityPatchPayload, ProjectIoError> {
+    let payload: EntityPatchPayload =
+        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    validate_entity_patch_payload(&payload)?;
     Ok(payload)
 }
 
@@ -949,6 +961,131 @@ fn apply_entity_patch(
     })
 }
 
+fn wall_patch_side(value: &Value, expected_id: &str) -> Result<(), ProjectIoError> {
+    if value.is_null() {
+        return Ok(());
+    }
+    const REQUIRED: [&str; 10] = [
+        "type",
+        "id",
+        "name",
+        "tags",
+        "floorId",
+        "layerId",
+        "transform",
+        "locked",
+        "centerLine",
+        "thickness",
+    ];
+    let source = value.as_object().ok_or(ProjectIoError::DatabaseError)?;
+    if !REQUIRED.iter().all(|key| source.contains_key(*key))
+        || source
+            .keys()
+            .any(|key| !REQUIRED.contains(&key.as_str()) && key != "spatial3D")
+        || source.get("type").and_then(Value::as_str) != Some("wall")
+        || source.get("id").and_then(Value::as_str) != Some(expected_id)
+    {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    Ok(())
+}
+
+fn building_structure_patch(value: &Value) -> Result<BuildingStructurePatch, ProjectIoError> {
+    let patch: BuildingStructurePatch =
+        serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    if patch.wall_changes.is_empty() && patch.opening_changes.is_empty() {
+        return Err(ProjectIoError::DatabaseError);
+    }
+    let wall_payload = EntityPatchPayload {
+        reason: patch.reason.clone(),
+        changes: patch.wall_changes.clone(),
+    };
+    validate_entity_patch_payload(&wall_payload)?;
+    for change in &patch.wall_changes {
+        wall_patch_side(&change.before, &change.id)?;
+        wall_patch_side(&change.after, &change.id)?;
+    }
+    validate_record_changes(&patch.opening_changes)?;
+    let mut target_ids = BTreeSet::new();
+    for id in patch
+        .wall_changes
+        .iter()
+        .map(|change| change.id.as_str())
+        .chain(
+            patch
+                .opening_changes
+                .iter()
+                .map(|change| change.id.as_str()),
+        )
+    {
+        if !target_ids.insert(id) {
+            return Err(ProjectIoError::DatabaseError);
+        }
+    }
+    Ok(patch)
+}
+
+fn building_wall_payload(patch: &BuildingStructurePatch) -> EntityPatchPayload {
+    EntityPatchPayload {
+        reason: patch.reason.clone(),
+        changes: patch.wall_changes.clone(),
+    }
+}
+
+fn building_opening_payload(patch: &BuildingStructurePatch) -> SnapshotRecordsPatch {
+    SnapshotRecordsPatch::Openings {
+        changes: patch.opening_changes.clone(),
+    }
+}
+
+fn building_has_inverse_values(
+    payload: &BuildingStructurePatch,
+    inverse: &BuildingStructurePatch,
+) -> bool {
+    let wall_payload = building_wall_payload(payload);
+    let wall_inverse = building_wall_payload(inverse);
+    let matching_walls = wall_payload.reason == wall_inverse.reason
+        && wall_payload.changes.len() == wall_inverse.changes.len()
+        && wall_payload
+            .changes
+            .iter()
+            .rev()
+            .zip(&wall_inverse.changes)
+            .all(|(change, reversed)| {
+                change.id == reversed.id
+                    && change.before == reversed.after
+                    && change.after == reversed.before
+                    && (change.index.is_none()
+                        || reversed.index.is_none()
+                        || change.index == reversed.index)
+            });
+    matching_walls
+        && building_opening_payload(payload).has_inverse_values(&building_opening_payload(inverse))
+}
+
+fn building_has_exact_inverse(
+    payload: &BuildingStructurePatch,
+    inverse: &BuildingStructurePatch,
+) -> bool {
+    exact_entity_inverse(
+        &building_wall_payload(payload),
+        &building_wall_payload(inverse),
+    ) && building_opening_payload(payload).has_exact_inverse(&building_opening_payload(inverse))
+}
+
+fn apply_building_structure_patch(
+    snapshot: &mut ProjectSnapshot,
+    patch: &BuildingStructurePatch,
+) -> Result<BuildingStructurePatch, ProjectIoError> {
+    let normalized_walls = apply_entity_patch(snapshot, &building_wall_payload(patch))?;
+    let normalized_openings =
+        apply_record_changes(&mut snapshot.project.openings, &patch.opening_changes)?;
+    Ok(BuildingStructurePatch {
+        reason: patch.reason.clone(),
+        wall_changes: normalized_walls.changes,
+        opening_changes: normalized_openings,
+    })
+}
 trait SnapshotPatchRecord {
     fn patch_id(&self) -> Uuid;
 }
@@ -1323,6 +1460,31 @@ fn apply_operation(
                     let mut replayed = candidate.clone();
                     let normalized_payload = apply_snapshot_records_patch(&mut replayed, &payload)?;
                     if !normalized_payload.has_exact_inverse(&normalized_inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+            }
+        }
+        "building.structure.patch" => {
+            let payload = building_structure_patch(&operation.payload)?;
+            let inverse = building_structure_patch(&operation.inverse_payload)?;
+            if !building_has_inverse_values(&payload, &inverse) {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            match operation.action {
+                JournalAction::Apply | JournalAction::Redo => {
+                    let normalized = apply_building_structure_patch(&mut candidate, &payload)?;
+                    if !building_has_exact_inverse(&normalized, &inverse) {
+                        return Err(ProjectIoError::DatabaseError);
+                    }
+                }
+                JournalAction::Undo => {
+                    let normalized_inverse =
+                        apply_building_structure_patch(&mut candidate, &inverse)?;
+                    let mut replayed = candidate.clone();
+                    let normalized_payload =
+                        apply_building_structure_patch(&mut replayed, &payload)?;
+                    if !building_has_exact_inverse(&normalized_payload, &normalized_inverse) {
                         return Err(ProjectIoError::DatabaseError);
                     }
                 }

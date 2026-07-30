@@ -1333,3 +1333,129 @@ fn snapshot_record_patch_dto_accepts_only_the_typed_allowlist_and_exact_payload_
     )
     .unwrap();
 }
+
+#[test]
+fn building_structure_patch_dto_accepts_only_the_exact_compound_shape() {
+    let root = tempdir().unwrap();
+    let app = with_invoke_handler(tauri::test::mock_builder().manage(AppService::default()))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Building DTO",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let floor = &opened.snapshot.project.floors[0];
+    let wall = json!({
+        "type": "wall",
+        "id": "00000000-0000-4000-8000-000000000280",
+        "name": "Wall",
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "spatial3D": { "elevation": 0, "height": 2800 },
+        "locked": false,
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 4000, "y": 0 }],
+        "thickness": 120
+    });
+    let opening = json!({
+        "id": "00000000-0000-4000-8000-000000000281",
+        "name": "Door",
+        "tags": [],
+        "wallId": wall["id"],
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+    });
+    let payload = json!({
+        "reason": "create",
+        "wallChanges": [{
+            "id": wall["id"],
+            "before": null,
+            "after": wall,
+            "index": 0
+        }],
+        "openingChanges": [{
+            "id": opening["id"],
+            "before": null,
+            "after": opening,
+            "index": 0
+        }]
+    });
+    let inverse = json!({
+        "reason": "create",
+        "wallChanges": [{
+            "id": wall["id"],
+            "before": wall,
+            "after": null,
+            "index": 0
+        }],
+        "openingChanges": [{
+            "id": opening["id"],
+            "before": opening,
+            "after": null,
+            "index": 0
+        }]
+    });
+    let mut after = opened.snapshot.clone();
+    after.project.entities = vec![wall];
+    after.project.openings = vec![serde_json::from_value(opening).unwrap()];
+    after.sequence = 1;
+    let mut malformed = plan_batch(
+        &opened.snapshot,
+        &after,
+        "building.structure.patch",
+        payload.clone(),
+        inverse.clone(),
+    );
+    malformed.journal[0].payload["extra"] = json!(true);
+    let error = invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id.clone(),
+                "batch": malformed
+            }
+        }),
+    )
+    .unwrap_err();
+    assert_invalid_ipc(&error);
+
+    let batch = plan_batch(
+        &opened.snapshot,
+        &after,
+        "building.structure.patch",
+        payload,
+        inverse,
+    );
+    invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id,
+                "batch": batch
+            }
+        }),
+    )
+    .unwrap();
+}
