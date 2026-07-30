@@ -12,6 +12,11 @@ export {
 export { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 export { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
 export {
+  patchBuildingStructureCommand,
+  type BuildingStructurePatch,
+  type BuildingWallChange,
+} from "./building-structure-command";
+export {
   patchSnapshotRecordsCommand,
   snapshotRecordCollections,
   type AnySnapshotRecordsPatch,

@@ -25,6 +25,10 @@ import type {
   ProjectBackend,
   RecoveryConfirmation,
 } from "./backend";
+import {
+  patchBuildingStructureCommand,
+  type BuildingStructurePatch,
+} from "./building-structure-command";
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
 import {
@@ -271,6 +275,14 @@ export class ProjectStore {
     const ownedChange = structuredClone(change);
     return this.enqueueMutation(() =>
       this.mutate((bus) => bus.execute(patchFloorCommand, ownedChange)),
+    );
+  }
+
+  applyBuildingStructurePatch(patch: BuildingStructurePatch): Promise<void> {
+    const ownedPatch = structuredClone(patch);
+    return this.enqueueMutation(() =>
+      this.mutate((bus) =>
+        bus.execute(patchBuildingStructureCommand, ownedPatch)),
     );
   }
 

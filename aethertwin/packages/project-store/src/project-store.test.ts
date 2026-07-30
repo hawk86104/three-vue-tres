@@ -6,8 +6,10 @@ import {
   type AssetRecord,
   type Boundary,
   type Fixture,
+  type Opening,
   type PlanReference,
   type ProjectSnapshot,
+  type Wall,
 } from "@aethertwin/core-model";
 import type {
   AssetImportProgress,
@@ -24,6 +26,7 @@ import {
   SandboxProjectBackend,
   renameProjectCommand,
   setProjectTagsCommand,
+  type BuildingStructurePatch,
   type KeyValueStorage,
 } from "./index";
 
@@ -2040,6 +2043,47 @@ describe("ProjectStore", () => {
     (change.after.layers[0] as { visible: boolean }).visible = true;
     await pendingFloor;
     expect(store.getState().snapshot!.project.floors[0]!.layers[0]!.visible).toBe(false);
+
+    const snapshot = store.getState().snapshot!;
+    const floor = snapshot.project.floors[0]!;
+    const wall: Wall = {
+      type: "wall",
+      id: "00000000-0000-4000-8000-000000000020",
+      name: "Owned wall",
+      tags: [],
+      floorId: floor.id,
+      layerId: floor.layers[0]!.id,
+      transform: identityTransform2D,
+      spatial3D: { elevation: 0, height: 2800 },
+      locked: false,
+      centerLine: [{ x: 0, y: 0 }, { x: 4000, y: 0 }],
+      thickness: 120,
+    };
+    const opening: Opening = {
+      id: "00000000-0000-4000-8000-000000000021",
+      name: "Owned door",
+      tags: [],
+      wallId: wall.id,
+      kind: "door",
+      distanceAlongWall: 2000,
+      width: 900,
+      height: 2100,
+      sillHeight: 0,
+    };
+    const buildingPatch: BuildingStructurePatch = {
+      reason: "create",
+      wallChanges: [{ id: wall.id, before: null, after: wall }],
+      openingChanges: [{ id: opening.id, before: null, after: opening }],
+    };
+    const pendingBuilding = store.applyBuildingStructurePatch(buildingPatch);
+    (buildingPatch.wallChanges[0]!.after as { name: string }).name = "Caller wall";
+    (buildingPatch.openingChanges[0]!.after as { name: string }).name =
+      "Caller opening";
+    await pendingBuilding;
+    expect(store.getState().snapshot!.project.entities.at(-1)!.name)
+      .toBe("Owned wall");
+    expect(store.getState().snapshot!.project.openings[0]!.name)
+      .toBe("Owned door");
   });
 });
 
