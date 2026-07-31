@@ -21,6 +21,15 @@ export type {
 } from "./intents";
 export type { PlanIssue, PlanResult } from "./result";
 export {
+  normalizeWallTopology,
+  type NormalizedRoomTopology,
+  type RoomTopologyDiagnostic,
+  type RoomTopologyDiagnosticCode,
+  type RoomTopologyFailure,
+  type RoomTopologyIssueCode,
+  type RoomTopologyResult,
+} from "./room-topology";
+export {
   alignEntities,
   distributeEntities,
   duplicateEntities,
