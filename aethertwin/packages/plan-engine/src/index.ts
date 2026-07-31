@@ -18,6 +18,12 @@ export type {
   FloorChange,
   PlanEditIntent,
   PlanEditReason,
+  RoomCreationInput,
+  RoomReplacementInput,
+} from "./intents";
+export {
+  roomCreationIntent,
+  roomReplacementIntent,
 } from "./intents";
 export type { PlanIssue, PlanResult } from "./result";
 export {
@@ -29,6 +35,17 @@ export {
   type RoomTopologyIssueCode,
   type RoomTopologyResult,
 } from "./room-topology";
+export {
+  recognizeClosedRooms,
+  representedRoomCandidateKeys,
+  roomInputFingerprint,
+  type RepresentedRoomCandidateInput,
+  type RoomCandidate,
+  type RoomFingerprintInput,
+  type RoomRecognitionDiagnostic,
+  type RoomRecognitionFailure,
+  type RoomRecognitionResult,
+} from "./rooms";
 export {
   alignEntities,
   distributeEntities,
