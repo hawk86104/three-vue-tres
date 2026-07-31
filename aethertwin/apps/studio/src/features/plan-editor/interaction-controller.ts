@@ -2,6 +2,7 @@ import {
   parseSnapshotV3,
   validateOpeningGeometry,
   type DimensionAnchor,
+  type Fixture,
   type Opening,
   type OpeningGeometryIssue,
   type PlanLayer,
@@ -30,6 +31,10 @@ import {
   type SnapResult,
   type ViewportTransform,
 } from "@aethertwin/plan-engine";
+import {
+  showroomFixture,
+  type ShowroomFixtureDescriptor,
+} from "@aethertwin/mode-showroom";
 import type {
   AnySnapshotRecordsPatch,
   BuildingStructurePatch,
@@ -85,6 +90,7 @@ const MIN_PIXELS_PER_MILLIMETRE = 0.0001;
 const MAX_PIXELS_PER_MILLIMETRE = 10_000;
 const WHEEL_ZOOM_SENSITIVITY = 0.001;
 const PREVIEW_OPENING_ID = "00000000-0000-4000-8000-000000000000";
+const PREVIEW_FIXTURE_ID = "00000000-0000-4000-8000-000000000000";
 const OPENING_DEFAULTS: Readonly<Record<OpeningCreationTool, {
   readonly width: number;
   readonly height: number;
@@ -549,6 +555,60 @@ function rectangleEntity(
   };
 }
 
+interface CatalogueFixturePlacement {
+  readonly entity: Fixture;
+  readonly center: Point2;
+}
+
+function catalogueFixtureEntity(
+  seed: EntitySeed,
+  descriptor: ShowroomFixtureDescriptor,
+  center: Point2,
+): Fixture {
+  return {
+    ...baseEntity(seed, descriptor.defaultName),
+    type: "fixture",
+    transform: identityTransform({
+      x: center.x - descriptor.defaultSize.width / 2,
+      y: center.y - descriptor.defaultSize.depth / 2,
+    }),
+    kind: descriptor.kind,
+    size: {
+      width: descriptor.defaultSize.width,
+      height: descriptor.defaultSize.depth,
+    },
+    spatial3D: {
+      elevation: 0,
+      height: descriptor.defaultSize.height,
+    },
+  };
+}
+
+function catalogueFixturePlacement(
+  event: PlanPointerEvent,
+  context: ActiveContext,
+  state: PlanEditorState,
+  id: string,
+): CatalogueFixturePlacement | null {
+  if (
+    context.snapshot.project.profile !== "showroom"
+    || state.activeTool !== "fixture"
+    || state.selectedFixtureKind === null
+    || context.creationLayer === null
+  ) return null;
+  const descriptor = showroomFixture(state.selectedFixtureKind);
+  const center = snappedPoint(event, context, state).point;
+  return {
+    center,
+    entity: catalogueFixtureEntity({
+      id,
+      floorId: context.activeFloorId,
+      layerId: context.creationLayer.id,
+      profile: context.snapshot.project.profile,
+    }, descriptor, center),
+  };
+}
+
 function poiEntity(
   gesture: Extract<ControllerGesture, { kind: "poi-create" }>,
 ): SpatialEntity {
@@ -764,6 +824,21 @@ export function createInteractionController(
     return preview;
   };
 
+  const publishCatalogueFixturePreview = (
+    event: PlanPointerEvent,
+  ): CatalogueFixturePlacement | null => {
+    const state = deps.store.getState();
+    const placement = catalogueFixturePlacement(
+      event,
+      contextNow(),
+      state,
+      PREVIEW_FIXTURE_ID,
+    );
+    if (placement !== null) {
+      state.setFixturePlacementPreview(placement.entity, placement.center);
+    }
+    return placement;
+  };
   const creationSeed = (context: ActiveContext): EntitySeed | null => {
     if (context.creationLayer === null) {
       fail(new Error("No visible, unlocked layer is available for creation."));
@@ -1008,6 +1083,64 @@ export function createInteractionController(
     }
     if (state.openingPreview?.sessionId === preview.sessionId) {
       state.clearOpeningPreview();
+    }
+  };
+
+  const commitCatalogueFixture = async (event: PlanPointerEvent): Promise<void> => {
+    if (commitToken !== null) return;
+    const stateAtStart = deps.store.getState();
+    const snapshot = deps.getSnapshot();
+    const context = activeContext(snapshot, stateAtStart);
+    if (
+      snapshot.project.profile !== "showroom"
+      || stateAtStart.activeTool !== "fixture"
+      || stateAtStart.selectedFixtureKind === null
+    ) return;
+    if (context.creationLayer === null) {
+      deps.onError(new Error("No visible, unlocked layer is available for creation."));
+      return;
+    }
+
+    const selectedKind = stateAtStart.selectedFixtureKind;
+    let placement: CatalogueFixturePlacement;
+    let intent: PlanEditIntent;
+    try {
+      const candidate = catalogueFixturePlacement(
+        event,
+        context,
+        stateAtStart,
+        deps.makeId(),
+      );
+      if (candidate === null) return;
+      placement = candidate;
+      intent = createIntent(snapshot, placement.entity);
+    } catch (error) {
+      deps.onError(error);
+      return;
+    }
+
+    const token = Symbol("catalogue-fixture-commit");
+    const sessionId = stateAtStart.sessionId;
+    const commitStartSelection = [...stateAtStart.selectedIds];
+    commitToken = token;
+    try {
+      await deps.applyPlanEdit(intent);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      if (deps.store.getState().sessionId !== sessionId) return;
+      deps.onError(error);
+      return;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (
+      state.sessionId !== sessionId
+      || state.activeTool !== "fixture"
+      || state.selectedFixtureKind !== selectedKind
+    ) return;
+    if (sameSelection(state.selectedIds, commitStartSelection)) {
+      state.setSelection([placement.entity.id]);
     }
   };
 
@@ -1658,6 +1791,20 @@ export function createInteractionController(
         if (commitToken !== null) return;
 
         const activeTool = deps.store.getState().activeTool;
+        if (
+          activeTool === "fixture"
+          && deps.getSnapshot().project.profile === "showroom"
+          && event.type !== "wheel"
+        ) {
+          if (event.type === "pointercancel") {
+            deps.store.getState().clearFixturePlacementPreview();
+          } else if (event.type === "pointermove") {
+            publishCatalogueFixturePreview(event);
+          } else if (event.type === "pointerup") {
+            await commitCatalogueFixture(event);
+          }
+          return;
+        }
         if (isOpeningCreationTool(activeTool)) {
           if (event.type === "pointercancel") {
             deps.store.getState().clearOpeningPreview();
@@ -1706,7 +1853,13 @@ export function createInteractionController(
           const state = deps.store.getState();
           clearGesture();
           state.clearOpeningPreview();
-          if (isOpeningCreationTool(state.activeTool)) {
+          if (
+            isOpeningCreationTool(state.activeTool)
+            || (
+              state.activeTool === "fixture"
+              && deps.getSnapshot().project.profile === "showroom"
+            )
+          ) {
             state.setActiveTool("select");
           }
           return;

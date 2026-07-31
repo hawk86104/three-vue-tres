@@ -55,6 +55,7 @@ import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
 import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
+import { FixtureCatalogue } from "./fixture-catalogue";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -334,6 +335,7 @@ export function PlanEditor({
     return () => {
       mountedRef.current = false;
       sessionStore.getState().clearRoomRecognition();
+      sessionStore.getState().clearSelectedFixtureKind();
     };
   }, [sessionStore]);
   const selectionKey = [...sessionState.selectedIds].join("\u0000");
@@ -952,6 +954,20 @@ export function PlanEditor({
           data-selected-count={selectedIds.size}
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
+          {snapshot.project.profile === "showroom"
+            && sessionState.activeTool === "fixture" ? (
+              <FixtureCatalogue
+                selectedKind={sessionState.selectedFixtureKind}
+                onSelect={(kind) => {
+                  sessionStore.getState().setSelectedFixtureKind(kind);
+                  queueMicrotask(() => {
+                    workspaceRef.current
+                      ?.querySelector<HTMLElement>(".studio-plan-canvas")
+                      ?.focus();
+                  });
+                }}
+              />
+            ) : null}
           {!roomPanelOpen || roomRecognition === null ? null : (
             <RoomRecognitionPanel
               state={roomRecognition}

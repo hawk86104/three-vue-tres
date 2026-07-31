@@ -1,0 +1,53 @@
+// @vitest-environment jsdom
+
+import "@testing-library/jest-dom/vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { FixtureCatalogue } from "./fixture-catalogue";
+
+afterEach(cleanup);
+
+describe("FixtureCatalogue", () => {
+  it("renders exactly seven accessible showroom choices with exact W/D/H defaults", () => {
+    render(
+      <FixtureCatalogue
+        selectedKind="screen"
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const catalogue = screen.getByRole("region", { name: "展具目录" });
+    const buttons = within(catalogue).getAllByRole("button");
+    expect(buttons).toHaveLength(7);
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "展示柜宽 1200 mm · 深 600 mm · 高 1200 mm",
+      "展示桌宽 1500 mm · 深 750 mm · 高 900 mm",
+      "货架宽 1000 mm · 深 400 mm · 高 2000 mm",
+      "收银台宽 1600 mm · 深 700 mm · 高 1000 mm",
+      "屏幕宽 1200 mm · 深 100 mm · 高 1800 mm",
+      "隔断宽 1200 mm · 深 100 mm · 高 2400 mm",
+      "标牌宽 600 mm · 深 100 mm · 高 1800 mm",
+    ]);
+    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual([
+      "false",
+      "false",
+      "false",
+      "false",
+      "true",
+      "false",
+      "false",
+    ]);
+  });
+
+  it("reports the selected immutable catalogue kind", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<FixtureCatalogue selectedKind={null} onSelect={onSelect} />);
+
+    await user.click(screen.getByRole("button", { name: /展示桌/ }));
+
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith("display-table");
+  });
+});

@@ -35,6 +35,15 @@ const showroomOpeningTools: readonly ToolDefinition[] = Object.freeze(
     )) ?? [],
 );
 
+const showroomFixtureTools: readonly ToolDefinition[] = Object.freeze(
+  SHOWROOM_TOOL_GROUPS
+    .find(({ id }) => id === "fixtures")
+    ?.actions.flatMap(({ id }) => (
+      id === "fixture-catalogue"
+        ? [{ ...toolById.fixture, label: "展具目录" }]
+        : []
+    )) ?? [],
+);
 const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
   market: [
     { label: "选择", tools: [toolById.select, toolById.pan] },
@@ -60,7 +69,10 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
         { ...toolById["space-unit"], label: "房间" },
       ],
     },
-    { label: "展具", tools: [toolById.fixture] },
+    {
+      label: "展具",
+      tools: showroomFixtureTools,
+    },
     { label: "标记", tools: [toolById.poi, toolById.dimension] },
   ],
 };

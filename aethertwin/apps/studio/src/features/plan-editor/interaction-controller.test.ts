@@ -45,13 +45,13 @@ async function click(
   await controller.handle(eventAt("pointerup", x, y, { ...overrides, buttons: 0 }));
 }
 
-function firstIntent(harness: Harness): PlanEditIntent {
+function firstIntent(harness: Pick<Harness, "applyPlanEdit">): PlanEditIntent {
   const intent = harness.applyPlanEdit.mock.calls[0]?.[0];
   if (intent === undefined) throw new Error("Expected one committed intent.");
   return intent;
 }
 
-function createdEntity(harness: Harness): SpatialEntity {
+function createdEntity(harness: Pick<Harness, "applyPlanEdit">): SpatialEntity {
   const after = firstIntent(harness).changes[0]?.after;
   if (after === null || after === undefined) throw new Error("Expected one created entity.");
   return after;
@@ -333,6 +333,172 @@ function assetsForReferences(
     });
   });
 
+  it("previews and creates one centred showroom catalogue fixture while retaining its kind", async () => {
+    const base = createPlanEditorTestHarness();
+    const snapshot = parseSnapshotV3({
+      ...base.snapshot,
+      project: { ...base.snapshot.project, profile: "showroom" },
+    });
+    const harness = createSnapshotController(snapshot);
+    harness.store.getState().setActiveTool("fixture");
+    harness.store.getState().setSelectedFixtureKind("display-case");
+
+    await harness.controller.handle(eventAt("pointermove", 250, 50, { buttons: 0 }));
+
+    expect(harness.store.getState().draft).toMatchObject({
+      kind: "create",
+      tool: "fixture",
+      points: [{ x: 200, y: 0 }],
+      preview: [{
+        type: "fixture",
+        name: "展示柜",
+        kind: "display-case",
+        transform: {
+          translation: { x: -400, y: -300 },
+          rotation: 0,
+          scale: { x: 1, y: 1 },
+        },
+        size: { width: 1_200, height: 600 },
+        spatial3D: { elevation: 0, height: 1_200 },
+      }],
+    });
+    expect(harness.store.getState().gestureActive).toBe(false);
+    expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+
+    await harness.controller.handle(eventAt("pointerup", 250, 50, { buttons: 0 }));
+
+    expect(harness.applyPlanEdit).toHaveBeenCalledOnce();
+    expect(firstIntent(harness)).toEqual({
+      reason: "create",
+      changes: [{
+        id: "00000000-0000-4000-8000-000000000100",
+        before: null,
+        after: {
+          type: "fixture",
+          id: "00000000-0000-4000-8000-000000000100",
+          name: "展示柜",
+          tags: [],
+          floorId: snapshot.project.floors[0]!.id,
+          layerId: snapshot.project.floors[0]!.layers[0]!.id,
+          locked: false,
+          transform: {
+            translation: { x: -400, y: -300 },
+            rotation: 0,
+            scale: { x: 1, y: 1 },
+          },
+          kind: "display-case",
+          size: { width: 1_200, height: 600 },
+          spatial3D: { elevation: 0, height: 1_200 },
+        },
+      }],
+    });
+    expect([...harness.store.getState().selectedIds]).toEqual([
+      "00000000-0000-4000-8000-000000000100",
+    ]);
+    expect(harness.store.getState().selectedFixtureKind).toBe("display-case");
+  });
+
+  it("rereads the showroom creation layer at pointer-up", async () => {
+    const base = createPlanEditorTestHarness();
+    const initialFloor = base.snapshot.project.floors[0]!;
+    const replacementLayer = {
+      id: "00000000-0000-4000-8000-000000000099",
+      name: "Placement",
+      tags: [],
+      visible: true,
+      locked: false,
+    };
+    let current = parseSnapshotV3({
+      ...base.snapshot,
+      project: { ...base.snapshot.project, profile: "showroom" },
+    });
+    const harness = createSnapshotController(current, { getSnapshot: () => current });
+    harness.store.getState().setActiveTool("fixture");
+    harness.store.getState().setSelectedFixtureKind("signage");
+    await harness.controller.handle(eventAt("pointermove", 250, 50, { buttons: 0 }));
+
+    current = parseSnapshotV3({
+      ...current,
+      project: {
+        ...current.project,
+        floors: [{
+          ...initialFloor,
+          layers: [
+            { ...initialFloor.layers[0]!, locked: true },
+            replacementLayer,
+          ],
+        }, ...current.project.floors.slice(1)],
+      },
+    });
+    await harness.controller.handle(eventAt("pointerup", 250, 50, { buttons: 0 }));
+
+    expect(createdEntity(harness)).toMatchObject({
+      type: "fixture",
+      kind: "signage",
+      layerId: replacementLayer.id,
+      size: { width: 600, height: 100 },
+      spatial3D: { elevation: 0, height: 1_800 },
+    });
+  });
+
+  it("retains the showroom choice and preview after persistence or creation-layer failure", async () => {
+    const base = createPlanEditorTestHarness();
+    let current = parseSnapshotV3({
+      ...base.snapshot,
+      project: { ...base.snapshot.project, profile: "showroom" },
+    });
+    const harness = createSnapshotController(current, { getSnapshot: () => current });
+    harness.store.getState().setActiveTool("fixture");
+    harness.store.getState().setSelectedFixtureKind("screen");
+    await harness.controller.handle(eventAt("pointermove", 250, 50, { buttons: 0 }));
+    const preview = harness.store.getState().draft;
+    harness.applyPlanEdit.mockRejectedValueOnce(new Error("checkpoint unavailable"));
+
+    await harness.controller.handle(eventAt("pointerup", 250, 50, { buttons: 0 }));
+
+    expect(harness.store.getState().selectedFixtureKind).toBe("screen");
+    expect(harness.store.getState().draft).toEqual(preview);
+    expect(String(harness.errors.at(-1))).toContain("checkpoint unavailable");
+
+    const floor = current.project.floors[0]!;
+    current = parseSnapshotV3({
+      ...current,
+      project: {
+        ...current.project,
+        floors: [{
+          ...floor,
+          layers: floor.layers.map((layer) => ({ ...layer, locked: true })),
+        }, ...current.project.floors.slice(1)],
+      },
+    });
+    harness.applyPlanEdit.mockClear();
+    await harness.controller.handle(eventAt("pointerup", 250, 50, { buttons: 0 }));
+
+    expect(harness.applyPlanEdit).not.toHaveBeenCalled();
+    expect(harness.store.getState().selectedFixtureKind).toBe("screen");
+    expect(harness.store.getState().draft).toEqual(preview);
+    expect(String(harness.errors.at(-1))).toContain("No visible, unlocked layer");
+  });
+
+  it("clears a showroom catalogue choice and preview on Escape without affecting Market fixture mode", async () => {
+    const base = createPlanEditorTestHarness();
+    const showroom = parseSnapshotV3({
+      ...base.snapshot,
+      project: { ...base.snapshot.project, profile: "showroom" },
+    });
+    const harness = createSnapshotController(showroom);
+    harness.store.getState().setActiveTool("fixture");
+    harness.store.getState().setSelectedFixtureKind("partition");
+    await harness.controller.handle(eventAt("pointermove", 250, 50, { buttons: 0 }));
+
+    await harness.controller.keyDown("Escape");
+
+    expect(harness.store.getState()).toMatchObject({
+      activeTool: "select",
+      selectedFixtureKind: null,
+      draft: null,
+    });
+  });
   it("creates one custom POI from one snapped click", async () => {
     const harness = createPlanEditorTestHarness();
     harness.store.getState().setActiveTool("poi");

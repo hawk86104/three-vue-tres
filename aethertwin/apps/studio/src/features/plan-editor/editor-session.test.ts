@@ -343,4 +343,62 @@ describe("plan editor session", () => {
     store.getState().clearRoomRecognition();
     expect(store.getState().roomRecognition).toBeNull();
   });
+  it("owns one showroom fixture choice and clears it at tool, floor, and session boundaries", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "session-a",
+    });
+
+    store.getState().setActiveTool("fixture");
+    store.getState().setSelectedFixtureKind("display-case");
+    expect(store.getState()).toMatchObject({
+      activeTool: "fixture",
+      selectedFixtureKind: "display-case",
+    });
+
+    store.getState().setFixturePlacementPreview({
+      type: "fixture",
+      id: "00000000-0000-4000-8000-000000000099",
+      name: "展示柜",
+      tags: [],
+      floorId: floorA.id,
+      layerId: floorA.layers[0]!.id,
+      locked: false,
+      transform: {
+        translation: { x: -600, y: -300 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      kind: "display-case",
+      size: { width: 1_200, height: 600 },
+      spatial3D: { elevation: 0, height: 1_200 },
+    }, { x: 0, y: 0 });
+    expect(store.getState().draft).toMatchObject({
+      kind: "create",
+      tool: "fixture",
+      points: [{ x: 0, y: 0 }],
+    });
+    expect(store.getState().gestureActive).toBe(false);
+
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(store.getState()).toMatchObject({
+      selectedFixtureKind: null,
+      draft: null,
+    });
+
+    store.getState().setSelectedFixtureKind("screen");
+    store.getState().setActiveTool("wall");
+    expect(store.getState().selectedFixtureKind).toBeNull();
+
+    store.getState().setActiveTool("fixture");
+    store.getState().setSelectedFixtureKind("signage");
+    store.getState().replaceSession("session-b", floorA.id);
+    expect(store.getState()).toMatchObject({
+      sessionId: "session-b",
+      activeTool: "select",
+      selectedFixtureKind: null,
+      draft: null,
+    });
+  });
 });

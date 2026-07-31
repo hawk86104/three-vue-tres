@@ -13,6 +13,7 @@ import type {
   SnapMode,
   ViewportTransform,
 } from "@aethertwin/plan-engine";
+import type { ShowroomFixtureKind } from "@aethertwin/mode-showroom";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 export type PlanTool =
@@ -97,6 +98,7 @@ export interface PlanEditorState {
   readonly calibrationDraft: CalibrationDraft | null;
   readonly openingPreview: OpeningPreviewState | null;
   readonly roomRecognition: RoomRecognitionState | null;
+  readonly selectedFixtureKind: ShowroomFixtureKind | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
   setActiveFloor(id: string): boolean;
@@ -115,7 +117,7 @@ export interface PlanEditorState {
   updateCalibration(draft: CalibrationDraft): void;
   cancelCalibration(): void;
   setOpeningPreview(preview: OpeningPreviewState): boolean;
-clearOpeningPreview(): void;
+  clearOpeningPreview(): void;
   setRoomRecognition(
     sessionId: string,
     floorId: string,
@@ -127,6 +129,10 @@ clearOpeningPreview(): void;
   setRoomRecognitionPersistenceError(message: string): void;
   clearRoomRecognitionPersistenceError(): void;
   clearRoomRecognition(): void;
+  setSelectedFixtureKind(kind: ShowroomFixtureKind): void;
+  setFixturePlacementPreview(entity: SpatialEntity, point: Point2): boolean;
+  clearFixturePlacementPreview(): void;
+  clearSelectedFixtureKind(): void;
 }
 
 const DEFAULT_VIEWPORT: ViewportTransform = {
@@ -230,6 +236,7 @@ export function createPlanEditorStore(
     calibrationDraft: null,
     openingPreview: null,
     roomRecognition: null,
+    selectedFixtureKind: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
 
@@ -252,6 +259,10 @@ export function createPlanEditorStore(
         roomRecognition: id === state.activeFloorId
           ? state.roomRecognition
           : null,
+        selectedFixtureKind: id === state.activeFloorId
+          ? state.selectedFixtureKind
+          : null,
+        draft: id === state.activeFloorId ? state.draft : null,
       });
       return true;
     },
@@ -272,6 +283,7 @@ export function createPlanEditorStore(
         calibrationDraft: null,
         openingPreview: null,
         roomRecognition: null,
+        selectedFixtureKind: null,
         gestureActive: false,
         clipboard: deepFreeze([] as SpatialEntity[]),
       });
@@ -288,6 +300,9 @@ export function createPlanEditorStore(
           : null,
         openingPreview: tool === state.activeTool
           ? state.openingPreview
+          : null,
+        selectedFixtureKind: tool === "fixture"
+          ? state.selectedFixtureKind
           : null,
       });
     },
@@ -448,6 +463,51 @@ export function createPlanEditorStore(
 
     clearRoomRecognition() {
       if (get().roomRecognition !== null) set({ roomRecognition: null });
+    },
+
+    setSelectedFixtureKind(kind) {
+      if (get().activeTool !== "fixture") return;
+      set({
+        selectedFixtureKind: kind,
+        draft: null,
+        gestureActive: false,
+      });
+    },
+
+    setFixturePlacementPreview(entity, point) {
+      const state = get();
+      if (state.activeTool !== "fixture" || state.selectedFixtureKind === null) {
+        return false;
+      }
+      set({
+        draft: ownedDraft({
+          kind: "create",
+          tool: "fixture",
+          points: [point],
+          preview: [entity],
+        }),
+        gestureActive: false,
+      });
+      return true;
+    },
+
+    clearFixturePlacementPreview() {
+      const state = get();
+      if (
+        state.gestureActive
+        || state.draft?.kind !== "create"
+        || state.draft.tool !== "fixture"
+      ) return;
+      set({ draft: null });
+    },
+
+    clearSelectedFixtureKind() {
+      const state = get();
+      if (state.selectedFixtureKind === null) return;
+      set({
+        selectedFixtureKind: null,
+        draft: state.gestureActive ? state.draft : null,
+      });
     },
   }));
 }

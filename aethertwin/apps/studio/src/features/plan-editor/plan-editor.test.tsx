@@ -599,7 +599,7 @@ const showroomToolLabels = [
   "\u533a\u57df",
   "\u623f\u95f4",
   "\u8bc6\u522b\u623f\u95f4",
-  "\u5c55\u5177",
+  "\u5c55\u5177\u76ee\u5f55",
   "\u5174\u8da3\u70b9",
   "\u5c3a\u5bf8",
 ] as const;
@@ -672,6 +672,46 @@ describe("PlanEditor Task 10 shell", () => {
     }
   });
 
+  it("opens the showroom catalogue, records one choice, and focuses the canvas", async () => {
+    const user = userEvent.setup();
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+
+    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
+    const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
+    expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
+
+    await user.click(within(catalogue).getByRole("button", { name: /\u5c55\u793a\u67dc/ }));
+
+    expect(sessionStore.getState()).toMatchObject({
+      activeTool: "fixture",
+      selectedFixtureKind: "display-case",
+    });
+    expect(within(catalogue).getByRole("button", { name: /\u5c55\u793a\u67dc/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() => expect(document.activeElement).toHaveClass("studio-plan-canvas"));
+
+    cleanup();
+    renderPlanEditorFixture({ profile: "market" });
+    expect(screen.queryByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "\u5c55\u5177" })).toBeVisible();
+  });
+
+  it("clears the showroom fixture choice on floor switch and unmount", async () => {
+    const user = userEvent.setup();
+    const { floorB, sessionStore, unmount } = renderPlanEditorFixture({ profile: "showroom" });
+    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
+    await user.click(screen.getByRole("button", { name: /\u6807\u724c/ }));
+    expect(sessionStore.getState().selectedFixtureKind).toBe("signage");
+
+    await user.click(rowByData("data-floor-id", floorB.id));
+    expect(sessionStore.getState().selectedFixtureKind).toBeNull();
+
+    act(() => sessionStore.getState().setSelectedFixtureKind("screen"));
+    unmount();
+    expect(sessionStore.getState().selectedFixtureKind).toBeNull();
+  });
   it("exposes stable floor, layer, and entity rows and synchronizes Inspector context", async () => {
     const user = userEvent.setup();
     const { floorA, layerA, entities } = renderPlanEditorFixture();
