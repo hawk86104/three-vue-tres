@@ -3,6 +3,7 @@ import {
   validateOpeningGeometry,
   type DimensionAnchor,
   type Opening,
+  type OpeningGeometryIssue,
   type PlanLayer,
   type PlanReference,
   type Point2,
@@ -17,6 +18,7 @@ import {
   duplicateEntities,
   entityWorldVertices,
   findSnap,
+  hitTestOpening,
   hitTestPlan,
   nearestOpeningPlacement,
   screenToWorld,
@@ -28,7 +30,10 @@ import {
   type SnapResult,
   type ViewportTransform,
 } from "@aethertwin/plan-engine";
-import type { AnySnapshotRecordsPatch } from "@aethertwin/project-store";
+import type {
+  AnySnapshotRecordsPatch,
+  BuildingStructurePatch,
+} from "@aethertwin/project-store";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
 import type { StoreApi } from "zustand/vanilla";
 import type {
@@ -49,6 +54,9 @@ export interface InteractionControllerDeps {
   ) => Promise<void>;
   readonly applySnapshotRecordPatches?: (
     patches: readonly AnySnapshotRecordsPatch[],
+  ) => Promise<void>;
+  readonly applyBuildingStructurePatch?: (
+    patch: BuildingStructurePatch,
   ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
@@ -95,6 +103,7 @@ interface ActiveContext {
   readonly visibleLayerIds: ReadonlySet<string>;
   readonly editableLayerIds: ReadonlySet<string>;
   readonly entities: readonly SpatialEntity[];
+  readonly openings: readonly Opening[];
   readonly creationLayer: PlanLayer | null;
   readonly references: readonly PlanReference[];
   readonly editableReferenceIds: ReadonlySet<string>;
@@ -159,6 +168,15 @@ type ControllerGesture =
       readonly selectionBefore: readonly string[];
     }
   | {
+      readonly kind: "opening-transform";
+      readonly tool: "select";
+      readonly pointerId: number;
+      readonly origin: Point2;
+      readonly originScreen: Point2;
+      readonly openingBefore: Opening;
+      readonly selectionBefore: readonly string[];
+    }
+  | {
       readonly kind: "box-select";
       readonly tool: "select";
       readonly pointerId: number;
@@ -196,6 +214,12 @@ function activeContext(
   const editableLayerIds = new Set(
     visibleLayers.filter((layer) => !layer.locked).map((layer) => layer.id),
   );
+  const entities = snapshot.project.entities.filter((entity) => (
+    entity.floorId === state.activeFloorId && visibleLayerIds.has(entity.layerId)
+  ));
+  const visibleWallIds = new Set(entities.flatMap((entity) => (
+    entity.type === "wall" ? [entity.id] : []
+  )));
   const references = snapshot.project.planReferences.filter((reference) => (
     reference.floorId === state.activeFloorId && visibleLayerIds.has(reference.layerId)
   ));
@@ -204,8 +228,9 @@ function activeContext(
     activeFloorId: state.activeFloorId,
     visibleLayerIds,
     editableLayerIds,
-    entities: snapshot.project.entities.filter((entity) => (
-      entity.floorId === state.activeFloorId && visibleLayerIds.has(entity.layerId)
+    entities,
+    openings: snapshot.project.openings.filter((opening) => (
+      visibleWallIds.has(opening.wallId)
     )),
     references,
     editableReferenceIds: new Set(references.filter((reference) => (
@@ -352,6 +377,94 @@ function hitPlan(context: ActiveContext, state: PlanEditorState, point: Point2) 
   });
   if (!result.ok) throw result.issue;
   return result.value;
+}
+
+function openingAt(
+  context: ActiveContext,
+  state: PlanEditorState,
+  point: Point2,
+): Opening | undefined {
+  const wallsById = new Map(
+    context.entities
+      .filter((entity): entity is Wall => entity.type === "wall")
+      .map((wall) => [wall.id, wall] as const),
+  );
+  const toleranceWorld = SNAP_TOLERANCE_PIXELS
+    / state.viewport.pixelsPerMillimetre;
+  return [...context.openings]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .find((opening) => {
+      const wall = wallsById.get(opening.wallId);
+      return wall !== undefined
+        && hitTestOpening(point, opening, wall, toleranceWorld);
+    });
+}
+
+function editableOpening(
+  context: ActiveContext,
+  opening: Opening,
+): boolean {
+  const wall = context.entities.find(
+    (entity): entity is Wall => entity.type === "wall" && entity.id === opening.wallId,
+  );
+  return wall !== undefined
+    && !wall.locked
+    && context.editableLayerIds.has(wall.layerId);
+}
+
+interface OpeningDragPreview {
+  readonly preview: Opening;
+  readonly issue?: OpeningGeometryIssue;
+}
+
+function openingDragAt(
+  context: ActiveContext,
+  state: PlanEditorState,
+  opening: Opening,
+  point: Point2,
+): OpeningDragPreview | null {
+  const wall = context.entities.find(
+    (entity): entity is Wall => entity.type === "wall" && entity.id === opening.wallId,
+  );
+  if (
+    wall === undefined
+    || wall.locked
+    || !context.editableLayerIds.has(wall.layerId)
+  ) return null;
+  const candidate = nearestOpeningPlacement({
+    point,
+    walls: [wall],
+    width: opening.width,
+    height: opening.height,
+    sillHeight: opening.sillHeight,
+    kind: opening.kind,
+    hitToleranceWorld: SNAP_TOLERANCE_PIXELS / state.viewport.pixelsPerMillimetre,
+  });
+  if (candidate === undefined) return null;
+
+  const preview: Opening = {
+    ...opening,
+    distanceAlongWall: candidate.distanceAlongWall,
+  };
+  const allWalls = context.snapshot.project.entities.filter(
+    (entity): entity is Wall => entity.type === "wall",
+  );
+  const openings = context.snapshot.project.openings.map((record) => (
+    record.id === opening.id ? preview : record
+  ));
+  const issue = validateOpeningGeometry(allWalls, openings).find(
+    (candidateIssue) => candidateIssue.openingId === opening.id,
+  );
+  return issue === undefined ? { preview } : { preview, issue };
+}
+
+function openingGeometryError(issue: OpeningGeometryIssue): Error {
+  const related = issue.relatedOpeningId === undefined
+    ? ""
+    : `; related opening ${issue.relatedOpeningId}`;
+  return new Error(
+    `${issue.code}: opening ${issue.openingId} on wall ${issue.wallId}${related}`,
+  );
 }
 
 function baseEntity(seed: EntitySeed, name: string) {
@@ -756,6 +869,96 @@ export function createInteractionController(
   };
 
 
+  const commitOpeningPatch = async (
+    before: Opening,
+    after: Opening | null,
+    selectionBefore: readonly string[],
+    selectionAfter?: readonly string[],
+  ): Promise<boolean> => {
+    if (commitToken !== null) return false;
+
+    const token = Symbol("opening-patch-commit");
+    const stateAtStart = deps.store.getState();
+    const commitStartSelection = [...stateAtStart.selectedIds];
+    const sessionId = stateAtStart.sessionId;
+    commitToken = token;
+    gesture = null;
+    stateAtStart.finishGesture();
+
+    try {
+      if (deps.applySnapshotRecordPatches === undefined) {
+        throw new Error("Opening mutations are unavailable.");
+      }
+      await deps.applySnapshotRecordPatches([{
+        collection: "openings",
+        changes: [{ id: before.id, before, after }],
+      }]);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (state.sessionId !== sessionId) return false;
+      if (sameSelection(state.selectedIds, commitStartSelection)) {
+        state.setSelection(selectionBefore);
+      }
+      deps.onError(error);
+      return false;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (state.sessionId !== sessionId) return true;
+    if (
+      selectionAfter !== undefined
+      && sameSelection(state.selectedIds, commitStartSelection)
+    ) {
+      state.setSelection(selectionAfter);
+    }
+    return true;
+  };
+
+  const commitBuildingStructurePatch = async (
+    patch: BuildingStructurePatch,
+    selectionBefore: readonly string[],
+    selectionAfter?: readonly string[],
+  ): Promise<boolean> => {
+    if (commitToken !== null) return false;
+
+    const token = Symbol("building-structure-commit");
+    const stateAtStart = deps.store.getState();
+    const commitStartSelection = [...stateAtStart.selectedIds];
+    const sessionId = stateAtStart.sessionId;
+    commitToken = token;
+    gesture = null;
+    stateAtStart.finishGesture();
+
+    try {
+      if (deps.applyBuildingStructurePatch === undefined) {
+        throw new Error("Building structure mutations are unavailable.");
+      }
+      await deps.applyBuildingStructurePatch(patch);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (state.sessionId !== sessionId) return false;
+      if (sameSelection(state.selectedIds, commitStartSelection)) {
+        state.setSelection(selectionBefore);
+      }
+      deps.onError(error);
+      return false;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (state.sessionId !== sessionId) return true;
+    if (
+      selectionAfter !== undefined
+      && sameSelection(state.selectedIds, commitStartSelection)
+    ) {
+      state.setSelection(selectionAfter);
+    }
+    return true;
+  };
+
   const commitOpening = async (event: PlanPointerEvent): Promise<void> => {
     if (commitToken !== null) return;
     const preview = publishOpeningPreview(event);
@@ -943,6 +1146,30 @@ export function createInteractionController(
   ): void => {
     const state = deps.store.getState();
     const world = screenToWorld(event.screen, state.viewport);
+    const opening = openingAt(context, state, world);
+    if (opening !== undefined) {
+      state.setSelection([opening.id]);
+      if (!editableOpening(context, opening)) {
+        gesture = null;
+        return;
+      }
+      gesture = {
+        kind: "opening-transform",
+        tool: "select",
+        pointerId: event.pointerId,
+        origin: world,
+        originScreen: { ...event.screen },
+        openingBefore: opening,
+        selectionBefore: [opening.id],
+      };
+      state.beginGesture({
+        kind: "opening-transform",
+        origin: world,
+        preview: opening,
+      });
+      return;
+    }
+
     const hit = hitPlan(context, state, world);
     if (hit === null) {
       gesture = {
@@ -1112,6 +1339,29 @@ export function createInteractionController(
   };
 
 
+  const previewOpeningTransform = (
+    event: PlanPointerEvent,
+    currentGesture: Extract<ControllerGesture, { kind: "opening-transform" }>,
+    context: ActiveContext,
+  ): void => {
+    const opening = context.openings.find(
+      (candidate) => candidate.id === currentGesture.openingBefore.id,
+    );
+    if (opening === undefined || !editableOpening(context, opening)) {
+      clearGesture();
+      return;
+    }
+    const point = screenToWorld(event.screen, deps.store.getState().viewport);
+    const result = openingDragAt(context, deps.store.getState(), opening, point);
+    if (result === null) return;
+    deps.store.getState().updateDraft({
+      kind: "opening-transform",
+      origin: currentGesture.origin,
+      preview: result.preview,
+      ...(result.issue === undefined ? {} : { issue: result.issue }),
+    });
+  };
+
   const handlePointerMove = (event: PlanPointerEvent): void => {
     if (gesture === null) return;
     if (gesture.pointerId !== event.pointerId) return;
@@ -1165,6 +1415,8 @@ export function createInteractionController(
       previewTransform(event, gesture, context);
     } else if (gesture.kind === "reference-transform") {
       previewReferenceTransform(event, gesture, context);
+    } else if (gesture.kind === "opening-transform") {
+      previewOpeningTransform(event, gesture, context);
     } else if (gesture.kind === "box-select") {
       const current = screenToWorld(event.screen, deps.store.getState().viewport);
       gesture = { ...gesture, current };
@@ -1240,6 +1492,43 @@ export function createInteractionController(
   };
 
 
+  const finishOpeningTransform = async (
+    event: PlanPointerEvent,
+    currentGesture: Extract<ControllerGesture, { kind: "opening-transform" }>,
+    context: ActiveContext,
+  ): Promise<void> => {
+    if (samePoint(event.screen, currentGesture.originScreen)) {
+      clearGesture();
+      return;
+    }
+    const opening = context.openings.find(
+      (candidate) => candidate.id === currentGesture.openingBefore.id,
+    );
+    if (opening === undefined || !editableOpening(context, opening)) {
+      clearGesture();
+      return;
+    }
+    const point = screenToWorld(event.screen, deps.store.getState().viewport);
+    const result = openingDragAt(context, deps.store.getState(), opening, point);
+    if (result === null) {
+      clearGesture();
+      return;
+    }
+    if (result.issue !== undefined) {
+      fail(openingGeometryError(result.issue), currentGesture.selectionBefore);
+      return;
+    }
+    if (result.preview.distanceAlongWall === opening.distanceAlongWall) {
+      clearGesture();
+      return;
+    }
+    await commitOpeningPatch(
+      opening,
+      result.preview,
+      currentGesture.selectionBefore,
+    );
+  };
+
   const finishBoxSelection = (
     event: PlanPointerEvent,
     currentGesture: Extract<ControllerGesture, { kind: "box-select" }>,
@@ -1291,6 +1580,8 @@ export function createInteractionController(
       await finishTransform(event, gesture, context);
     } else if (gesture.kind === "reference-transform") {
       await finishReferenceTransform(event, gesture, context);
+    } else if (gesture.kind === "opening-transform") {
+      await finishOpeningTransform(event, gesture, context);
     } else if (gesture.kind === "box-select") {
       finishBoxSelection(event, gesture, context);
     }
@@ -1300,6 +1591,12 @@ export function createInteractionController(
     const context = contextNow();
     const selectionBefore = [...deps.store.getState().selectedIds];
     if (selectionBefore.length === 1) {
+      const opening = context.openings.find(({ id }) => id === selectionBefore[0]);
+      if (opening !== undefined) {
+        if (!editableOpening(context, opening)) return;
+        await commitOpeningPatch(opening, null, selectionBefore, []);
+        return;
+      }
       const reference = context.references.find(({ id }) => id === selectionBefore[0]);
       if (reference !== undefined) {
         if (!context.editableReferenceIds.has(reference.id)) return;
@@ -1312,6 +1609,37 @@ export function createInteractionController(
     if (entities.length === 0 || entities.length !== selectionBefore.length) {
       return;
     }
+    const selectedWalls = entities.filter(
+      (entity): entity is Wall => entity.type === "wall",
+    );
+    const selectedWallIds = new Set(selectedWalls.map(({ id }) => id));
+    const attachedOpenings = context.snapshot.project.openings.filter((opening) => (
+      selectedWallIds.has(opening.wallId)
+    ));
+    if (attachedOpenings.length > 0) {
+      if (selectedWalls.length !== entities.length) {
+        fail(
+          new Error("Delete walls with attached openings separately from other objects."),
+          selectionBefore,
+        );
+        return;
+      }
+      await commitBuildingStructurePatch({
+        reason: "delete",
+        wallChanges: selectedWalls.map((wall) => ({
+          id: wall.id,
+          before: wall,
+          after: null,
+        })),
+        openingChanges: attachedOpenings.map((opening) => ({
+          id: opening.id,
+          before: opening,
+          after: null,
+        })),
+      }, selectionBefore, []);
+      return;
+    }
+
     const intent: PlanEditIntent = {
       reason: "delete",
       changes: entities.map((entity) => ({

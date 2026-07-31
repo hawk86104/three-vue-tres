@@ -1,12 +1,14 @@
-import type { ProjectSnapshot } from "@aethertwin/core-model";
+import type { ProjectSnapshot, Wall } from "@aethertwin/core-model";
 import type { StoreApi } from "zustand/vanilla";
 import type { PlanEditorState } from "./editor-session";
+import type { InteractionController } from "./interaction-controller";
 
 export interface PlanAccessibilityProps {
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
   readonly selectedIds: ReadonlySet<string>;
   readonly sessionStore: StoreApi<PlanEditorState>;
+  readonly controller: InteractionController;
   readonly onStartCalibration?: (
     referenceId: string,
     initiator: HTMLButtonElement,
@@ -24,6 +26,7 @@ export function PlanAccessibility({
   activeFloorId,
   selectedIds,
   sessionStore,
+  controller,
   onStartCalibration,
 }: PlanAccessibilityProps) {
   const floor = snapshot.project.floors.find((candidate) => (
@@ -40,6 +43,19 @@ export function PlanAccessibility({
   const references = snapshot.project.planReferences.filter((reference) => (
     reference.floorId === activeFloorId && visibleLayers.has(reference.layerId)
   ));
+  const wallsById = new Map(
+    entities
+      .filter((entity): entity is Wall => entity.type === "wall")
+      .map((wall) => [wall.id, wall] as const),
+  );
+  const openings = snapshot.project.openings.flatMap((opening) => {
+    const wall = wallsById.get(opening.wallId);
+    return wall === undefined ? [] : [{
+      opening,
+      wall,
+      locked: wall.locked || visibleLayers.get(wall.layerId) === true,
+    }];
+  });
 
   return (
     <section
@@ -47,7 +63,7 @@ export function PlanAccessibility({
       className="studio-plan-accessibility"
     >
       <h2>平面对象</h2>
-      {entities.length === 0 && references.length === 0 ? (
+      {entities.length === 0 && references.length === 0 && openings.length === 0 ? (
         <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
       ) : (
         <ul>
@@ -101,6 +117,39 @@ export function PlanAccessibility({
                   }}
                 >
                   校准
+                </button>
+              </li>
+            );
+          })}
+          {openings.map(({ opening, wall, locked }) => {
+            const selected = selectedIds.has(opening.id);
+            return (
+              <li
+                key={opening.id}
+                data-testid={`accessible-opening-${opening.id}`}
+                data-opening-id={opening.id}
+              >
+                <span>
+                  {opening.kind} · {opening.name} · {wall.name} · {wall.id} · 沿墙距离 {metric(opening.distanceAlongWall)} mm · {metric(opening.width)} × {metric(opening.height)} mm · 窗台高度 {metric(opening.sillHeight)} mm · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`选择门窗：${opening.name}`}
+                  aria-pressed={selected}
+                  onClick={() => sessionStore.getState().setSelection([opening.id])}
+                >
+                  选择
+                </button>
+                <button
+                  type="button"
+                  aria-label={`删除门窗：${opening.name}`}
+                  disabled={locked}
+                  onClick={() => {
+                    sessionStore.getState().setSelection([opening.id]);
+                    void controller.keyDown("Delete");
+                  }}
+                >
+                  删除
                 </button>
               </li>
             );

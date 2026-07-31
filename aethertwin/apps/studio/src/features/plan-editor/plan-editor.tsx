@@ -266,6 +266,7 @@ export function PlanEditor({
       applyPlanEdit: (intent) => store.applyPlanEdit(intent),
       applyPlanReferencePatch: (before, after) => store.applyPlanReferencePatch(before, after),
       applySnapshotRecordPatches: (patches) => store.applySnapshotRecordPatches(patches),
+      applyBuildingStructurePatch: (patch) => store.applyBuildingStructurePatch(patch),
       onError: (error) => setActionError(errorValue(error)),
     })
   ));
@@ -334,10 +335,14 @@ export function PlanEditor({
     const referenceIds = new Set(
       snapshot?.project.planReferences.map(({ id }) => id) ?? [],
     );
+    const openingIds = new Set(
+      snapshot?.project.openings.map(({ id }) => id) ?? [],
+    );
     if (
       selectedIds.length === 1
       && !entityIds.has(selectedIds[0]!)
       && !referenceIds.has(selectedIds[0]!)
+      && !openingIds.has(selectedIds[0]!)
     ) {
       sessionStore.getState().setSelection([]);
       return;
@@ -345,14 +350,20 @@ export function PlanEditor({
     setContext((current) => {
       if (selectedIds.length === 1) {
         const selectedId = selectedIds[0]!;
-        return referenceIds.has(selectedId)
-          ? { kind: "plan-reference", referenceId: selectedId }
+        if (referenceIds.has(selectedId)) {
+          return { kind: "plan-reference", referenceId: selectedId };
+        }
+        return openingIds.has(selectedId)
+          ? { kind: "opening", openingId: selectedId }
           : { kind: "entity", entityId: selectedId };
       }
       if (selectedIds.length > 1) {
         return { kind: "multi", entityIds: selectedIds };
       }
-      return current.kind === "entity" || current.kind === "multi" || current.kind === "plan-reference"
+      return current.kind === "entity"
+        || current.kind === "multi"
+        || current.kind === "plan-reference"
+        || current.kind === "opening"
         ? { kind: "project" }
         : current;
     });
@@ -727,6 +738,15 @@ export function PlanEditor({
           {sessionState.openingPreview === null ? null : (
             <OpeningPreview preview={sessionState.openingPreview} />
           )}
+          {sessionState.draft?.kind !== "opening-transform"
+            || sessionState.draft.issue === undefined ? null : (
+            <StatusNotice
+              tone="error"
+              data-issue-code={sessionState.draft.issue.code}
+            >
+              门窗拖动无效：{openingIssueLabels[sessionState.draft.issue.code]}（{sessionState.draft.issue.openingId}）
+            </StatusNotice>
+          )}
           {activeCalibrationReference === null ? null : (
             <CalibrationPanel
               reference={activeCalibrationReference}
@@ -779,6 +799,22 @@ export function PlanEditor({
               setContext({ kind: "project" });
             }
           }}
+          onApplyOpeningPatch={async (before, after) => {
+            await store.applySnapshotRecordPatches([{
+              collection: "openings",
+              changes: [{ id: before.id, before, after }],
+            }]);
+            if (
+              after === null
+              && sessionStore.getState().selectedIds.has(before.id)
+            ) {
+              sessionStore.getState().setSelection([]);
+              setContext({ kind: "project" });
+            }
+          }}
+          onApplyBuildingStructurePatch={(patch) => (
+            store.applyBuildingStructurePatch(patch)
+          )}
           onError={(error) => setActionError(errorValue(error))}
         />
       }

@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { parseSnapshotV3, type PlanReference } from "@aethertwin/core-model";
+import {
+  parseSnapshotV3,
+  type Opening,
+  type PlanReference,
+  type Wall,
+} from "@aethertwin/core-model";
 import type {
   PlanAssetSourcePort,
   PlanPointerEvent,
@@ -12,7 +17,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanCanvas } from "./plan-canvas";
-import type { PlanDraft } from "./editor-session";
+import type { PlanDraft, PlanEditorState } from "./editor-session";
 import {
   createPlanCanvasProps,
   createPlanEditorTestHarness,
@@ -584,5 +589,155 @@ describe("PlanCanvas plan-reference transform preview", () => {
 
     await waitFor(() => expect(renderer.updateInputs.at(-1)?.snapshot).toBe(snapshot));
     expect(renderer.updateInputs.at(-1)?.snapshot.project.planReferences).toEqual([reference]);
+  });
+});
+function taskNineWall(
+  harness: ReturnType<typeof createPlanEditorTestHarness>,
+  locked = false,
+): Wall {
+  return {
+    id: "00000000-0000-4000-8000-000000000040",
+    name: "North wall",
+    tags: [],
+    type: "wall",
+    floorId: harness.floorA.id,
+    layerId: harness.floorA.layers[0]!.id,
+    locked,
+    transform: {
+      translation: { x: 0, y: 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    centerLine: [{ x: -2_500, y: 0 }, { x: 2_500, y: 0 }],
+    thickness: 100,
+  };
+}
+
+function taskNineOpening(wall: Wall): Opening {
+  return {
+    id: "00000000-0000-4000-8000-000000000041",
+    name: "North window",
+    tags: [],
+    wallId: wall.id,
+    kind: "window",
+    distanceAlongWall: 2_500,
+    width: 1_200,
+    height: 1_200,
+    sillHeight: 900,
+  };
+}
+
+describe("PlanCanvas Task 9 opening parity", () => {
+  it("projects an opening drag preview without mutating the durable snapshot", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const wall = taskNineWall(harness);
+    const opening = taskNineOpening(wall);
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project,
+        profile: "showroom",
+        entities: [wall],
+        openings: [opening],
+      },
+    });
+    render(
+      <PlanCanvas
+        {...createPlanCanvasProps(harness, renderer)}
+        snapshot={snapshot}
+      />,
+    );
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+
+    const preview = { ...opening, distanceAlongWall: 3_000 };
+    act(() => {
+      harness.store.setState({
+        draft: {
+          kind: "opening-transform",
+          origin: { x: 0, y: 0 },
+          preview,
+        },
+        gestureActive: true,
+      } as unknown as Partial<PlanEditorState>);
+    });
+
+    await waitFor(() => expect(
+      renderer.updateInputs.at(-1)?.snapshot.project.openings,
+    ).toEqual([preview]));
+    expect(snapshot.project.openings).toEqual([opening]);
+  });
+
+  it("exposes opening metadata plus shared selection/delete actions and locked editability", async () => {
+    const user = userEvent.setup();
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const wall = taskNineWall(harness);
+    const opening = taskNineOpening(wall);
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project,
+        profile: "showroom",
+        entities: [wall],
+        openings: [opening],
+      },
+    });
+    const controller = {
+      ...harness.controller,
+      keyDown: vi.fn(async () => undefined),
+    };
+    const props = createPlanCanvasProps(harness, renderer);
+    const view = render(
+      <PlanCanvas
+        {...props}
+        snapshot={snapshot}
+        controller={controller}
+      />,
+    );
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+
+    const row = screen.getByTestId(`accessible-opening-${opening.id}`);
+    expect(row).toHaveTextContent("window");
+    expect(row).toHaveTextContent(opening.name);
+    expect(row).toHaveTextContent(wall.name);
+    expect(row).toHaveTextContent(wall.id);
+    expect(row).toHaveTextContent("沿墙距离 2500 mm");
+    expect(row).toHaveTextContent("1200 × 1200 mm");
+    expect(row).toHaveTextContent("窗台高度 900 mm");
+    expect(row).toHaveTextContent("可编辑");
+
+    await user.click(screen.getByRole("button", {
+      name: `选择门窗：${opening.name}`,
+    }));
+    expect([...harness.store.getState().selectedIds]).toEqual([opening.id]);
+
+    await user.click(screen.getByRole("button", {
+      name: `删除门窗：${opening.name}`,
+    }));
+    expect(controller.keyDown).toHaveBeenCalledWith("Delete");
+
+    const lockedWall = taskNineWall(harness, true);
+    const lockedOpening = taskNineOpening(lockedWall);
+    const lockedSnapshot = parseSnapshotV3({
+      ...snapshot,
+      project: {
+        ...snapshot.project,
+        entities: [lockedWall],
+        openings: [lockedOpening],
+      },
+    });
+    view.rerender(
+      <PlanCanvas
+        {...props}
+        snapshot={lockedSnapshot}
+        controller={controller}
+      />,
+    );
+    expect(screen.getByTestId(`accessible-opening-${lockedOpening.id}`))
+      .toHaveTextContent("已锁定");
+    expect(screen.getByRole("button", {
+      name: `删除门窗：${lockedOpening.name}`,
+    })).toBeDisabled();
   });
 });

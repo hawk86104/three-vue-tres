@@ -6,7 +6,9 @@ import userEvent from "@testing-library/user-event";
 import type {
   AssetRecord,
   Fixture,
+  Opening,
   PlanReference,
+  Wall,
 } from "@aethertwin/core-model";
 import {
   ProjectStore,
@@ -1645,5 +1647,112 @@ describe("PlanEditor Task 8 opening creation UI", () => {
     expect(sessionStore.getState().activeFloorId).toBe(
       store.getState().snapshot!.project.floors[0]!.id,
     );
+  });
+});
+async function projectWithTaskNineOpening(name: string) {
+  const { backend, store } = await sandboxProject(name);
+  const snapshot = store.getState().snapshot!;
+  const floor = snapshot.project.floors[0]!;
+  const wall: Wall = {
+    id: "00000000-0000-4000-8000-000000000040",
+    name: "North wall",
+    tags: [],
+    type: "wall",
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    locked: false,
+    transform: {
+      translation: { x: 0, y: 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    centerLine: [{ x: -2_500, y: 0 }, { x: 2_500, y: 0 }],
+    thickness: 100,
+  };
+  const opening: Opening = {
+    id: "00000000-0000-4000-8000-000000000041",
+    name: "North window",
+    tags: [],
+    wallId: wall.id,
+    kind: "window",
+    distanceAlongWall: 2_500,
+    width: 1_200,
+    height: 1_200,
+    sillHeight: 900,
+  };
+  await store.applyBuildingStructurePatch({
+    reason: "create",
+    wallChanges: [{ id: wall.id, before: null, after: wall }],
+    openingChanges: [{ id: opening.id, before: null, after: opening }],
+  });
+  return { backend, store, floor, wall, opening };
+}
+
+describe("PlanEditor Task 9 opening Inspector integration", () => {
+  it("keeps accessible opening selection in selectedIds and routes Inspector edit/delete as record patches", async () => {
+    const { store, floor, wall, opening } = await projectWithTaskNineOpening(
+      "Opening selection",
+    );
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(
+      <PlanEditor
+        store={store}
+        dependencies={{ sessionStore, assetPicker: null }}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: `选择门窗：${opening.name}`,
+    }));
+
+    expect([...sessionStore.getState().selectedIds]).toEqual([opening.id]);
+    const inspector = screen.getByRole("complementary", { name: "检查器" });
+    expect(within(inspector).getByRole("heading", { name: "门窗" })).toBeVisible();
+    expect(within(inspector).getByLabelText("门窗名称")).toHaveValue(opening.name);
+    expect(inspector).toHaveTextContent(wall.name);
+    expect(inspector).toHaveTextContent(wall.id);
+
+    fireEvent.change(within(inspector).getByLabelText("门窗名称"), {
+      target: { value: "Updated window" },
+    });
+    await user.click(within(inspector).getByRole("button", { name: "应用门窗" }));
+    await waitFor(() => expect(
+      store.getState().snapshot!.project.openings[0]?.name,
+    ).toBe("Updated window"));
+    expect([...sessionStore.getState().selectedIds]).toEqual([opening.id]);
+
+    await user.click(within(inspector).getByRole("button", { name: "删除门窗" }));
+    await waitFor(() => expect(
+      store.getState().snapshot!.project.openings,
+    ).toEqual([]));
+    expect([...sessionStore.getState().selectedIds]).toEqual([]);
+    expect(within(inspector).getByLabelText("项目名称"))
+      .toHaveValue("Opening selection");
+  });
+
+  it("rejects a wall thickness change with the affected opening id before persistence", async () => {
+    const { backend, store, wall, opening } = await projectWithTaskNineOpening(
+      "Opening-safe reshape",
+    );
+    const commit = vi.spyOn(backend, "commit");
+    render(<PlanEditor store={store} dependencies={{ assetPicker: null }} />);
+    const user = userEvent.setup();
+
+    await user.click(rowByData("data-entity-id", wall.id));
+    const thickness = screen.getByLabelText("墙体厚度 (mm)");
+    await user.clear(thickness);
+    await user.type(thickness, "4500");
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+
+    await waitFor(() => expect(screen.getByRole("alert"))
+      .toHaveTextContent(opening.id));
+    expect(screen.getByRole("alert"))
+      .toHaveTextContent("OPENING_ENDPOINT_CLEARANCE");
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.getState().snapshot!.project.entities.find(
+      (entity) => entity.id === wall.id,
+    )).toMatchObject({ thickness: 100 });
+    expect(store.getState().snapshot!.project.openings).toEqual([opening]);
   });
 });

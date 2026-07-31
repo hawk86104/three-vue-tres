@@ -1,4 +1,10 @@
-import type { PlanReference, Point2, SpatialEntity } from "@aethertwin/core-model";
+import type {
+  Opening,
+  OpeningGeometryIssue,
+  PlanReference,
+  Point2,
+  SpatialEntity,
+} from "@aethertwin/core-model";
 import type {
   CalibrationPreview,
   OpeningPlacementCandidate,
@@ -58,6 +64,12 @@ export type PlanDraft =
       readonly kind: "reference-transform";
       readonly origin: Point2;
       readonly preview: PlanReference;
+    }
+  | {
+      readonly kind: "opening-transform";
+      readonly origin: Point2;
+      readonly preview: Opening;
+      readonly issue?: OpeningGeometryIssue;
     }
   | { readonly kind: "box-select"; readonly start: Point2; readonly current: Point2 };
 

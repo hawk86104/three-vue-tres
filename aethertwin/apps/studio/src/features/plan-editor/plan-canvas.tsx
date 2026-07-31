@@ -57,10 +57,22 @@ function isTextInputTarget(target: EventTarget | null): boolean {
     || target.closest('[contenteditable]:not([contenteditable="false"])') !== null;
 }
 
-function snapshotWithReferencePreview(
+function snapshotWithTransientPreview(
   snapshot: ProjectSnapshot,
   state: PlanEditorState,
 ): ProjectSnapshot {
+  if (state.draft?.kind === "opening-transform") {
+    const preview = state.draft.preview;
+    return {
+      ...snapshot,
+      project: {
+        ...snapshot.project,
+        openings: snapshot.project.openings.map((opening) => (
+          opening.id === preview.id ? preview : opening
+        )),
+      },
+    };
+  }
   if (state.draft?.kind !== "reference-transform") return snapshot;
   const preview = state.draft.preview;
   return {
@@ -79,7 +91,7 @@ function rendererInput(
   activeFloorId: string,
   state: PlanEditorState,
 ): PlanRendererInput {
-  const renderSnapshot = snapshotWithReferencePreview(snapshot, state);
+  const renderSnapshot = snapshotWithTransientPreview(snapshot, state);
   return {
     snapshot: renderSnapshot,
     activeFloorId,
@@ -435,6 +447,7 @@ export function PlanCanvas({
         activeFloorId={activeFloorId}
         selectedIds={sessionState.selectedIds}
         sessionStore={sessionStore}
+        controller={controller}
         {...(onStartCalibration === undefined ? {} : { onStartCalibration })}
       />
     </div>

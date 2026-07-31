@@ -1,10 +1,13 @@
-import type {
-  Floor,
-  PlanLayer,
-  PlanReference,
-  ProjectSnapshot,
-  SaveState,
-  SpatialEntity,
+import {
+  validateOpeningGeometry,
+  type Floor,
+  type Opening,
+  type PlanLayer,
+  type PlanReference,
+  type ProjectSnapshot,
+  type SaveState,
+  type SpatialEntity,
+  type Wall,
 } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import {
@@ -18,10 +21,14 @@ import {
   type PlanIssue,
   type PlanResult,
 } from "@aethertwin/plan-engine";
-import type { ProjectBackend } from "@aethertwin/project-store";
+import type {
+  BuildingStructurePatch,
+  ProjectBackend,
+} from "@aethertwin/project-store";
 import { useEffect, useId, useState } from "react";
 import { validateProjectName } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
+import { OpeningInspector } from "./opening-inspector";
 import { ReferenceInspector } from "./reference-inspector";
 
 export type InspectorContext =
@@ -29,6 +36,7 @@ export type InspectorContext =
   | { readonly kind: "floor"; readonly floorId: string }
   | { readonly kind: "layer"; readonly floorId: string; readonly layerId: string }
   | { readonly kind: "plan-reference"; readonly referenceId: string }
+  | { readonly kind: "opening"; readonly openingId: string }
   | { readonly kind: "entity"; readonly entityId: string }
   | { readonly kind: "multi"; readonly entityIds: readonly string[] };
 
@@ -390,9 +398,13 @@ function LayerInspector({
 }
 
 interface EntityInspectorProps {
+  readonly snapshot: ProjectSnapshot;
   readonly entity: SpatialEntity;
   readonly floor: Floor;
   readonly onApplyPlanEdit: (intent: PlanEditIntent) => Promise<void>;
+  readonly onApplyBuildingStructurePatch: (
+    patch: BuildingStructurePatch,
+  ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
 
@@ -412,9 +424,11 @@ interface EntityFieldIssue {
 }
 
 function EntityInspector({
+  snapshot,
   entity,
   floor,
   onApplyPlanEdit,
+  onApplyBuildingStructurePatch,
   onError,
 }: EntityInspectorProps) {
   const committedName = entity.name;
@@ -651,12 +665,50 @@ function EntityInspector({
       )
     );
 
+    const attachedOpenings = entity.type === "wall"
+      ? snapshot.project.openings.filter((opening) => opening.wallId === entity.id)
+      : [];
+    if (entity.type === "wall" && after.type === "wall") {
+      const nextWall: Wall = after;
+      const walls = snapshot.project.entities.flatMap((candidate): Wall[] => {
+        if (candidate.id === entity.id) return [nextWall];
+        return candidate.type === "wall" ? [candidate] : [];
+      });
+      const affectedIds = new Set(attachedOpenings.map(({ id }) => id));
+      const issues = validateOpeningGeometry(walls, snapshot.project.openings)
+        .filter((issue) => affectedIds.has(issue.openingId));
+      if (issues.length > 0) {
+        const first = issues[0]!;
+        reportFieldIssue(
+          "thickness",
+          first.code,
+          `${first.code}: affected openings ${[
+            ...new Set(issues.map(({ openingId }) => openingId)),
+          ].join(", ")}`,
+        );
+        return;
+      }
+    }
+
     setLocalError(null);
     try {
-      await onApplyPlanEdit({
-        reason: transformOnly ? "transform" : "properties",
-        changes: [{ id: entity.id, before: entity, after }],
-      });
+      if (
+        entity.type === "wall"
+        && after.type === "wall"
+        && attachedOpenings.length > 0
+        && !transformOnly
+      ) {
+        await onApplyBuildingStructurePatch({
+          reason: "properties",
+          wallChanges: [{ id: entity.id, before: entity, after }],
+          openingChanges: [],
+        });
+      } else {
+        await onApplyPlanEdit({
+          reason: transformOnly ? "transform" : "properties",
+          changes: [{ id: entity.id, before: entity, after }],
+        });
+      }
     } catch (error) {
       onError(error);
     }
@@ -926,6 +978,13 @@ export interface PlanInspectorProps {
     before: PlanReference,
     after: PlanReference | null,
   ) => Promise<void>;
+  readonly onApplyOpeningPatch: (
+    before: Opening,
+    after: Opening | null,
+  ) => Promise<void>;
+  readonly onApplyBuildingStructurePatch: (
+    patch: BuildingStructurePatch,
+  ) => Promise<void>;
   readonly onError: (error: unknown) => void;
 }
 
@@ -944,6 +1003,8 @@ export function PlanInspector({
   onApplyFloorPatch,
   onApplyPlanEdit,
   onApplyPlanReferencePatch,
+  onApplyOpeningPatch,
+  onApplyBuildingStructurePatch,
   onError,
 }: PlanInspectorProps) {
   if (context.kind === "project") {
@@ -1026,6 +1087,37 @@ export function PlanInspector({
     );
   }
 
+  if (context.kind === "opening") {
+    const opening = snapshot.project.openings.find(
+      (candidate) => candidate.id === context.openingId,
+    );
+    const wall = opening === undefined
+      ? undefined
+      : snapshot.project.entities.find(
+          (candidate): candidate is Wall => (
+            candidate.type === "wall" && candidate.id === opening.wallId
+          ),
+        );
+    const floor = wall === undefined
+      ? undefined
+      : snapshot.project.floors.find(({ id }) => id === wall.floorId);
+    const layer = wall === undefined
+      ? undefined
+      : floor?.layers.find(({ id }) => id === wall.layerId);
+    if (opening === undefined || wall === undefined || layer === undefined) {
+      return <StatusNotice tone="error">门窗不存在</StatusNotice>;
+    }
+    return (
+      <OpeningInspector
+        opening={opening}
+        wall={wall}
+        layer={layer}
+        onApplyOpeningPatch={onApplyOpeningPatch}
+        onError={onError}
+      />
+    );
+  }
+
   if (context.kind === "entity") {
     const entity = snapshot.project.entities.find(
       (candidate) => candidate.id === context.entityId,
@@ -1039,9 +1131,11 @@ export function PlanInspector({
       <StatusNotice tone="error">对象不存在</StatusNotice>
     ) : (
       <EntityInspector
+        snapshot={snapshot}
         entity={entity}
         floor={floor}
         onApplyPlanEdit={onApplyPlanEdit}
+        onApplyBuildingStructurePatch={onApplyBuildingStructurePatch}
         onError={onError}
       />
     );
