@@ -6,8 +6,17 @@ import type {
   ProjectStore,
   ProjectStoreState,
 } from "@aethertwin/project-store";
-import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
-import type { PlanReference, ProjectSnapshot } from "@aethertwin/core-model";
+import {
+  recognizeClosedRooms,
+  representedRoomCandidateKeys,
+  roomCreationIntent,
+  roomInputFingerprint,
+  roomReplacementIntent,
+  type FloorChange,
+  type PlanEditIntent,
+  type RoomRecognitionResult,
+} from "@aethertwin/plan-engine";
+import type { PlanReference, ProjectSnapshot, SpaceUnit, Wall } from "@aethertwin/core-model";
 import {
   useCallback,
   useEffect,
@@ -45,6 +54,7 @@ import {
 import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
 import { CalibrationPanel } from "./calibration-panel";
+import { RoomRecognitionPanel } from "./room-recognition-panel";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -59,7 +69,10 @@ export interface PlanEditorDependencies {
   readonly controller?: InteractionController;
   readonly makeId?: () => string;
   readonly workspace?: (context: PlanWorkspaceContext) => ReactNode;
-  readonly assetPicker?: PlanAssetPicker | null;
+readonly assetPicker?: PlanAssetPicker | null;
+  readonly recognizeRooms?: (
+    input: Parameters<typeof recognizeClosedRooms>[0],
+  ) => RoomRecognitionResult | Promise<RoomRecognitionResult>;
 }
 
 export interface PlanEditorProps {
@@ -202,6 +215,44 @@ function editableCalibrationReference(
     : null;
 }
 
+function visibleRoomWalls(
+  snapshot: ProjectSnapshot,
+  floorId: string,
+): readonly Wall[] {
+  const floor = snapshot.project.floors.find((candidate) => candidate.id === floorId);
+  const visibleLayerIds = new Set(
+    floor?.layers.filter((layer) => layer.visible).map((layer) => layer.id) ?? [],
+  );
+  return snapshot.project.entities.filter((entity): entity is Wall => (
+    entity.type === "wall"
+    && entity.floorId === floorId
+    && visibleLayerIds.has(entity.layerId)
+  ));
+}
+
+function editableSelectedRoom(
+  snapshot: ProjectSnapshot,
+  activeFloorId: string,
+  selectedIds: ReadonlySet<string>,
+): SpaceUnit | null {
+  if (selectedIds.size !== 1) return null;
+  const selectedId = [...selectedIds][0]!;
+  const entity = snapshot.project.entities.find(({ id }) => id === selectedId);
+  if (
+    entity?.type !== "space-unit"
+    || entity.kind !== "room"
+    || entity.floorId !== activeFloorId
+    || entity.locked
+  ) return null;
+  const floor = snapshot.project.floors.find(({ id }) => id === activeFloorId);
+  const layer = floor?.layers.find(({ id }) => id === entity.layerId);
+  return layer !== undefined && layer.visible && !layer.locked ? entity : null;
+}
+
+function planIssueMessage(issue: { readonly code: string; readonly message: string }): string {
+  return `${issue.code}: ${issue.message}`;
+}
+
 export function PlanEditor({
   store,
   backendMode,
@@ -211,6 +262,8 @@ export function PlanEditor({
 }: PlanEditorProps) {
   const state = useProjectState(store);
   const [actionError, setActionError] = useState<Error | null>(null);
+  const [roomPanelOpen, setRoomPanelOpen] = useState(false);
+  const [roomRecognitionBusy, setRoomRecognitionBusy] = useState(false);
   const [handledStoreError, setHandledStoreError] = useState<Error | null>(null);
   const mode: ProjectBackend["mode"] = backendMode
     ?? (state.projectPath?.startsWith("sandbox://") ? "sandbox" : "desktop");
@@ -227,6 +280,8 @@ export function PlanEditor({
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const projectSessionGeneration = useRef(0);
+  const mountedRef = useRef(true);
+  const roomRecognitionGeneration = useRef(0);
   const sidePanelId = useId();
   const treeTabId = `${sidePanelId}-tree-tab`;
   const assetTabId = `${sidePanelId}-asset-tab`;
@@ -239,6 +294,9 @@ export function PlanEditor({
     })
   ));
   const [makeId] = useState(() => dependencies?.makeId ?? productionId);
+  const [recognizeRoomPort] = useState(() => (
+    dependencies?.recognizeRooms ?? recognizeClosedRooms
+  ));
   const openingToolInitiator = useRef<HTMLButtonElement | null>(null);
   const previousActiveTool = useRef<PlanTool>(sessionStore.getState().activeTool);
   const calibrationProjectId = useRef<string | null>(
@@ -271,10 +329,18 @@ export function PlanEditor({
     })
   ));
   const sessionState = useSessionState(sessionStore);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      sessionStore.getState().clearRoomRecognition();
+    };
+  }, [sessionStore]);
   const selectionKey = [...sessionState.selectedIds].join("\u0000");
 
   const activeCalibrationReferenceId =
     sessionState.calibrationDraft?.referenceId ?? null;
+  const roomRecognition = sessionState.roomRecognition;
 
   useEffect(() => {
     const previous = previousActiveTool.current;
@@ -295,6 +361,9 @@ export function PlanEditor({
     const nextProjectId = state.snapshot?.project.id ?? null;
     if (calibrationProjectId.current !== nextProjectId) {
       openingToolInitiator.current = null;
+      setRoomPanelOpen(false);
+      setRoomRecognitionBusy(false);
+      roomRecognitionGeneration.current += 1;
       projectSessionGeneration.current += 1;
       sessionStore.getState().replaceSession(
         `plan-editor-project-session-${projectSessionGeneration.current}`,
@@ -317,6 +386,23 @@ export function PlanEditor({
     }
   }, [
     activeCalibrationReferenceId,
+    sessionState.activeFloorId,
+    sessionStore,
+    state.snapshot,
+  ]);
+
+  useEffect(() => {
+    if (roomRecognition === null || roomRecognition.stale || state.snapshot === null) return;
+    const fingerprint = roomInputFingerprint({
+      snapshot: state.snapshot,
+      floorId: sessionState.activeFloorId,
+      toleranceMm: roomRecognition.toleranceMm,
+    });
+    if (fingerprint !== roomRecognition.fingerprint) {
+      sessionStore.getState().markRoomRecognitionStale();
+    }
+  }, [
+    roomRecognition,
     sessionState.activeFloorId,
     sessionStore,
     state.snapshot,
@@ -436,6 +522,133 @@ export function PlanEditor({
       sessionState.activeFloorId,
       activeCalibrationReferenceId,
     );
+
+  const representedRoomKeys = new Set(roomRecognition === null ? [] : (
+    representedRoomCandidateKeys({
+      candidates: roomRecognition.candidates,
+      entities: snapshot.project.entities,
+      floorId: sessionState.activeFloorId,
+    })
+  ));
+  const selectedEditableRoom = editableSelectedRoom(
+    snapshot,
+    sessionState.activeFloorId,
+    selectedIds,
+  );
+
+  async function runRoomRecognition(): Promise<void> {
+    const current = sessionStore.getState();
+    const currentSnapshot = store.getState().snapshot;
+    if (currentSnapshot === null) return;
+    const sessionId = current.sessionId;
+    const floorId = current.activeFloorId;
+    const toleranceMm = current.roomRecognition?.toleranceMm ?? 5;
+    const fingerprint = roomInputFingerprint({
+      snapshot: currentSnapshot,
+      floorId,
+      toleranceMm,
+    });
+    const generation = roomRecognitionGeneration.current + 1;
+    roomRecognitionGeneration.current = generation;
+    setRoomPanelOpen(true);
+    setRoomRecognitionBusy(true);
+    current.setRoomRecognition(sessionId, floorId, {
+      toleranceMm,
+      fingerprint,
+      candidates: [],
+      diagnostics: [],
+      stale: false,
+    });
+    try {
+      await Promise.resolve();
+      const result = await recognizeRoomPort({
+        walls: visibleRoomWalls(currentSnapshot, floorId),
+        toleranceMm,
+      });
+      if (!mountedRef.current || generation !== roomRecognitionGeneration.current) return;
+      if (!result.ok) {
+        sessionStore.getState().setRoomRecognition(sessionId, floorId, {
+          toleranceMm,
+          fingerprint,
+          candidates: [],
+          diagnostics: [],
+          stale: true,
+          persistenceError: `${result.issue.code}: ${result.issue.message}`,
+        });
+        return;
+      }
+      sessionStore.getState().setRoomRecognition(sessionId, floorId, {
+        toleranceMm,
+        fingerprint,
+        candidates: result.value,
+        ...(result.value[0] === undefined
+          ? {}
+          : { selectedCandidateKey: result.value[0].key }),
+        diagnostics: result.diagnostics,
+        stale: false,
+      });
+    } catch (error) {
+      if (mountedRef.current && generation === roomRecognitionGeneration.current) {
+        sessionStore.getState().setRoomRecognitionPersistenceError(
+          errorValue(error).message,
+        );
+      }
+    } finally {
+      if (mountedRef.current && generation === roomRecognitionGeneration.current) {
+        setRoomRecognitionBusy(false);
+      }
+    }
+  }
+
+  async function applyRoomCandidate(
+    action: "one" | "all" | "replace",
+  ): Promise<void> {
+    const current = sessionStore.getState();
+    const recognition = current.roomRecognition;
+    const currentSnapshot = store.getState().snapshot;
+    if (recognition === null || currentSnapshot === null || recognition.stale) return;
+    const fingerprint = roomInputFingerprint({
+      snapshot: currentSnapshot,
+      floorId: current.activeFloorId,
+      toleranceMm: recognition.toleranceMm,
+    });
+    if (fingerprint !== recognition.fingerprint) {
+      current.markRoomRecognitionStale();
+      return;
+    }
+    const selectedCandidate = recognition.candidates.find(
+      ({ key }) => key === recognition.selectedCandidateKey,
+    );
+    const result = action === "replace"
+      ? selectedCandidate === undefined || selectedEditableRoom === null
+        ? null
+        : roomReplacementIntent({
+          snapshot: currentSnapshot,
+          roomId: selectedEditableRoom.id,
+          candidate: selectedCandidate,
+        })
+      : roomCreationIntent({
+        snapshot: currentSnapshot,
+        floorId: current.activeFloorId,
+        candidates: action === "one"
+          ? selectedCandidate === undefined ? [] : [selectedCandidate]
+          : recognition.candidates,
+        makeId,
+      });
+    if (result === null) return;
+    if (!result.ok) {
+      current.setRoomRecognitionPersistenceError(planIssueMessage(result.issue));
+      return;
+    }
+    current.clearRoomRecognitionPersistenceError();
+    try {
+      await store.applyPlanEdit(result.value);
+    } catch (error) {
+      sessionStore.getState().setRoomRecognitionPersistenceError(
+        errorValue(error).message,
+      );
+    }
+  }
 
   async function runPlanAssetImport(
     initiator: HTMLButtonElement,
@@ -575,6 +788,9 @@ export function PlanEditor({
       return;
     }
     current.setSelection([]);
+    setRoomPanelOpen(false);
+    setRoomRecognitionBusy(false);
+    roomRecognitionGeneration.current += 1;
     setActionError(null);
     setContext({ kind: "floor", floorId });
   }
@@ -713,6 +929,7 @@ export function PlanEditor({
           profile={snapshot.project.profile}
           activeTool={sessionState.activeTool}
           onToolChange={selectTool}
+          onRecognizeRooms={() => void runRoomRecognition()}
           {...(selectedCalibrationReference === null ? {} : {
             onCalibrate: (initiator: HTMLButtonElement) => {
               startCalibration(selectedCalibrationReference.id, initiator);
@@ -735,6 +952,30 @@ export function PlanEditor({
           data-selected-count={selectedIds.size}
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
+          {!roomPanelOpen || roomRecognition === null ? null : (
+            <RoomRecognitionPanel
+              state={roomRecognition}
+              representedKeys={representedRoomKeys}
+              canReplaceSelectedRoom={selectedEditableRoom !== null}
+              busy={roomRecognitionBusy}
+              onToleranceChange={(toleranceMm) => {
+                sessionStore.getState().setRoomRecognitionTolerance(toleranceMm);
+              }}
+              onRecognize={() => void runRoomRecognition()}
+              onSelectCandidate={(key) => {
+                sessionStore.getState().selectRoomCandidate(key);
+              }}
+              onConfirmOne={() => void applyRoomCandidate("one")}
+              onConfirmAll={() => void applyRoomCandidate("all")}
+              onReplaceSelectedRoom={() => void applyRoomCandidate("replace")}
+              onClose={() => {
+                roomRecognitionGeneration.current += 1;
+                setRoomRecognitionBusy(false);
+                setRoomPanelOpen(false);
+                sessionStore.getState().clearRoomRecognition();
+              }}
+            />
+          )}
           {sessionState.openingPreview === null ? null : (
             <OpeningPreview preview={sessionState.openingPreview} />
           )}

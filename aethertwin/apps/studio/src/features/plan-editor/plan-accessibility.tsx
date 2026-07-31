@@ -56,6 +56,7 @@ export function PlanAccessibility({
       locked: wall.locked || visibleLayers.get(wall.layerId) === true,
     }];
   });
+  const roomRecognition = sessionStore.getState().roomRecognition;
 
   return (
     <section
@@ -63,10 +64,26 @@ export function PlanAccessibility({
       className="studio-plan-accessibility"
     >
       <h2>平面对象</h2>
-      {entities.length === 0 && references.length === 0 && openings.length === 0 ? (
+      {entities.length === 0 && references.length === 0 && openings.length === 0
+      && (roomRecognition === null || roomRecognition.candidates.length === 0) ? (
         <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
       ) : (
         <ul>
+          {roomRecognition?.candidates.map((candidate, index) => (
+            <li key={`room-candidate-${candidate.key}`}>
+              <span>
+                房间候选 {index + 1} · {metric(candidate.area / 1_000_000)} m² · {candidate.key === roomRecognition?.selectedCandidateKey ? "已选择" : "未选择"} · {roomRecognition?.stale ? "已过期" : "可预览"}
+              </span>
+              <button
+                type="button"
+                aria-label={`预览候选 ${index + 1}`}
+                aria-pressed={candidate.key === roomRecognition?.selectedCandidateKey}
+                onClick={() => sessionStore.getState().selectRoomCandidate(candidate.key)}
+              >
+                预览
+              </button>
+            </li>
+          ))}
           {entities.map((entity) => {
             const selected = selectedIds.has(entity.id);
             const locked = entity.locked || visibleLayers.get(entity.layerId) === true;

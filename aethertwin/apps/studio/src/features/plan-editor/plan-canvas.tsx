@@ -2,6 +2,7 @@ import type { PlanReference, Point2, ProjectSnapshot } from "@aethertwin/core-mo
 import {
   planReferenceSourceToWorld,
   planReferenceWorldToSource,
+  representedRoomCandidateKeys,
   screenToWorld,
   worldToScreen,
 } from "@aethertwin/plan-engine";
@@ -92,6 +93,14 @@ function rendererInput(
   state: PlanEditorState,
 ): PlanRendererInput {
   const renderSnapshot = snapshotWithTransientPreview(snapshot, state);
+  const recognition = state.roomRecognition;
+  const representedKeys = recognition === null
+    ? new Set<string>()
+    : new Set(representedRoomCandidateKeys({
+      candidates: recognition.candidates,
+      entities: snapshot.project.entities,
+      floorId: activeFloorId,
+    }));
   return {
     snapshot: renderSnapshot,
     activeFloorId,
@@ -101,6 +110,14 @@ function rendererInput(
       ? state.draft.preview
       : null,
     calibrationPreview: state.calibrationDraft?.preview ?? null,
+    roomCandidates: recognition === null || recognition.stale
+      ? []
+      : recognition.candidates.map((candidate) => ({
+        key: candidate.key,
+        footprint: candidate.footprint,
+        represented: representedKeys.has(candidate.key),
+        selected: candidate.key === recognition.selectedCandidateKey,
+      })),
   };
 }
 

@@ -8,6 +8,8 @@ import type {
   Fixture,
   Opening,
   PlanReference,
+  SpaceUnit,
+  SpatialEntity,
   Wall,
 } from "@aethertwin/core-model";
 import {
@@ -20,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
 import { createPlanEditorStore, type OpeningPreviewState } from "./editor-session";
 import { PlanEditor } from "./plan-editor";
-import { renderPlanEditorFixture } from "./plan-editor.test-support";
+import { FakePlanRenderer, renderPlanEditorFixture } from "./plan-editor.test-support";
 
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
@@ -576,29 +578,30 @@ describe("PlanEditor M0 behavior contract", () => {
 
 
 const marketToolLabels = [
-  "选择",
-  "平移",
-  "边界",
-  "墙体",
-  "区域",
-  "空间单元",
-  "展具",
-  "兴趣点",
-  "尺寸",
+  "\u9009\u62e9",
+  "\u5e73\u79fb",
+  "\u8fb9\u754c",
+  "\u5899\u4f53",
+  "\u533a\u57df",
+  "\u644a\u4f4d",
+  "\u5c55\u5177",
+  "\u5174\u8da3\u70b9",
+  "\u5c3a\u5bf8",
 ] as const;
 
 const showroomToolLabels = [
-  "选择",
-  "平移",
-  "边界",
-  "墙体",
-  "门",
-  "窗",
-  "区域",
-  "空间单元",
-  "展具",
-  "兴趣点",
-  "尺寸",
+  "\u9009\u62e9",
+  "\u5e73\u79fb",
+  "\u8fb9\u754c",
+  "\u5899\u4f53",
+  "\u95e8",
+  "\u7a97",
+  "\u533a\u57df",
+  "\u623f\u95f4",
+  "\u8bc6\u522b\u623f\u95f4",
+  "\u5c55\u5177",
+  "\u5174\u8da3\u70b9",
+  "\u5c3a\u5bf8",
 ] as const;
 
 function rowByData(attribute: string, id: string): HTMLElement {
@@ -1754,5 +1757,433 @@ describe("PlanEditor Task 9 opening Inspector integration", () => {
       (entity) => entity.id === wall.id,
     )).toMatchObject({ thickness: 100 });
     expect(store.getState().snapshot!.project.openings).toEqual([opening]);
+  });
+});
+const roomIdentityTransform = {
+  translation: { x: 0, y: 0 },
+  rotation: 0,
+  scale: { x: 1, y: 1 },
+} as const;
+
+function squareRoomWalls(
+  floorId: string,
+  layerId: string,
+  roomIndex: number,
+  locked = true,
+): readonly Wall[] {
+  const x = roomIndex * 2_000;
+  const points = [
+    [{ x, y: 0 }, { x: x + 1_000, y: 0 }],
+    [{ x: x + 1_000, y: 0 }, { x: x + 1_000, y: 1_000 }],
+    [{ x: x + 1_000, y: 1_000 }, { x, y: 1_000 }],
+    [{ x, y: 1_000 }, { x, y: 0 }],
+  ] as const;
+  return points.map((centerLine, index): Wall => ({
+    id: `00000000-0000-4000-8001-${(roomIndex * 10 + index).toString().padStart(12, "0")}`,
+    name: `Room ${roomIndex + 1} wall ${index + 1}`,
+    tags: [],
+    type: "wall",
+    floorId,
+    layerId,
+    locked,
+    transform: roomIdentityTransform,
+    centerLine,
+    thickness: 100,
+  }));
+}
+
+function existingRoom(
+  floorId: string,
+  layerId: string,
+  footprint: SpaceUnit["footprint"],
+): SpaceUnit {
+  return {
+    id: "00000000-0000-4000-8002-000000000001",
+    name: "Existing room",
+    tags: ["preserve-me"],
+    type: "space-unit",
+    kind: "room",
+    floorId,
+    layerId,
+    locked: false,
+    transform: {
+      translation: { x: 25, y: 50 },
+      rotation: 0.25,
+      scale: { x: 1.1, y: 0.9 },
+    },
+    footprint,
+  };
+}
+
+async function addRoomTestEntities(
+  applyPlanEdit: (intent: {
+    readonly reason: "create";
+    readonly changes: readonly {
+      readonly id: string;
+      readonly before: null;
+      readonly after: SpatialEntity;
+    }[];
+  }) => Promise<void>,
+  entities: readonly SpatialEntity[],
+): Promise<void> {
+  await act(async () => {
+    await applyPlanEdit({
+      reason: "create",
+      changes: entities.map((entity) => ({
+        id: entity.id,
+        before: null,
+        after: entity,
+      })),
+    });
+  });
+}
+
+describe("PlanEditor Task 12 room recognition", () => {
+  it("maps Room and Recognize Rooms only into showroom while market keeps Booth", async () => {
+    const user = userEvent.setup();
+    const { sessionStore, applyPlanEdit } = renderPlanEditorFixture({
+      profile: "showroom",
+    });
+    const activeTool = sessionStore.getState().activeTool;
+
+    expect(screen.getByRole("button", { name: "\u623f\u95f4" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("region", { name: "\u623f\u95f4\u8bc6\u522b" });
+    expect(sessionStore.getState().activeTool).toBe(activeTool);
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+
+    cleanup();
+    renderPlanEditorFixture({ profile: "market" });
+    expect(screen.getByRole("button", { name: "\u644a\u4f4d" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "\u623f\u95f4" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" })).not.toBeInTheDocument();
+  });
+
+  it("recognizes locked visible walls read-only, orders overlays, and labels represented rooms", async () => {
+    const user = userEvent.setup();
+    const renderer = new FakePlanRenderer();
+    const {
+      floorA,
+      floorB,
+      layerA,
+      layerB,
+      applyPlanEdit,
+      applyFloorPatch,
+      sessionStore,
+    } = renderPlanEditorFixture({
+      profile: "showroom",
+      renderer,
+    });
+    const walls = [
+      ...squareRoomWalls(floorA.id, layerA.id, 0),
+      ...squareRoomWalls(floorA.id, layerA.id, 1),
+    ];
+    const excludedWalls = [
+      ...squareRoomWalls(floorA.id, layerB.id, 3),
+      ...squareRoomWalls(floorB.id, floorB.layers[0]!.id, 4),
+    ];
+    await act(async () => {
+      await applyFloorPatch({
+        floorId: floorA.id,
+        before: floorA,
+        after: {
+          ...floorA,
+          layers: [layerA, { ...layerB, visible: false }],
+        },
+      });
+    });
+    const represented: SpaceUnit = {
+      ...existingRoom(floorA.id, layerA.id, [
+        { x: 0, y: 0 },
+        { x: 1_000, y: 0 },
+        { x: 1_000, y: 1_000 },
+        { x: 0, y: 1_000 },
+      ]),
+      transform: roomIdentityTransform,
+    };
+    await addRoomTestEntities(applyPlanEdit, [...walls, ...excludedWalls, represented]);
+    applyPlanEdit.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    const candidateButtons = await screen.findAllByRole("button", {
+      name: /\u9009\u62e9\u623f\u95f4\u5019\u9009/,
+    });
+    expect(candidateButtons).toHaveLength(2);
+    expect(screen.getByText(/\u5019\u9009 1 .* \u5df2\u5b58\u5728/)).toBeVisible();
+    expect(screen.getByText(/\u5019\u9009 2 .* \u5f85\u786e\u8ba4/)).toBeVisible();
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      const input = renderer.updateInputs.at(-1);
+      expect(input?.roomCandidates).toHaveLength(2);
+      expect(input?.roomCandidates?.[0]).toMatchObject({
+        represented: true,
+        selected: true,
+      });
+    });
+    await user.click(candidateButtons[1]!);
+    expect([...sessionStore.getState().selectedIds]).toEqual([]);
+    await waitFor(() => expect(
+      renderer.updateInputs.at(-1)?.roomCandidates?.[1]?.selected,
+    ).toBe(true));
+  });
+
+  it("confirms only the selected candidate through one plan edit", async () => {
+    const user = userEvent.setup();
+    const { floorA, layerA, applyPlanEdit } = renderPlanEditorFixture({
+      profile: "showroom",
+    });
+    await addRoomTestEntities(applyPlanEdit, [
+      ...squareRoomWalls(floorA.id, layerA.id, 0),
+      ...squareRoomWalls(floorA.id, layerA.id, 1),
+    ]);
+    applyPlanEdit.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    const candidates = await screen.findAllByRole("button", {
+      name: /\u9009\u62e9\u623f\u95f4\u5019\u9009/,
+    });
+    await user.click(candidates[1]!);
+    await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit.mock.calls[0]?.[0]).toMatchObject({
+      reason: "create",
+      changes: [{
+        before: null,
+        after: {
+          type: "space-unit",
+          kind: "room",
+          name: "Room 1",
+          footprint: [
+            { x: 2_000, y: 0 },
+            { x: 3_000, y: 0 },
+            { x: 3_000, y: 1_000 },
+            { x: 2_000, y: 1_000 },
+          ],
+        },
+      }],
+    });
+  });
+  it("confirms all unrepresented candidates through one plan edit", async () => {
+    const user = userEvent.setup();
+    const { floorA, layerA, applyPlanEdit } = renderPlanEditorFixture({
+      profile: "showroom",
+    });
+    await addRoomTestEntities(applyPlanEdit, [
+      ...squareRoomWalls(floorA.id, layerA.id, 0),
+      ...squareRoomWalls(floorA.id, layerA.id, 1),
+    ]);
+    applyPlanEdit.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findAllByRole("button", { name: /\u9009\u62e9\u623f\u95f4\u5019\u9009/ });
+    await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5168\u90e8\u5019\u9009" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit.mock.calls[0]?.[0]).toMatchObject({
+      reason: "create",
+      changes: [
+        { before: null, after: { type: "space-unit", kind: "room", name: "Room 1" } },
+        { before: null, after: { type: "space-unit", kind: "room", name: "Room 2" } },
+      ],
+    });
+  });
+
+  it("stales relevant wall changes but ignores fixture metadata changes", async () => {
+    const user = userEvent.setup();
+    const {
+      floorA,
+      layerA,
+      layerB,
+      fixture,
+      applyPlanEdit,
+      applyFloorPatch,
+      sessionStore,
+    } = renderPlanEditorFixture({ profile: "showroom" });
+    const walls = squareRoomWalls(floorA.id, layerA.id, 0);
+    await addRoomTestEntities(applyPlanEdit, walls);
+    applyPlanEdit.mockClear();
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("button", { name: "\u9009\u62e9\u623f\u95f4\u5019\u9009 1" });
+
+    await act(async () => {
+      await applyPlanEdit({
+        reason: "properties",
+        changes: [{
+          id: fixture.id,
+          before: fixture,
+          after: { ...fixture, name: "Fixture metadata changed" },
+        }],
+      });
+    });
+    expect(sessionStore.getState().roomRecognition?.stale).toBe(false);
+    expect(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" })).toBeEnabled();
+
+    await act(async () => {
+      await applyFloorPatch({
+        floorId: floorA.id,
+        before: floorA,
+        after: {
+          ...floorA,
+          layers: [layerA, { ...layerB, visible: false }],
+        },
+      });
+    });
+    await waitFor(() => expect(sessionStore.getState().roomRecognition?.stale).toBe(true));
+    await user.click(screen.getByRole("button", { name: "\u91cd\u65b0\u8bc6\u522b" }));
+    await waitFor(() => expect(sessionStore.getState().roomRecognition?.stale).toBe(false));
+
+    const wall = walls[0]!;
+    await act(async () => {
+      await applyPlanEdit({
+        reason: "transform",
+        changes: [{
+          id: wall.id,
+          before: wall,
+          after: {
+            ...wall,
+            centerLine: [{ x: 0, y: 0 }, { x: 900, y: 0 }],
+          },
+        }],
+      });
+    });
+    await waitFor(() => expect(sessionStore.getState().roomRecognition?.stale).toBe(true));
+    expect(screen.getByText("\u8bc6\u522b\u7ed3\u679c\u5df2\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u8bc6\u522b\u3002")).toBeVisible();
+    expect(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" })).toBeDisabled();
+  });
+
+  it("rechecks the fingerprint immediately before confirmation", async () => {
+    const user = userEvent.setup();
+    const {
+      floorA,
+      layerA,
+      applyPlanEdit,
+      projectStore,
+      sessionStore,
+    } = renderPlanEditorFixture({ profile: "showroom" });
+    const walls = squareRoomWalls(floorA.id, layerA.id, 0);
+    await addRoomTestEntities(applyPlanEdit, walls);
+    applyPlanEdit.mockClear();
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("button", { name: "\u9009\u62e9\u623f\u95f4\u5019\u9009 1" });
+
+    const current = projectStore.getState();
+    const snapshot = current.snapshot!;
+    const changedWall = {
+      ...walls[0]!,
+      centerLine: [{ x: 0, y: 0 }, { x: 750, y: 0 }],
+    } as Wall;
+    vi.spyOn(projectStore, "getState").mockReturnValue({
+      ...current,
+      snapshot: {
+        ...snapshot,
+        project: {
+          ...snapshot.project,
+          entities: snapshot.project.entities.map((entity) => (
+            entity.id === changedWall.id ? changedWall : entity
+          )),
+        },
+      },
+    });
+
+    await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+    expect(sessionStore.getState().roomRecognition?.stale).toBe(true);
+  });
+  it("retains candidates after persistence failure and reports a missing creation layer", async () => {
+    const user = userEvent.setup();
+    const { floorA, layerA, layerB, applyPlanEdit, applyFloorPatch, sessionStore } =
+      renderPlanEditorFixture({ profile: "showroom" });
+    await addRoomTestEntities(
+      applyPlanEdit,
+      squareRoomWalls(floorA.id, layerA.id, 0),
+    );
+    applyPlanEdit.mockClear();
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("button", { name: "\u9009\u62e9\u623f\u95f4\u5019\u9009 1" });
+
+    applyPlanEdit.mockRejectedValueOnce(new Error("checkpoint unavailable"));
+    await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
+    expect(await screen.findByText("\u4fdd\u5b58\u5931\u8d25\uff1acheckpoint unavailable")).toBeVisible();
+    expect(sessionStore.getState().roomRecognition?.candidates).toHaveLength(1);
+
+    applyPlanEdit.mockClear();
+    await act(async () => {
+      await applyFloorPatch({
+        floorId: floorA.id,
+        before: floorA,
+        after: {
+          ...floorA,
+          layers: [
+            { ...layerA, locked: true },
+            { ...layerB, locked: true },
+          ],
+        },
+      });
+    });
+    await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
+    expect(await screen.findByText(/NO_EDITABLE_CREATION_LAYER/)).toBeVisible();
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+    expect(sessionStore.getState().roomRecognition?.candidates).toHaveLength(1);
+  });
+
+  it("explicitly replaces one editable room while preserving identity and metadata", async () => {
+    const user = userEvent.setup();
+    const { floorA, layerA, applyPlanEdit, sessionStore } =
+      renderPlanEditorFixture({ profile: "showroom" });
+    const room = existingRoom(floorA.id, layerA.id, [
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 300, y: 300 },
+      { x: 100, y: 300 },
+    ]);
+    await addRoomTestEntities(applyPlanEdit, [
+      ...squareRoomWalls(floorA.id, layerA.id, 0),
+      room,
+    ]);
+    applyPlanEdit.mockClear();
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("button", { name: "\u9009\u62e9\u623f\u95f4\u5019\u9009 1" });
+    expect(screen.getByRole("button", { name: "\u7528\u5019\u9009\u66ff\u6362\u6240\u9009\u623f\u95f4" })).toBeDisabled();
+
+    act(() => sessionStore.getState().setSelection([room.id]));
+    expect(screen.getByRole("button", { name: "\u7528\u5019\u9009\u66ff\u6362\u6240\u9009\u623f\u95f4" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "\u7528\u5019\u9009\u66ff\u6362\u6240\u9009\u623f\u95f4" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    const change = applyPlanEdit.mock.calls[0]?.[0].changes[0];
+    expect(change?.before).toEqual(room);
+    expect(change?.after).toMatchObject({
+      id: room.id,
+      name: room.name,
+      tags: room.tags,
+      floorId: room.floorId,
+      layerId: room.layerId,
+      locked: room.locked,
+      transform: roomIdentityTransform,
+      footprint: [
+        { x: 0, y: 0 },
+        { x: 1_000, y: 0 },
+        { x: 1_000, y: 1_000 },
+        { x: 0, y: 1_000 },
+      ],
+    });
+  });
+
+  it("clears transient candidates on unmount", async () => {
+    const user = userEvent.setup();
+    const { floorA, layerA, applyPlanEdit, sessionStore, unmount } =
+      renderPlanEditorFixture({ profile: "showroom" });
+    await addRoomTestEntities(
+      applyPlanEdit,
+      squareRoomWalls(floorA.id, layerA.id, 0),
+    );
+    await user.click(screen.getByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" }));
+    await screen.findByRole("button", { name: "\u9009\u62e9\u623f\u95f4\u5019\u9009 1" });
+    expect(sessionStore.getState().roomRecognition).not.toBeNull();
+
+    unmount();
+    expect(sessionStore.getState().roomRecognition).toBeNull();
   });
 });

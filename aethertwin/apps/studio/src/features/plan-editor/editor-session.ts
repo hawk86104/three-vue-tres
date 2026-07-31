@@ -8,6 +8,8 @@ import type {
 import type {
   CalibrationPreview,
   OpeningPlacementCandidate,
+  RoomCandidate,
+  RoomRecognitionDiagnostic,
   SnapMode,
   ViewportTransform,
 } from "@aethertwin/plan-engine";
@@ -35,6 +37,16 @@ export interface OpeningPreviewState {
   readonly width: number;
   readonly height: number;
   readonly sillHeight: number;
+  readonly persistenceError?: string;
+}
+
+export interface RoomRecognitionState {
+  readonly toleranceMm: number;
+  readonly fingerprint: string;
+  readonly candidates: readonly RoomCandidate[];
+  readonly selectedCandidateKey?: string;
+  readonly diagnostics: readonly RoomRecognitionDiagnostic[];
+  readonly stale: boolean;
   readonly persistenceError?: string;
 }
 
@@ -84,6 +96,7 @@ export interface PlanEditorState {
   readonly draft: PlanDraft | null;
   readonly calibrationDraft: CalibrationDraft | null;
   readonly openingPreview: OpeningPreviewState | null;
+  readonly roomRecognition: RoomRecognitionState | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
   setActiveFloor(id: string): boolean;
@@ -102,7 +115,18 @@ export interface PlanEditorState {
   updateCalibration(draft: CalibrationDraft): void;
   cancelCalibration(): void;
   setOpeningPreview(preview: OpeningPreviewState): boolean;
-  clearOpeningPreview(): void;
+clearOpeningPreview(): void;
+  setRoomRecognition(
+    sessionId: string,
+    floorId: string,
+    recognition: RoomRecognitionState,
+  ): boolean;
+  setRoomRecognitionTolerance(toleranceMm: number): boolean;
+  selectRoomCandidate(key: string): boolean;
+  markRoomRecognitionStale(message?: string): void;
+  setRoomRecognitionPersistenceError(message: string): void;
+  clearRoomRecognitionPersistenceError(): void;
+  clearRoomRecognition(): void;
 }
 
 const DEFAULT_VIEWPORT: ViewportTransform = {
@@ -171,6 +195,10 @@ function ownedOpeningPreview(preview: OpeningPreviewState): OpeningPreviewState 
   return ownValue(preview);
 }
 
+function ownedRoomRecognition(recognition: RoomRecognitionState): RoomRecognitionState {
+  return ownValue(recognition);
+}
+
 let nextSessionNumber = 1;
 
 function transientSessionId(): string {
@@ -201,6 +229,7 @@ export function createPlanEditorStore(
     draft: null,
     calibrationDraft: null,
     openingPreview: null,
+    roomRecognition: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
 
@@ -219,6 +248,9 @@ export function createPlanEditorStore(
           : null,
         openingPreview: id === state.activeFloorId
           ? state.openingPreview
+          : null,
+        roomRecognition: id === state.activeFloorId
+          ? state.roomRecognition
           : null,
       });
       return true;
@@ -239,6 +271,7 @@ export function createPlanEditorStore(
         draft: null,
         calibrationDraft: null,
         openingPreview: null,
+        roomRecognition: null,
         gestureActive: false,
         clipboard: deepFreeze([] as SpatialEntity[]),
       });
@@ -341,6 +374,80 @@ export function createPlanEditorStore(
 
     clearOpeningPreview() {
       if (get().openingPreview !== null) set({ openingPreview: null });
+    },
+
+    setRoomRecognition(sessionId, floorId, recognition) {
+      const state = get();
+      if (sessionId !== state.sessionId || floorId !== state.activeFloorId) {
+        return false;
+      }
+      set({ roomRecognition: ownedRoomRecognition(recognition) });
+      return true;
+    },
+
+    setRoomRecognitionTolerance(toleranceMm) {
+      if (!Number.isFinite(toleranceMm) || toleranceMm < 0.1 || toleranceMm > 100) {
+        return false;
+      }
+      const recognition = get().roomRecognition;
+      if (recognition === null) return false;
+      if (recognition.toleranceMm === toleranceMm) return true;
+      set({
+        roomRecognition: ownedRoomRecognition({
+          ...recognition,
+          toleranceMm,
+          stale: true,
+        }),
+      });
+      return true;
+    },
+
+    selectRoomCandidate(key) {
+      const recognition = get().roomRecognition;
+      if (recognition === null || !recognition.candidates.some((candidate) => candidate.key === key)) {
+        return false;
+      }
+      set({
+        roomRecognition: ownedRoomRecognition({
+          ...recognition,
+          selectedCandidateKey: key,
+        }),
+      });
+      return true;
+    },
+
+    markRoomRecognitionStale(message) {
+      const recognition = get().roomRecognition;
+      if (recognition === null) return;
+      set({
+        roomRecognition: ownedRoomRecognition({
+          ...recognition,
+          stale: true,
+          ...(message === undefined ? {} : { persistenceError: message }),
+        }),
+      });
+    },
+
+    setRoomRecognitionPersistenceError(message) {
+      const recognition = get().roomRecognition;
+      if (recognition === null) return;
+      set({
+        roomRecognition: ownedRoomRecognition({
+          ...recognition,
+          persistenceError: message,
+        }),
+      });
+    },
+
+    clearRoomRecognitionPersistenceError() {
+      const recognition = get().roomRecognition;
+      if (recognition === null || recognition.persistenceError === undefined) return;
+      const { persistenceError: _ignored, ...next } = recognition;
+      set({ roomRecognition: ownedRoomRecognition(next) });
+    },
+
+    clearRoomRecognition() {
+      if (get().roomRecognition !== null) set({ roomRecognition: null });
     },
   }));
 }

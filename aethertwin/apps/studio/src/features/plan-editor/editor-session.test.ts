@@ -5,6 +5,7 @@ import {
   createPlanEditorStore,
   type OpeningPreviewState,
   type PlanDraft,
+  type RoomRecognitionState,
 } from "./editor-session";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
 
@@ -208,5 +209,138 @@ describe("plan editor session", () => {
       gestureActive: false,
     });
     expect([...store.getState().selectedIds]).toEqual([]);
+  });
+  it("owns room recognition results and keeps candidate selection outside project selection", () => {
+    const { floorA, fixture } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "session-a",
+    });
+    const recognition: RoomRecognitionState = {
+      toleranceMm: 5,
+      fingerprint: "fingerprint-a",
+      candidates: [{
+        key: "candidate-a",
+        footprint: [
+          { x: 0, y: 0 },
+          { x: 1_000, y: 0 },
+          { x: 1_000, y: 1_000 },
+          { x: 0, y: 1_000 },
+        ],
+        wallIds: ["wall-a", "wall-b", "wall-c", "wall-d"],
+        area: 1_000_000,
+        perimeter: 4_000,
+      }],
+      selectedCandidateKey: "candidate-a",
+      diagnostics: [{
+        code: "DANGLING_EDGE",
+        wallIds: ["wall-z"],
+      }],
+      stale: false,
+    };
+
+    store.getState().setSelection([fixture.id]);
+    expect(
+      store.getState().setRoomRecognition("session-a", floorA.id, recognition),
+    ).toBe(true);
+    (recognition.candidates[0]!.footprint[0] as { x: number }).x = 999;
+
+    expect(store.getState().roomRecognition).toMatchObject({
+      fingerprint: "fingerprint-a",
+      selectedCandidateKey: "candidate-a",
+    });
+    expect(store.getState().roomRecognition?.candidates[0]?.footprint[0]).toEqual({
+      x: 0,
+      y: 0,
+    });
+    expect(store.getState().roomRecognition?.candidates[0]?.footprint).toHaveLength(4);
+    expect(Object.isFrozen(store.getState().roomRecognition)).toBe(true);
+    expect(Object.isFrozen(store.getState().roomRecognition?.candidates[0])).toBe(true);
+    expect([...store.getState().selectedIds]).toEqual([fixture.id]);
+
+    expect(store.getState().selectRoomCandidate("missing")).toBe(false);
+    expect(store.getState().selectRoomCandidate("candidate-a")).toBe(true);
+    expect([...store.getState().selectedIds]).toEqual([fixture.id]);
+  });
+
+  it("validates tolerance, marks recognition stale, and retains candidates with persistence errors", () => {
+    const { floorA } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "session-a",
+    });
+    const recognition: RoomRecognitionState = {
+      toleranceMm: 5,
+      fingerprint: "fingerprint-a",
+      candidates: [{
+        key: "candidate-a",
+        footprint: [
+          { x: 0, y: 0 },
+          { x: 1_000, y: 0 },
+          { x: 1_000, y: 1_000 },
+          { x: 0, y: 1_000 },
+        ],
+        wallIds: ["wall-a"],
+        area: 1_000_000,
+        perimeter: 4_000,
+      }],
+      selectedCandidateKey: "candidate-a",
+      diagnostics: [],
+      stale: false,
+    };
+    store.getState().setRoomRecognition("session-a", floorA.id, recognition);
+
+    expect(store.getState().setRoomRecognitionTolerance(0.09)).toBe(false);
+    expect(store.getState().setRoomRecognitionTolerance(100.01)).toBe(false);
+    expect(store.getState().setRoomRecognitionTolerance(10)).toBe(true);
+    expect(store.getState().roomRecognition).toMatchObject({
+      toleranceMm: 10,
+      stale: true,
+      candidates: [{ key: "candidate-a" }],
+    });
+
+    store.getState().setRoomRecognitionPersistenceError("checkpoint unavailable");
+    expect(store.getState().roomRecognition).toMatchObject({
+      persistenceError: "checkpoint unavailable",
+      candidates: [{ key: "candidate-a" }],
+    });
+    store.getState().clearRoomRecognitionPersistenceError();
+    expect(store.getState().roomRecognition).not.toHaveProperty("persistenceError");
+  });
+
+  it("clears room recognition at floor and session boundaries and rejects late completions", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "session-a",
+    });
+    const recognition: RoomRecognitionState = {
+      toleranceMm: 5,
+      fingerprint: "fingerprint-a",
+      candidates: [],
+      diagnostics: [],
+      stale: false,
+    };
+
+    expect(
+      store.getState().setRoomRecognition("session-a", floorA.id, recognition),
+    ).toBe(true);
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(store.getState().roomRecognition).toBeNull();
+    expect(
+      store.getState().setRoomRecognition("session-a", floorA.id, recognition),
+    ).toBe(false);
+
+    store.getState().replaceSession("session-b", floorA.id);
+    expect(
+      store.getState().setRoomRecognition("session-a", floorA.id, recognition),
+    ).toBe(false);
+    expect(store.getState().roomRecognition).toBeNull();
+
+    expect(
+      store.getState().setRoomRecognition("session-b", floorA.id, recognition),
+    ).toBe(true);
+    store.getState().clearRoomRecognition();
+    expect(store.getState().roomRecognition).toBeNull();
   });
 });

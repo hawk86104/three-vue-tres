@@ -44,7 +44,7 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
     },
     {
       label: "空间单元",
-      tools: [toolById["space-unit"], toolById.fixture],
+      tools: [{ ...toolById["space-unit"], label: "摊位" }, toolById.fixture],
     },
     { label: "标记", tools: [toolById.poi, toolById.dimension] },
   ],
@@ -57,7 +57,7 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
         toolById.wall,
         ...showroomOpeningTools,
         toolById.zone,
-        toolById["space-unit"],
+        { ...toolById["space-unit"], label: "房间" },
       ],
     },
     { label: "展具", tools: [toolById.fixture] },
@@ -72,6 +72,7 @@ export interface PlanToolbarProps {
   readonly onImportFloorPlan?: (initiator: HTMLButtonElement) => void;
   readonly importFloorPlanDisabled?: boolean;
   readonly onCalibrate?: (initiator: HTMLButtonElement) => void;
+  readonly onRecognizeRooms?: (initiator: HTMLButtonElement) => void;
 }
 
 export function PlanToolbar({
@@ -81,6 +82,7 @@ export function PlanToolbar({
   onImportFloorPlan,
   importFloorPlanDisabled = false,
   onCalibrate,
+  onRecognizeRooms,
 }: PlanToolbarProps) {
   return (
     <div className="studio-plan-toolbar" data-profile={profile}>
@@ -115,6 +117,17 @@ export function PlanToolbar({
                 </Button>
               );
             })}
+{profile === "showroom"
+            && group.tools.some(({ tool }) => tool === "space-unit")
+            && onRecognizeRooms !== undefined ? (
+              <Button
+                variant="secondary"
+                className="studio-plan-toolbar__action"
+                onClick={(event) => onRecognizeRooms(event.currentTarget)}
+              >
+                识别房间
+              </Button>
+            ) : null}
             {onImportFloorPlan !== undefined
             && group.tools.some(({ tool }) => tool === "boundary") ? (
               <Button
