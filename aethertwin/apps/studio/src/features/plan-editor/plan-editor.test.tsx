@@ -17,6 +17,10 @@ import {
   SandboxProjectBackend,
   type OpenedProject,
 } from "@aethertwin/project-store";
+import {
+  SHOWROOM_FIXTURE_CATALOGUE,
+  showroomFixture,
+} from "@aethertwin/mode-showroom";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
@@ -1097,7 +1101,8 @@ describe("PlanEditor locked single-entity editing", () => {
       "对象图层",
       "对象标签",
       "对象宽度 (mm)",
-      "对象高度 (mm)",
+      "对象深度 (mm)",
+      "对象垂直高度 (mm)",
     ]) {
       expect(within(inspector).getByLabelText(label)).toBeDisabled();
     }
@@ -1395,7 +1400,7 @@ describe("PlanEditor exact unit editing", () => {
       ["对象 X (mm)", "-1.25m"],
       ["对象 Y (mm)", "+20cm"],
       ["对象宽度 (mm)", "1.2m"],
-      ["对象高度 (mm)", "35cm"],
+      ["对象深度 (mm)", "35cm"],
     ] as const) {
       const field = screen.getByLabelText(label);
       await user.clear(field);
@@ -2225,5 +2230,243 @@ describe("PlanEditor Task 12 room recognition", () => {
 
     unmount();
     expect(sessionStore.getState().roomRecognition).toBeNull();
+  });
+});
+
+describe("PlanEditor Task 14 fixture compatibility", () => {
+  it("shows a read-only standard kind and lazily materializes the catalogue height on explicit Apply", async () => {
+    const user = userEvent.setup();
+    const {
+      fixture,
+      projectStore,
+      applyPlanEdit,
+    } = renderPlanEditorFixture({ profile: "showroom" });
+    const legacyFixture: Fixture = {
+      ...fixture,
+      name: "Legacy display case",
+      kind: "display-case",
+      size: { width: 1_200, height: 600 },
+    };
+    await act(async () => {
+      await applyPlanEdit({
+        reason: "properties",
+        changes: [{
+          id: fixture.id,
+          before: fixture,
+          after: legacyFixture,
+        }],
+      });
+    });
+    applyPlanEdit.mockClear();
+    const sequenceBeforeSelection = projectStore.getState().snapshot!.sequence;
+
+    await user.click(rowByData("data-entity-id", fixture.id));
+
+    const inspector = screen.getByRole("complementary", { name: "检查器" });
+    const kindMetadata = within(inspector).getByText("展具种类").parentElement;
+    expect(kindMetadata).toHaveTextContent("display-case");
+    expect(within(inspector).queryByLabelText("展具种类")).not.toBeInTheDocument();
+    expect(within(inspector).getByLabelText("对象名称")).toHaveValue(legacyFixture.name);
+    expect(within(inspector).getByLabelText("对象 X (mm)")).toHaveValue("0");
+    expect(within(inspector).getByLabelText("对象 Y (mm)")).toHaveValue("0");
+    expect(within(inspector).getByLabelText("对象旋转 (°)")).toHaveValue("0");
+    expect(within(inspector).getByLabelText("对象图层")).toHaveValue(fixture.layerId);
+    expect(within(inspector).getByRole("checkbox", { name: "对象锁定" })).not.toBeChecked();
+    expect(within(inspector).getByLabelText("对象标签")).toHaveValue("");
+    expect(within(inspector).getByLabelText("对象宽度 (mm)")).toHaveValue("1200");
+    expect(within(inspector).getByLabelText("对象深度 (mm)")).toHaveValue("600");
+    expect(within(inspector).getByLabelText("对象垂直高度 (mm)")).toHaveValue("1200");
+    expect(projectStore.getState().snapshot!.sequence).toBe(sequenceBeforeSelection);
+    expect(
+      projectStore.getState().snapshot!.project.entities.find(
+        (entity) => entity.id === fixture.id,
+      ),
+    ).not.toHaveProperty("spatial3D");
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+
+    await user.click(within(inspector).getByRole("button", { name: "应用对象属性" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit).toHaveBeenLastCalledWith({
+      reason: "properties",
+      changes: [{
+        id: fixture.id,
+        before: legacyFixture,
+        after: {
+          ...legacyFixture,
+          spatial3D: { elevation: 0, height: 1_200 },
+        },
+      }],
+    });
+  });
+
+  it("submits width, depth, and stored vertical height atomically while preserving elevation", async () => {
+    const user = userEvent.setup();
+    const { fixture, applyPlanEdit } = renderPlanEditorFixture({ profile: "showroom" });
+    const storedFixture: Fixture = {
+      ...fixture,
+      name: "Stored shelf",
+      kind: "shelf",
+      size: { width: 900, height: 350 },
+      spatial3D: { elevation: 125, height: 1_800 },
+    };
+    await act(async () => {
+      await applyPlanEdit({
+        reason: "properties",
+        changes: [{ id: fixture.id, before: fixture, after: storedFixture }],
+      });
+    });
+    applyPlanEdit.mockClear();
+    await user.click(rowByData("data-entity-id", fixture.id));
+
+    const width = screen.getByLabelText("对象宽度 (mm)");
+    const depth = screen.getByLabelText("对象深度 (mm)");
+    const verticalHeight = screen.getByLabelText("对象垂直高度 (mm)");
+    expect(verticalHeight).toHaveValue("1800");
+    for (const [field, value] of [
+      [width, "1.1m"],
+      [depth, "45cm"],
+      [verticalHeight, "2m"],
+    ] as const) {
+      await user.clear(field);
+      await user.type(field, value);
+    }
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit).toHaveBeenLastCalledWith({
+      reason: "properties",
+      changes: [{
+        id: fixture.id,
+        before: storedFixture,
+        after: {
+          ...storedFixture,
+          size: { width: 1_100, height: 450 },
+          spatial3D: { elevation: 125, height: 2_000 },
+        },
+      }],
+    });
+  });
+
+  it("keeps generic height blank, adds it on entry, and removes it when cleared", async () => {
+    const user = userEvent.setup();
+    const { fixture, applyPlanEdit } = renderPlanEditorFixture({ profile: "showroom" });
+    await user.click(rowByData("data-entity-id", fixture.id));
+    const verticalHeight = screen.getByLabelText("对象垂直高度 (mm)");
+    expect(verticalHeight).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(applyPlanEdit).not.toHaveBeenCalled();
+
+    await user.type(verticalHeight, "75cm");
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    const withHeight = applyPlanEdit.mock.calls[0]![0].changes[0]!.after as Fixture;
+    expect(withHeight).toEqual({
+      ...fixture,
+      spatial3D: { elevation: 0, height: 750 },
+    });
+
+    applyPlanEdit.mockClear();
+    await waitFor(() => expect(verticalHeight).toHaveValue("750"));
+    await user.clear(verticalHeight);
+    await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+
+    await waitFor(() => expect(applyPlanEdit).toHaveBeenCalledOnce());
+    expect(applyPlanEdit.mock.calls[0]![0].changes[0]!.before).toEqual(withHeight);
+    expect(applyPlanEdit.mock.calls[0]![0].changes[0]!.after).toEqual(fixture);
+  });
+
+  it.each(["0", "-1", "Infinity"])(
+    "rejects non-positive or non-finite vertical height %s without publishing",
+    async (invalidHeight) => {
+      const user = userEvent.setup();
+      const { fixture, applyPlanEdit } = renderPlanEditorFixture({ profile: "showroom" });
+      const standardFixture: Fixture = {
+        ...fixture,
+        kind: "screen",
+        spatial3D: { elevation: 0, height: 1_800 },
+      };
+      await act(async () => {
+        await applyPlanEdit({
+          reason: "properties",
+          changes: [{ id: fixture.id, before: fixture, after: standardFixture }],
+        });
+      });
+      applyPlanEdit.mockClear();
+      await user.click(rowByData("data-entity-id", fixture.id));
+      const field = screen.getByLabelText("对象垂直高度 (mm)");
+
+      await user.clear(field);
+      await user.type(field, invalidHeight);
+      await user.click(screen.getByRole("button", { name: "应用对象属性" }));
+
+      const alert = screen.getByRole("alert");
+      expect(alert).toHaveAttribute("data-issue-code", "INVALID_LENGTH");
+      expect(alert).toHaveTextContent("垂直高度必须是正数");
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(applyPlanEdit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("exposes kind and all dimensions for all eight fixture kinds without offering generic in the catalogue", async () => {
+    const user = userEvent.setup();
+    const { fixture, applyPlanEdit } = renderPlanEditorFixture({ profile: "showroom" });
+    const catalogueFixtures = SHOWROOM_FIXTURE_CATALOGUE.map((descriptor, index): Fixture => ({
+      ...fixture,
+      id: `00000000-0000-4000-8000-${(60 + index).toString().padStart(12, "0")}`,
+      name: `Accessible ${descriptor.kind}`,
+      kind: descriptor.kind,
+      size: {
+        width: descriptor.defaultSize.width,
+        height: descriptor.defaultSize.depth,
+      },
+    }));
+    const genericFixture: Fixture = {
+      ...fixture,
+      id: "00000000-0000-4000-8000-000000000067",
+      name: "Accessible generic",
+      kind: "generic",
+      size: { width: 900, height: 450 },
+    };
+    await act(async () => {
+      await applyPlanEdit({
+        reason: "create",
+        changes: [...catalogueFixtures, genericFixture].map((entity) => ({
+          id: entity.id,
+          before: null,
+          after: entity,
+        })),
+      });
+    });
+
+    const accessibility = screen.getByRole("region", {
+      name: "可访问对象列表",
+    });
+
+    for (const entity of catalogueFixtures) {
+      const descriptor = showroomFixture(entity.kind as Exclude<Fixture["kind"], "generic">);
+      const row = within(accessibility).getByRole("button", {
+        name: `选择对象：${entity.name}`,
+      }).closest("li");
+      expect(row).toHaveTextContent(`展具种类 ${entity.kind}`);
+      expect(row).toHaveTextContent(`宽度 ${descriptor.defaultSize.width} mm`);
+      expect(row).toHaveTextContent(`深度 ${descriptor.defaultSize.depth} mm`);
+      expect(row).toHaveTextContent(`垂直高度 ${descriptor.defaultSize.height} mm`);
+      expect(row).toHaveTextContent("未选择");
+      expect(row).toHaveTextContent("可编辑");
+    }
+    const genericRow = within(accessibility).getByRole("button", {
+      name: `选择对象：${genericFixture.name}`,
+    }).closest("li");
+    expect(genericRow).toHaveTextContent("展具种类 generic");
+    expect(genericRow).toHaveTextContent("宽度 900 mm");
+    expect(genericRow).toHaveTextContent("深度 450 mm");
+    expect(genericRow).toHaveTextContent("垂直高度 未设置");
+
+    await user.click(screen.getByRole("button", { name: "展具目录" }));
+    const catalogue = screen.getByRole("region", { name: "展具目录" });
+    expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
+    expect(within(catalogue).queryByText(/generic|通用/i)).not.toBeInTheDocument();
   });
 });

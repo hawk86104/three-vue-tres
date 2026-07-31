@@ -1,5 +1,6 @@
 import {
   validateOpeningGeometry,
+  type Fixture,
   type Floor,
   type Opening,
   type PlanLayer,
@@ -10,6 +11,7 @@ import {
   type Wall,
 } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
+import { showroomFixture } from "@aethertwin/mode-showroom";
 import {
   alignEntities,
   distributeEntities,
@@ -75,6 +77,13 @@ function parsedTags(value: string): readonly string[] {
 function positiveLength(value: string): number | null {
   const parsed = parseLength(value, "mm");
   return parsed.ok && parsed.value > 0 ? parsed.value : null;
+}
+
+function fixtureVerticalHeight(fixture: Fixture): number | null {
+  if (fixture.spatial3D !== undefined) return fixture.spatial3D.height;
+  return fixture.kind === "generic"
+    ? null
+    : showroomFixture(fixture.kind).defaultSize.height;
 }
 
 function signedLength(value: string): number | null {
@@ -413,7 +422,8 @@ type EntityIssueField =
   | "y"
   | "rotation"
   | "width"
-  | "height"
+  | "depth"
+  | "verticalHeight"
   | "thickness"
   | "radius"
   | "offset";
@@ -439,7 +449,10 @@ function EntityInspector({
   const committedLocked = entity.locked;
   const committedTags = entity.tags.join(", ");
   const committedWidth = entity.type === "fixture" ? String(entity.size.width) : "";
-  const committedHeight = entity.type === "fixture" ? String(entity.size.height) : "";
+  const committedDepth = entity.type === "fixture" ? String(entity.size.height) : "";
+  const committedVerticalHeight = entity.type === "fixture"
+    ? String(fixtureVerticalHeight(entity) ?? "")
+    : "";
   const committedThickness = entity.type === "wall" ? String(entity.thickness) : "";
   const committedRadius = (
     entity.type === "poi" && entity.radius !== undefined ? String(entity.radius) : ""
@@ -453,7 +466,8 @@ function EntityInspector({
   const [locked, setLocked] = useState(committedLocked);
   const [tags, setTags] = useState(committedTags);
   const [width, setWidth] = useState(committedWidth);
-  const [height, setHeight] = useState(committedHeight);
+  const [depth, setDepth] = useState(committedDepth);
+  const [verticalHeight, setVerticalHeight] = useState(committedVerticalHeight);
   const [thickness, setThickness] = useState(committedThickness);
   const [radius, setRadius] = useState(committedRadius);
   const [offset, setOffset] = useState(committedOffset);
@@ -495,7 +509,8 @@ function EntityInspector({
     setLocked(committedLocked);
     setTags(committedTags);
     setWidth(committedWidth);
-    setHeight(committedHeight);
+    setDepth(committedDepth);
+    setVerticalHeight(committedVerticalHeight);
     setThickness(committedThickness);
     setRadius(committedRadius);
     setOffset(committedOffset);
@@ -511,7 +526,8 @@ function EntityInspector({
     committedLocked,
     committedTags,
     committedWidth,
-    committedHeight,
+    committedDepth,
+    committedVerticalHeight,
     committedThickness,
     committedRadius,
     committedOffset,
@@ -569,19 +585,51 @@ function EntityInspector({
 
     if (after.type === "fixture") {
       const nextWidth = positiveLength(width);
-      const nextHeight = positiveLength(height);
+      const nextDepth = positiveLength(depth);
       if (nextWidth === null) {
-        reportFieldIssue("width", "INVALID_LENGTH", "宽度和高度必须是正数");
+        reportFieldIssue("width", "INVALID_LENGTH", "宽度和深度必须是正数");
         return;
       }
-      if (nextHeight === null) {
-        reportFieldIssue("height", "INVALID_LENGTH", "宽度和高度必须是正数");
+      if (nextDepth === null) {
+        reportFieldIssue("depth", "INVALID_LENGTH", "宽度和深度必须是正数");
         return;
       }
       after = {
         ...after,
-        size: { width: nextWidth, height: nextHeight },
+        size: { width: nextWidth, height: nextDepth },
       };
+
+      const normalizedVerticalHeight = verticalHeight.trim();
+      if (normalizedVerticalHeight.length === 0) {
+        if (after.kind !== "generic") {
+          reportFieldIssue(
+            "verticalHeight",
+            "INVALID_LENGTH",
+            "垂直高度必须是正数",
+          );
+          return;
+        }
+        const withoutSpatial3D = { ...after };
+        delete withoutSpatial3D.spatial3D;
+        after = withoutSpatial3D;
+      } else {
+        const nextVerticalHeight = positiveLength(normalizedVerticalHeight);
+        if (nextVerticalHeight === null) {
+          reportFieldIssue(
+            "verticalHeight",
+            "INVALID_LENGTH",
+            "垂直高度必须是正数",
+          );
+          return;
+        }
+        after = {
+          ...after,
+          spatial3D: {
+            elevation: after.spatial3D?.elevation ?? 0,
+            height: nextVerticalHeight,
+          },
+        };
+      }
     }
 
     if (after.type === "wall") {
@@ -637,6 +685,7 @@ function EntityInspector({
       && after.layerId === entity.layerId
       && after.locked === entity.locked
       && JSON.stringify(after.tags) === JSON.stringify(entity.tags)
+      && JSON.stringify(after.spatial3D) === JSON.stringify(entity.spatial3D)
       && (
         entity.type !== "fixture"
         || (
@@ -719,6 +768,9 @@ function EntityInspector({
       <h2>对象</h2>
       <dl className="studio-plan-inspector__metadata">
         <div><dt>类型</dt><dd>{entity.type}</dd></div>
+        {entity.type === "fixture" ? (
+          <div><dt>展具种类</dt><dd>{entity.kind}</dd></div>
+        ) : null}
       </dl>
       {localError === null ? null : (
         <StatusNotice
@@ -792,11 +844,18 @@ function EntityInspector({
             onChange={(event) => setWidth(event.currentTarget.value)}
           />
           <Field
-            label="对象高度 (mm)"
-            value={height}
+            label="对象深度 (mm)"
+            value={depth}
             disabled={propertiesDisabled}
-            {...fieldIssueProps("height")}
-            onChange={(event) => setHeight(event.currentTarget.value)}
+            {...fieldIssueProps("depth")}
+            onChange={(event) => setDepth(event.currentTarget.value)}
+          />
+          <Field
+            label="对象垂直高度 (mm)"
+            value={verticalHeight}
+            disabled={propertiesDisabled}
+            {...fieldIssueProps("verticalHeight")}
+            onChange={(event) => setVerticalHeight(event.currentTarget.value)}
           />
         </>
       ) : null}

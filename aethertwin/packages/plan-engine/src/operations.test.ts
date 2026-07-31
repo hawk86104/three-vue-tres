@@ -951,3 +951,59 @@ describe("deterministic batch validation", () => {
     }
   });
 });
+
+describe("fixture kind and vertical metadata preservation", () => {
+  const fixture: Fixture = {
+    ...fixtureAt("00000000-0000-4000-8000-000000000070", 10, 900, 20, 350),
+    kind: "shelf",
+    spatial3D: { elevation: 125, height: 1_800 },
+  };
+
+  it("resizes only the 2D width and depth", () => {
+    const intent = intentOf(resizeEntities([fixture], { x: 2, y: 3 }));
+    const after = intent.changes[0]!.after as Fixture;
+
+    expect(after.size).toEqual({ width: 1_800, height: 1_050 });
+    expect(after.kind).toBe("shelf");
+    expect(after.spatial3D).toEqual({ elevation: 125, height: 1_800 });
+  });
+
+  it("preserves kind and owned spatial3D through duplicate/copy-paste semantics", () => {
+    const result = duplicateEntities(
+      [fixture],
+      { x: 100, y: -100 },
+      () => "00000000-0000-4000-8000-000000000071",
+    );
+    const intent = intentOf(result);
+    const copy = intent.changes[0]!.after as Fixture;
+
+    expect(copy.kind).toBe("shelf");
+    expect(copy.spatial3D).toEqual({ elevation: 125, height: 1_800 });
+    expect(copy.spatial3D).not.toBe(fixture.spatial3D);
+  });
+
+  it("preserves kind and spatial3D for every linear and rectangular array copy", () => {
+    const ids = [72, 73, 74, 75].map(
+      (value) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`,
+    );
+    const queue = [...ids];
+    const linear = intentOf(linearArray(
+      [fixture],
+      { count: 3, delta: { x: 100, y: 0 } },
+      () => queue.shift()!,
+    ));
+    const rectangular = intentOf(rectangularArray(
+      [fixture],
+      { rows: 1, columns: 3, rowGap: 0, columnGap: 100 },
+      () => queue.shift()!,
+    ));
+
+    for (const change of [...linear.changes, ...rectangular.changes]) {
+      expect(change.after).toMatchObject({
+        type: "fixture",
+        kind: "shelf",
+        spatial3D: { elevation: 125, height: 1_800 },
+      });
+    }
+  });
+});

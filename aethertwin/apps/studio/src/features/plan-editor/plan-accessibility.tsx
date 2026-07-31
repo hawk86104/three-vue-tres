@@ -1,4 +1,5 @@
-import type { ProjectSnapshot, Wall } from "@aethertwin/core-model";
+import type { Fixture, ProjectSnapshot, Wall } from "@aethertwin/core-model";
+import { showroomFixture } from "@aethertwin/mode-showroom";
 import type { StoreApi } from "zustand/vanilla";
 import type { PlanEditorState } from "./editor-session";
 import type { InteractionController } from "./interaction-controller";
@@ -19,6 +20,20 @@ function metric(value: number): string {
   return Number.isInteger(value)
     ? String(value)
     : String(Number(value.toPrecision(12)));
+}
+
+function fixtureDetails(fixture: Fixture): string {
+  const verticalHeight = fixture.spatial3D?.height ?? (
+    fixture.kind === "generic"
+      ? null
+      : showroomFixture(fixture.kind).defaultSize.height
+  );
+  return [
+    `展具种类 ${fixture.kind}`,
+    `宽度 ${metric(fixture.size.width)} mm`,
+    `深度 ${metric(fixture.size.height)} mm`,
+    `垂直高度 ${verticalHeight === null ? "未设置" : `${metric(verticalHeight)} mm`}`,
+  ].join(" · ");
 }
 
 export function PlanAccessibility({
@@ -90,7 +105,7 @@ export function PlanAccessibility({
             return (
               <li key={entity.id}>
                 <span>
-                  {entity.type} · {entity.name} · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
+                  {entity.type} · {entity.type === "fixture" ? `${fixtureDetails(entity)} · ` : ""}{entity.name} · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
                 </span>
                 <button
                   type="button"

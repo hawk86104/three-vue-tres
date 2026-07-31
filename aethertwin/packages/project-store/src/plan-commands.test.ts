@@ -297,3 +297,50 @@ describe("floor patch command", () => {
     expect(current.project.floors[0]).toEqual(before);
   });
 });
+
+describe("fixture vertical metadata command preservation", () => {
+  it("undoes and redoes explicit legacy-height materialization without changing kind or 2D depth", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    try {
+      await store.create({ name: "Fixture compatibility", location: "sandbox", profile: "showroom" });
+      const legacy: Fixture = {
+        ...fixtureFor(
+          store.getState().snapshot!,
+          "00000000-0000-4000-8000-000000000070",
+          "Legacy display case",
+        ),
+        kind: "display-case",
+        size: { width: 1_200, height: 600 },
+      };
+      await store.applyPlanEdit({
+        reason: "create",
+        changes: [{ id: legacy.id, before: null, after: legacy }],
+      });
+      const materialized: Fixture = {
+        ...legacy,
+        spatial3D: { elevation: 0, height: 1_200 },
+      };
+
+      await store.applyPlanEdit({
+        reason: "properties",
+        changes: [{ id: legacy.id, before: legacy, after: materialized }],
+      });
+      expect(store.getState().snapshot!.project.entities).toContainEqual(materialized);
+
+      await store.undo();
+      expect(store.getState().snapshot!.project.entities).toContainEqual(legacy);
+      expect(store.getState().snapshot!.project.entities[0]).not.toHaveProperty("spatial3D");
+
+      await store.redo();
+      expect(store.getState().snapshot!.project.entities).toContainEqual(materialized);
+      expect(store.getState().snapshot!.project.entities[0]).toMatchObject({
+        kind: "display-case",
+        size: { width: 1_200, height: 600 },
+        spatial3D: { elevation: 0, height: 1_200 },
+      });
+    } finally {
+      await store.dispose();
+    }
+  });
+});
