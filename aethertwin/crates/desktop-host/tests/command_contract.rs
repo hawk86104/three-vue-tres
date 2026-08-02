@@ -401,6 +401,8 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     }
     assert_eq!(commands.matches("payload: Option<Value>").count(), 8);
     assert!(!commands.contains("batch: CommitBatch"));
+    assert!(!commands.contains("building_structure_patch"));
+    assert!(!include_str!("../src/lib.rs").contains("commands::building_structure_patch"));
 
     let main = include_str!("../src/main.rs");
     let single_instance = main.find("tauri_plugin_single_instance::init").unwrap();

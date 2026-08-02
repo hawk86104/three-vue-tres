@@ -164,3 +164,62 @@ test("M2.1 asset boundaries have real manifests and production implementations",
   assert.equal(existsSync(join(root, "packages/asset-pipeline/.gitkeep")), false);
   assert.equal(existsSync(join(root, "crates/asset-io/.gitkeep")), false);
 });
+
+test("M2.2 package ownership keeps geometry, topology, catalogue, rendering, and persistence acyclic", () => {
+  const manifests = Object.fromEntries(
+    [
+      "core-model",
+      "plan-engine",
+      "mode-showroom",
+      "render-plan-2d",
+      "project-store",
+    ].map((name) => [
+      name,
+      JSON.parse(readFileSync(join(root, `packages/${name}/package.json`), "utf8")),
+    ]),
+  );
+  const internalDependencies = (name) => Object.keys(
+    manifests[name].dependencies ?? {},
+  ).filter((dependency) => dependency.startsWith("@aethertwin/"));
+
+  assert.deepEqual(internalDependencies("core-model"), []);
+  assert.deepEqual(internalDependencies("plan-engine"), ["@aethertwin/core-model"]);
+  assert.deepEqual(internalDependencies("mode-showroom"), ["@aethertwin/core-model"]);
+  assert.deepEqual(
+    internalDependencies("render-plan-2d"),
+    ["@aethertwin/core-model", "@aethertwin/plan-engine"],
+  );
+  assert.deepEqual(
+    internalDependencies("project-store"),
+    [
+      "@aethertwin/asset-pipeline",
+      "@aethertwin/command-bus",
+      "@aethertwin/core-model",
+      "@aethertwin/plan-engine",
+    ],
+  );
+  for (const forbidden of [
+    "@aethertwin/mode-showroom",
+    "@aethertwin/render-plan-2d",
+    "@aethertwin/studio",
+  ]) {
+    assert.equal(
+      internalDependencies("project-store").includes(forbidden),
+      false,
+      `project-store must not depend on ${forbidden}`,
+    );
+  }
+
+  for (const relative of [
+    "packages/core-model/src/opening-geometry.ts",
+    "packages/plan-engine/src/openings.ts",
+    "packages/plan-engine/src/room-topology.ts",
+    "packages/plan-engine/src/rooms.ts",
+    "packages/mode-showroom/src/catalogue.ts",
+    "packages/mode-showroom/src/tool-policy.ts",
+    "packages/render-plan-2d/src/scene-projection.ts",
+    "packages/project-store/src/building-structure-command.ts",
+  ]) {
+    assert.ok(existsSync(join(root, relative)), `missing M2.2 owner: ${relative}`);
+  }
+});

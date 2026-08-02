@@ -490,8 +490,12 @@ describe("PlanCanvas accessible parity", () => {
     await waitFor(() => expect(renderer.initCount).toBe(1));
 
     expect(screen.getByRole("button", { name: "选择对象：Fixture" })).toBeVisible();
-    expect(screen.getByText("fixture · Fixture · 已选择 · 可编辑")).toBeVisible();
-    expect(screen.getByText("fixture · Locked Fixture · 未选择 · 已锁定")).toBeVisible();
+    expect(screen.getByText(
+      "fixture · 展具种类 generic · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Fixture · 已选择 · 可编辑",
+    )).toBeVisible();
+    expect(screen.getByText(
+      "fixture · 展具种类 generic · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Locked Fixture · 未选择 · 已锁定",
+    )).toBeVisible();
     expect(screen.queryByText(/Hidden Fixture/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Other Floor Fixture/)).not.toBeInTheDocument();
 

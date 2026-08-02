@@ -159,3 +159,20 @@ test("desktop M2.1 keeps exactly eight invokes, a custom protocol, and two permi
   );
   assert.equal(tauriConfig.app.security.assetProtocol, undefined);
 });
+test("offline scanning includes every M2.2 building workflow owner", () => {
+  const normalized = runtimeFiles.map((file) => file.replaceAll("\\", "/"));
+  for (const relative of [
+    "packages/core-model/src/opening-geometry.ts",
+    "packages/project-store/src/building-structure-command.ts",
+    "packages/plan-engine/src/openings.ts",
+    "packages/plan-engine/src/room-topology.ts",
+    "packages/plan-engine/src/rooms.ts",
+    "packages/mode-showroom/src/catalogue.ts",
+    "packages/mode-showroom/src/tool-policy.ts",
+    "packages/render-plan-2d/src/scene-projection.ts",
+    "apps/studio/src/features/plan-editor/fixture-catalogue.tsx",
+    "apps/studio/src/features/plan-editor/room-recognition-panel.tsx",
+  ]) {
+    assert.ok(normalized.includes(relative), `offline scan misses ${relative}`);
+  }
+});

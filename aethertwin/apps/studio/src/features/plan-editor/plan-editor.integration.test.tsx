@@ -5,7 +5,16 @@ import { Blob as NodeBlob } from "node:buffer";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AssetRecord, PlanReference } from "@aethertwin/core-model";
+import {
+  identityTransform2D,
+  type AssetRecord,
+  type Fixture,
+  type Opening,
+  type PlanReference,
+  type SpaceUnit,
+  type Wall,
+} from "@aethertwin/core-model";
+import { SHOWROOM_FIXTURE_CATALOGUE } from "@aethertwin/mode-showroom";
 import { ProjectStore, SandboxProjectBackend } from "@aethertwin/project-store";
 import { createPlanEditorStore } from "./editor-session";
 import { PlanCanvas } from "./plan-canvas";
@@ -434,5 +443,173 @@ describe("PlanEditor M2.1 vertical integration", () => {
       assetId: repaired.assetId,
       mediaType: "image/png",
     });
+  });
+});
+
+describe("PlanEditor M2.2 vertical integration", () => {
+  it("renders the complete reopened building while selecting a legacy fixture remains read-only", async () => {
+    const backend = new SandboxProjectBackend();
+    const commit = vi.spyOn(backend, "commit");
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    task14Stores.push(store);
+    await store.create({ name: "M2.2 Studio acceptance", location: "sandbox", profile: "showroom" });
+    const snapshot = store.getState().snapshot!;
+    const floor = snapshot.project.floors[0]!;
+    const layer = floor.layers[0]!;
+    const wall: Wall = {
+      type: "wall",
+      id: "00000000-0000-4000-8000-000000000400",
+      name: "Studio entrance wall",
+      tags: [],
+      floorId: floor.id,
+      layerId: layer.id,
+      transform: identityTransform2D,
+      spatial3D: { elevation: 0, height: 2_800 },
+      locked: false,
+      centerLine: [{ x: 0, y: 0 }, { x: 10_000, y: 0 }],
+      thickness: 120,
+    };
+    const openings: Opening[] = [
+      {
+        id: "00000000-0000-4000-8000-000000000401",
+        name: "Studio door",
+        tags: [],
+        wallId: wall.id,
+        kind: "door",
+        distanceAlongWall: 2_000,
+        width: 900,
+        height: 2_100,
+        sillHeight: 0,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000402",
+        name: "Studio window",
+        tags: [],
+        wallId: wall.id,
+        kind: "window",
+        distanceAlongWall: 6_000,
+        width: 1_200,
+        height: 1_200,
+        sillHeight: 900,
+      },
+    ];
+    await store.applyBuildingStructurePatch({
+      reason: "create",
+      wallChanges: [{ id: wall.id, before: null, after: wall }],
+      openingChanges: openings.map((opening) => ({
+        id: opening.id,
+        before: null,
+        after: opening,
+      })),
+    });
+
+    const rooms: SpaceUnit[] = Array.from({ length: 4 }, (_, index) => {
+      const x = index * 2_000;
+      return {
+        type: "space-unit",
+        kind: "room",
+        id: `00000000-0000-4000-8000-${String(410 + index).padStart(12, "0")}`,
+        name: `Studio confirmed room ${index + 1}`,
+        tags: ["confirmed"],
+        floorId: floor.id,
+        layerId: layer.id,
+        transform: identityTransform2D,
+        locked: false,
+        footprint: [
+          { x, y: 1_000 },
+          { x: x + 1_500, y: 1_000 },
+          { x: x + 1_500, y: 2_500 },
+          { x, y: 2_500 },
+        ],
+      };
+    });
+    const catalogueFixtures = SHOWROOM_FIXTURE_CATALOGUE.map(
+      (descriptor, index): Fixture => ({
+        type: "fixture",
+        kind: descriptor.kind,
+        id: `00000000-0000-4000-8000-${String(420 + index).padStart(12, "0")}`,
+        name: `Studio catalogue ${descriptor.kind}`,
+        tags: [],
+        floorId: floor.id,
+        layerId: layer.id,
+        transform: {
+          ...identityTransform2D,
+          translation: { x: index * 1_000, y: 3_000 },
+        },
+        spatial3D: { elevation: 0, height: descriptor.defaultSize.height },
+        locked: false,
+        size: {
+          width: descriptor.defaultSize.width,
+          height: descriptor.defaultSize.depth,
+        },
+      }),
+    );
+    const legacyFixture: Fixture = {
+      type: "fixture",
+      kind: "display-case",
+      id: "00000000-0000-4000-8000-000000000427",
+      name: "Studio legacy fixture",
+      tags: ["legacy"],
+      floorId: floor.id,
+      layerId: layer.id,
+      transform: {
+        ...identityTransform2D,
+        translation: { x: 8_000, y: 3_000 },
+      },
+      locked: false,
+      size: { width: 1_200, height: 600 },
+    };
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [...rooms, ...catalogueFixtures, legacyFixture].map((entity) => ({
+        id: entity.id,
+        before: null,
+        after: entity,
+      })),
+    });
+    const projectPath = store.getState().projectPath!;
+    await store.save();
+    await store.close();
+    await store.open(projectPath);
+
+    const reopened = store.getState().snapshot!;
+    expect(reopened.project.entities.filter(({ type }) => type === "space-unit"))
+      .toHaveLength(4);
+    expect(reopened.project.entities.filter(({ type }) => type === "fixture"))
+      .toHaveLength(8);
+    expect(reopened.project.openings.map(({ kind }) => kind)).toEqual(["door", "window"]);
+    expect(reopened.project.entities.find(({ id }) => id === legacyFixture.id))
+      .not.toHaveProperty("spatial3D");
+
+    const commitCount = commit.mock.calls.length;
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(
+      <PlanEditor
+        store={store}
+        backendMode="sandbox"
+        dependencies={{ sessionStore, assetPicker: null }}
+      />,
+    );
+    for (const entity of [...rooms, ...catalogueFixtures, legacyFixture]) {
+      expect(document.querySelector(`[data-entity-id="${entity.id}"]`))
+        .toBeInstanceOf(HTMLElement);
+    }
+    for (const opening of openings) {
+      expect(screen.getByTestId(`accessible-opening-${opening.id}`)).toBeVisible();
+    }
+
+    const user = userEvent.setup();
+    await user.click(document.querySelector(
+      `[data-entity-id="${legacyFixture.id}"]`,
+    ) as HTMLElement);
+    expect([...sessionStore.getState().selectedIds]).toEqual([legacyFixture.id]);
+    expect(store.getState().snapshot!.project.entities.find(({ id }) => id === legacyFixture.id))
+      .toEqual(legacyFixture);
+    expect(commit.mock.calls).toHaveLength(commitCount);
+
+    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
+    const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
+    expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
+    expect(within(catalogue).queryByText(/generic|\u901a\u7528/i)).not.toBeInTheDocument();
   });
 });

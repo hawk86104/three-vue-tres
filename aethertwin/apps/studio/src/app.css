@@ -762,8 +762,6 @@ input {
 .studio-asset-library__issue .aether-button {
   width: 100%;
 }
-/* Task 13: append to apps/studio/src/app.css */
-
 .studio-calibration-panel {
   position: absolute;
   z-index: 4;
@@ -778,7 +776,6 @@ input {
   border: 1px solid var(--aether-border);
   border-radius: var(--aether-radius-md);
   background: var(--aether-surface-2);
-  box-shadow: 0 18px 44px rgb(0 0 0 / 28%);
 }
 
 .studio-calibration-panel h2,

@@ -457,7 +457,8 @@ export function createPlanEditorStore(
     clearRoomRecognitionPersistenceError() {
       const recognition = get().roomRecognition;
       if (recognition === null || recognition.persistenceError === undefined) return;
-      const { persistenceError: _ignored, ...next } = recognition;
+      const next = { ...recognition };
+      delete next.persistenceError;
       set({ roomRecognition: ownedRoomRecognition(next) });
     },
 

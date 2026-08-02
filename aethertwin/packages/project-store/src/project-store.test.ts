@@ -9,6 +9,7 @@ import {
   type Opening,
   type PlanReference,
   type ProjectSnapshot,
+  type SpaceUnit,
   type Wall,
 } from "@aethertwin/core-model";
 import type {
@@ -2084,6 +2085,182 @@ describe("ProjectStore", () => {
       .toBe("Owned wall");
     expect(store.getState().snapshot!.project.openings[0]!.name)
       .toBe("Owned door");
+  });
+
+  it("preserves the complete M2.2 building workflow through undo, redo, save, and reopen", async () => {
+    const backend = new SandboxProjectBackend();
+    const commit = vi.spyOn(backend, "commit");
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "M2.2 acceptance", location: "sandbox", profile: "showroom" });
+    const initial = store.getState().snapshot!;
+    const floor = initial.project.floors[0]!;
+    const layer = floor.layers[0]!;
+    const wall: Wall = {
+      type: "wall",
+      id: "00000000-0000-4000-8000-000000000300",
+      name: "Entrance wall",
+      tags: [],
+      floorId: floor.id,
+      layerId: layer.id,
+      transform: identityTransform2D,
+      spatial3D: { elevation: 0, height: 2_800 },
+      locked: false,
+      centerLine: [{ x: 0, y: 0 }, { x: 10_000, y: 0 }],
+      thickness: 120,
+    };
+    const door: Opening = {
+      id: "00000000-0000-4000-8000-000000000301",
+      name: "Entrance door",
+      tags: [],
+      wallId: wall.id,
+      kind: "door",
+      distanceAlongWall: 2_000,
+      width: 900,
+      height: 2_100,
+      sillHeight: 0,
+    };
+    const window: Opening = {
+      id: "00000000-0000-4000-8000-000000000302",
+      name: "Display window",
+      tags: [],
+      wallId: wall.id,
+      kind: "window",
+      distanceAlongWall: 6_000,
+      width: 1_200,
+      height: 1_200,
+      sillHeight: 900,
+    };
+    await store.applyBuildingStructurePatch({
+      reason: "create",
+      wallChanges: [{ id: wall.id, before: null, after: wall }],
+      openingChanges: [
+        { id: door.id, before: null, after: door },
+        { id: window.id, before: null, after: window },
+      ],
+    });
+
+    const rooms: SpaceUnit[] = Array.from({ length: 4 }, (_, index) => {
+      const x = index * 2_000;
+      return {
+        type: "space-unit",
+        kind: "room",
+        id: `00000000-0000-4000-8000-${String(310 + index).padStart(12, "0")}`,
+        name: `Confirmed room ${index + 1}`,
+        tags: ["confirmed"],
+        floorId: floor.id,
+        layerId: layer.id,
+        transform: identityTransform2D,
+        locked: false,
+        footprint: [
+          { x, y: 1_000 },
+          { x: x + 1_500, y: 1_000 },
+          { x: x + 1_500, y: 2_500 },
+          { x, y: 2_500 },
+        ],
+      };
+    });
+    const catalogue = [
+      ["display-case", 1_200, 600, 1_200],
+      ["display-table", 1_500, 750, 900],
+      ["shelf", 1_000, 400, 2_000],
+      ["checkout", 1_600, 700, 1_000],
+      ["screen", 1_200, 100, 1_800],
+      ["partition", 1_200, 100, 2_400],
+      ["signage", 600, 100, 1_800],
+    ] as const;
+    const catalogueFixtures: Fixture[] = catalogue.map(
+      ([kind, width, depth, height], index) => ({
+        type: "fixture",
+        kind,
+        id: `00000000-0000-4000-8000-${String(320 + index).padStart(12, "0")}`,
+        name: `Catalogue ${kind}`,
+        tags: [],
+        floorId: floor.id,
+        layerId: layer.id,
+        transform: {
+          ...identityTransform2D,
+          translation: { x: index * 1_000, y: 3_000 },
+        },
+        spatial3D: { elevation: 0, height },
+        locked: false,
+        size: { width, height: depth },
+      }),
+    );
+    const legacyFixture: Fixture = {
+      ...catalogueFixtures[0]!,
+      id: "00000000-0000-4000-8000-000000000327",
+      name: "Legacy standard fixture",
+      transform: {
+        ...identityTransform2D,
+        translation: { x: 8_000, y: 3_000 },
+      },
+    };
+    delete (legacyFixture as { spatial3D?: Fixture["spatial3D"] }).spatial3D;
+    const durableEntities = [...rooms, ...catalogueFixtures, legacyFixture];
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: durableEntities.map((entity) => ({
+        id: entity.id,
+        before: null,
+        after: entity,
+      })),
+    });
+
+    const editedWindow: Opening = {
+      ...window,
+      name: "Edited display window",
+      distanceAlongWall: 6_250,
+      width: 1_400,
+    };
+    await store.applyBuildingStructurePatch({
+      reason: "properties",
+      wallChanges: [],
+      openingChanges: [{ id: window.id, before: window, after: editedWindow }],
+    });
+    const deleteStructure: BuildingStructurePatch = {
+      reason: "delete",
+      wallChanges: [{ id: wall.id, before: wall, after: null }],
+      openingChanges: [
+        { id: door.id, before: door, after: null },
+        { id: editedWindow.id, before: editedWindow, after: null },
+      ],
+    };
+    await store.applyBuildingStructurePatch(deleteStructure);
+    expect(store.getState().snapshot!.project.entities).not.toContainEqual(wall);
+    expect(store.getState().snapshot!.project.openings).toEqual([]);
+    await store.undo();
+    expect(store.getState().snapshot!.project.entities).toContainEqual(wall);
+    expect(store.getState().snapshot!.project.openings).toEqual([door, editedWindow]);
+    await store.redo();
+    expect(store.getState().snapshot!.project.openings).toEqual([]);
+    await store.undo();
+
+    const beforeSave = structuredClone(store.getState().snapshot!);
+    expect(beforeSave.schemaVersion).toBe(3);
+    expect(beforeSave.project.entities.filter(({ type }) => type === "space-unit")).toHaveLength(4);
+    expect(beforeSave.project.entities.filter(({ type }) => type === "fixture")).toHaveLength(8);
+    expect(beforeSave.project.openings).toEqual([door, editedWindow]);
+    expect(beforeSave.project.entities.find(({ id }) => id === legacyFixture.id)).toEqual(legacyFixture);
+    expect(beforeSave.project.entities.find(({ id }) => id === legacyFixture.id))
+      .not.toHaveProperty("spatial3D");
+
+    const structureCommits = commit.mock.calls.filter(([, batch]) => (
+      batch.journal.some(({ commandType }) => commandType === "building.structure.patch")
+    ));
+    expect(structureCommits).toHaveLength(6);
+    expect(structureCommits.every(([, batch]) => batch.journal.length === 1)).toBe(true);
+
+    const projectPath = store.getState().projectPath!;
+    await store.save();
+    await store.close();
+    await store.open(projectPath);
+    expect(store.getState().snapshot).toEqual({
+      ...beforeSave,
+      checkpointSequence: beforeSave.sequence,
+    });
+    expect(store.getState().snapshot!.project.entities.find(({ id }) => id === legacyFixture.id))
+      .not.toHaveProperty("spatial3D");
+    await store.dispose();
   });
 });
 

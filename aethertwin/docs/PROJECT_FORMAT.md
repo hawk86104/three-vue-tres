@@ -44,6 +44,14 @@ A plan reference contains `id`, name/tags, `floorId`, `layerId`, `assetId`, intr
 
 Calibration contains `sourcePointA`, `sourcePointB`, and positive `measuredDistanceMm`. Applying calibration and its exact uniform scale is one reversible record patch. A missing/corrupt asset does not delete or rewrite the reference. Reimport creates a new immutable asset record, retargets the reference while preserving transform/property state, and always clears calibration so the replacement must be measured again.
 
+## Openings and compound building edits
+
+An `Opening` is a project record with UUID `id`, name/tags, `wallId`, `kind` (`door` or `window`), `distanceAlongWall`, positive `width`/`height`, and non-negative `sillHeight`, all in millimetres. Its span must fit within one transformed wall segment, retain at least the greater of 1 mm or half the effective wall thickness at both segment ends, and keep at least a 1 mm gap from every other opening on that wall. A door has zero sill height. A door top, or a window sill plus height, may not exceed the wall's `spatial3D.height`; walls without vertical metadata use the 3,000 mm compatibility height. TypeScript and Rust consume the same deterministic geometry vectors and issue codes.
+
+`building.structure.patch` is a journal command, not a ninth native invoke. It carries exact `reason`, `wallChanges`, and `openingChanges`; every change has UUID `id`, exact `before`/`after`, and an optional normalized index. Wall and opening changes are applied to one candidate snapshot, schema-v3 parsing validates that final state once, and only that canonical snapshot is committed. Undo reverses both change lists and their normalized indexes exactly, so deleting a wall and all attached openings is atomic and recoverable.
+
+Catalogue fixture descriptors and primitive `parts` are runtime metadata and are never persisted. A placed showroom fixture stores only ordinary schema-v3 `Fixture` fields: catalogue `kind`, planar `size`, transform, and positive `spatial3D.height`. Existing standard fixtures may omit `spatial3D`; opening, selecting, saving unrelated edits, or reopening such a fixture must not materialize a height. Only an explicit fixture property Apply may persist the catalogue fallback height.
+
 ## SQLite storage migration 1
 
 SQLite uses WAL, foreign keys, and a 5,000 ms busy timeout. Storage migration 1 creates exactly these tables; its number is independent from snapshot schema v3.

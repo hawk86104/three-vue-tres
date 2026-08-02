@@ -218,21 +218,32 @@ describe("Task 11 plan asset picker", () => {
     expect(importButton).toHaveFocus();
   });
   it("owns a hidden sandbox file input and imports the selected Blob exactly once", async () => {
-    const { store } = await createProject();
-    const completion = deferred<PlanReference>();
-    const expected = referenceResult(store);
-    const importPlanReference = vi
-      .spyOn(store, "importPlanReference")
-      .mockImplementation(async (request, reference, onProgress) => {
-        onProgress?.({
-          operationId: request.operationId,
-          stage: "validate",
-          completedBytes: 0,
-          totalBytes: 24,
-        });
-        void reference;
-        return completion.promise;
+    const { backend, store } = await createProject();
+    const completion = deferred<void>();
+    vi.spyOn(backend, "importAsset").mockImplementation(async (
+      _projectPath,
+      request,
+      onProgress,
+    ) => {
+      onProgress({
+        operationId: request.operationId,
+        stage: "validate",
+        completedBytes: 0,
+        totalBytes: 24,
       });
+      await completion.promise;
+      return {
+        asset: {
+          id: ASSET_ID,
+          sha256: "0".repeat(64),
+          relativePath: `assets/sha256/00/${"0".repeat(64)}.png`,
+          mediaType: "image/png",
+          size: 24,
+        },
+        facts: { kind: "image", width: 1, height: 1 },
+      };
+    });
+    const importPlanReference = vi.spyOn(store, "importPlanReference");
     const { sessionStore } = renderImportEditor(store);
     const user = userEvent.setup();
     const importButton = toolbarImportButton();
@@ -273,8 +284,15 @@ describe("Task 11 plan asset picker", () => {
     expect(within(library).getByRole("status")).toHaveTextContent("\u6b63\u5728\u9a8c\u8bc1\u683c\u5f0f");
     expect(within(library).getByRole("button", { name: "\u53d6\u6d88\u5bfc\u5165" })).toBeEnabled();
 
-    await act(async () => completion.resolve(expected));
+    await act(async () => completion.resolve());
     await waitFor(() => expect(sessionStore.getState().selectedIds.has(REFERENCE_ID)).toBe(true));
+    expect(store.getState().snapshot?.project.planReferences).toContainEqual(
+      expect.objectContaining({
+        id: REFERENCE_ID,
+        assetId: ASSET_ID,
+        intrinsicSize: { width: 1, height: 1 },
+      }),
+    );
     expect(importButton).toHaveFocus();
     expect(document.querySelector('input[type="file"]')).not.toBeInTheDocument();
   });

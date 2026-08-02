@@ -19,8 +19,24 @@ const planToolbar = readFileSync(
   "apps/studio/src/features/plan-editor/plan-toolbar.tsx",
   "utf8",
 );
-const m1Tools = [
-  "select", "pan", "boundary", "wall", "zone", "space-unit", "fixture", "poi", "dimension",
+const showroomToolPolicy = readFileSync(
+  "packages/mode-showroom/src/tool-policy.ts",
+  "utf8",
+);
+const showroomCatalogue = readFileSync(
+  "packages/mode-showroom/src/catalogue.ts",
+  "utf8",
+);
+const fixtureCatalogue = readFileSync(
+  "apps/studio/src/features/plan-editor/fixture-catalogue.tsx",
+  "utf8",
+);
+const roomRecognitionPanel = readFileSync(
+  "apps/studio/src/features/plan-editor/room-recognition-panel.tsx",
+  "utf8",
+);
+const m22PlanTools = [
+  "select", "pan", "boundary", "wall", "door", "window", "zone", "space-unit", "fixture", "poi", "dimension",
 ];
 const runtimeFiles = globSync(["apps/studio/src/**/*.{ts,tsx}"], {
   exclude: ["**/*.test.*", "**/dev/**", "**/e2e/**"],
@@ -55,11 +71,11 @@ test("foundational project and editor actions remain wired", () => {
   assertWiredButton(editorShell, "关闭", "onClose");
 });
 
-test("M1 exposes exactly nine authoring tools through the live session handler", () => {
+test("M2.2 exposes exactly eleven authoring tools through the live session handler", () => {
   const planToolUnion = editorSession.match(/export type PlanTool\s*=([\s\S]*?);/)?.[1];
   assert.ok(planToolUnion, "PlanTool union must exist");
   const declaredTools = [...planToolUnion.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual([...declaredTools].sort(), [...m1Tools].sort());
+  assert.deepEqual([...declaredTools].sort(), [...m22PlanTools].sort());
 
   const definitionsBlock = planToolbar.match(
     /const toolById:[\s\S]*?=\s*\{([\s\S]*?)\n\};/,
@@ -71,25 +87,30 @@ test("M1 exposes exactly nine authoring tools through the live session handler",
   const wiredByKey = new Map(
     wiredDefinitions.map(({ key, tool }) => [key, tool]),
   );
-  assert.equal(wiredDefinitions.length, m1Tools.length);
-  assert.equal(wiredByKey.size, m1Tools.length, "toolById keys must be unique");
+  assert.equal(wiredDefinitions.length, m22PlanTools.length);
+  assert.equal(wiredByKey.size, m22PlanTools.length, "toolById keys must be unique");
   for (const [key, tool] of wiredByKey) {
     assert.equal(tool, key, `${key} must wire its own tool id`);
   }
   assert.deepEqual(
     [...wiredByKey.keys()].sort(),
-    [...m1Tools].sort(),
+    [...m22PlanTools].sort(),
   );
 
   assert.match(
     planToolbar,
-    /<Button\b(?:(?!<\/Button>)[\s\S])*?data-tool=\{tool\}(?:(?!<\/Button>)[\s\S])*?onClick=\{\(\) => onToolChange\(tool\)\}(?:(?!<\/Button>)[\s\S])*?<\/Button>/,
-    "each rendered M1 tool must invoke onToolChange with its exact tool id",
+    /<Button\b(?:(?!<\/Button>)[\s\S])*?data-tool=\{tool\}(?:(?!<\/Button>)[\s\S])*?onClick=\{\(event\) => onToolChange\(tool, event\.currentTarget\)\}(?:(?!<\/Button>)[\s\S])*?<\/Button>/,
+    "each rendered M2.2 tool must invoke onToolChange with its exact id and initiator",
   );
   assert.match(
     planEditor,
-    /<PlanToolbar\b[\s\S]*?onToolChange=\{\(tool\) => sessionStore\.getState\(\)\.setActiveTool\(tool\)\}[\s\S]*?\/>/,
-    "PlanToolbar must terminate at the live editor session store",
+    /function selectTool\(tool: PlanTool, initiator: HTMLButtonElement\): void \{[\s\S]*?sessionStore\.getState\(\)\.setActiveTool\(tool\);/,
+    "selectTool must terminate at the live editor session store",
+  );
+  assert.match(
+    planEditor,
+    /<PlanToolbar\b[\s\S]*?onToolChange=\{selectTool\}[\s\S]*?\/>/,
+    "PlanToolbar must route through the focus-aware live handler",
   );
 });
 
@@ -129,6 +150,54 @@ test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls"
       m21ActionSurface,
       new RegExp(`\\b${deferredHandler}\\b`),
       `forbidden later-M2 action: ${deferredHandler}`,
+    );
+  }
+});
+
+test("M2.2 exposes only implemented building, room-confirmation, and showroom-catalogue actions", () => {
+  const actionIds = [...showroomToolPolicy.matchAll(/action\("([^"]+)"/g)]
+    .map((match) => match[1]);
+  assert.deepEqual(actionIds, [
+    "select",
+    "pan",
+    "boundary",
+    "wall",
+    "door",
+    "window",
+    "zone",
+    "room",
+    "recognize-rooms",
+    "fixture-catalogue",
+    "poi",
+    "dimension",
+  ]);
+  assert.match(planToolbar, /id === "door" \|\| id === "window"/);
+  assert.match(planToolbar, /onClick=\{\(event\) => onRecognizeRooms\(event\.currentTarget\)\}/);
+  assert.match(fixtureCatalogue, /SHOWROOM_FIXTURE_CATALOGUE\.map/);
+  assert.match(fixtureCatalogue, /data-fixture-kind=\{descriptor\.kind\}/);
+  assert.match(fixtureCatalogue, /onClick=\{\(\) => onSelect\(descriptor\.kind\)\}/);
+  assert.doesNotMatch(showroomCatalogue, /fixture\("generic"/);
+  assert.match(roomRecognitionPanel, /onClick=\{onConfirmOne\}/);
+  assert.match(roomRecognitionPanel, /onClick=\{onConfirmAll\}/);
+  assert.match(roomRecognitionPanel, /onClick=\{onReplaceSelectedRoom\}/);
+
+  const m22ActionSurface = [
+    planToolbar,
+    planEditor,
+    fixtureCatalogue,
+    roomRecognitionPanel,
+  ].join("\n");
+  for (const forbiddenHandler of [
+    "onOpen3D",
+    "onAddContent",
+    "onAddRoute",
+    "onExport",
+    "onPublish",
+  ]) {
+    assert.doesNotMatch(
+      m22ActionSurface,
+      new RegExp(`\\b${forbiddenHandler}\\b`),
+      `forbidden post-M2.2 action: ${forbiddenHandler}`,
     );
   }
 });

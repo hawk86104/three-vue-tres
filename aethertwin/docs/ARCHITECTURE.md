@@ -28,6 +28,14 @@ apps/player -> design-system (deferred noninteractive boundary)
 
 A plan reference stores intrinsic source size, source-to-world transform, opacity, lock state, and optional two-point calibration. Calibration retains source points and measured millimetres; the committed transform uses one exact uniform scale. Preview and overlay state remain transient until a single confirmation publishes one reversible `snapshot.records.patch`.
 
+## M2.2 building and showroom ownership
+
+`core-model` owns durable Opening shape and transformed wall/opening validation. `plan-engine` consumes that contract for placement and owns deterministic wall-topology normalization, closed-face recognition, canonical room rings, explicit room creation/replacement intents, and room input fingerprints. `mode-showroom` is a pure catalogue/tool-policy package that depends only on `core-model`; it owns immutable fixture descriptors and normalized primitive parts. `render-plan-2d` consumes core geometry plus plan-engine projections. `project-store` owns the serialized compound journal command but never depends on showroom or rendering packages. Studio is the only layer that composes all of these packages.
+
+Room candidates, canonical candidate keys, input fingerprints, diagnostics, selection, and overlays are transient Studio/engine state. Recognition never creates or rewrites rooms automatically. Confirmation rereads the current snapshot, rejects stale fingerprints, and commits only normal schema-v3 `SpaceUnit` records. Catalogue descriptors and primitive parts likewise remain runtime data; only normal `Fixture` fields cross the persistence boundary.
+
+Wall and attached-opening edits use one `building.structure.patch`. ProjectStore applies exact before-state checks to walls and openings, constructs one candidate final snapshot, and invokes schema parsing once after both collections have changed. The native replay/recovery path enforces the same final-state-only rule. This avoids rejecting valid compound wall deletion or reshape because of an invalid intermediate snapshot, while exact reversed lists and normalized indexes preserve deterministic undo/redo and recovery.
+
 ## Asset import and resolution boundaries
 
 TypeScript `asset-pipeline` owns cross-runtime media classification, role checks, initial plan-reference composition, and shared limits. Native `asset-io` owns source identity capture, streaming validation/hash, unique staging, flush/fsync, no-replace publication, collision verification, cancellation, canonical path derivation, and verified resolution. Supported media are PNG, JPEG, sanitized SVG, MP4, and WebM; plan references accept only the three image formats.
@@ -63,4 +71,4 @@ A clean close checkpoints, writes `cleanShutdown=true`, truncates WAL, closes SQ
 
 ## Current boundary
 
-M1 and M2.1 are accepted. The environment-limited Windows reparse test was explicitly waived without being claimed as passing. Openings/room recognition, fixture catalogues, content placement UI, routes, synchronized 3D, export, Player/media, and market workflow remain deferred. Task 14 includes no build, browser, packaged-runtime, screenshot, real-GPU, or visual-performance evidence.
+M1, M2.1, and the M2.2 2D building/showroom workflow are implemented. The environment-limited Windows reparse test was explicitly waived without being claimed as passing. Content placement UI, routes, synchronized 3D, export, Player/media, and expanded market workflow remain deferred. M2.2 includes no build, browser, packaged-runtime, screenshot, real-GPU, or visual-performance evidence.

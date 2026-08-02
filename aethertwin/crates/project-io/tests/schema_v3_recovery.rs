@@ -40,10 +40,26 @@ fn operation(
     payload: Value,
     inverse_payload: Value,
 ) -> JournalOperation {
+    typed_operation(
+        sequence,
+        transaction_id,
+        "snapshot.records.patch",
+        payload,
+        inverse_payload,
+    )
+}
+
+fn typed_operation(
+    sequence: u64,
+    transaction_id: &str,
+    command_type: &str,
+    payload: Value,
+    inverse_payload: Value,
+) -> JournalOperation {
     JournalOperation {
         sequence,
         transaction_id: transaction_id.into(),
-        command_type: "snapshot.records.patch".into(),
+        command_type: command_type.into(),
         payload,
         inverse_payload,
         action: JournalAction::Apply,
@@ -438,4 +454,304 @@ fn dirty_building_structure_patch_recovers_wall_and_opening_together() {
     let recovered = recover_project(&opened.project_path, true).unwrap();
     assert!(recovered.recovered);
     assert_eq!(recovered.snapshot, dirty);
+}
+
+#[test]
+fn complete_m2_2_building_survives_checkpoint_reopen_and_dirty_recovery() {
+    let opened = create("M2.2 Vertical Recovery");
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let floor = initial.project.floors[0].clone();
+    let wall = json!({
+        "type": "wall",
+        "id": "00000000-0000-4000-8000-000000000500",
+        "name": "Recovery wall",
+        "tags": [],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "spatial3D": { "elevation": 0, "height": 2800 },
+        "locked": false,
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 10000, "y": 0 }],
+        "thickness": 120
+    });
+    let door = json!({
+        "id": "00000000-0000-4000-8000-000000000501",
+        "name": "Recovery door",
+        "tags": [],
+        "wallId": wall["id"],
+        "kind": "door",
+        "distanceAlongWall": 2000,
+        "width": 900,
+        "height": 2100,
+        "sillHeight": 0
+    });
+    let window = json!({
+        "id": "00000000-0000-4000-8000-000000000502",
+        "name": "Recovery window",
+        "tags": [],
+        "wallId": wall["id"],
+        "kind": "window",
+        "distanceAlongWall": 6000,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+    });
+    let wall_changes = vec![json!({
+        "id": wall["id"],
+        "before": null,
+        "after": wall,
+        "index": 0
+    })];
+    let opening_changes = vec![
+        json!({
+            "id": door["id"],
+            "before": null,
+            "after": door,
+            "index": 0
+        }),
+        json!({
+            "id": window["id"],
+            "before": null,
+            "after": window,
+            "index": 1
+        }),
+    ];
+    let building_payload = json!({
+        "reason": "create",
+        "wallChanges": wall_changes,
+        "openingChanges": opening_changes
+    });
+    let building_inverse = json!({
+        "reason": "create",
+        "wallChanges": inverse_changes(&wall_changes),
+        "openingChanges": inverse_changes(&opening_changes)
+    });
+    let mut building_applied = initial.clone();
+    building_applied.project.entities = vec![wall.clone()];
+    building_applied.project.openings = vec![
+        serde_json::from_value(door.clone()).unwrap(),
+        serde_json::from_value(window.clone()).unwrap(),
+    ];
+    building_applied.sequence = 1;
+    session
+        .commit(CommitBatch {
+            before: initial,
+            after: building_applied.clone(),
+            journal: vec![typed_operation(
+                1,
+                "00000000-0000-4000-8000-000000000503",
+                "building.structure.patch",
+                building_payload,
+                building_inverse,
+            )],
+        })
+        .unwrap();
+
+    let rooms: Vec<Value> = (0..4)
+        .map(|index| {
+            let x = index * 2000;
+            json!({
+                "type": "space-unit",
+                "kind": "room",
+                "id": format!("00000000-0000-4000-8000-{:012}", 510 + index),
+                "name": format!("Recovered room {}", index + 1),
+                "tags": ["confirmed"],
+                "floorId": floor.id,
+                "layerId": floor.layers[0].id,
+                "transform": {
+                    "translation": { "x": 0, "y": 0 },
+                    "rotation": 0,
+                    "scale": { "x": 1, "y": 1 }
+                },
+                "locked": false,
+                "footprint": [
+                    { "x": x, "y": 1000 },
+                    { "x": x + 1500, "y": 1000 },
+                    { "x": x + 1500, "y": 2500 },
+                    { "x": x, "y": 2500 }
+                ]
+            })
+        })
+        .collect();
+    let catalogue = [
+        ("display-case", 1200, 600, 1200),
+        ("display-table", 1500, 750, 900),
+        ("shelf", 1000, 400, 2000),
+        ("checkout", 1600, 700, 1000),
+        ("screen", 1200, 100, 1800),
+        ("partition", 1200, 100, 2400),
+        ("signage", 600, 100, 1800),
+    ];
+    let fixtures: Vec<Value> = catalogue
+        .iter()
+        .enumerate()
+        .map(|(index, (kind, width, depth, height))| {
+            json!({
+                "type": "fixture",
+                "kind": kind,
+                "id": format!("00000000-0000-4000-8000-{:012}", 520 + index),
+                "name": format!("Recovered catalogue {kind}"),
+                "tags": [],
+                "floorId": floor.id,
+                "layerId": floor.layers[0].id,
+                "transform": {
+                    "translation": { "x": index * 1000, "y": 3000 },
+                    "rotation": 0,
+                    "scale": { "x": 1, "y": 1 }
+                },
+                "spatial3D": { "elevation": 0, "height": height },
+                "locked": false,
+                "size": { "width": width, "height": depth }
+            })
+        })
+        .collect();
+    let legacy_fixture = json!({
+        "type": "fixture",
+        "kind": "display-case",
+        "id": "00000000-0000-4000-8000-000000000527",
+        "name": "Recovered legacy fixture",
+        "tags": ["legacy"],
+        "floorId": floor.id,
+        "layerId": floor.layers[0].id,
+        "transform": {
+            "translation": { "x": 8000, "y": 3000 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "locked": false,
+        "size": { "width": 1200, "height": 600 }
+    });
+    let mut durable_entities = rooms.clone();
+    durable_entities.extend(fixtures.clone());
+    durable_entities.push(legacy_fixture.clone());
+    let entity_changes: Vec<Value> = durable_entities
+        .iter()
+        .enumerate()
+        .map(|(index, entity)| {
+            json!({
+                "id": entity["id"],
+                "before": null,
+                "after": entity,
+                "index": index + 1
+            })
+        })
+        .collect();
+    let entity_payload = json!({ "reason": "create", "changes": entity_changes });
+    let entity_inverse = json!({
+        "reason": "create",
+        "changes": inverse_changes(&entity_changes)
+    });
+    let mut complete = building_applied.clone();
+    complete.project.entities.extend(durable_entities);
+    complete.sequence = 2;
+    session
+        .commit(CommitBatch {
+            before: building_applied,
+            after: complete.clone(),
+            journal: vec![typed_operation(
+                2,
+                "00000000-0000-4000-8000-000000000504",
+                "plan.entities.patch",
+                entity_payload,
+                entity_inverse,
+            )],
+        })
+        .unwrap();
+    let checkpoint = session
+        .checkpoint(session.snapshot().clone())
+        .unwrap()
+        .snapshot;
+    assert_eq!(checkpoint.schema_version, 3);
+    assert_eq!(checkpoint.checkpoint_sequence, 2);
+    session.close().unwrap();
+
+    let mut reopened = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(reopened.snapshot(), &checkpoint);
+    let edited_window = json!({
+        "id": window["id"],
+        "name": "Recovered edited window",
+        "tags": [],
+        "wallId": wall["id"],
+        "kind": "window",
+        "distanceAlongWall": 6250,
+        "width": 1400,
+        "height": 1200,
+        "sillHeight": 900
+    });
+    let edit_changes = vec![json!({
+        "id": window["id"],
+        "before": window,
+        "after": edited_window,
+        "index": 1
+    })];
+    let edit_payload = json!({
+        "reason": "properties",
+        "wallChanges": [],
+        "openingChanges": edit_changes
+    });
+    let edit_inverse = json!({
+        "reason": "properties",
+        "wallChanges": [],
+        "openingChanges": inverse_changes(&edit_changes)
+    });
+    let mut dirty = checkpoint.clone();
+    dirty.project.openings[1] = serde_json::from_value(edited_window).unwrap();
+    dirty.sequence = 3;
+    reopened
+        .commit(CommitBatch {
+            before: checkpoint,
+            after: dirty.clone(),
+            journal: vec![typed_operation(
+                3,
+                "00000000-0000-4000-8000-000000000505",
+                "building.structure.patch",
+                edit_payload,
+                edit_inverse,
+            )],
+        })
+        .unwrap();
+    assert_eq!(reopened.save_state(), SaveState::Dirty);
+    drop(reopened);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert!(recovered.recovered);
+    assert_eq!(recovered.snapshot, dirty);
+    assert_eq!(
+        recovered
+            .snapshot
+            .project
+            .entities
+            .iter()
+            .filter(|entity| entity["type"] == "space-unit")
+            .count(),
+        4
+    );
+    assert_eq!(
+        recovered
+            .snapshot
+            .project
+            .entities
+            .iter()
+            .filter(|entity| entity["type"] == "fixture")
+            .count(),
+        8
+    );
+    assert_eq!(recovered.snapshot.project.openings.len(), 2);
+    let recovered_legacy = recovered
+        .snapshot
+        .project
+        .entities
+        .iter()
+        .find(|entity| entity["id"] == legacy_fixture["id"])
+        .unwrap();
+    assert!(recovered_legacy.get("spatial3D").is_none());
+    let durable_json = serde_json::to_string(&recovered.snapshot).unwrap();
+    for transient in ["roomCandidates", "candidateKey", "fingerprint", "parts"] {
+        assert!(!durable_json.contains(transient));
+    }
 }
