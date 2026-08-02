@@ -223,3 +223,30 @@ test("M2.2 package ownership keeps geometry, topology, catalogue, rendering, and
     assert.ok(existsSync(join(root, relative)), `missing M2.2 owner: ${relative}`);
   }
 });
+
+test("M2.3 route topology mutation has one pure package owner", () => {
+  const packageRoot = join(root, "packages/route-engine");
+  const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+  const index = readFileSync(join(packageRoot, "src/index.ts"), "utf8");
+  const insertion = readFileSync(join(packageRoot, "src/insertion.ts"), "utf8");
+  const internalDependencies = Object.keys(manifest.dependencies ?? {})
+    .filter((dependency) => dependency.startsWith("@aethertwin/"));
+
+  assert.equal(manifest.name, "@aethertwin/route-engine");
+  assert.equal(manifest.exports["."], "./src/index.ts");
+  assert.deepEqual(internalDependencies, ["@aethertwin/core-model"]);
+  assert.match(index, /insertRouteSegment/);
+  assert.match(insertion, /export function insertRouteSegment/);
+  assert.ok(insertion.trim().length > 0, "route insertion implementation is empty");
+  assert.equal(existsSync(join(packageRoot, ".gitkeep")), false);
+  assert.equal(existsSync(join(packageRoot, "src/.gitkeep")), false);
+  for (const forbidden of [
+    "@aethertwin/plan-engine",
+    "@aethertwin/project-store",
+    "@aethertwin/render-plan-2d",
+    "@aethertwin/mode-showroom",
+    "@aethertwin/studio",
+  ]) {
+    assert.equal(internalDependencies.includes(forbidden), false);
+  }
+});

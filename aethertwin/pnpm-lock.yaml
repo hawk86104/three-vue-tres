@@ -242,6 +242,12 @@ importers:
         specifier: 8.19.0
         version: 8.19.0
 
+  packages/route-engine:
+    dependencies:
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
+
 packages:
 
   '@adobe/css-tools@4.5.0':
