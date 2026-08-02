@@ -1,6 +1,9 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { Button } from "@aethertwin/design-system";
-import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
+import {
+  SHOWROOM_TOOL_GROUPS,
+  type ShowroomToolActionId,
+} from "@aethertwin/mode-showroom";
 import type { PlanTool } from "./editor-session";
 
 interface ToolDefinition {
@@ -8,9 +11,15 @@ interface ToolDefinition {
   readonly label: string;
 }
 
+interface DisabledToolAction {
+  readonly id: ShowroomToolActionId;
+  readonly label: string;
+}
+
 interface ToolGroup {
   readonly label: string;
   readonly tools: readonly ToolDefinition[];
+  readonly disabledActions?: readonly DisabledToolAction[];
 }
 
 const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
@@ -25,6 +34,9 @@ const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
   fixture: { tool: "fixture", label: "展具" },
   poi: { tool: "poi", label: "兴趣点" },
   dimension: { tool: "dimension", label: "尺寸" },
+  "product-hotspot": { tool: "product-hotspot", label: "\u4ea7\u54c1\u70ed\u70b9" },
+  "route-node": { tool: "route-node", label: "\u8def\u7ebf\u8282\u70b9" },
+  "route-edge": { tool: "route-edge", label: "\u8def\u7ebf\u8fb9" },
 };
 
 const showroomOpeningTools: readonly ToolDefinition[] = Object.freeze(
@@ -44,6 +56,33 @@ const showroomFixtureTools: readonly ToolDefinition[] = Object.freeze(
         : []
     )) ?? [],
 );
+const showroomContentTools: readonly ToolDefinition[] = Object.freeze(
+  SHOWROOM_TOOL_GROUPS
+    .find(({ id }) => id === "content")
+    ?.actions.flatMap(({ id }) => (
+      id === "poi" || id === "dimension" || id === "product-hotspot"
+        ? [toolById[id]]
+        : []
+    )) ?? [],
+);
+
+const showroomTourTools: readonly ToolDefinition[] = Object.freeze(
+  SHOWROOM_TOOL_GROUPS
+    .find(({ id }) => id === "tour")
+    ?.actions.flatMap(({ id }) => (
+      id === "route-node" || id === "route-edge"
+        ? [toolById[id]]
+        : []
+    )) ?? [],
+);
+
+const showroomContentActions: readonly DisabledToolAction[] = Object.freeze([
+  { id: "attach-product-media", label: "\u6dfb\u52a0\u5a92\u4f53" },
+]);
+const showroomTourActions: readonly DisabledToolAction[] = Object.freeze([
+  { id: "edit-route-stops", label: "\u7f16\u8f91\u505c\u9760\u70b9" },
+  { id: "preview-guided-route", label: "\u9884\u89c8\u8def\u7ebf" },
+]);
 const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
   market: [
     { label: "选择", tools: [toolById.select, toolById.pan] },
@@ -73,7 +112,16 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
       label: "展具",
       tools: showroomFixtureTools,
     },
-    { label: "标记", tools: [toolById.poi, toolById.dimension] },
+    {
+      label: "内容",
+      tools: showroomContentTools,
+      disabledActions: showroomContentActions,
+    },
+    {
+      label: "导览",
+      tools: showroomTourTools,
+      disabledActions: showroomTourActions,
+    },
   ],
 };
 
@@ -129,7 +177,18 @@ export function PlanToolbar({
                 </Button>
               );
             })}
-{profile === "showroom"
+            {group.disabledActions?.map(({ id, label }) => (
+              <Button
+                key={id}
+                variant="secondary"
+                className="studio-plan-toolbar__action"
+                data-action={id}
+                disabled
+              >
+                {label}
+              </Button>
+            ))}
+            {profile === "showroom"
             && group.tools.some(({ tool }) => tool === "space-unit")
             && onRecognizeRooms !== undefined ? (
               <Button

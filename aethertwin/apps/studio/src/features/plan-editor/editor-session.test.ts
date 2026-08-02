@@ -5,9 +5,22 @@ import {
   createPlanEditorStore,
   type OpeningPreviewState,
   type PlanDraft,
+  type RouteAuthoringScope,
   type RoomRecognitionState,
 } from "./editor-session";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
+
+function currentRouteAuthoringScope(
+  store: ReturnType<typeof createPlanEditorStore>,
+): RouteAuthoringScope {
+  const state = store.getState();
+  return {
+    sessionId: state.sessionId,
+    floorId: state.activeFloorId,
+    networkId: state.routeAuthoring.networkId,
+    tool: state.activeTool,
+  };
+}
 
 describe("plan editor session", () => {
   it("restores per-floor viewports and rejects floor switches during a gesture", () => {
@@ -399,6 +412,208 @@ describe("plan editor session", () => {
       activeTool: "select",
       selectedFixtureKind: null,
       draft: null,
+    });
+  });
+
+  it("owns route authoring state and resets only the incompatible transient parts", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "route-session-a",
+    });
+    const networkId = "00000000-0000-4000-8000-000000000501";
+    const secondNetworkId = "00000000-0000-4000-8000-000000000502";
+    const mutableStart = { x: 120, y: 240 };
+    const mutableStops = [
+      "00000000-0000-4000-8000-000000000503",
+      "00000000-0000-4000-8000-000000000504",
+    ];
+
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId: null,
+      segmentStart: null,
+      stopDraft: [],
+    });
+    store.getState().setActiveRouteNetwork(currentRouteAuthoringScope(store), networkId);
+    store.getState().setActiveTool("route-edge");
+    store.getState().setRouteSegmentStart(currentRouteAuthoringScope(store), mutableStart);
+    store.getState().setRouteStopDraft(currentRouteAuthoringScope(store), mutableStops);
+    store.getState().setRouteAuthoringPersistenceError(currentRouteAuthoringScope(store), "retry route save");
+    mutableStart.x = 999;
+    mutableStops.push("00000000-0000-4000-8000-000000000505");
+
+    expect(store.getState()).toMatchObject({
+      activeTool: "route-edge",
+      routeAuthoring: {
+        networkId,
+        segmentStart: { x: 120, y: 240 },
+        stopDraft: [
+          "00000000-0000-4000-8000-000000000503",
+          "00000000-0000-4000-8000-000000000504",
+        ],
+        persistenceError: "retry route save",
+      },
+    });
+    expect(Object.isFrozen(store.getState().routeAuthoring)).toBe(true);
+    expect(Object.isFrozen(store.getState().routeAuthoring.segmentStart)).toBe(true);
+    expect(Object.isFrozen(store.getState().routeAuthoring.stopDraft)).toBe(true);
+
+    store.getState().setActiveTool("route-node");
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId,
+      segmentStart: null,
+      stopDraft: [
+        "00000000-0000-4000-8000-000000000503",
+        "00000000-0000-4000-8000-000000000504",
+      ],
+    });
+
+    store.getState().setActiveTool("product-hotspot");
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId,
+      segmentStart: null,
+      stopDraft: [],
+    });
+
+    store.getState().setActiveTool("route-edge");
+    store.getState().setRouteSegmentStart(currentRouteAuthoringScope(store), { x: 1, y: 2 });
+    store.getState().setRouteStopDraft(currentRouteAuthoringScope(store), mutableStops.slice(0, 2));
+    store.getState().setRouteAuthoringPersistenceError(currentRouteAuthoringScope(store), "cancel me");
+    store.getState().cancelDraft();
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId,
+      segmentStart: null,
+      stopDraft: [],
+    });
+
+    store.getState().setRouteSegmentStart(currentRouteAuthoringScope(store), { x: 3, y: 4 });
+    store.getState().setRouteStopDraft(currentRouteAuthoringScope(store), mutableStops.slice(0, 2));
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId: null,
+      segmentStart: null,
+      stopDraft: [],
+    });
+
+    store.getState().setActiveRouteNetwork(currentRouteAuthoringScope(store), secondNetworkId);
+    store.getState().setActiveTool("route-edge");
+    store.getState().setRouteSegmentStart(currentRouteAuthoringScope(store), { x: 5, y: 6 });
+    store.getState().setRouteStopDraft(currentRouteAuthoringScope(store), mutableStops.slice(0, 2));
+    store.getState().replaceSession("route-session-b", floorA.id);
+    expect(store.getState()).toMatchObject({
+      sessionId: "route-session-b",
+      activeFloorId: floorA.id,
+      activeTool: "select",
+      routeAuthoring: {
+        networkId: null,
+        segmentStart: null,
+        stopDraft: [],
+      },
+    });
+  });
+
+  it("rejects late route authoring writes after floor and session boundaries", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "route-session-a",
+    });
+    const networkId = "00000000-0000-4000-8000-000000000601";
+
+    store.getState().setActiveTool("route-edge");
+    expect(
+      store.getState().setActiveRouteNetwork(currentRouteAuthoringScope(store), networkId),
+    ).toBe(true);
+    expect(
+      store.getState().setRouteSegmentStart(currentRouteAuthoringScope(store), { x: 10, y: 20 }),
+    ).toBe(true);
+    expect(
+      store.getState().setRouteStopDraft(currentRouteAuthoringScope(store), ["stop-a", "stop-b"]),
+    ).toBe(true);
+    expect(
+      store.getState().setRouteAuthoringPersistenceError(
+        currentRouteAuthoringScope(store),
+        "old floor error",
+      ),
+    ).toBe(true);
+
+    const staleFloorScope = currentRouteAuthoringScope(store);
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(
+      store.getState().setActiveRouteNetwork(staleFloorScope, networkId),
+    ).toBe(false);
+    expect(
+      store.getState().setRouteSegmentStart(staleFloorScope, { x: 30, y: 40 }),
+    ).toBe(false);
+    expect(
+      store.getState().setRouteStopDraft(staleFloorScope, ["stale-stop"]),
+    ).toBe(false);
+    expect(
+      store.getState().setRouteAuthoringPersistenceError(
+        staleFloorScope,
+        "stale floor error",
+      ),
+    ).toBe(false);
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId: null,
+      segmentStart: null,
+      stopDraft: [],
+    });
+
+    const secondNetworkId = "00000000-0000-4000-8000-000000000602";
+    expect(
+      store.getState().setActiveRouteNetwork(currentRouteAuthoringScope(store), networkId),
+    ).toBe(true);
+    const staleNetworkScope = currentRouteAuthoringScope(store);
+    expect(
+      store.getState().setActiveRouteNetwork(
+        currentRouteAuthoringScope(store),
+        secondNetworkId,
+      ),
+    ).toBe(true);
+    expect(
+      store.getState().setRouteAuthoringPersistenceError(
+        staleNetworkScope,
+        "stale network error",
+      ),
+    ).toBe(false);
+
+    const staleToolScope = currentRouteAuthoringScope(store);
+    store.getState().setActiveTool("route-node");
+    expect(
+      store.getState().setRouteStopDraft(
+        currentRouteAuthoringScope(store),
+        ["current-stop"],
+      ),
+    ).toBe(true);
+    expect(
+      store.getState().setRouteAuthoringPersistenceError(
+        staleToolScope,
+        "stale tool error",
+      ),
+    ).toBe(false);
+    expect(store.getState().clearRouteAuthoringDrafts(staleToolScope)).toBe(false);
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId: secondNetworkId,
+      segmentStart: null,
+      stopDraft: ["current-stop"],
+    });
+
+    const staleSessionScope = currentRouteAuthoringScope(store);
+    store.getState().replaceSession("route-session-b", floorA.id);
+    expect(
+      store.getState().setActiveRouteNetwork(staleSessionScope, networkId),
+    ).toBe(false);
+    expect(
+      store.getState().setRouteAuthoringPersistenceError(
+        staleSessionScope,
+        "stale session error",
+      ),
+    ).toBe(false);
+    expect(store.getState().routeAuthoring).toEqual({
+      networkId: null,
+      segmentStart: null,
+      stopDraft: [],
     });
   });
 });

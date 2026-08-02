@@ -35,8 +35,8 @@ const roomRecognitionPanel = readFileSync(
   "apps/studio/src/features/plan-editor/room-recognition-panel.tsx",
   "utf8",
 );
-const m22PlanTools = [
-  "select", "pan", "boundary", "wall", "door", "window", "zone", "space-unit", "fixture", "poi", "dimension",
+const m23PlanTools = [
+  "select", "pan", "boundary", "wall", "door", "window", "zone", "space-unit", "fixture", "poi", "dimension", "product-hotspot", "route-node", "route-edge",
 ];
 const runtimeFiles = globSync(["apps/studio/src/**/*.{ts,tsx}"], {
   exclude: ["**/*.test.*", "**/dev/**", "**/e2e/**"],
@@ -71,11 +71,11 @@ test("foundational project and editor actions remain wired", () => {
   assertWiredButton(editorShell, "关闭", "onClose");
 });
 
-test("M2.2 exposes exactly eleven authoring tools through the live session handler", () => {
+test("M2.3 exposes exactly fourteen authoring tools through the live session handler", () => {
   const planToolUnion = editorSession.match(/export type PlanTool\s*=([\s\S]*?);/)?.[1];
   assert.ok(planToolUnion, "PlanTool union must exist");
   const declaredTools = [...planToolUnion.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual([...declaredTools].sort(), [...m22PlanTools].sort());
+  assert.deepEqual([...declaredTools].sort(), [...m23PlanTools].sort());
 
   const definitionsBlock = planToolbar.match(
     /const toolById:[\s\S]*?=\s*\{([\s\S]*?)\n\};/,
@@ -87,20 +87,20 @@ test("M2.2 exposes exactly eleven authoring tools through the live session handl
   const wiredByKey = new Map(
     wiredDefinitions.map(({ key, tool }) => [key, tool]),
   );
-  assert.equal(wiredDefinitions.length, m22PlanTools.length);
-  assert.equal(wiredByKey.size, m22PlanTools.length, "toolById keys must be unique");
+  assert.equal(wiredDefinitions.length, m23PlanTools.length);
+  assert.equal(wiredByKey.size, m23PlanTools.length, "toolById keys must be unique");
   for (const [key, tool] of wiredByKey) {
     assert.equal(tool, key, `${key} must wire its own tool id`);
   }
   assert.deepEqual(
     [...wiredByKey.keys()].sort(),
-    [...m22PlanTools].sort(),
+    [...m23PlanTools].sort(),
   );
 
   assert.match(
     planToolbar,
     /<Button\b(?:(?!<\/Button>)[\s\S])*?data-tool=\{tool\}(?:(?!<\/Button>)[\s\S])*?onClick=\{\(event\) => onToolChange\(tool, event\.currentTarget\)\}(?:(?!<\/Button>)[\s\S])*?<\/Button>/,
-    "each rendered M2.2 tool must invoke onToolChange with its exact id and initiator",
+    "each rendered M2.3 tool must invoke onToolChange with its exact id and initiator",
   );
   assert.match(
     planEditor,
@@ -114,7 +114,7 @@ test("M2.2 exposes exactly eleven authoring tools through the live session handl
   );
 });
 
-test("M2.1 runtime source contains no later authoring claims", () => {
+test("runtime source contains no deferred platform or export claims", () => {
   for (const label of [
     "BIM",
     "IoT",
@@ -154,7 +154,7 @@ test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls"
   }
 });
 
-test("M2.2 exposes only implemented building, room-confirmation, and showroom-catalogue actions", () => {
+test("M2.3 exposes only implemented building, content, tour, and showroom-catalogue actions", () => {
   const actionIds = [...showroomToolPolicy.matchAll(/action\("([^"]+)"/g)]
     .map((match) => match[1]);
   assert.deepEqual(actionIds, [
@@ -170,6 +170,12 @@ test("M2.2 exposes only implemented building, room-confirmation, and showroom-ca
     "fixture-catalogue",
     "poi",
     "dimension",
+    "product-hotspot",
+    "attach-product-media",
+    "route-node",
+    "route-edge",
+    "edit-route-stops",
+    "preview-guided-route",
   ]);
   assert.match(planToolbar, /id === "door" \|\| id === "window"/);
   assert.match(planToolbar, /onClick=\{\(event\) => onRecognizeRooms\(event\.currentTarget\)\}/);
@@ -181,7 +187,7 @@ test("M2.2 exposes only implemented building, room-confirmation, and showroom-ca
   assert.match(roomRecognitionPanel, /onClick=\{onConfirmAll\}/);
   assert.match(roomRecognitionPanel, /onClick=\{onReplaceSelectedRoom\}/);
 
-  const m22ActionSurface = [
+  const m23ActionSurface = [
     planToolbar,
     planEditor,
     fixtureCatalogue,
@@ -189,15 +195,15 @@ test("M2.2 exposes only implemented building, room-confirmation, and showroom-ca
   ].join("\n");
   for (const forbiddenHandler of [
     "onOpen3D",
-    "onAddContent",
-    "onAddRoute",
+    "onEditMaterials",
+    "onEditLighting",
     "onExport",
     "onPublish",
   ]) {
     assert.doesNotMatch(
-      m22ActionSurface,
+      m23ActionSurface,
       new RegExp(`\\b${forbiddenHandler}\\b`),
-      `forbidden post-M2.2 action: ${forbiddenHandler}`,
+      `forbidden post-M2.3 action: ${forbiddenHandler}`,
     );
   }
 });

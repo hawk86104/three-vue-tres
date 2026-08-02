@@ -27,6 +27,9 @@ export type PlanTool =
   | "fixture"
   | "poi"
   | "dimension"
+  | "product-hotspot"
+  | "route-node"
+  | "route-edge"
   | "pan";
 
 export type OpeningCreationTool = "door" | "window";
@@ -50,6 +53,20 @@ export interface RoomRecognitionState {
   readonly stale: boolean;
   readonly persistenceError?: string;
 }
+
+export interface RouteAuthoringState {
+  readonly networkId: string | null;
+  readonly segmentStart: Point2 | null;
+  readonly stopDraft: readonly string[];
+  readonly persistenceError?: string;
+}
+export interface RouteAuthoringScope {
+  readonly sessionId: string;
+  readonly floorId: string;
+  readonly networkId: string | null;
+  readonly tool: PlanTool;
+}
+
 
 export type PlanSidePanel = "tree" | "assets";
 
@@ -98,6 +115,7 @@ export interface PlanEditorState {
   readonly calibrationDraft: CalibrationDraft | null;
   readonly openingPreview: OpeningPreviewState | null;
   readonly roomRecognition: RoomRecognitionState | null;
+  readonly routeAuthoring: RouteAuthoringState;
   readonly selectedFixtureKind: ShowroomFixtureKind | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
@@ -129,6 +147,12 @@ export interface PlanEditorState {
   setRoomRecognitionPersistenceError(message: string): void;
   clearRoomRecognitionPersistenceError(): void;
   clearRoomRecognition(): void;
+  setActiveRouteNetwork(scope: RouteAuthoringScope, networkId: string | null): boolean;
+  setRouteSegmentStart(scope: RouteAuthoringScope, point: Point2 | null): boolean;
+  setRouteStopDraft(scope: RouteAuthoringScope, nodeIds: readonly string[]): boolean;
+  setRouteAuthoringPersistenceError(scope: RouteAuthoringScope, message: string): boolean;
+  clearRouteAuthoringPersistenceError(scope: RouteAuthoringScope): boolean;
+  clearRouteAuthoringDrafts(scope: RouteAuthoringScope): boolean;
   setSelectedFixtureKind(kind: ShowroomFixtureKind): void;
   setFixturePlacementPreview(entity: SpatialEntity, point: Point2): boolean;
   clearFixturePlacementPreview(): void;
@@ -205,6 +229,28 @@ function ownedRoomRecognition(recognition: RoomRecognitionState): RoomRecognitio
   return ownValue(recognition);
 }
 
+function ownedRouteAuthoring(routeAuthoring: RouteAuthoringState): RouteAuthoringState {
+  return ownValue(routeAuthoring);
+}
+
+function emptyRouteAuthoring(networkId: string | null = null): RouteAuthoringState {
+  return ownedRouteAuthoring({
+    networkId,
+    segmentStart: null,
+    stopDraft: [],
+  });
+}
+
+function isCurrentRouteAuthoringScope(
+  state: PlanEditorState,
+  scope: RouteAuthoringScope,
+): boolean {
+  return state.sessionId === scope.sessionId
+    && state.activeFloorId === scope.floorId
+    && state.routeAuthoring.networkId === scope.networkId
+    && state.activeTool === scope.tool;
+}
+
 let nextSessionNumber = 1;
 
 function transientSessionId(): string {
@@ -236,6 +282,7 @@ export function createPlanEditorStore(
     calibrationDraft: null,
     openingPreview: null,
     roomRecognition: null,
+    routeAuthoring: emptyRouteAuthoring(),
     selectedFixtureKind: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
@@ -259,6 +306,9 @@ export function createPlanEditorStore(
         roomRecognition: id === state.activeFloorId
           ? state.roomRecognition
           : null,
+        routeAuthoring: id === state.activeFloorId
+          ? state.routeAuthoring
+          : emptyRouteAuthoring(),
         selectedFixtureKind: id === state.activeFloorId
           ? state.selectedFixtureKind
           : null,
@@ -283,6 +333,7 @@ export function createPlanEditorStore(
         calibrationDraft: null,
         openingPreview: null,
         roomRecognition: null,
+        routeAuthoring: emptyRouteAuthoring(),
         selectedFixtureKind: null,
         gestureActive: false,
         clipboard: deepFreeze([] as SpatialEntity[]),
@@ -291,6 +342,17 @@ export function createPlanEditorStore(
 
     setActiveTool(tool) {
       const state = get();
+      const routeAuthoring = tool === state.activeTool
+        ? state.routeAuthoring
+        : ownedRouteAuthoring({
+          networkId: state.routeAuthoring.networkId,
+          segmentStart: tool === "route-edge"
+            ? state.routeAuthoring.segmentStart
+            : null,
+          stopDraft: tool === "route-edge" || tool === "route-node"
+            ? state.routeAuthoring.stopDraft
+            : [],
+        });
       set({
         activeTool: tool,
         draft: null,
@@ -304,6 +366,7 @@ export function createPlanEditorStore(
         selectedFixtureKind: tool === "fixture"
           ? state.selectedFixtureKind
           : null,
+        routeAuthoring,
       });
     },
 
@@ -351,7 +414,12 @@ export function createPlanEditorStore(
     },
 
     cancelDraft() {
-      set({ draft: null, gestureActive: false });
+      const state = get();
+      set({
+        draft: null,
+        gestureActive: false,
+        routeAuthoring: emptyRouteAuthoring(state.routeAuthoring.networkId),
+      });
     },
 
     beginCalibration(referenceId) {
@@ -464,6 +532,75 @@ export function createPlanEditorStore(
 
     clearRoomRecognition() {
       if (get().roomRecognition !== null) set({ roomRecognition: null });
+    },
+
+    setActiveRouteNetwork(scope, networkId) {
+      const state = get();
+      if (!isCurrentRouteAuthoringScope(state, scope)) return false;
+      if (state.routeAuthoring.networkId === networkId) return true;
+      set({ routeAuthoring: emptyRouteAuthoring(networkId) });
+      return true;
+    },
+
+    setRouteSegmentStart(scope, point) {
+      const state = get();
+      if (
+        !isCurrentRouteAuthoringScope(state, scope)
+        || state.activeTool !== "route-edge"
+      ) return false;
+      set({
+        routeAuthoring: ownedRouteAuthoring({
+          ...state.routeAuthoring,
+          segmentStart: point,
+        }),
+      });
+      return true;
+    },
+
+    setRouteStopDraft(scope, nodeIds) {
+      const state = get();
+      if (
+        !isCurrentRouteAuthoringScope(state, scope)
+        || (state.activeTool !== "route-edge" && state.activeTool !== "route-node")
+      ) return false;
+      set({
+        routeAuthoring: ownedRouteAuthoring({
+          ...state.routeAuthoring,
+          stopDraft: nodeIds,
+        }),
+      });
+      return true;
+    },
+
+    setRouteAuthoringPersistenceError(scope, message) {
+      const state = get();
+      if (!isCurrentRouteAuthoringScope(state, scope)) return false;
+      set({
+        routeAuthoring: ownedRouteAuthoring({
+          ...state.routeAuthoring,
+          persistenceError: message,
+        }),
+      });
+      return true;
+    },
+
+    clearRouteAuthoringPersistenceError(scope) {
+      const state = get();
+      if (!isCurrentRouteAuthoringScope(state, scope)) return false;
+      if (state.routeAuthoring.persistenceError === undefined) return true;
+      const next = { ...state.routeAuthoring };
+      delete next.persistenceError;
+      set({ routeAuthoring: ownedRouteAuthoring(next) });
+      return true;
+    },
+
+    clearRouteAuthoringDrafts(scope) {
+      const state = get();
+      if (!isCurrentRouteAuthoringScope(state, scope)) return false;
+      set({
+        routeAuthoring: emptyRouteAuthoring(state.routeAuthoring.networkId),
+      });
+      return true;
     },
 
     setSelectedFixtureKind(kind) {

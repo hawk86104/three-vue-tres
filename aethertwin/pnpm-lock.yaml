@@ -93,6 +93,9 @@ importers:
       '@aethertwin/render-plan-2d':
         specifier: workspace:*
         version: link:../../packages/render-plan-2d
+      '@aethertwin/route-engine':
+        specifier: workspace:*
+        version: link:../../packages/route-engine
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1

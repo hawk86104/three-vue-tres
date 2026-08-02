@@ -10,13 +10,20 @@ export type ShowroomToolActionId =
   | "recognize-rooms"
   | "fixture-catalogue"
   | "poi"
-  | "dimension";
+  | "dimension"
+  | "product-hotspot"
+  | "attach-product-media"
+  | "route-node"
+  | "route-edge"
+  | "edit-route-stops"
+  | "preview-guided-route";
 
 export type ShowroomToolGroupId =
   | "select"
   | "building"
   | "fixtures"
-  | "markers";
+  | "content"
+  | "tour";
 
 export interface ToolActionDescriptor {
   readonly id: ShowroomToolActionId;
@@ -66,8 +73,16 @@ export const SHOWROOM_TOOL_GROUPS: readonly ToolGroupDescriptor[] =
     group("fixtures", "Fixtures", [
       action("fixture-catalogue", "Fixture Catalogue"),
     ]),
-    group("markers", "Markers", [
+    group("content", "Content", [
       action("poi", "POI"),
       action("dimension", "Dimension"),
+      action("product-hotspot", "Product Hotspot"),
+      action("attach-product-media", "Attach Media"),
+    ]),
+    group("tour", "Tour", [
+      action("route-node", "Route Node"),
+      action("route-edge", "Route Edge"),
+      action("edit-route-stops", "Edit Stops"),
+      action("preview-guided-route", "Preview Route"),
     ]),
   ]);

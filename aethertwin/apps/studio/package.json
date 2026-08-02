@@ -16,6 +16,7 @@
     "@aethertwin/plan-engine": "workspace:*",
     "@aethertwin/project-store": "workspace:*",
     "@aethertwin/render-plan-2d": "workspace:*",
+    "@aethertwin/route-engine": "workspace:*",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-dialog": "2.7.2",
     "react": "19.2.7",

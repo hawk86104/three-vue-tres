@@ -30,11 +30,23 @@ const expectedGroups = [
     actions: [{ id: "fixture-catalogue", label: "Fixture Catalogue" }],
   },
   {
-    id: "markers",
-    label: "Markers",
+    id: "content",
+    label: "Content",
     actions: [
       { id: "poi", label: "POI" },
       { id: "dimension", label: "Dimension" },
+      { id: "product-hotspot", label: "Product Hotspot" },
+      { id: "attach-product-media", label: "Attach Media" },
+    ],
+  },
+  {
+    id: "tour",
+    label: "Tour",
+    actions: [
+      { id: "route-node", label: "Route Node" },
+      { id: "route-edge", label: "Route Edge" },
+      { id: "edit-route-stops", label: "Edit Stops" },
+      { id: "preview-guided-route", label: "Preview Route" },
     ],
   },
 ] as const;

@@ -606,6 +606,12 @@ const showroomToolLabels = [
   "\u5c55\u5177\u76ee\u5f55",
   "\u5174\u8da3\u70b9",
   "\u5c3a\u5bf8",
+  "\u4ea7\u54c1\u70ed\u70b9",
+  "\u6dfb\u52a0\u5a92\u4f53",
+  "\u8def\u7ebf\u8282\u70b9",
+  "\u8def\u7ebf\u8fb9",
+  "\u7f16\u8f91\u505c\u9760\u70b9",
+  "\u9884\u89c8\u8def\u7ebf",
 ] as const;
 
 function rowByData(attribute: string, id: string): HTMLElement {
@@ -624,13 +630,17 @@ describe("PlanEditor Task 10 shell", () => {
       "项目位置",
     );
     expect(screen.queryByText("M0 OVERVIEW")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /3D|导出|路线/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /3D|导出/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId("bottom-dock")).not.toBeInTheDocument();
   });
 
   it.each([
     ["market", ["选择", "场地", "空间单元", "标记"], marketToolLabels],
-    ["showroom", ["选择", "建筑", "展具", "标记"], showroomToolLabels],
+    [
+      "showroom",
+      ["选择", "建筑", "展具", "内容", "导览"],
+      showroomToolLabels,
+    ],
   ] as const)(
     "groups the implemented tools for the %s profile",
     (profile, groupLabels, expectedToolLabels) => {
@@ -700,6 +710,40 @@ describe("PlanEditor Task 10 shell", () => {
     renderPlanEditorFixture({ profile: "market" });
     expect(screen.queryByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "\u5c55\u5177" })).toBeVisible();
+  });
+
+  it("exposes only the M2.3 showroom content and tour entry points", async () => {
+    const user = userEvent.setup();
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+
+    for (const [label, tool] of [
+      ["\u4ea7\u54c1\u70ed\u70b9", "product-hotspot"],
+      ["\u8def\u7ebf\u8282\u70b9", "route-node"],
+      ["\u8def\u7ebf\u8fb9", "route-edge"],
+    ] as const) {
+      const button = screen.getByRole("button", { name: label });
+      await user.click(button);
+      expect(sessionStore.getState().activeTool).toBe(tool);
+      expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(document.activeElement).toBe(button);
+    }
+
+    for (const label of [
+      "\u6dfb\u52a0\u5a92\u4f53",
+      "\u7f16\u8f91\u505c\u9760\u70b9",
+      "\u9884\u89c8\u8def\u7ebf",
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeDisabled();
+    }
+    for (const deferredLabel of ["3D", "\u6750\u8d28", "\u706f\u5149", "\u5bfc\u51fa", "\u53d1\u5e03"]) {
+      expect(screen.queryByRole("button", { name: deferredLabel })).not.toBeInTheDocument();
+    }
+
+    cleanup();
+    renderPlanEditorFixture({ profile: "market" });
+    for (const label of showroomToolLabels.slice(12)) {
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
   });
 
   it("clears the showroom fixture choice on floor switch and unmount", async () => {
@@ -1229,7 +1273,7 @@ describe("PlanEditor Task 11 asset entry points", () => {
       "true",
     );
     expect(within(navigation).getByRole("region", { name: "\u8d44\u4ea7\u5e93" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|\u5185\u5bb9|\u8def\u7ebf|3D|\u5bfc\u51fa/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|3D|\u5bfc\u51fa/ })).not.toBeInTheDocument();
   });
 
   it("keeps Task 11 controls absent when the import picker capability is unavailable", () => {
