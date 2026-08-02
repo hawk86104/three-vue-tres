@@ -34,6 +34,8 @@ export type {
 export {
   ProjectStore,
   type ProjectAssetSource,
+  type ProductMediaImportInput,
+  type ProductMediaImportResult,
   type ProjectStoreOptions,
   type ProjectStoreState,
 } from "./project-store";

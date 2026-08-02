@@ -6,8 +6,10 @@ import {
   type AssetRecord,
   type Boundary,
   type Fixture,
+  type MediaAsset,
   type Opening,
   type PlanReference,
+  type ProductContent,
   type ProjectSnapshot,
   type SpaceUnit,
   type Wall,
@@ -29,6 +31,8 @@ import {
   setProjectTagsCommand,
   type BuildingStructurePatch,
   type KeyValueStorage,
+  type ProductMediaImportInput,
+  type ProductMediaImportResult,
 } from "./index";
 
 afterEach(() => {
@@ -124,6 +128,11 @@ const ASSET_B = "40000000-0000-4000-8000-000000000002";
 const REFERENCE_A = "50000000-0000-4000-8000-000000000001";
 const REFERENCE_B = "50000000-0000-4000-8000-000000000002";
 
+const MEDIA_A = "60000000-0000-4000-8000-000000000001";
+const MEDIA_B = "60000000-0000-4000-8000-000000000002";
+const CONTENT_A = "70000000-0000-4000-8000-000000000001";
+const CONTENT_B = "70000000-0000-4000-8000-000000000002";
+
 function task8Store(store: ProjectStore): Task8ProjectStore {
   return store as unknown as Task8ProjectStore;
 }
@@ -187,6 +196,57 @@ function nativeImportRequest(
       path: PRIVATE_SOURCE_PATH,
       displayName,
     },
+  };
+}
+
+function productMediaRequest(
+  operationId = IMPORT_OPERATION_A,
+  role: AssetImportRequest["role"] = "content-image",
+): AssetImportRequest {
+  return {
+    operationId,
+    role,
+    source: {
+      kind: "native-path",
+      path: PRIVATE_SOURCE_PATH,
+      displayName: role === "content-video" ? "product.webm" : "product.png",
+    },
+  };
+}
+
+function productMediaInput(
+  targetEntityId: string,
+  options: {
+    readonly mediaId?: string;
+    readonly contentBefore?: ProductContent | null;
+    readonly operationId?: string;
+  } = {},
+): ProductMediaImportInput {
+  const mediaId = options.mediaId ?? MEDIA_A;
+  const contentBefore = options.contentBefore ?? null;
+  const contentAfter: ProductContent = contentBefore === null
+    ? {
+        id: CONTENT_A,
+        name: "Fixture product",
+        tags: ["showroom"],
+        targetEntityId,
+        description: "Local product media",
+        mediaAssetIds: [mediaId],
+      }
+    : {
+        ...contentBefore,
+        mediaAssetIds: [...contentBefore.mediaAssetIds, mediaId],
+      };
+  return {
+    request: productMediaRequest(options.operationId),
+    media: {
+      id: mediaId,
+      name: `Media ${mediaId.at(-1)}`,
+      tags: ["local"],
+      kind: "image",
+    },
+    contentBefore,
+    contentAfter,
   };
 }
 
@@ -789,6 +849,373 @@ describe("ProjectStore asset import orchestration", () => {
     expect(store.getState().snapshot!.project.planReferences).toEqual([]);
     expect(store.getState().assetIssues).toEqual([]);
     await baseStore.close();
+  });
+});
+
+describe("ProjectStore product media orchestration", () => {
+  it("creates asset, media, and first fixture content in one durable transaction", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Product media", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const before = store.getState().snapshot!;
+    const input = productMediaInput(fixture.id);
+    const commit = vi.spyOn(backend, "commit");
+
+    const created: ProductMediaImportResult = await store.importProductMedia(input, vi.fn());
+    const expectedMedia: MediaAsset = {
+      ...input.media,
+      assetId: ASSET_A,
+    };
+
+    expect(created).toEqual({
+      asset: nativeImportResult().asset,
+      media: expectedMedia,
+      content: input.contentAfter,
+    });
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: before.sequence + 3,
+      assets: [nativeImportResult().asset],
+      project: {
+        mediaAssets: [expectedMedia],
+        productContents: [input.contentAfter],
+      },
+    });
+    expect(backend.importCalls).toHaveLength(1);
+    expect(commit).toHaveBeenCalledOnce();
+    const journal = commit.mock.calls[0]![1].journal;
+    expect(journal.map((row) =>
+      (row.payload as { readonly collection: string }).collection)).toEqual([
+      "assets",
+      "mediaAssets",
+      "productContents",
+    ]);
+    expect(journal.map((row) => row.payload)).toEqual([
+      {
+        collection: "assets",
+        changes: [{ id: ASSET_A, before: null, after: nativeImportResult().asset }],
+      },
+      {
+        collection: "mediaAssets",
+        changes: [{ id: MEDIA_A, before: null, after: expectedMedia }],
+      },
+      {
+        collection: "productContents",
+        changes: [{ id: CONTENT_A, before: null, after: input.contentAfter }],
+      },
+    ]);
+    expect(new Set(journal.map((row) => row.transactionId)).size).toBe(1);
+    expect(JSON.stringify(journal)).not.toContain(PRIVATE_SOURCE_PATH);
+
+    await baseStore.undo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [],
+      project: {
+        entities: [fixture],
+        mediaAssets: [],
+        productContents: [],
+      },
+    });
+    await baseStore.redo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [nativeImportResult().asset],
+      project: {
+        mediaAssets: [expectedMedia],
+        productContents: [input.contentAfter],
+      },
+    });
+    await baseStore.close();
+  });
+
+  it("publishes no product-media records when the combined commit fails", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Product failure", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const before = store.getState().snapshot!;
+    const projectPath = store.getState().projectPath!;
+    const failure = new Error("product journal fsync failed");
+    backend.failNextCommit = failure;
+    const commit = vi.spyOn(backend, "commit");
+
+    await expect(store.importProductMedia(
+      productMediaInput(fixture.id),
+      vi.fn(),
+    )).rejects.toBe(failure);
+
+    expect(backend.importCalls).toHaveLength(1);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(store.getState().snapshot).toEqual(before);
+    expect(store.getState().saveState).toBe("error");
+    const reopened = await backend.openProject(projectPath);
+    expect(reopened.snapshot.assets).toEqual([]);
+    expect(reopened.snapshot.project.mediaAssets).toEqual([]);
+    expect(reopened.snapshot.project.productContents).toEqual([]);
+    await baseStore.close();
+  });
+
+  it("cancels active product media import without publishing metadata", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    const cancellation = Object.assign(new Error("Asset import cancelled"), {
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    backend.importImplementation = () => pending.promise;
+    backend.cancelImplementation = async () => pending.reject(cancellation);
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Cancel product", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const before = store.getState();
+    const commit = vi.spyOn(backend, "commit");
+
+    const importing = store.importProductMedia(
+      productMediaInput(fixture.id),
+      vi.fn(),
+    );
+    const rejected = expect(importing).rejects.toBe(cancellation);
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+    await expect(store.cancelAssetImport(IMPORT_OPERATION_A)).resolves.toBeUndefined();
+    await rejected;
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual(before);
+    await baseStore.close();
+  });
+
+  it("rejects role and product-order mismatches before native import", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Validate product", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const valid = productMediaInput(fixture.id);
+
+    await expect(store.importProductMedia({
+      ...valid,
+      request: productMediaRequest(IMPORT_OPERATION_A, "content-video"),
+    })).rejects.toThrow(/role|kind|image|video/i);
+    await expect(store.importProductMedia({
+      ...valid,
+      contentAfter: { ...valid.contentAfter, mediaAssetIds: [] },
+    })).rejects.toThrow(/media|exactly once|order/i);
+    await expect(store.importProductMedia({
+      ...valid,
+      contentAfter: { ...valid.contentAfter, mediaAssetIds: [MEDIA_A, MEDIA_A] },
+    })).rejects.toThrow(/media|exactly once|order/i);
+
+    expect(backend.importCalls).toEqual([]);
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([]);
+    expect(store.getState().snapshot!.project.productContents).toEqual([]);
+    await baseStore.close();
+  });
+
+  it("rejects stale queued content ownership before importing another asset", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Stale content", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const first = await store.importProductMedia(productMediaInput(fixture.id));
+    backend.importCalls.length = 0;
+    backend.nextImportResult = nativeImportResult(nativeAsset(ASSET_B, "b"));
+
+    const editedContent: ProductContent = {
+      ...first.content,
+      description: "Queued owner edit",
+    };
+    const editing = baseStore.applySnapshotRecordPatches([{
+      collection: "productContents",
+      changes: [{
+        id: first.content.id,
+        before: first.content,
+        after: editedContent,
+      }],
+    }]);
+    const importing = store.importProductMedia(productMediaInput(fixture.id, {
+      mediaId: MEDIA_B,
+      contentBefore: first.content,
+      operationId: IMPORT_OPERATION_B,
+    }));
+
+    await editing;
+    await expect(importing).rejects.toThrow(/content|before|stale|ownership/i);
+    expect(backend.importCalls).toEqual([]);
+    expect(store.getState().snapshot!.assets).toEqual([first.asset]);
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([first.media]);
+    expect(store.getState().snapshot!.project.productContents).toEqual([editedContent]);
+    await baseStore.close();
+  });
+
+  it("repairs only broken media identity, retains old assets, and preserves product order", async () => {
+    const backend = new ControlledAssetBackend();
+    const baseStore = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await baseStore.create({ name: "Repair product", location: "sandbox", profile: "showroom" });
+    const fixture = fixtureFor(baseStore.getState().snapshot!);
+    await baseStore.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const store = baseStore;
+    const first = await store.importProductMedia(productMediaInput(fixture.id));
+    const oldAsset = first.asset;
+    const oldMedia = first.media;
+    const productOrder = structuredClone(first.content);
+
+    backend.resolveFailure = Object.assign(new Error("Missing product bytes"), {
+      code: "ASSET_MISSING",
+      sourcePath: PRIVATE_SOURCE_PATH,
+    });
+    await expect(store.resolveAsset(oldAsset.id)).rejects.toMatchObject({
+      code: "ASSET_MISSING",
+    });
+    expect(store.getState().assetIssues).toEqual([{
+      assetId: oldAsset.id,
+      code: "ASSET_MISSING",
+    }]);
+    await baseStore.setProjectTags(["issue-stays-authorized"]);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId: oldAsset.id,
+      code: "ASSET_MISSING",
+    }]);
+
+    backend.resolveFailure = null;
+    backend.nextImportResult = nativeImportResult(nativeAsset(ASSET_B, "b"));
+    backend.importCalls.length = 0;
+    await expect(store.replaceBrokenProductMedia(
+      oldMedia.id,
+      productMediaRequest(IMPORT_OPERATION_B, "content-video"),
+    )).rejects.toThrow(/role|kind|image|video/i);
+    expect(backend.importCalls).toEqual([]);
+    const commit = vi.spyOn(backend, "commit");
+
+    const repaired = await store.replaceBrokenProductMedia(
+      oldMedia.id,
+      productMediaRequest(IMPORT_OPERATION_B),
+      vi.fn(),
+    );
+    const expectedMedia: MediaAsset = { ...oldMedia, assetId: ASSET_B };
+
+    expect(repaired).toEqual(expectedMedia);
+    expect(store.getState().snapshot!.assets).toEqual([
+      oldAsset,
+      backend.nextImportResult.asset,
+    ]);
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([expectedMedia]);
+    expect(store.getState().snapshot!.project.productContents).toEqual([productOrder]);
+    expect(store.getState().assetIssues).toEqual([]);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit.mock.calls[0]![1].journal.map((row) =>
+      (row.payload as { readonly collection: string }).collection)).toEqual([
+      "assets",
+      "mediaAssets",
+    ]);
+    expect(commit.mock.calls[0]![1].journal[1]!.payload).toEqual({
+      collection: "mediaAssets",
+      changes: [{ id: oldMedia.id, before: oldMedia, after: expectedMedia }],
+    });
+
+    await baseStore.undo();
+    expect(store.getState().snapshot!.assets).toEqual([oldAsset]);
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([oldMedia]);
+    expect(store.getState().snapshot!.project.productContents).toEqual([productOrder]);
+    await baseStore.close();
+  });
+
+  it("keeps a broken asset issue while another media record still references it", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Shared product asset",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const snapshot = store.getState().snapshot!;
+    const firstFixture = fixtureFor(snapshot);
+    const secondFixture = fixtureFor(
+      snapshot,
+      "00000000-0000-4000-8000-000000000011",
+      "Second fixture",
+    );
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [
+        { id: firstFixture.id, before: null, after: firstFixture },
+        { id: secondFixture.id, before: null, after: secondFixture },
+      ],
+    });
+    const first = await store.importProductMedia(
+      productMediaInput(firstFixture.id),
+    );
+    const sharedMedia: MediaAsset = {
+      ...first.media,
+      id: MEDIA_B,
+      name: "Shared media",
+    };
+    const sharedContent: ProductContent = {
+      ...first.content,
+      id: CONTENT_B,
+      name: "Shared product",
+      targetEntityId: secondFixture.id,
+      mediaAssetIds: [MEDIA_B],
+    };
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "mediaAssets",
+        changes: [{ id: sharedMedia.id, before: null, after: sharedMedia }],
+      },
+      {
+        collection: "productContents",
+        changes: [{ id: sharedContent.id, before: null, after: sharedContent }],
+      },
+    ]);
+
+    backend.resolveFailure = Object.assign(new Error("Missing shared bytes"), {
+      code: "ASSET_MISSING",
+    });
+    await expect(store.resolveAsset(first.asset.id)).rejects.toMatchObject({
+      code: "ASSET_MISSING",
+    });
+    backend.resolveFailure = null;
+    backend.nextImportResult = nativeImportResult(nativeAsset(ASSET_B, "b"));
+
+    await store.replaceBrokenProductMedia(
+      first.media.id,
+      productMediaRequest(IMPORT_OPERATION_B),
+    );
+
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([
+      { ...first.media, assetId: ASSET_B },
+      sharedMedia,
+    ]);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId: first.asset.id,
+      code: "ASSET_MISSING",
+    }]);
+    await store.close();
   });
 });
 

@@ -1,6 +1,7 @@
 import { CommandBus, commandIntent } from "@aethertwin/command-bus";
 import {
   ASSET_ISSUE_CODES,
+  assertRoleAllowsMedia,
   composeInitialPlanReference,
   type AssetImportProgress,
   type AssetImportRequest,
@@ -12,6 +13,9 @@ import {
   parseManifest,
   parseSnapshot,
   type AssetMediaType,
+  type AssetRecord,
+  type MediaAsset,
+  type ProductContent,
   type ProjectManifest,
   type ProjectSnapshot,
   type PlanReference,
@@ -52,6 +56,19 @@ export interface ProjectAssetSource {
   readonly assetId: string;
   readonly url: string;
   readonly mediaType: AssetMediaType;
+}
+
+export interface ProductMediaImportInput {
+  readonly request: AssetImportRequest;
+  readonly media: Omit<MediaAsset, "assetId">;
+  readonly contentBefore: ProductContent | null;
+  readonly contentAfter: ProductContent;
+}
+
+export interface ProductMediaImportResult {
+  readonly asset: AssetRecord;
+  readonly media: MediaAsset;
+  readonly content: ProductContent;
 }
 
 export interface ProjectStoreOptions {
@@ -111,6 +128,55 @@ function safeAssetResolutionError(code: AssetIssueCode): Error & { readonly code
 function isImportCancellation(value: unknown): boolean {
   return value !== null && typeof value === "object" &&
     (value as { readonly code?: unknown }).code === "ASSET_IMPORT_CANCELLED";
+}
+
+function assertProductMediaRole(
+  request: AssetImportRequest,
+  kind: MediaAsset["kind"],
+): void {
+  const expectedRole = kind === "image" ? "content-image" : "content-video";
+  if (request.role !== expectedRole) {
+    throw new Error("Product media import role must match the media kind.");
+  }
+}
+
+function sameStrings(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function sameProductContent(
+  left: ProductContent,
+  right: ProductContent,
+): boolean {
+  return left.id === right.id
+    && left.name === right.name
+    && sameStrings(left.tags, right.tags)
+    && left.targetEntityId === right.targetEntityId
+    && left.description === right.description
+    && sameStrings(left.mediaAssetIds, right.mediaAssetIds);
+}
+
+function assertProductMediaInput(input: ProductMediaImportInput): void {
+  assertProductMediaRole(input.request, input.media.kind);
+  const occurrences = input.contentAfter.mediaAssetIds.filter((id) =>
+    id === input.media.id).length;
+  if (occurrences !== 1) {
+    throw new Error(
+      "Product content media order must contain the imported media exactly once.",
+    );
+  }
+  if (input.contentBefore !== null) {
+    if (input.contentBefore.id !== input.contentAfter.id) {
+      throw new Error("Product content identity cannot change during media import.");
+    }
+    if (input.contentBefore.mediaAssetIds.includes(input.media.id)) {
+      throw new Error("Product media is already present before import.");
+    }
+  }
 }
 
 function errorValue(value: unknown): Error {
@@ -342,6 +408,20 @@ export class ProjectStore {
     );
   }
 
+  importProductMedia(
+    input: ProductMediaImportInput,
+    onProgress: (value: AssetImportProgress) => void = () => undefined,
+  ): Promise<ProductMediaImportResult> {
+    try {
+      const ownedInput = structuredClone(input);
+      assertProductMediaInput(ownedInput);
+      return this.enqueueMutation(() =>
+        this.performProductMediaImport(ownedInput, onProgress));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
   cancelAssetImport(operationId: string): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new Error("ProjectStore is disposed"));
@@ -362,6 +442,20 @@ export class ProjectStore {
     return this.enqueueMutation(() =>
       this.performBrokenReferenceReplacement(referenceId, ownedRequest, onProgress),
     );
+  }
+
+  replaceBrokenProductMedia(
+    mediaAssetId: string,
+    request: AssetImportRequest,
+    onProgress: (value: AssetImportProgress) => void = () => undefined,
+  ): Promise<MediaAsset> {
+    const ownedRequest = structuredClone(request);
+    return this.enqueueMutation(() =>
+      this.performBrokenProductMediaReplacement(
+        mediaAssetId,
+        ownedRequest,
+        onProgress,
+      ));
   }
 
   resolveAsset(assetId: string): Promise<ProjectAssetSource> {
@@ -492,6 +586,72 @@ export class ProjectStore {
     return created;
   }
 
+  private async performProductMediaImport(
+    input: ProductMediaImportInput,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<ProductMediaImportResult> {
+    const projectPath = this.requireProjectPath();
+    const snapshot = this.state.snapshot!;
+    const current = input.contentBefore === null
+      ? snapshot.project.productContents.find(({ id }) =>
+          id === input.contentAfter.id) ?? null
+      : snapshot.project.productContents.find(({ id }) =>
+          id === input.contentBefore!.id) ?? null;
+    if (
+      input.contentBefore === null
+        ? current !== null
+        : current === null || !sameProductContent(current, input.contentBefore)
+    ) {
+      throw new Error("Product content ownership is stale.");
+    }
+    if (snapshot.project.mediaAssets.some(({ id }) => id === input.media.id)) {
+      throw new Error("Product media record already exists.");
+    }
+    const targetOwner = snapshot.project.productContents.find(({ targetEntityId }) =>
+      targetEntityId === input.contentAfter.targetEntityId);
+    if (targetOwner !== undefined && targetOwner.id !== current?.id) {
+      throw new Error("Product content target already has an owner.");
+    }
+
+    let imported: ProductMediaImportResult | null = null;
+    await this.mutate(async (bus) => {
+      const result = await this.backend.importAsset(
+        projectPath,
+        input.request,
+        onProgress,
+      );
+      assertRoleAllowsMedia(input.request.role, result.asset.mediaType);
+      const media: MediaAsset = { ...input.media, assetId: result.asset.id };
+      imported = {
+        asset: result.asset,
+        media,
+        content: input.contentAfter,
+      };
+      return bus.transaction([
+        commandIntent(patchSnapshotRecordsCommand, {
+          collection: "assets",
+          changes: [{ id: result.asset.id, before: null, after: result.asset }],
+        }),
+        commandIntent(patchSnapshotRecordsCommand, {
+          collection: "mediaAssets",
+          changes: [{ id: media.id, before: null, after: media }],
+        }),
+        commandIntent(patchSnapshotRecordsCommand, {
+          collection: "productContents",
+          changes: [{
+            id: input.contentAfter.id,
+            before: input.contentBefore,
+            after: input.contentAfter,
+          }],
+        }),
+      ]);
+    });
+    if (imported === null) {
+      throw new Error("Asset import did not create product media");
+    }
+    return imported;
+  }
+
   private async performBrokenReferenceReplacement(
     referenceId: string,
     request: AssetImportRequest,
@@ -535,7 +695,54 @@ export class ProjectStore {
       ]);
     });
     if (repaired === null) throw new Error("Asset repair did not replace the plan reference");
-    this.clearAssetIssue(current.assetId);
+    return repaired;
+  }
+
+  private async performBrokenProductMediaReplacement(
+    mediaAssetId: string,
+    request: AssetImportRequest,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<MediaAsset> {
+    const projectPath = this.requireProjectPath();
+    const snapshot = this.state.snapshot!;
+    const current = snapshot.project.mediaAssets.find(({ id }) =>
+      id === mediaAssetId);
+    if (current === undefined) throw new Error("Product media not found");
+    const issue = this.state.assetIssues.find(({ assetId }) =>
+      assetId === current.assetId);
+    if (
+      issue === undefined
+      || (issue.code !== "ASSET_MISSING" && issue.code !== "ASSET_CORRUPT")
+    ) {
+      throw new Error(
+        "Product media does not have a broken or missing asset issue",
+      );
+    }
+    assertProductMediaRole(request, current.kind);
+
+    let repaired: MediaAsset | null = null;
+    await this.mutate(async (bus) => {
+      const result = await this.backend.importAsset(
+        projectPath,
+        request,
+        onProgress,
+      );
+      assertRoleAllowsMedia(request.role, result.asset.mediaType);
+      repaired = { ...current, assetId: result.asset.id };
+      return bus.transaction([
+        commandIntent(patchSnapshotRecordsCommand, {
+          collection: "assets",
+          changes: [{ id: result.asset.id, before: null, after: result.asset }],
+        }),
+        commandIntent(patchSnapshotRecordsCommand, {
+          collection: "mediaAssets",
+          changes: [{ id: current.id, before: current, after: repaired }],
+        }),
+      ]);
+    });
+    if (repaired === null) {
+      throw new Error("Asset repair did not replace product media");
+    }
     return repaired;
   }
 
@@ -738,7 +945,10 @@ export class ProjectStore {
   private reconcileAssetIssues(snapshot: ProjectSnapshot): readonly AssetIssue[] {
     const assetIds = new Set(snapshot.assets.map(({ id }) => id));
     const referencedAssetIds = new Set(
-      snapshot.project.planReferences.map(({ assetId }) => assetId),
+      [
+        ...snapshot.project.planReferences.map(({ assetId }) => assetId),
+        ...snapshot.project.mediaAssets.map(({ assetId }) => assetId),
+      ],
     );
     return this.state.assetIssues.filter(({ assetId }) =>
       assetIds.has(assetId) && referencedAssetIds.has(assetId));
