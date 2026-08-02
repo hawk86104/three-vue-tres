@@ -1,4 +1,16 @@
-import { createInitialSnapshot, parseSnapshot, type AssetRecord, type PlanReference, type ProjectSnapshot } from "@aethertwin/core-model";
+import {
+  createInitialSnapshot,
+  identityTransform2D,
+  parseSnapshot,
+  type AssetRecord,
+  type Fixture,
+  type GuidedRoute,
+  type MediaAsset,
+  type PlanReference,
+  type ProductContent,
+  type ProjectSnapshot,
+  type RouteNetwork,
+} from "@aethertwin/core-model";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ProjectStore,
@@ -244,5 +256,141 @@ describe("snapshot.records.patch", () => {
       }),
     ).toThrow(/asset|reference/i);
     expect(initial.project.planReferences).toEqual([]);
+  });
+
+  it("replays fixture content and guided routes as one heterogeneous history step", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Content route replay",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const initial = store.getState().snapshot!;
+    const floor = initial.project.floors[0]!;
+    const fixture: Fixture = {
+      id: "00000000-0000-4000-8000-000000000081",
+      name: "Replay fixture",
+      tags: [],
+      floorId: floor.id,
+      layerId: floor.layers[0]!.id,
+      transform: identityTransform2D,
+      locked: false,
+      type: "fixture",
+      kind: "display-table",
+      size: { width: 1200, height: 600 },
+    };
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const source = asset("00000000-0000-4000-8000-000000000080", "a");
+    const media: MediaAsset = {
+      id: "00000000-0000-4000-8000-000000000082",
+      name: "Replay image",
+      tags: [],
+      assetId: source.id,
+      kind: "image",
+    };
+    const content: ProductContent = {
+      id: "00000000-0000-4000-8000-000000000083",
+      name: "Replay content",
+      tags: [],
+      targetEntityId: fixture.id,
+      description: "Durable content",
+      mediaAssetIds: [media.id],
+    };
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000000084",
+      name: "Replay network",
+      tags: [],
+      nodes: [
+        {
+          id: "00000000-0000-4000-8000-000000000085",
+          name: "Entrance",
+          tags: [],
+          position: { x: 0, y: 0 },
+          floorId: floor.id,
+          kind: "entrance",
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000086",
+          name: "Product stop",
+          tags: [],
+          position: { x: 1000, y: 0 },
+          floorId: floor.id,
+          kind: "showroom-stop",
+        },
+      ],
+      edges: [{
+        id: "00000000-0000-4000-8000-000000000087",
+        name: "Entrance to product",
+        tags: [],
+        from: "00000000-0000-4000-8000-000000000085",
+        to: "00000000-0000-4000-8000-000000000086",
+        distance: 1000,
+        bidirectional: true,
+        accessible: true,
+        enabled: true,
+        width: 1200,
+        weight: 1,
+      }],
+    };
+    const guided: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000000088",
+      name: "Replay guide",
+      tags: [],
+      routeNetworkId: network.id,
+      stopNodeIds: [network.nodes[0]!.id, network.nodes[1]!.id],
+    };
+    const commit = vi.spyOn(backend, "commit");
+
+    await store.applySnapshotRecordPatches([
+      { collection: "assets", changes: [{ id: source.id, before: null, after: source }] },
+      { collection: "mediaAssets", changes: [{ id: media.id, before: null, after: media }] },
+      { collection: "productContents", changes: [{ id: content.id, before: null, after: content }] },
+      { collection: "routeNetworks", changes: [{ id: network.id, before: null, after: network }] },
+      { collection: "guidedRoutes", changes: [{ id: guided.id, before: null, after: guided }] },
+    ]);
+
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: 6,
+      assets: [source],
+      project: {
+        entities: [fixture],
+        mediaAssets: [media],
+        productContents: [content],
+        routeNetworks: [network],
+        guidedRoutes: [guided],
+      },
+    });
+    const journal = commit.mock.calls[0]![1].journal;
+    expect(journal).toHaveLength(5);
+    expect(new Set(journal.map(({ transactionId }) => transactionId)).size).toBe(1);
+
+    await store.undo();
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: 11,
+      assets: [],
+      project: {
+        entities: [fixture],
+        mediaAssets: [],
+        productContents: [],
+        routeNetworks: [],
+        guidedRoutes: [],
+      },
+    });
+    await store.redo();
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: 16,
+      assets: [source],
+      project: {
+        mediaAssets: [media],
+        productContents: [content],
+        routeNetworks: [network],
+        guidedRoutes: [guided],
+      },
+    });
+    await store.dispose();
   });
 });

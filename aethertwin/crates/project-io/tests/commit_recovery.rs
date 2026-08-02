@@ -1859,6 +1859,132 @@ fn snapshot_plan_reference(snapshot: &ProjectSnapshot, asset: &AssetRecord, id: 
     })
 }
 
+fn showroom_replay_records(
+    snapshot: &ProjectSnapshot,
+) -> (Value, Vec<(&'static str, Value)>) {
+    let floor = serde_json::to_value(&snapshot.project.floors[0]).unwrap();
+    let floor_id = floor["id"].clone();
+    let layer_id = floor["layers"][0]["id"].clone();
+    let asset_id = json!("90000000-0000-4000-8000-000000000001");
+    let fixture_id = json!("90000000-0000-4000-8000-000000000002");
+    let media_id = json!("90000000-0000-4000-8000-000000000003");
+    let network_id = json!("90000000-0000-4000-8000-000000000005");
+    let entrance_id = json!("90000000-0000-4000-8000-000000000006");
+    let stop_id = json!("90000000-0000-4000-8000-000000000007");
+    let sha256 = "d".repeat(64);
+    let fixture = json!({
+        "type": "fixture",
+        "id": fixture_id,
+        "name": "Replay fixture",
+        "tags": [],
+        "floorId": floor_id,
+        "layerId": layer_id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "locked": false,
+        "kind": "display-table",
+        "size": { "width": 1200, "height": 600 }
+    });
+    let asset = json!({
+        "id": asset_id,
+        "sha256": sha256,
+        "relativePath": format!("assets/sha256/dd/{sha256}.png"),
+        "mediaType": "image/png",
+        "size": 128
+    });
+    let media = json!({
+        "id": media_id,
+        "name": "Replay image",
+        "tags": [],
+        "assetId": asset_id,
+        "kind": "image"
+    });
+    let content = json!({
+        "id": "90000000-0000-4000-8000-000000000004",
+        "name": "Replay content",
+        "tags": [],
+        "targetEntityId": fixture_id,
+        "description": "Recovered product content",
+        "mediaAssetIds": [media_id]
+    });
+    let network = json!({
+        "id": network_id,
+        "name": "Replay network",
+        "tags": [],
+        "nodes": [
+            {
+                "id": entrance_id,
+                "name": "Entrance",
+                "tags": [],
+                "position": { "x": 0, "y": 0 },
+                "floorId": floor_id,
+                "kind": "entrance"
+            },
+            {
+                "id": stop_id,
+                "name": "Product stop",
+                "tags": [],
+                "position": { "x": 1500, "y": 0 },
+                "floorId": floor_id,
+                "kind": "showroom-stop"
+            }
+        ],
+        "edges": [{
+            "id": "90000000-0000-4000-8000-000000000008",
+            "name": "Entrance to product",
+            "tags": [],
+            "from": entrance_id,
+            "to": stop_id,
+            "distance": 1500,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+        }]
+    });
+    let guided = json!({
+        "id": "90000000-0000-4000-8000-000000000009",
+        "name": "Replay guide",
+        "tags": [],
+        "routeNetworkId": network_id,
+        "stopNodeIds": [entrance_id, stop_id]
+    });
+    (
+        fixture,
+        vec![
+            ("assets", asset),
+            ("mediaAssets", media),
+            ("productContents", content),
+            ("routeNetworks", network),
+            ("guidedRoutes", guided),
+        ],
+    )
+}
+
+fn with_showroom_replay_records(
+    snapshot: &ProjectSnapshot,
+    fixture: &Value,
+    records: &[(&str, Value)],
+    sequence: u64,
+) -> ProjectSnapshot {
+    let mut value = serde_json::to_value(snapshot).unwrap();
+    value["sequence"] = json!(sequence);
+    value["project"]["entities"].as_array_mut().unwrap().push(fixture.clone());
+    for (collection, record) in records {
+        let target = if *collection == "assets" {
+            &mut value["assets"]
+        } else {
+            &mut value["project"][*collection]
+        };
+        target.as_array_mut().unwrap().push(record.clone());
+    }
+    serde_json::from_value(value).unwrap()
+}
+
 #[test]
 fn snapshot_record_patch_replays_heterogeneous_transaction_and_normalized_rows_through_recovery() {
     let opened = create("Snapshot Record Replay", ProjectProfile::Showroom);
@@ -2332,4 +2458,84 @@ fn building_structure_patch_rejects_malformed_partial_and_disagreeing_rows_atomi
         .query_row("SELECT COUNT(*) FROM command_journal", [], |row| row.get(0))
         .unwrap();
     assert_eq!(journal_count, 0);
+}
+
+#[test]
+fn content_and_route_record_batch_is_atomic_and_exactly_retryable() {
+    let opened = create("Content Route Retry", ProjectProfile::Showroom);
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let (fixture, records) = showroom_replay_records(&initial);
+    let transaction_id = "90000000-0000-4000-8000-000000000020";
+    let entity_changes = vec![json!({
+        "id": fixture["id"],
+        "before": null,
+        "after": fixture,
+        "index": 0
+    })];
+    let mut journal = vec![plan_operation(
+        1,
+        transaction_id,
+        "plan.entities.patch",
+        entity_patch_payload("create", entity_changes.clone()),
+        entity_patch_payload("create", inverse_entity_changes(&entity_changes)),
+        JournalAction::Apply,
+    )];
+    for (index, (collection, record)) in records.iter().enumerate() {
+        let changes = vec![json!({
+            "id": record["id"],
+            "before": null,
+            "after": record,
+            "index": 0
+        })];
+        journal.push(plan_operation(
+            u64::try_from(index + 2).unwrap(),
+            transaction_id,
+            "snapshot.records.patch",
+            snapshot_record_payload(collection, changes.clone()),
+            snapshot_record_payload(
+                collection,
+                inverse_snapshot_record_changes(&changes),
+            ),
+            JournalAction::Apply,
+        ));
+    }
+    let applied = with_showroom_replay_records(&initial, &fixture, &records, 6);
+    let batch = || CommitBatch {
+        before: initial.clone(),
+        after: applied.clone(),
+        journal: journal.clone(),
+    };
+    Connection::open(opened.project_path.join("project.db"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER fail_content_route_journal
+             BEFORE INSERT ON command_journal
+             BEGIN SELECT RAISE(ABORT, 'forced content route journal failure'); END;",
+        )
+        .unwrap();
+
+    assert!(session.commit(batch()).is_err());
+    assert_eq!(session.snapshot(), &initial);
+    assert_eq!(session.save_state(), SaveState::Error);
+    let connection = Connection::open(opened.project_path.join("project.db")).unwrap();
+    let journal_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM command_journal", [], |row| row.get(0))
+        .unwrap();
+    let entity_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM entity_records", [], |row| row.get(0))
+        .unwrap();
+    let asset_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM asset_records", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!((journal_count, entity_count, asset_count), (0, 0, 0));
+    connection
+        .execute("DROP TRIGGER fail_content_route_journal", [])
+        .unwrap();
+    drop(connection);
+
+    session.commit(batch()).unwrap();
+    assert_eq!(session.snapshot(), &applied);
+    assert_eq!(session.save_state(), SaveState::Dirty);
+    session.close().unwrap();
 }

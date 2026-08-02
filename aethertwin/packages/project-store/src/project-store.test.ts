@@ -6,11 +6,13 @@ import {
   type AssetRecord,
   type Boundary,
   type Fixture,
+  type GuidedRoute,
   type MediaAsset,
   type Opening,
   type PlanReference,
   type ProductContent,
   type ProjectSnapshot,
+  type RouteNetwork,
   type SpaceUnit,
   type Wall,
 } from "@aethertwin/core-model";
@@ -29,6 +31,7 @@ import {
   SandboxProjectBackend,
   renameProjectCommand,
   setProjectTagsCommand,
+  type AnySnapshotRecordsPatch,
   type BuildingStructurePatch,
   type KeyValueStorage,
   type ProductMediaImportInput,
@@ -1215,6 +1218,155 @@ describe("ProjectStore product media orchestration", () => {
       assetId: first.asset.id,
       code: "ASSET_MISSING",
     }]);
+    await store.close();
+  });
+});
+
+describe("ProjectStore content and route durability", () => {
+  it("retries an exact heterogeneous transaction and preserves it through history and reopen", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Content route durability",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const initial = store.getState().snapshot!;
+    const fixture = fixtureFor(initial);
+    await store.applyPlanEdit({
+      reason: "create",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const before = store.getState().snapshot!;
+    const source = nativeAsset(ASSET_A, "a");
+    const media: MediaAsset = {
+      id: MEDIA_A,
+      name: "Durable image",
+      tags: [],
+      assetId: source.id,
+      kind: "image",
+    };
+    const content: ProductContent = {
+      id: CONTENT_A,
+      name: "Durable content",
+      tags: [],
+      targetEntityId: fixture.id,
+      description: "Checkpointed product",
+      mediaAssetIds: [media.id],
+    };
+    const floor = before.project.floors[0]!;
+    const entranceId = "80000000-0000-4000-8000-000000000001";
+    const stopId = "80000000-0000-4000-8000-000000000002";
+    const network: RouteNetwork = {
+      id: "80000000-0000-4000-8000-000000000003",
+      name: "Durable network",
+      tags: [],
+      nodes: [
+        {
+          id: entranceId,
+          name: "Entrance",
+          tags: [],
+          position: { x: 0, y: 0 },
+          floorId: floor.id,
+          kind: "entrance",
+        },
+        {
+          id: stopId,
+          name: "Product stop",
+          tags: [],
+          position: { x: 2000, y: 0 },
+          floorId: floor.id,
+          kind: "showroom-stop",
+        },
+      ],
+      edges: [{
+        id: "80000000-0000-4000-8000-000000000004",
+        name: "Durable edge",
+        tags: [],
+        from: entranceId,
+        to: stopId,
+        distance: 2000,
+        bidirectional: true,
+        accessible: true,
+        enabled: true,
+        width: 1200,
+        weight: 1,
+      }],
+    };
+    const guided: GuidedRoute = {
+      id: "80000000-0000-4000-8000-000000000005",
+      name: "Durable guide",
+      tags: [],
+      routeNetworkId: network.id,
+      stopNodeIds: [entranceId, stopId],
+    };
+    const patches: readonly AnySnapshotRecordsPatch[] = [
+      { collection: "assets", changes: [{ id: source.id, before: null, after: source }] },
+      { collection: "mediaAssets", changes: [{ id: media.id, before: null, after: media }] },
+      { collection: "productContents", changes: [{ id: content.id, before: null, after: content }] },
+      { collection: "routeNetworks", changes: [{ id: network.id, before: null, after: network }] },
+      { collection: "guidedRoutes", changes: [{ id: guided.id, before: null, after: guided }] },
+    ];
+    const failure = new Error("content route commit failed");
+    backend.failNextCommit = failure;
+    const commit = vi.spyOn(backend, "commit");
+
+    await expect(store.applySnapshotRecordPatches(patches)).rejects.toBe(failure);
+    expect(store.getState().snapshot).toEqual(before);
+
+    await store.applySnapshotRecordPatches(patches);
+    const applied = store.getState().snapshot!;
+    expect(applied).toMatchObject({
+      assets: [source],
+      project: {
+        entities: [fixture],
+        mediaAssets: [media],
+        productContents: [content],
+        routeNetworks: [network],
+        guidedRoutes: [guided],
+      },
+    });
+    expect(commit).toHaveBeenCalledTimes(2);
+    expect(commit.mock.calls[0]![1].journal.map(({ payload }) => payload)).toEqual(
+      commit.mock.calls[1]![1].journal.map(({ payload }) => payload),
+    );
+
+    await store.undo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [],
+      project: {
+        entities: [fixture],
+        mediaAssets: [],
+        productContents: [],
+        routeNetworks: [],
+        guidedRoutes: [],
+      },
+    });
+    await store.redo();
+    expect(store.getState().snapshot).toMatchObject({
+      assets: [source],
+      project: {
+        mediaAssets: [media],
+        productContents: [content],
+        routeNetworks: [network],
+        guidedRoutes: [guided],
+      },
+    });
+
+    const projectPath = store.getState().projectPath!;
+    const beforeSave = store.getState().snapshot!;
+    await store.save();
+    await store.close();
+    await store.open(projectPath);
+    expect(store.getState().snapshot).toEqual(parseSnapshot({
+      ...beforeSave,
+      checkpointSequence: beforeSave.sequence,
+    }));
+    expect(store.getState()).toMatchObject({
+      saveState: "saved",
+      canUndo: false,
+      canRedo: false,
+    });
     await store.close();
   });
 });

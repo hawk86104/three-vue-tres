@@ -93,6 +93,132 @@ fn patch(collection: &str, changes: Vec<Value>) -> (Value, Value) {
     )
 }
 
+fn showroom_replay_records(
+    snapshot: &ProjectSnapshot,
+) -> (Value, Vec<(&'static str, Value)>) {
+    let floor = serde_json::to_value(&snapshot.project.floors[0]).unwrap();
+    let floor_id = floor["id"].clone();
+    let layer_id = floor["layers"][0]["id"].clone();
+    let asset_id = json!("90000000-0000-4000-8000-000000000001");
+    let fixture_id = json!("90000000-0000-4000-8000-000000000002");
+    let media_id = json!("90000000-0000-4000-8000-000000000003");
+    let network_id = json!("90000000-0000-4000-8000-000000000005");
+    let entrance_id = json!("90000000-0000-4000-8000-000000000006");
+    let stop_id = json!("90000000-0000-4000-8000-000000000007");
+    let sha256 = "d".repeat(64);
+    let fixture = json!({
+        "type": "fixture",
+        "id": fixture_id,
+        "name": "Replay fixture",
+        "tags": [],
+        "floorId": floor_id,
+        "layerId": layer_id,
+        "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "locked": false,
+        "kind": "display-table",
+        "size": { "width": 1200, "height": 600 }
+    });
+    let asset = json!({
+        "id": asset_id,
+        "sha256": sha256,
+        "relativePath": format!("assets/sha256/dd/{sha256}.png"),
+        "mediaType": "image/png",
+        "size": 128
+    });
+    let media = json!({
+        "id": media_id,
+        "name": "Replay image",
+        "tags": [],
+        "assetId": asset_id,
+        "kind": "image"
+    });
+    let content = json!({
+        "id": "90000000-0000-4000-8000-000000000004",
+        "name": "Replay content",
+        "tags": [],
+        "targetEntityId": fixture_id,
+        "description": "Recovered product content",
+        "mediaAssetIds": [media_id]
+    });
+    let network = json!({
+        "id": network_id,
+        "name": "Replay network",
+        "tags": [],
+        "nodes": [
+            {
+                "id": entrance_id,
+                "name": "Entrance",
+                "tags": [],
+                "position": { "x": 0, "y": 0 },
+                "floorId": floor_id,
+                "kind": "entrance"
+            },
+            {
+                "id": stop_id,
+                "name": "Product stop",
+                "tags": [],
+                "position": { "x": 1500, "y": 0 },
+                "floorId": floor_id,
+                "kind": "showroom-stop"
+            }
+        ],
+        "edges": [{
+            "id": "90000000-0000-4000-8000-000000000008",
+            "name": "Entrance to product",
+            "tags": [],
+            "from": entrance_id,
+            "to": stop_id,
+            "distance": 1500,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+        }]
+    });
+    let guided = json!({
+        "id": "90000000-0000-4000-8000-000000000009",
+        "name": "Replay guide",
+        "tags": [],
+        "routeNetworkId": network_id,
+        "stopNodeIds": [entrance_id, stop_id]
+    });
+    (
+        fixture,
+        vec![
+            ("assets", asset),
+            ("mediaAssets", media),
+            ("productContents", content),
+            ("routeNetworks", network),
+            ("guidedRoutes", guided),
+        ],
+    )
+}
+
+fn with_showroom_replay_records(
+    snapshot: &ProjectSnapshot,
+    fixture: &Value,
+    records: &[(&str, Value)],
+    sequence: u64,
+) -> ProjectSnapshot {
+    let mut value = serde_json::to_value(snapshot).unwrap();
+    value["sequence"] = json!(sequence);
+    value["project"]["entities"].as_array_mut().unwrap().push(fixture.clone());
+    for (collection, record) in records {
+        let target = if *collection == "assets" {
+            &mut value["assets"]
+        } else {
+            &mut value["project"][*collection]
+        };
+        target.as_array_mut().unwrap().push(record.clone());
+    }
+    serde_json::from_value(value).unwrap()
+}
+
 fn canonical_asset() -> AssetRecord {
     let sha256 = "c".repeat(64);
     AssetRecord {
@@ -754,4 +880,99 @@ fn complete_m2_2_building_survives_checkpoint_reopen_and_dirty_recovery() {
     for transient in ["roomCandidates", "candidateKey", "fingerprint", "parts"] {
         assert!(!durable_json.contains(transient));
     }
+}
+
+#[test]
+fn content_and_routes_survive_checkpoint_reopen_and_dirty_recovery() {
+    let opened = create("Content Route Recovery");
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let (fixture, records) = showroom_replay_records(&initial);
+    let transaction_id = "90000000-0000-4000-8000-000000000010";
+    let entity_changes = vec![json!({
+        "id": fixture["id"],
+        "before": null,
+        "after": fixture,
+        "index": 0
+    })];
+    let mut journal = vec![typed_operation(
+        1,
+        transaction_id,
+        "plan.entities.patch",
+        json!({ "reason": "create", "changes": entity_changes }),
+        json!({
+            "reason": "create",
+            "changes": inverse_changes(&entity_changes)
+        }),
+    )];
+    for (index, (collection, record)) in records.iter().enumerate() {
+        let changes = vec![json!({
+            "id": record["id"],
+            "before": null,
+            "after": record,
+            "index": 0
+        })];
+        let (payload, inverse_payload) = patch(collection, changes);
+        journal.push(operation(
+            u64::try_from(index + 2).unwrap(),
+            transaction_id,
+            payload,
+            inverse_payload,
+        ));
+    }
+    let applied = with_showroom_replay_records(&initial, &fixture, &records, 6);
+    session
+        .commit(CommitBatch {
+            before: initial,
+            after: applied,
+            journal,
+        })
+        .unwrap();
+    let checkpoint = session
+        .checkpoint(session.snapshot().clone())
+        .unwrap()
+        .snapshot;
+    assert_eq!(checkpoint.sequence, 6);
+    assert_eq!(checkpoint.checkpoint_sequence, 6);
+    session.close().unwrap();
+
+    let mut reopened = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(reopened.snapshot(), &checkpoint);
+    let guided_before = records
+        .iter()
+        .find(|(collection, _)| *collection == "guidedRoutes")
+        .unwrap()
+        .1
+        .clone();
+    let mut guided_after = guided_before.clone();
+    guided_after["name"] = json!("Recovered guide edit");
+    let changes = vec![json!({
+        "id": guided_before["id"],
+        "before": guided_before,
+        "after": guided_after,
+        "index": 0
+    })];
+    let (payload, inverse_payload) = patch("guidedRoutes", changes);
+    let mut dirty_value = serde_json::to_value(&checkpoint).unwrap();
+    dirty_value["sequence"] = json!(7);
+    dirty_value["project"]["guidedRoutes"][0] = guided_after;
+    let dirty: ProjectSnapshot = serde_json::from_value(dirty_value).unwrap();
+    reopened
+        .commit(CommitBatch {
+            before: checkpoint,
+            after: dirty.clone(),
+            journal: vec![operation(
+                7,
+                "90000000-0000-4000-8000-000000000011",
+                payload,
+                inverse_payload,
+            )],
+        })
+        .unwrap();
+    assert_eq!(reopened.save_state(), SaveState::Dirty);
+    drop(reopened);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert!(recovered.recovered);
+    assert_eq!(recovered.snapshot, dirty);
 }

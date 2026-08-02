@@ -396,6 +396,14 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     ] {
         assert_eq!(commands.matches(&format!("fn {command}(")).count(), 1);
     }
+    for forbidden_command in [
+        "import_product_media",
+        "replace_broken_product_media",
+        "create_route_network",
+        "save_guided_route",
+    ] {
+        assert!(!commands.contains(forbidden_command));
+    }
     for forbidden in ["rusqlite", "std::fs", "Command::new", "std::process"] {
         assert!(!commands.contains(forbidden));
     }
