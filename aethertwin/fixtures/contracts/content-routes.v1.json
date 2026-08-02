@@ -1,0 +1,842 @@
+{
+  "version": 1,
+  "routeGeometryEpsilonMm": 1e-7,
+  "baseSnapshot": {
+    "schemaVersion": 3,
+    "sequence": 7,
+    "checkpointSequence": 7,
+    "project": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "M2.3 content and routes contract",
+      "tags": [],
+      "profile": "showroom",
+      "floors": [
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": "Showroom floor",
+          "tags": [],
+          "layers": [
+            {
+              "id": "00000000-0000-4000-8000-000000000003",
+              "name": "Default",
+              "tags": [],
+              "visible": true,
+              "locked": false
+            }
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "name": "Other floor",
+          "tags": [],
+          "layers": [
+            {
+              "id": "00000000-0000-4000-8000-000000000005",
+              "name": "Default",
+              "tags": [],
+              "visible": true,
+              "locked": false
+            }
+          ]
+        }
+      ],
+      "entities": [
+        {
+          "type": "fixture",
+          "id": "00000000-0000-4000-8000-000000000010",
+          "name": "Display table",
+          "tags": ["featured"],
+          "floorId": "00000000-0000-4000-8000-000000000002",
+          "layerId": "00000000-0000-4000-8000-000000000003",
+          "transform": {
+            "translation": { "x": 1000, "y": 1000 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+          },
+          "spatial3D": { "elevation": 0, "height": 900 },
+          "locked": false,
+          "kind": "display-table",
+          "size": { "width": 1600, "height": 800 }
+        },
+        {
+          "type": "poi",
+          "id": "00000000-0000-4000-8000-000000000011",
+          "name": "Featured product",
+          "tags": ["featured"],
+          "floorId": "00000000-0000-4000-8000-000000000002",
+          "layerId": "00000000-0000-4000-8000-000000000003",
+          "transform": {
+            "translation": { "x": 3000, "y": 2000 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+          },
+          "locked": false,
+          "kind": "product-hotspot",
+          "radius": 250
+        },
+        {
+          "type": "boundary",
+          "id": "00000000-0000-4000-8000-000000000012",
+          "name": "Showroom boundary",
+          "tags": [],
+          "floorId": "00000000-0000-4000-8000-000000000002",
+          "layerId": "00000000-0000-4000-8000-000000000003",
+          "transform": {
+            "translation": { "x": 0, "y": 0 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+          },
+          "locked": false,
+          "polygon": [
+            { "x": -1000, "y": -1000 },
+            { "x": 5000, "y": -1000 },
+            { "x": 5000, "y": 5000 },
+            { "x": -1000, "y": 5000 }
+          ]
+        }
+      ],
+      "vendors": [],
+      "productContents": [
+        {
+          "id": "00000000-0000-4000-8000-000000000040",
+          "name": "Fixture content",
+          "tags": [],
+          "targetEntityId": "00000000-0000-4000-8000-000000000010",
+          "description": "Fixture description",
+          "mediaAssetIds": [
+            "00000000-0000-4000-8000-000000000030",
+            "00000000-0000-4000-8000-000000000031"
+          ]
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000041",
+          "name": "Hotspot content",
+          "tags": [],
+          "targetEntityId": "00000000-0000-4000-8000-000000000011",
+          "description": "Hotspot description",
+          "mediaAssetIds": ["00000000-0000-4000-8000-000000000030"]
+        }
+      ],
+      "mediaAssets": [
+        {
+          "id": "00000000-0000-4000-8000-000000000030",
+          "name": "Product image",
+          "tags": [],
+          "assetId": "00000000-0000-4000-8000-000000000020",
+          "kind": "image"
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000031",
+          "name": "Product video",
+          "tags": [],
+          "assetId": "00000000-0000-4000-8000-000000000021",
+          "kind": "video"
+        }
+      ],
+      "routeNetworks": [
+        {
+          "id": "00000000-0000-4000-8000-000000000050",
+          "name": "Showroom route network",
+          "tags": [],
+          "nodes": [
+            {
+              "id": "00000000-0000-4000-8000-000000000051",
+              "name": "Entrance",
+              "tags": [],
+              "position": { "x": 0, "y": 0 },
+              "floorId": "00000000-0000-4000-8000-000000000002",
+              "kind": "entrance"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000052",
+              "name": "Junction",
+              "tags": [],
+              "position": { "x": 3000, "y": 0 },
+              "floorId": "00000000-0000-4000-8000-000000000002",
+              "kind": "junction"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000053",
+              "name": "Stop A",
+              "tags": [],
+              "position": { "x": 3000, "y": 4000 },
+              "floorId": "00000000-0000-4000-8000-000000000002",
+              "kind": "showroom-stop"
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000054",
+              "name": "Stop B",
+              "tags": [],
+              "position": { "x": 0, "y": 4000 },
+              "floorId": "00000000-0000-4000-8000-000000000002",
+              "kind": "showroom-stop"
+            }
+          ],
+          "edges": [
+            {
+              "id": "00000000-0000-4000-8000-000000000061",
+              "name": "Entrance to junction",
+              "tags": [],
+              "from": "00000000-0000-4000-8000-000000000051",
+              "to": "00000000-0000-4000-8000-000000000052",
+              "distance": 3000,
+              "bidirectional": true,
+              "accessible": true,
+              "enabled": true,
+              "width": 1200,
+              "weight": 1
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000062",
+              "name": "Junction to stop A",
+              "tags": [],
+              "from": "00000000-0000-4000-8000-000000000052",
+              "to": "00000000-0000-4000-8000-000000000053",
+              "distance": 4000,
+              "bidirectional": true,
+              "accessible": true,
+              "enabled": true,
+              "width": 1200,
+              "weight": 1
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000063",
+              "name": "Stop A to stop B",
+              "tags": [],
+              "from": "00000000-0000-4000-8000-000000000053",
+              "to": "00000000-0000-4000-8000-000000000054",
+              "distance": 3000,
+              "bidirectional": true,
+              "accessible": true,
+              "enabled": true,
+              "width": 1200,
+              "weight": 1
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000064",
+              "name": "Stop B to entrance",
+              "tags": [],
+              "from": "00000000-0000-4000-8000-000000000054",
+              "to": "00000000-0000-4000-8000-000000000051",
+              "distance": 4000,
+              "bidirectional": true,
+              "accessible": true,
+              "enabled": true,
+              "width": 1200,
+              "weight": 1
+            }
+          ]
+        }
+      ],
+      "themes": [],
+      "cameraShots": [],
+      "storySequences": [],
+      "planReferences": [],
+      "openings": [],
+      "guidedRoutes": [
+        {
+          "id": "00000000-0000-4000-8000-000000000070",
+          "name": "Curated route",
+          "tags": [],
+          "routeNetworkId": "00000000-0000-4000-8000-000000000050",
+          "stopNodeIds": [
+            "00000000-0000-4000-8000-000000000051",
+            "00000000-0000-4000-8000-000000000053"
+          ]
+        }
+      ],
+      "materials": [],
+      "materialAssignments": [],
+      "sceneEnvironment": {
+        "backgroundColor": "#101820",
+        "ambient": { "color": "#dce8f0", "intensity": 0.55 },
+        "key": {
+          "color": "#fff1dc",
+          "intensity": 1.1,
+          "direction": [4, 8, 5]
+        },
+        "shadowsEnabled": true,
+        "shadowSoftness": 0.5
+      }
+    },
+    "assets": [
+      {
+        "id": "00000000-0000-4000-8000-000000000020",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "relativePath": "assets/sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+        "mediaType": "image/png",
+        "size": 128
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000021",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "relativePath": "assets/sha256/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.webm",
+        "mediaType": "video/webm",
+        "size": 256
+      }
+    ]
+  },
+  "validCases": [
+    {
+      "name": "fixture content is optional",
+      "operations": [
+        { "op": "remove", "path": ["project", "productContents", 0] }
+      ]
+    },
+    {
+      "name": "content media order remains durable",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "productContents", 0, "mediaAssetIds"],
+          "value": [
+            "00000000-0000-4000-8000-000000000031",
+            "00000000-0000-4000-8000-000000000030"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "image media accepts JPEG assets",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["assets", 0, "mediaType"],
+          "value": "image/jpeg"
+        },
+        {
+          "op": "set",
+          "path": ["assets", 0, "relativePath"],
+          "value": "assets/sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+        }
+      ]
+    },
+    {
+      "name": "image media accepts sanitized SVG asset metadata",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["assets", 0, "mediaType"],
+          "value": "image/svg+xml"
+        },
+        {
+          "op": "set",
+          "path": ["assets", 0, "relativePath"],
+          "value": "assets/sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.svg"
+        }
+      ]
+    },
+    {
+      "name": "video media accepts MP4 assets",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["assets", 1, "mediaType"],
+          "value": "video/mp4"
+        },
+        {
+          "op": "set",
+          "path": ["assets", 1, "relativePath"],
+          "value": "assets/sha256/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.mp4"
+        }
+      ]
+    },
+    {
+      "name": "distance within the geometry epsilon is accepted without rewriting",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "distance"],
+          "value": 3000.00000009
+        }
+      ]
+    },
+    {
+      "name": "distance at the represented geometry epsilon boundary is accepted",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "distance"],
+          "value": 3000.0000001
+        }
+      ]
+    },
+    {
+      "name": "same coordinates are allowed on another floor",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "nodes"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000055",
+            "name": "Other-floor junction",
+            "tags": [],
+            "position": { "x": 0, "y": 0 },
+            "floorId": "00000000-0000-4000-8000-000000000004",
+            "kind": "junction"
+          }
+        }
+      ]
+    },
+    {
+      "name": "opposing unidirectional edges are distinct arcs",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "bidirectional"],
+          "value": false
+        },
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "edges"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000065",
+            "name": "Junction to entrance",
+            "tags": [],
+            "from": "00000000-0000-4000-8000-000000000052",
+            "to": "00000000-0000-4000-8000-000000000051",
+            "distance": 3000,
+            "bidirectional": false,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "guided routes may revisit a nonconsecutive stop",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds"],
+          "value": [
+            "00000000-0000-4000-8000-000000000051",
+            "00000000-0000-4000-8000-000000000053",
+            "00000000-0000-4000-8000-000000000051"
+          ]
+        }
+      ]
+    }
+  ],
+  "invalidCases": [
+    {
+      "name": "content target must be a fixture or product hotspot",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "productContents", 0, "targetEntityId"],
+          "value": "00000000-0000-4000-8000-000000000012"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.productContents[0].targetEntityId"
+      }
+    },
+    {
+      "name": "a target may not have duplicate content records",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "productContents"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000042",
+            "name": "Duplicate fixture content",
+            "tags": [],
+            "targetEntityId": "00000000-0000-4000-8000-000000000010",
+            "description": "Duplicate",
+            "mediaAssetIds": []
+          }
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.productContents[2].targetEntityId"
+      }
+    },
+    {
+      "name": "a product hotspot requires exactly one content record",
+      "operations": [
+        { "op": "remove", "path": ["project", "productContents", 1] }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.entities[1].id"
+      }
+    },
+    {
+      "name": "content media IDs must be unique",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "productContents", 0, "mediaAssetIds"],
+          "value": [
+            "00000000-0000-4000-8000-000000000030",
+            "00000000-0000-4000-8000-000000000030"
+          ]
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.productContents[0].mediaAssetIds[1]"
+      }
+    },
+    {
+      "name": "duplicate product-content UUIDs remain invalid",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "productContents"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000040",
+            "name": "Duplicate content UUID",
+            "tags": [],
+            "targetEntityId": "00000000-0000-4000-8000-000000000010",
+            "description": "Duplicate UUID",
+            "mediaAssetIds": []
+          }
+        }
+      ],
+      "expected": {
+        "code": "DUPLICATE_UUID",
+        "path": "project.productContents[2].id"
+      }
+    },
+    {
+      "name": "duplicate media-asset UUIDs remain invalid",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "mediaAssets"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000030",
+            "name": "Duplicate media UUID",
+            "tags": [],
+            "assetId": "00000000-0000-4000-8000-000000000020",
+            "kind": "image"
+          }
+        }
+      ],
+      "expected": {
+        "code": "DUPLICATE_UUID",
+        "path": "project.mediaAssets[2].id"
+      }
+    },
+    {
+      "name": "image media must reference an image asset",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "mediaAssets", 0, "assetId"],
+          "value": "00000000-0000-4000-8000-000000000021"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.mediaAssets[0].assetId"
+      }
+    },
+    {
+      "name": "video media must reference a video asset",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "mediaAssets", 1, "assetId"],
+          "value": "00000000-0000-4000-8000-000000000020"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.mediaAssets[1].assetId"
+      }
+    },
+    {
+      "name": "unsupported M2 media kinds are rejected",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "mediaAssets", 0, "kind"],
+          "value": "audio"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.mediaAssets[0].kind"
+      }
+    },
+    {
+      "name": "unsupported M2 route-node kinds are rejected",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "nodes", 1, "kind"],
+          "value": "aisle"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.routeNetworks[0].nodes[1].kind"
+      }
+    },
+    {
+      "name": "route edges must connect distinct nodes",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "to"],
+          "value": "00000000-0000-4000-8000-000000000051"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.routeNetworks[0].edges[0].to"
+      }
+    },
+    {
+      "name": "route edges may not cross floors",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "nodes"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000055",
+            "name": "Other-floor junction",
+            "tags": [],
+            "position": { "x": 6000, "y": 0 },
+            "floorId": "00000000-0000-4000-8000-000000000004",
+            "kind": "junction"
+          }
+        },
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "to"],
+          "value": "00000000-0000-4000-8000-000000000055"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.routeNetworks[0].edges[0].to"
+      }
+    },
+    {
+      "name": "route distance must equal Euclidean node distance",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "distance"],
+          "value": 3000.0000002
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.routeNetworks[0].edges[0].distance"
+      }
+    },
+    {
+      "name": "same-floor route nodes may not occupy duplicate positions",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "nodes"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000056",
+            "name": "Duplicate entrance position",
+            "tags": [],
+            "position": { "x": 0.00000005, "y": 0 },
+            "floorId": "00000000-0000-4000-8000-000000000002",
+            "kind": "junction"
+          }
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.routeNetworks[0].nodes[4].position"
+      }
+    },
+    {
+      "name": "same-floor route nodes at the epsilon boundary are duplicates",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "nodes"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000056",
+            "name": "Boundary duplicate position",
+            "tags": [],
+            "position": { "x": 0.0000001, "y": 0 },
+            "floorId": "00000000-0000-4000-8000-000000000002",
+            "kind": "junction"
+          }
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.routeNetworks[0].nodes[4].position"
+      }
+    },
+    {
+      "name": "a directed route arc may have only one owner",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "edges"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000065",
+            "name": "Duplicate entrance arc",
+            "tags": [],
+            "from": "00000000-0000-4000-8000-000000000051",
+            "to": "00000000-0000-4000-8000-000000000052",
+            "distance": 3000,
+            "bidirectional": false,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          }
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.routeNetworks[0].edges[4].from"
+      }
+    },
+    {
+      "name": "a reverse edge conflicts with an existing bidirectional arc",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "edges"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000065",
+            "name": "Conflicting reverse arc",
+            "tags": [],
+            "from": "00000000-0000-4000-8000-000000000052",
+            "to": "00000000-0000-4000-8000-000000000051",
+            "distance": 3000,
+            "bidirectional": false,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          }
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.routeNetworks[0].edges[4].from"
+      }
+    },
+    {
+      "name": "route weight must be at least one",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "routeNetworks", 0, "edges", 0, "weight"],
+          "value": 0.999
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.routeNetworks[0].edges[0].weight"
+      }
+    },
+    {
+      "name": "guided routes require at least two stops",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds"],
+          "value": ["00000000-0000-4000-8000-000000000051"]
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.guidedRoutes[0].stopNodeIds"
+      }
+    },
+    {
+      "name": "guided routes reject an empty stop list",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds"],
+          "value": []
+        }
+      ],
+      "expected": {
+        "code": "INVALID_VALUE",
+        "path": "project.guidedRoutes[0].stopNodeIds"
+      }
+    },
+    {
+      "name": "guided routes must reference an existing network",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "routeNetworkId"],
+          "value": "00000000-0000-4000-8000-000000000099"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.guidedRoutes[0].routeNetworkId"
+      }
+    },
+    {
+      "name": "guided routes must reference nodes in their network",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds", 1],
+          "value": "00000000-0000-4000-8000-000000000099"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.guidedRoutes[0].stopNodeIds[1]"
+      }
+    },
+    {
+      "name": "guided-route stops must share one floor",
+      "operations": [
+        {
+          "op": "append",
+          "path": ["project", "routeNetworks", 0, "nodes"],
+          "value": {
+            "id": "00000000-0000-4000-8000-000000000055",
+            "name": "Other-floor stop",
+            "tags": [],
+            "position": { "x": 6000, "y": 0 },
+            "floorId": "00000000-0000-4000-8000-000000000004",
+            "kind": "showroom-stop"
+          }
+        },
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds", 1],
+          "value": "00000000-0000-4000-8000-000000000055"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.guidedRoutes[0].stopNodeIds[1]"
+      }
+    },
+    {
+      "name": "adjacent guided-route stops must be distinct",
+      "operations": [
+        {
+          "op": "set",
+          "path": ["project", "guidedRoutes", 0, "stopNodeIds", 1],
+          "value": "00000000-0000-4000-8000-000000000051"
+        }
+      ],
+      "expected": {
+        "code": "INVALID_REFERENCE",
+        "path": "project.guidedRoutes[0].stopNodeIds[1]"
+      }
+    }
+  ]
+}

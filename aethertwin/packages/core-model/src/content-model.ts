@@ -3,11 +3,15 @@ import type { Size2, Transform2D } from "./geometry";
 import type { ProjectProfile } from "./model";
 import type { ProjectRecordBase } from "./spatial-entities";
 
+export type MediaAssetKind = "image" | "video";
+export type RouteNodeKind = "junction" | "entrance" | "showroom-stop";
+export const ROUTE_GEOMETRY_EPSILON_MM = 1e-7;
+
 export interface Opening extends ProjectRecordBase { readonly wallId: string; readonly kind: "door" | "window"; readonly distanceAlongWall: number; readonly width: number; readonly height: number; readonly sillHeight: number }
 export interface Vendor extends ProjectRecordBase { readonly spaceUnitId: string | null; readonly externalId: string; readonly category: string; readonly status: "unassigned" | "active" | "inactive" }
 export interface ProductContent extends ProjectRecordBase { readonly targetEntityId: string; readonly description: string; readonly mediaAssetIds: readonly string[] }
-export interface MediaAsset extends ProjectRecordBase { readonly assetId: string; readonly kind: "image" | "video" | "audio" | "model" | "document" }
-export interface RouteNode extends ProjectRecordBase { readonly position: Point2; readonly floorId: string; readonly kind: string }
+export interface MediaAsset extends ProjectRecordBase { readonly assetId: string; readonly kind: MediaAssetKind }
+export interface RouteNode extends ProjectRecordBase { readonly position: Point2; readonly floorId: string; readonly kind: RouteNodeKind }
 export interface RouteEdge extends ProjectRecordBase { readonly from: string; readonly to: string; readonly distance: number; readonly bidirectional: boolean; readonly accessible: boolean; readonly enabled: boolean; readonly width: number; readonly weight: number }
 export interface RouteNetwork extends ProjectRecordBase { readonly nodes: readonly RouteNode[]; readonly edges: readonly RouteEdge[] }
 export interface ThemeConfig extends ProjectRecordBase { readonly profile: ProjectProfile; readonly values: Readonly<Record<string, string | number | boolean>> }

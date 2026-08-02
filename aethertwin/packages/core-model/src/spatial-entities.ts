@@ -9,7 +9,7 @@ export interface SpatialEntityBase extends ProjectRecordBase {
 }
 export type SpaceUnitKind = "room" | "shop" | "booth" | "exhibition" | "service" | "restricted";
 export type FixtureKind = "display-case" | "display-table" | "shelf" | "checkout" | "screen" | "partition" | "signage" | "generic";
-export type PointOfInterestKind = "entrance" | "exit" | "service-desk" | "restroom" | "accessible-restroom" | "stage" | "food" | "rest-area" | "medical" | "fire-safety" | "parking" | "charging" | "storage" | "nursery" | "water" | "atm" | "closed-area" | "custom";
+export type PointOfInterestKind = "entrance" | "exit" | "service-desk" | "restroom" | "accessible-restroom" | "stage" | "food" | "rest-area" | "medical" | "fire-safety" | "parking" | "charging" | "storage" | "nursery" | "water" | "atm" | "closed-area" | "custom" | "product-hotspot";
 export interface Boundary extends SpatialEntityBase { readonly type: "boundary"; readonly polygon: readonly Point2[] }
 export interface Wall extends SpatialEntityBase { readonly type: "wall"; readonly centerLine: readonly Point2[]; readonly thickness: number }
 export interface Zone extends SpatialEntityBase { readonly type: "zone"; readonly polygon: readonly Point2[]; readonly purpose: string; readonly color: string }

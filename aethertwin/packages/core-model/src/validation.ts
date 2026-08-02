@@ -16,6 +16,7 @@ import type {
   Vendor,
   SceneEnvironment,
 } from "./content-model";
+import { ROUTE_GEOMETRY_EPSILON_MM } from "./content-model";
 import { parsePoint, polygon, polyline } from "./geometry-validation";
 import type { Point2, Size2, Spatial3D, Transform2D } from "./geometry";
 import { deepFreeze } from "./immutability";
@@ -70,13 +71,16 @@ const FIXTURE_KINDS = ["display-case", "display-table", "shelf", "checkout", "sc
 const POI_KINDS = [
   "entrance", "exit", "service-desk", "restroom", "accessible-restroom", "stage", "food",
   "rest-area", "medical", "fire-safety", "parking", "charging", "storage", "nursery",
-  "water", "atm", "closed-area", "custom",
+  "water", "atm", "closed-area", "custom", "product-hotspot",
 ] as const;
 const VENDOR_STATUSES = ["unassigned", "active", "inactive"] as const;
-const MEDIA_KINDS = ["image", "video", "audio", "model", "document"] as const;
+const MEDIA_KINDS = ["image", "video"] as const;
+const ROUTE_NODE_KINDS = ["junction", "entrance", "showroom-stop"] as const;
 const DISPLAY_UNITS = ["m", "cm", "mm"] as const;
 const ASSET_MEDIA_TYPES = ["image/png", "image/jpeg", "image/svg+xml", "video/mp4", "video/webm"] as const;
-const PLAN_MEDIA_TYPES: ReadonlySet<AssetMediaType> = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const IMAGE_MEDIA_TYPES: ReadonlySet<AssetMediaType> = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
+const VIDEO_MEDIA_TYPES: ReadonlySet<AssetMediaType> = new Set(["video/mp4", "video/webm"]);
+const PLAN_MEDIA_TYPES = IMAGE_MEDIA_TYPES;
 const ASSET_EXTENSION: Readonly<Record<AssetMediaType, string>> = Object.freeze({
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -774,12 +778,16 @@ function parseRouteNode(value: unknown, path: string, registerId: RegisterId): R
     ...parseRecordBase(source, path, registerId),
     position: parsePoint(source.position, `${path}.position`),
     floorId: uuid(source.floorId, `${path}.floorId`),
-    kind: nonEmpty(source.kind, `${path}.kind`),
+    kind: oneOf(source.kind, `${path}.kind`, ROUTE_NODE_KINDS),
   };
 }
 
 function parseRouteEdge(value: unknown, path: string, registerId: RegisterId): RouteEdge {
   const source = record(value, path);
+  const weight = positive(source.weight, `${path}.weight`);
+  if (weight < 1) {
+    fail("INVALID_VALUE", `${path}.weight`, "must be at least 1");
+  }
   return {
     ...parseRecordBase(source, path, registerId),
     from: uuid(source.from, `${path}.from`),
@@ -789,7 +797,7 @@ function parseRouteEdge(value: unknown, path: string, registerId: RegisterId): R
     accessible: bool(source.accessible, `${path}.accessible`),
     enabled: bool(source.enabled, `${path}.enabled`),
     width: positive(source.width, `${path}.width`),
-    weight: positive(source.weight, `${path}.weight`),
+    weight,
   };
 }
 
@@ -989,6 +997,161 @@ function validateV2References(snapshot: ProjectSnapshotV2 | ProjectSnapshot): vo
       requireReference(cameraShotIds, id, `project.storySequences[${sequenceIndex}].cameraShotIds[${shotIndex}]`, "unknown camera shot")));
 }
 
+function validateV3ContentReferences(
+  snapshot: ProjectSnapshot,
+  assetsById: ReadonlyMap<string, AssetRecord>,
+  entitiesById: ReadonlyMap<string, SpatialEntity>,
+): void {
+  const mediaAssetsById = new Map(snapshot.project.mediaAssets.map((asset) => [asset.id, asset]));
+  const contentIndexByTarget = new Map<string, number>();
+
+  snapshot.project.productContents.forEach((content, contentIndex) => {
+    const path = `project.productContents[${contentIndex}]`;
+    const target = entitiesById.get(content.targetEntityId);
+    if (
+      target === undefined
+      || (target.type !== "fixture" && !(target.type === "poi" && target.kind === "product-hotspot"))
+    ) {
+      fail("INVALID_REFERENCE", `${path}.targetEntityId`, "expected a fixture or product hotspot");
+    }
+    if (contentIndexByTarget.has(content.targetEntityId)) {
+      fail("INVALID_REFERENCE", `${path}.targetEntityId`, "target already has product content");
+    }
+    contentIndexByTarget.set(content.targetEntityId, contentIndex);
+
+    const seenMediaIds = new Set<string>();
+    content.mediaAssetIds.forEach((mediaAssetId, mediaIndex) => {
+      const mediaPath = `${path}.mediaAssetIds[${mediaIndex}]`;
+      if (!mediaAssetsById.has(mediaAssetId)) {
+        fail("INVALID_REFERENCE", mediaPath, "unknown media asset");
+      }
+      if (seenMediaIds.has(mediaAssetId)) {
+        fail("INVALID_REFERENCE", mediaPath, "media asset is already ordered in this content");
+      }
+      seenMediaIds.add(mediaAssetId);
+    });
+  });
+
+  snapshot.project.entities.forEach((entity, entityIndex) => {
+    if (
+      entity.type === "poi"
+      && entity.kind === "product-hotspot"
+      && !contentIndexByTarget.has(entity.id)
+    ) {
+      fail(
+        "INVALID_REFERENCE",
+        `project.entities[${entityIndex}].id`,
+        "product hotspot requires exactly one content record",
+      );
+    }
+  });
+
+  snapshot.project.mediaAssets.forEach((mediaAsset, mediaIndex) => {
+    const path = `project.mediaAssets[${mediaIndex}].assetId`;
+    const asset = assetsById.get(mediaAsset.assetId);
+    if (asset === undefined) {
+      fail("INVALID_REFERENCE", path, "unknown asset");
+    }
+    const allowedMediaTypes = mediaAsset.kind === "image" ? IMAGE_MEDIA_TYPES : VIDEO_MEDIA_TYPES;
+    if (!allowedMediaTypes.has(asset.mediaType)) {
+      fail("INVALID_REFERENCE", path, `${mediaAsset.kind} media requires a matching asset media type`);
+    }
+  });
+}
+
+function validateV3RouteNetworks(snapshot: ProjectSnapshot): void {
+  snapshot.project.routeNetworks.forEach((network, networkIndex) => {
+    const networkPath = `project.routeNetworks[${networkIndex}]`;
+    const nodesById = new Map(network.nodes.map((node) => [node.id, node]));
+    const bucketSize = ROUTE_GEOMETRY_EPSILON_MM * 2;
+    const nodesByBucket = new Map<string, RouteNode[]>();
+    const bucketAxis = (coordinate: number): {
+      readonly home: string;
+      readonly neighbors: readonly string[];
+    } => {
+      const index = Math.floor(coordinate / bucketSize);
+      if (!Number.isSafeInteger(index)) {
+        const exact = `exact:${coordinate}`;
+        return { home: exact, neighbors: [exact] };
+      }
+      return {
+        home: `index:${index}`,
+        neighbors: [
+          `index:${index - 1}`,
+          `index:${index}`,
+          `index:${index + 1}`,
+        ],
+      };
+    };
+    const bucketKey = (floorId: string, x: string, y: string): string =>
+      `${floorId}|${x}|${y}`;
+
+    network.nodes.forEach((node, nodeIndex) => {
+      const bucketX = bucketAxis(node.position.x);
+      const bucketY = bucketAxis(node.position.y);
+      for (const neighborX of bucketX.neighbors) {
+        for (const neighborY of bucketY.neighbors) {
+          const candidates = nodesByBucket.get(bucketKey(node.floorId, neighborX, neighborY)) ?? [];
+          const duplicate = candidates.find(
+            (prior) =>
+              Math.hypot(
+                node.position.x - prior.position.x,
+                node.position.y - prior.position.y,
+              ) <= ROUTE_GEOMETRY_EPSILON_MM,
+          );
+          if (duplicate !== undefined) {
+            fail(
+              "INVALID_VALUE",
+              `${networkPath}.nodes[${nodeIndex}].position`,
+              "duplicates an existing same-floor route-node position",
+            );
+          }
+        }
+      }
+      const homeKey = bucketKey(node.floorId, bucketX.home, bucketY.home);
+      const homeBucket = nodesByBucket.get(homeKey);
+      if (homeBucket === undefined) {
+        nodesByBucket.set(homeKey, [node]);
+      } else {
+        homeBucket.push(node);
+      }
+    });
+
+    const arcOwnerByKey = new Map<string, string>();
+    const claimArc = (from: string, to: string, edgePath: string): void => {
+      const key = `${from}:${to}`;
+      const existingOwner = arcOwnerByKey.get(key);
+      if (existingOwner !== undefined) {
+        fail("INVALID_REFERENCE", `${edgePath}.from`, `directed arc already belongs to ${existingOwner}`);
+      }
+      arcOwnerByKey.set(key, edgePath);
+    };
+
+    network.edges.forEach((edge, edgeIndex) => {
+      const path = `${networkPath}.edges[${edgeIndex}]`;
+      const from = nodesById.get(edge.from);
+      const to = nodesById.get(edge.to);
+      if (from === undefined) fail("INVALID_REFERENCE", `${path}.from`, "unknown route node in this network");
+      if (to === undefined) fail("INVALID_REFERENCE", `${path}.to`, "unknown route node in this network");
+      if (from.id === to.id) {
+        fail("INVALID_REFERENCE", `${path}.to`, "route edges require distinct nodes");
+      }
+      if (from.floorId !== to.floorId) {
+        fail("INVALID_REFERENCE", `${path}.to`, "route edge nodes must share one floor");
+      }
+      const expectedDistance = Math.hypot(
+        to.position.x - from.position.x,
+        to.position.y - from.position.y,
+      );
+      if (Math.abs(edge.distance - expectedDistance) > ROUTE_GEOMETRY_EPSILON_MM) {
+        fail("INVALID_VALUE", `${path}.distance`, "must equal the Euclidean node distance");
+      }
+      claimArc(edge.from, edge.to, path);
+      if (edge.bidirectional) claimArc(edge.to, edge.from, path);
+    });
+  });
+}
+
 function validateV3References(snapshot: ProjectSnapshot): void {
   const floorIds = new Set(snapshot.project.floors.map((floor) => floor.id));
   const layersByFloor = new Map(snapshot.project.floors.map((floor) => [
@@ -999,6 +1162,9 @@ function validateV3References(snapshot: ProjectSnapshot): void {
   const entitiesById = new Map(snapshot.project.entities.map((entity) => [entity.id, entity]));
   const routeNetworksById = new Map(snapshot.project.routeNetworks.map((network) => [network.id, network]));
   const materialsById = new Map(snapshot.project.materials.map((material) => [material.id, material]));
+
+  validateV3ContentReferences(snapshot, assetsById, entitiesById);
+  validateV3RouteNetworks(snapshot);
 
   snapshot.project.planReferences.forEach((reference, index) => {
     const path = `project.planReferences[${index}]`;
@@ -1030,6 +1196,7 @@ function validateV3References(snapshot: ProjectSnapshot): void {
     }
     const nodesById = new Map(network.nodes.map((node) => [node.id, node]));
     let floorId: string | undefined;
+    let previousNodeId: string | undefined;
     route.stopNodeIds.forEach((nodeId, stopIndex) => {
       const node = nodesById.get(nodeId);
       if (node === undefined) {
@@ -1039,6 +1206,10 @@ function validateV3References(snapshot: ProjectSnapshot): void {
       if (node.floorId !== floorId) {
         fail("INVALID_REFERENCE", `${path}.stopNodeIds[${stopIndex}]`, "guided route stops must share one floor");
       }
+      if (nodeId === previousNodeId) {
+        fail("INVALID_REFERENCE", `${path}.stopNodeIds[${stopIndex}]`, "adjacent guided-route stops must be distinct");
+      }
+      previousNodeId = nodeId;
     });
   });
 

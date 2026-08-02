@@ -59,17 +59,20 @@ export type {
   MaterialAssignment,
   MaterialDefinition,
   MediaAsset,
+  MediaAssetKind,
   Opening,
   PlanReference,
   ProductContent,
   RouteEdge,
   RouteNetwork,
   RouteNode,
+  RouteNodeKind,
   SceneEnvironment,
   StorySequence,
   ThemeConfig,
   Vendor,
 } from "./content-model";
+export { ROUTE_GEOMETRY_EPSILON_MM } from "./content-model";
 export {
   ModelValidationError,
   parseManifest,

@@ -251,7 +251,7 @@ function completeSnapshotInput(): MutableSnapshotV2 {
     id: contractId(14), name: "Public route", tags: [],
     nodes: [
       { id: contractId(15), name: "A", tags: [], position: { x: 0, y: 0 }, floorId, kind: "entrance" },
-      { id: contractId(16), name: "B", tags: [], position: { x: 1000, y: 0 }, floorId, kind: "aisle" },
+      { id: contractId(16), name: "B", tags: [], position: { x: 1000, y: 0 }, floorId, kind: "junction" },
     ],
     edges: [{
       id: contractId(17), name: "A-B", tags: [], from: contractId(15), to: contractId(16),
