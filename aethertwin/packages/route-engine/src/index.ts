@@ -9,3 +9,9 @@ export type {
   RouteMutationError,
   RouteMutationErrorCode,
 } from "./result";
+export {
+  resolveGuidedRoute,
+  resolveRoute,
+  type NoRouteError,
+  type ResolvedRoute,
+} from "./resolver";
