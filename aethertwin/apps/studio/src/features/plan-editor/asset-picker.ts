@@ -2,12 +2,29 @@ import { open as openPlanDialog } from "@tauri-apps/plugin-dialog";
 import type { AssetImportRequest } from "@aethertwin/project-store";
 
 export type PlanAssetSource = AssetImportRequest["source"];
+export type PlanAssetRole = AssetImportRequest["role"];
 
 export interface PlanAssetPicker {
-  pick(): Promise<PlanAssetSource | null>;
+  pick(role?: PlanAssetRole): Promise<PlanAssetSource | null>;
 }
 
-const PLAN_ACCEPT = ".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml";
+const roleOptions = {
+  "plan-reference": {
+    accept: ".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml",
+    filter: { name: "\u5e73\u9762\u56fe", extensions: ["png", "jpg", "jpeg", "svg"] },
+  },
+  "content-image": {
+    accept: ".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml",
+    filter: { name: "\u4ea7\u54c1\u56fe\u7247", extensions: ["png", "jpg", "jpeg", "svg"] },
+  },
+  "content-video": {
+    accept: ".mp4,.webm,video/mp4,video/webm",
+    filter: { name: "\u4ea7\u54c1\u89c6\u9891", extensions: ["mp4", "webm"] },
+  },
+} satisfies Record<PlanAssetRole, {
+  readonly accept: string;
+  readonly filter: { readonly name: string; readonly extensions: readonly string[] };
+}>;
 
 function displayNameFromPath(path: string): string {
   return path.split(/[\\/]/).at(-1) ?? path;
@@ -17,14 +34,13 @@ export function createDesktopPlanAssetPicker(
   openDialog: typeof openPlanDialog = openPlanDialog,
 ): PlanAssetPicker {
   return Object.freeze({
-    async pick(): Promise<PlanAssetSource | null> {
+    async pick(
+      role: PlanAssetRole = "plan-reference",
+    ): Promise<PlanAssetSource | null> {
       const selected = await openDialog({
         directory: false,
         multiple: false,
-        filters: [{
-          name: "\u5e73\u9762\u56fe",
-          extensions: ["png", "jpg", "jpeg", "svg"],
-        }],
+        filters: [roleOptions[role].filter],
       });
       if (typeof selected !== "string") return null;
       return Object.freeze({
@@ -40,11 +56,11 @@ export function createSandboxPlanAssetPicker(
   ownerDocument: Document = document,
 ): PlanAssetPicker {
   return Object.freeze({
-    pick(): Promise<PlanAssetSource | null> {
+    pick(role: PlanAssetRole = "plan-reference"): Promise<PlanAssetSource | null> {
       return new Promise((resolve) => {
         const input = ownerDocument.createElement("input");
         input.type = "file";
-        input.accept = PLAN_ACCEPT;
+        input.accept = roleOptions[role].accept;
         input.tabIndex = -1;
         input.hidden = true;
         input.setAttribute("aria-hidden", "true");

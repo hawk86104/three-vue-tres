@@ -1,12 +1,22 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { parseSnapshotV3, type PlanReference } from "@aethertwin/core-model";
+import {
+  parseSnapshotV3,
+  type Fixture,
+  type PlanReference,
+  type ProductContent,
+} from "@aethertwin/core-model";
 import { ProjectStore, SandboxProjectBackend } from "@aethertwin/project-store";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
+import {
+  createDesktopPlanAssetPicker,
+  createSandboxPlanAssetPicker,
+  type PlanAssetPicker,
+} from "./asset-picker";
 import { PlanEditor } from "./plan-editor";
 
 type AssetImportSource = Parameters<ProjectStore["importPlanReference"]>[0]["source"];
@@ -32,6 +42,9 @@ const OPERATION_ID = "00000000-0000-4000-8000-000000000101";
 const REFERENCE_ID = "00000000-0000-4000-8000-000000000102";
 const REPLACEMENT_OPERATION_ID = "00000000-0000-4000-8000-000000000103";
 const ASSET_ID = "00000000-0000-4000-8000-000000000104";
+const PRODUCT_FIXTURE_ID = "00000000-0000-4000-8000-000000000201";
+const PRODUCT_CONTENT_ID = "00000000-0000-4000-8000-000000000202";
+const PRODUCT_MEDIA_ID = "00000000-0000-4000-8000-000000000203";
 const PRIVATE_SOURCE_PATH = "E:\\private\\plans\\sensitive-floor.png";
 const stores: ProjectStore[] = [];
 
@@ -92,6 +105,45 @@ async function createProject() {
   return { backend, store };
 }
 
+async function addProductTarget(store: ProjectStore) {
+  const floor = store.getState().snapshot!.project.floors[0]!;
+  const fixture: Fixture = {
+    id: PRODUCT_FIXTURE_ID,
+    name: "North display",
+    tags: [],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    transform: {
+      translation: { x: 0, y: 0 },
+      rotation: 0,
+      scale: { x: 1, y: 1 },
+    },
+    locked: false,
+    type: "fixture",
+    kind: "display-table",
+    size: { width: 1_200, height: 600 },
+  };
+  const content: ProductContent = {
+    id: PRODUCT_CONTENT_ID,
+    name: "North product",
+    tags: [],
+    targetEntityId: fixture.id,
+    description: "",
+    mediaAssetIds: [],
+  };
+  await store.applySnapshotRecordPatches([
+    {
+      collection: "entities",
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    },
+    {
+      collection: "productContents",
+      changes: [{ id: content.id, before: null, after: content }],
+    },
+  ]);
+  return { fixture, content };
+}
+
 function referenceResult(store: ProjectStore, referenceId = REFERENCE_ID): PlanReference {
   const snapshot = store.getState().snapshot!;
   const floor = snapshot.project.floors[0]!;
@@ -118,7 +170,7 @@ function renderImportEditor(
   store: ProjectStore,
   options: {
     readonly backendMode?: "desktop" | "sandbox";
-    readonly picker?: { readonly pick: () => Promise<AssetImportSource | null> } | null;
+    readonly picker?: PlanAssetPicker | null;
     readonly ids?: readonly string[];
   } = {},
 ) {
@@ -537,7 +589,9 @@ describe("Task 11 Asset Library workflow", () => {
     expect(within(library).getByText("\u672a\u9501\u5b9a")).toBeVisible();
     expect(within(library).getByText("\u8d44\u4ea7\u5df2\u635f\u574f")).toBeVisible();
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
-    expect(screen.queryByRole("button", { name: /\u5f00\u53e3|\u5185\u5bb9|\u8def\u7ebf|3D|\u5bfc\u51fa/ })).not.toBeInTheDocument();
+    expect(within(library).queryByRole("button", {
+      name: /\u5f00\u53e3|\u5185\u5bb9|\u8def\u7ebf|3D|\u5bfc\u51fa/,
+    })).not.toBeInTheDocument();
 
     const reimport = within(library).getByRole("button", { name: "\u91cd\u65b0\u5bfc\u5165 north-floor" });
     await user.click(reimport);
@@ -552,5 +606,274 @@ describe("Task 11 Asset Library workflow", () => {
       expect.any(Function),
     );
     expect(reimport).toHaveFocus();
+  });
+});
+
+describe('M2.3 Task 11 product-media picker roles', () => {
+  it.each([
+    ['content-image', {
+      name: '产品图片',
+      extensions: ['png', 'jpg', 'jpeg', 'svg'],
+    }],
+    ['content-video', {
+      name: '产品视频',
+      extensions: ['mp4', 'webm'],
+    }],
+  ] as const)(
+    'uses an exact desktop dialog filter for %s',
+    async (role, filter) => {
+      openPlanDialog.mockResolvedValueOnce(null);
+      const picker = createDesktopPlanAssetPicker(openPlanDialog);
+
+      await picker.pick(role);
+
+      expect(openPlanDialog).toHaveBeenCalledWith({
+        directory: false,
+        multiple: false,
+        filters: [filter],
+      });
+    },
+  );
+
+  it.each([
+    [
+      'content-image',
+      '.png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml',
+    ],
+    [
+      'content-video',
+      '.mp4,.webm,video/mp4,video/webm',
+    ],
+  ] as const)(
+    'owns a sandbox input with an exact accept list for %s',
+    async (role, accept) => {
+      const picker = createSandboxPlanAssetPicker(document);
+      const picked = picker.pick(role);
+      const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+
+      expect(input).not.toBeNull();
+      expect(input).toHaveAttribute('accept', accept);
+      expect(input).not.toHaveAttribute('multiple');
+      fireEvent(input!, new Event('cancel'));
+
+      await expect(picked).resolves.toBeNull();
+      expect(input).not.toBeInTheDocument();
+    },
+  );
+});
+
+describe('M2.3 Task 11 product-media import ownership', () => {
+  it('rejects a stale product target when selection changes while the picker is open', async () => {
+    const { store } = await createProject();
+    const { fixture } = await addProductTarget(store);
+    const secondFixture: Fixture = {
+      ...fixture,
+      id: '00000000-0000-4000-8000-000000000204',
+      name: 'South display',
+      transform: {
+        ...fixture.transform,
+        translation: { x: 2_000, y: 0 },
+      },
+    };
+    await store.applyPlanEdit({
+      reason: 'create',
+      changes: [{ id: secondFixture.id, before: null, after: secondFixture }],
+    });
+    const source = sandboxSource('stale.png');
+    const pickerResult = deferred<AssetImportSource | null>();
+    const pick = vi.fn(async () => pickerResult.promise);
+    const importProductMedia = vi.spyOn(store, 'importProductMedia');
+    renderImportEditor(store, {
+      picker: { pick },
+      ids: [OPERATION_ID, PRODUCT_MEDIA_ID],
+    });
+    const user = userEvent.setup();
+
+    await user.click(document.querySelector<HTMLElement>(
+      `[data-entity-id="${fixture.id}"]`,
+    )!);
+    await user.click(screen.getByRole('button', { name: '\u5bfc\u5165\u56fe\u7247' }));
+    await user.click(document.querySelector<HTMLElement>(
+      `[data-entity-id="${secondFixture.id}"]`,
+    )!);
+    expect(screen.getByRole('button', { name: '\u5bfc\u5165\u56fe\u7247' }))
+      .toBeDisabled();
+    await act(async () => pickerResult.resolve(source));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+      '\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002',
+    ));
+    expect(importProductMedia).not.toHaveBeenCalled();
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([]);
+  });
+
+  it('uses the shared progress and cancellation owner for a product image import', async () => {
+    const { store } = await createProject();
+    const { fixture, content } = await addProductTarget(store);
+    const source = sandboxSource('hero.png');
+    const completion = deferred<
+      Awaited<ReturnType<ProjectStore['importProductMedia']>>
+    >();
+    const importProductMedia = vi
+      .spyOn(store, 'importProductMedia')
+      .mockImplementation(async (_input, onProgress) => {
+        onProgress?.({
+          operationId: OPERATION_ID,
+          stage: 'hash',
+          completedBytes: 12,
+          totalBytes: 24,
+        });
+        return completion.promise;
+      });
+    const cancelAssetImport = vi
+      .spyOn(store, 'cancelAssetImport')
+      .mockResolvedValue();
+    const pick = vi.fn(async () => source);
+    renderImportEditor(store, {
+      picker: { pick },
+      ids: [OPERATION_ID, PRODUCT_MEDIA_ID],
+    });
+    const user = userEvent.setup();
+
+    await user.click(document.querySelector<HTMLElement>(
+      `[data-entity-id="${fixture.id}"]`,
+    )!);
+    const importButton = screen.getByRole('button', { name: '导入图片' });
+    await user.click(importButton);
+
+    expect(pick).toHaveBeenCalledOnce();
+    expect(pick).toHaveBeenCalledWith('content-image');
+    expect(importProductMedia).toHaveBeenCalledWith(
+      {
+        request: {
+          operationId: OPERATION_ID,
+          role: 'content-image',
+          source,
+        },
+        media: {
+          id: PRODUCT_MEDIA_ID,
+          name: 'hero',
+          tags: [],
+          kind: 'image',
+        },
+        contentBefore: content,
+        contentAfter: {
+          ...content,
+          mediaAssetIds: [PRODUCT_MEDIA_ID],
+        },
+      },
+      expect.any(Function),
+    );
+    expect(await screen.findByText('正在计算指纹')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: '取消导入' }));
+    expect(cancelAssetImport).toHaveBeenCalledWith(OPERATION_ID);
+
+    await act(async () => completion.reject(Object.assign(
+      new Error('Asset import cancelled'),
+      { code: 'ASSET_IMPORT_CANCELLED' },
+    )));
+    await waitFor(() => {
+      expect(screen.queryByText('正在计算指纹')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText('Asset import cancelled')).not.toBeInTheDocument();
+    expect(importButton).toHaveFocus();
+  });
+
+  it('redacts native paths from product-media commit failures and restores focus', async () => {
+    const { store } = await createProject();
+    const { fixture } = await addProductTarget(store);
+    const source: AssetImportSource = {
+      kind: 'native-path',
+      path: PRIVATE_SOURCE_PATH,
+      displayName: 'sensitive-product.png',
+    };
+    vi.spyOn(store, 'importProductMedia').mockRejectedValueOnce(Object.assign(
+      new Error(`Commit failed for ${PRIVATE_SOURCE_PATH}`),
+      { code: 'COMMIT_FAILED', logRef: 'product-media-commit' },
+    ));
+    renderImportEditor(store, {
+      picker: { pick: vi.fn(async () => source) },
+      ids: [OPERATION_ID, PRODUCT_MEDIA_ID],
+    });
+    const user = userEvent.setup();
+
+    await user.click(document.querySelector<HTMLElement>(
+      `[data-entity-id="${fixture.id}"]`,
+    )!);
+    const importButton = screen.getByRole('button', { name: '导入图片' });
+    await user.click(importButton);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('产品媒体导入失败，请重试。');
+    expect(alert).toHaveTextContent('product-media-commit');
+    expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
+    expect(screen.queryByText('sensitive-product')).not.toBeInTheDocument();
+    await waitFor(() => expect(importButton).toHaveFocus());
+    expect(store.getState().snapshot!.project.mediaAssets).toEqual([]);
+  });
+
+  it('repairs corrupt product media in place with the matching media role', async () => {
+    const { store } = await createProject();
+    const { fixture, content } = await addProductTarget(store);
+    const originalSource = await sandboxSvgSource('hero.svg', 1);
+    vi.stubGlobal('Blob', originalSource.blob.constructor);
+    const imported = await store.importProductMedia({
+      request: {
+        operationId: OPERATION_ID,
+        role: 'content-image',
+        source: originalSource,
+      },
+      media: {
+        id: PRODUCT_MEDIA_ID,
+        name: 'hero',
+        tags: [],
+        kind: 'image',
+      },
+      contentBefore: content,
+      contentAfter: {
+        ...content,
+        mediaAssetIds: [PRODUCT_MEDIA_ID],
+      },
+    });
+    const state = store.getState();
+    (store as unknown as { state: ReturnType<ProjectStore['getState']> }).state =
+      Object.freeze({
+        ...state,
+        assetIssues: Object.freeze([{
+          assetId: imported.media.assetId,
+          code: 'ASSET_CORRUPT' as const,
+        }]),
+      });
+    const replacement = await sandboxSvgSource('replacement.svg', 2);
+    const replaceBrokenProductMedia = vi
+      .spyOn(store, 'replaceBrokenProductMedia')
+      .mockResolvedValue(imported.media);
+    const pick = vi.fn(async () => replacement);
+    renderImportEditor(store, {
+      picker: { pick },
+      ids: [REPLACEMENT_OPERATION_ID],
+    });
+    const user = userEvent.setup();
+
+    await user.click(document.querySelector<HTMLElement>(
+      `[data-entity-id="${fixture.id}"]`,
+    )!);
+    const repairButton = screen.getByRole('button', { name: '修复 hero' });
+    await user.click(repairButton);
+
+    expect(pick).toHaveBeenCalledWith('content-image');
+    expect(replaceBrokenProductMedia).toHaveBeenCalledWith(
+      PRODUCT_MEDIA_ID,
+      {
+        operationId: REPLACEMENT_OPERATION_ID,
+        role: 'content-image',
+        source: replacement,
+      },
+      expect.any(Function),
+    );
+    await waitFor(() => expect(repairButton).toHaveFocus());
+    expect(store.getState().snapshot!.project.productContents[0]!.mediaAssetIds)
+      .toEqual([PRODUCT_MEDIA_ID]);
   });
 });

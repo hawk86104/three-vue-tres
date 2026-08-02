@@ -2,9 +2,12 @@ import {
   validateOpeningGeometry,
   type Fixture,
   type Floor,
+  type MediaAsset,
   type Opening,
   type PlanLayer,
   type PlanReference,
+  type PointOfInterest,
+  type ProductContent,
   type ProjectSnapshot,
   type SaveState,
   type SpatialEntity,
@@ -26,12 +29,20 @@ import {
 import type {
   BuildingStructurePatch,
   ProjectBackend,
+  ProjectAssetSource,
+  ProjectStoreState,
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState } from "react";
 import { validateProjectName } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
 import { OpeningInspector } from "./opening-inspector";
 import { ReferenceInspector } from "./reference-inspector";
+import {
+  ContentInspector,
+  type ProductMediaRole,
+} from "./content-inspector";
+
+type AssetIssue = ProjectStoreState["assetIssues"][number];
 
 export type InspectorContext =
   | { readonly kind: "project" }
@@ -1019,8 +1030,137 @@ function MultiInspector({
   );
 }
 
+interface EntityInspectorWithContentProps {
+  readonly snapshot: ProjectSnapshot;
+  readonly assetIssues: readonly AssetIssue[];
+  readonly assetOperationBusy: boolean;
+  readonly entity: SpatialEntity;
+  readonly floor: Floor;
+  readonly makeId: () => string;
+  readonly onApplyPlanEdit: (intent: PlanEditIntent) => Promise<void>;
+  readonly onApplyBuildingStructurePatch: (
+    patch: BuildingStructurePatch,
+  ) => Promise<void>;
+  readonly onApplyProductContentPatch: (
+    before: ProductContent | null,
+    after: ProductContent,
+  ) => Promise<void>;
+  readonly onImportProductMedia: (
+    role: ProductMediaRole,
+    target: Fixture | PointOfInterest,
+    content: ProductContent | null,
+    initiator: HTMLElement,
+  ) => Promise<void>;
+  readonly onRepairProductMedia: (
+    media: MediaAsset,
+    target: Fixture | PointOfInterest,
+    initiator: HTMLElement,
+  ) => Promise<void>;
+  readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
+  readonly onError: (error: unknown) => void;
+}
+
+function EntityInspectorWithContent({
+  snapshot,
+  assetIssues,
+  assetOperationBusy,
+  entity,
+  floor,
+  makeId,
+  onApplyPlanEdit,
+  onApplyBuildingStructurePatch,
+  onApplyProductContentPatch,
+  onImportProductMedia,
+  onRepairProductMedia,
+  resolveAsset,
+  onError,
+}: EntityInspectorWithContentProps) {
+  const entityInspector = (
+    <EntityInspector
+      snapshot={snapshot}
+      entity={entity}
+      floor={floor}
+      onApplyPlanEdit={onApplyPlanEdit}
+      onApplyBuildingStructurePatch={onApplyBuildingStructurePatch}
+      onError={onError}
+    />
+  );
+  const target = entity.type === "fixture"
+    || (entity.type === "poi" && entity.kind === "product-hotspot")
+    ? entity
+    : null;
+  if (target === null) return entityInspector;
+
+  const storedContent = snapshot.project.productContents.find(
+    (candidate) => candidate.targetEntityId === target.id,
+  );
+  if (target.type === "poi" && storedContent === undefined) {
+    return (
+      <div className="studio-inspector-stack">
+        {entityInspector}
+        <StatusNotice tone="error">
+          {"\u4ea7\u54c1\u70ed\u70b9\u7f3a\u5c11\u5185\u5bb9\u8bb0\u5f55"}
+        </StatusNotice>
+      </div>
+    );
+  }
+
+  const content: ProductContent = storedContent ?? {
+    id: "00000000-0000-4000-8000-000000000000",
+    name: target.name,
+    tags: [...target.tags],
+    targetEntityId: target.id,
+    description: "",
+    mediaAssetIds: [],
+  };
+  const mediaById = new Map(
+    snapshot.project.mediaAssets.map((item) => [item.id, item]),
+  );
+  const media = content.mediaAssetIds.flatMap((id) => {
+    const item = mediaById.get(id);
+    return item === undefined ? [] : [item];
+  });
+  const targetLayer = floor.layers.find((layer) => layer.id === target.layerId);
+  const contentDisabled = target.locked
+    || targetLayer === undefined
+    || !targetLayer.visible
+    || targetLayer.locked;
+  return (
+    <div className="studio-inspector-stack">
+      {entityInspector}
+      <ContentInspector
+        content={content}
+        target={target}
+        media={media}
+        assetIssues={assetIssues}
+        disabled={contentDisabled}
+        assetOperationBusy={assetOperationBusy}
+        onPatch={async (_before, after) => {
+          try {
+            const next = storedContent === undefined
+              ? { ...after, id: makeId(), targetEntityId: target.id }
+              : after;
+            await onApplyProductContentPatch(storedContent ?? null, next);
+          } catch (error) {
+            onError(error);
+          }
+        }}
+        onImport={(role, initiator) => (
+          onImportProductMedia(role, target, storedContent ?? null, initiator)
+        )}
+        onRepair={(mediaItem, initiator) => (
+          onRepairProductMedia(mediaItem, target, initiator)
+        )}
+        resolveAsset={resolveAsset}
+      />
+    </div>
+  );
+}
+
 export interface PlanInspectorProps {
   readonly snapshot: ProjectSnapshot;
+  readonly assetIssues: readonly AssetIssue[];
+  readonly assetOperationBusy: boolean;
   readonly context: InspectorContext;
   readonly activeFloorId: string;
   readonly saveState: SaveState;
@@ -1044,11 +1184,29 @@ export interface PlanInspectorProps {
   readonly onApplyBuildingStructurePatch: (
     patch: BuildingStructurePatch,
   ) => Promise<void>;
+  readonly onApplyProductContentPatch: (
+    before: ProductContent | null,
+    after: ProductContent,
+  ) => Promise<void>;
+  readonly onImportProductMedia: (
+    role: ProductMediaRole,
+    target: Fixture | PointOfInterest,
+    content: ProductContent | null,
+    initiator: HTMLElement,
+  ) => Promise<void>;
+  readonly onRepairProductMedia: (
+    media: MediaAsset,
+    target: Fixture | PointOfInterest,
+    initiator: HTMLElement,
+  ) => Promise<void>;
+  readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
   readonly onError: (error: unknown) => void;
 }
 
 export function PlanInspector({
   snapshot,
+  assetIssues,
+  assetOperationBusy,
   context,
   activeFloorId,
   saveState,
@@ -1064,6 +1222,10 @@ export function PlanInspector({
   onApplyPlanReferencePatch,
   onApplyOpeningPatch,
   onApplyBuildingStructurePatch,
+  onApplyProductContentPatch,
+  onImportProductMedia,
+  onRepairProductMedia,
+  resolveAsset,
   onError,
 }: PlanInspectorProps) {
   if (context.kind === "project") {
@@ -1189,12 +1351,19 @@ export function PlanInspector({
     return entity === undefined || floor === undefined ? (
       <StatusNotice tone="error">对象不存在</StatusNotice>
     ) : (
-      <EntityInspector
+      <EntityInspectorWithContent
         snapshot={snapshot}
+        assetIssues={assetIssues}
+        assetOperationBusy={assetOperationBusy}
         entity={entity}
         floor={floor}
+        makeId={makeId}
         onApplyPlanEdit={onApplyPlanEdit}
         onApplyBuildingStructurePatch={onApplyBuildingStructurePatch}
+        onApplyProductContentPatch={onApplyProductContentPatch}
+        onImportProductMedia={onImportProductMedia}
+        onRepairProductMedia={onRepairProductMedia}
+        resolveAsset={resolveAsset}
         onError={onError}
       />
     );

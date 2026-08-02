@@ -16,7 +16,16 @@ import {
   type PlanEditIntent,
   type RoomRecognitionResult,
 } from "@aethertwin/plan-engine";
-import type { PlanReference, ProjectSnapshot, SpaceUnit, Wall } from "@aethertwin/core-model";
+import type {
+  Fixture,
+  MediaAsset,
+  PlanReference,
+  PointOfInterest,
+  ProductContent,
+  ProjectSnapshot,
+  SpaceUnit,
+  Wall,
+} from "@aethertwin/core-model";
 import {
   useCallback,
   useEffect,
@@ -51,6 +60,7 @@ import {
   PlanInspector,
   type InspectorContext,
 } from "./plan-inspector";
+import type { ProductMediaRole } from "./content-inspector";
 import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
 import { CalibrationPanel } from "./calibration-panel";
@@ -102,8 +112,11 @@ function logReference(value: unknown): string | null {
     : null;
 }
 
-function safeAssetImportError(value: unknown): Error {
-  const safe = new Error("\u5e73\u9762\u56fe\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002");
+function safeAssetImportError(
+  value: unknown,
+  message = "\u5e73\u9762\u56fe\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
+): Error {
+  const safe = new Error(message);
   const logRef = logReference(value);
   if (logRef !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(logRef)) {
     Object.assign(safe, { logRef });
@@ -273,7 +286,8 @@ export function PlanEditor({
   const [context, setContext] = useState<InspectorContext>({ kind: "project" });
   const activeAssetOperation = useRef<{
     readonly operationId: string;
-    readonly initiator: HTMLButtonElement;
+    readonly initiator: HTMLElement;
+    readonly failureMessage: string;
   } | null>(null);
   const calibrationInitiator = useRef<HTMLButtonElement | null>(null);
   const assetPickerPending = useRef(false);
@@ -295,6 +309,10 @@ export function PlanEditor({
     })
   ));
   const [makeId] = useState(() => dependencies?.makeId ?? productionId);
+  const resolveProjectAsset = useCallback(
+    (assetId: string) => store.resolveAsset(assetId),
+    [store],
+  );
   const [recognizeRoomPort] = useState(() => (
     dependencies?.recognizeRooms ?? recognizeClosedRooms
   ));
@@ -669,7 +687,11 @@ export function PlanEditor({
 
       const operationId = makeId();
       ownedOperationId = operationId;
-      activeAssetOperation.current = { operationId, initiator };
+      activeAssetOperation.current = {
+        operationId,
+        initiator,
+        failureMessage: "\u5e73\u9762\u56fe\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
+      };
       sessionStore.getState().setSidePanel("assets");
       const totalBytes = source.kind === "sandbox-blob" ? source.blob.size : 0;
       setImportProgress({
@@ -731,13 +753,213 @@ export function PlanEditor({
     }
   }
 
+  async function runProductAssetOperation(
+    role: ProductMediaRole,
+    initiator: HTMLElement,
+    action: (
+      source: PlanAssetSource,
+      operationId: string,
+      onProgress: (value: AssetImportProgress) => void,
+    ) => Promise<void>,
+  ): Promise<void> {
+    if (assetPicker === null
+      || assetPickerPending.current
+      || activeAssetOperation.current !== null) return;
+    assetPickerPending.current = true;
+    setAssetImportBusy(true);
+    setActionError(null);
+    let ownedOperationId: string | null = null;
+    const failureMessage = "\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002";
+    try {
+      const source = await assetPicker.pick(role);
+      if (source === null) return;
+
+      const operationId = makeId();
+      ownedOperationId = operationId;
+      activeAssetOperation.current = { operationId, initiator, failureMessage };
+      sessionStore.getState().setSidePanel("assets");
+      const totalBytes = source.kind === "sandbox-blob" ? source.blob.size : 0;
+      setImportProgress({
+        operationId,
+        stage: "capture",
+        completedBytes: 0,
+        totalBytes,
+      });
+      const onProgress = (value: AssetImportProgress): void => {
+        if (activeAssetOperation.current?.operationId === operationId) {
+          setImportProgress(value);
+        }
+      };
+      await action(source, operationId, onProgress);
+    } catch (error) {
+      if (!isAssetImportCancellation(error)) {
+        setActionError(safeAssetImportError(error, failureMessage));
+      }
+    } finally {
+      assetPickerPending.current = false;
+      setAssetImportBusy(false);
+      if (ownedOperationId !== null
+        && activeAssetOperation.current?.operationId === ownedOperationId) {
+        activeAssetOperation.current = null;
+        setImportProgress(null);
+      }
+      setTimeout(() => {
+        if (initiator.isConnected) initiator.focus();
+        else assetLibraryTabRef.current?.focus();
+      }, 0);
+    }
+  }
+
+  async function runProductMediaImport(
+    role: ProductMediaRole,
+    target: Fixture | PointOfInterest,
+    content: ProductContent | null,
+    initiator: HTMLElement,
+  ): Promise<void> {
+    await runProductAssetOperation(
+      role,
+      initiator,
+      async (source, operationId, onProgress) => {
+        const currentSnapshot = store.getState().snapshot;
+        if (currentSnapshot === null) {
+          throw new Error("Project changed while choosing a product asset.");
+        }
+        const currentTarget = currentSnapshot.project.entities.find(
+          (candidate) => candidate.id === target.id,
+        );
+        if (currentTarget === undefined || !(
+          currentTarget.type === "fixture"
+          || (currentTarget.type === "poi" && currentTarget.kind === "product-hotspot")
+        )) {
+          throw new Error("Product-media target changed while choosing an asset.");
+        }
+        const currentSession = sessionStore.getState();
+        const currentFloor = currentSnapshot.project.floors.find(
+          (candidate) => candidate.id === currentTarget.floorId,
+        );
+        const currentLayer = currentFloor?.layers.find(
+          (candidate) => candidate.id === currentTarget.layerId,
+        );
+        if (currentSession.selectedIds.size !== 1
+          || !currentSession.selectedIds.has(currentTarget.id)
+          || currentSession.activeFloorId !== currentTarget.floorId
+          || currentTarget.locked
+          || currentLayer === undefined
+          || !currentLayer.visible
+          || currentLayer.locked) {
+          throw new Error("Product-media target is no longer editable.");
+        }
+        const currentContent = currentSnapshot.project.productContents.find(
+          (candidate) => candidate.targetEntityId === currentTarget.id,
+        ) ?? null;
+        if (content !== null && currentContent?.id !== content.id) {
+          throw new Error("Product content changed while choosing an asset.");
+        }
+        if (currentTarget.type === "poi" && currentContent === null) {
+          throw new Error("Product hotspot content is missing.");
+        }
+        const mediaId = makeId();
+        const contentId = currentContent?.id ?? makeId();
+        const contentBefore = currentContent;
+        const contentAfter: ProductContent = currentContent === null
+          ? {
+              id: contentId,
+              name: currentTarget.name,
+              tags: [...currentTarget.tags],
+              targetEntityId: currentTarget.id,
+              description: "",
+              mediaAssetIds: [mediaId],
+            }
+          : {
+              ...currentContent,
+              mediaAssetIds: [...currentContent.mediaAssetIds, mediaId],
+            };
+        await store.importProductMedia({
+          request: { operationId, role, source },
+          media: {
+            id: mediaId,
+            name: referenceName(source),
+            tags: [],
+            kind: role === "content-image" ? "image" : "video",
+          },
+          contentBefore,
+          contentAfter,
+        }, onProgress);
+      },
+    );
+  }
+
+  async function runProductMediaRepair(
+    media: MediaAsset,
+    target: Fixture | PointOfInterest,
+    initiator: HTMLElement,
+  ): Promise<void> {
+    const role: ProductMediaRole = media.kind === "image"
+      ? "content-image"
+      : "content-video";
+    await runProductAssetOperation(
+      role,
+      initiator,
+      async (source, operationId, onProgress) => {
+        const currentSnapshot = store.getState().snapshot;
+        if (currentSnapshot === null) {
+          throw new Error("Project changed while choosing a media replacement.");
+        }
+        const currentTarget = currentSnapshot.project.entities.find(
+          (candidate) => candidate.id === target.id,
+        );
+        const currentFloor = currentTarget === undefined
+          ? undefined
+          : currentSnapshot.project.floors.find(
+              (candidate) => candidate.id === currentTarget.floorId,
+            );
+        const currentLayer = currentTarget === undefined
+          ? undefined
+          : currentFloor?.layers.find(
+              (candidate) => candidate.id === currentTarget.layerId,
+            );
+        const currentSession = sessionStore.getState();
+        const currentContent = currentTarget === undefined
+          ? undefined
+          : currentSnapshot.project.productContents.find(
+              (candidate) => candidate.targetEntityId === currentTarget.id,
+            );
+        if (currentTarget === undefined
+          || !(currentTarget.type === "fixture"
+            || (currentTarget.type === "poi" && currentTarget.kind === "product-hotspot"))
+          || currentSession.selectedIds.size !== 1
+          || !currentSession.selectedIds.has(currentTarget.id)
+          || currentSession.activeFloorId !== currentTarget.floorId
+          || currentTarget.locked
+          || currentLayer === undefined
+          || !currentLayer.visible
+          || currentLayer.locked
+          || currentContent === undefined
+          || !currentContent.mediaAssetIds.includes(media.id)) {
+          throw new Error("Product-media repair target is no longer editable.");
+        }
+        const currentMedia = currentSnapshot.project.mediaAssets.find(
+          (candidate) => candidate.id === media.id,
+        );
+        if (currentMedia === undefined || currentMedia.kind !== media.kind) {
+          throw new Error("Product media changed while choosing a replacement.");
+        }
+        await store.replaceBrokenProductMedia(
+          currentMedia.id,
+          { operationId, role, source },
+          onProgress,
+        );
+      },
+    );
+  }
+
   async function cancelPlanAssetImport(): Promise<void> {
     const active = activeAssetOperation.current;
     if (active === null) return;
     try {
       await store.cancelAssetImport(active.operationId);
     } catch (error) {
-      setActionError(safeAssetImportError(error));
+      setActionError(safeAssetImportError(error, active.failureMessage));
     }
   }
 
@@ -1032,6 +1254,8 @@ export function PlanEditor({
       inspector={
         <PlanInspector
           snapshot={snapshot}
+          assetIssues={state.assetIssues}
+          assetOperationBusy={assetImportBusy}
           context={context}
           activeFloorId={sessionState.activeFloorId}
           saveState={state.saveState}
@@ -1072,6 +1296,15 @@ export function PlanEditor({
           onApplyBuildingStructurePatch={(patch) => (
             store.applyBuildingStructurePatch(patch)
           )}
+          onApplyProductContentPatch={(before, after) => (
+            store.applySnapshotRecordPatches([{
+              collection: "productContents",
+              changes: [{ id: after.id, before, after }],
+            }])
+          )}
+          onImportProductMedia={runProductMediaImport}
+          onRepairProductMedia={runProductMediaRepair}
+          resolveAsset={resolveProjectAsset}
           onError={(error) => setActionError(errorValue(error))}
         />
       }

@@ -8,6 +8,8 @@ import type {
   Fixture,
   Opening,
   PlanReference,
+  PointOfInterest,
+  ProductContent,
   SpaceUnit,
   SpatialEntity,
   Wall,
@@ -2569,5 +2571,133 @@ describe('PlanEditor Task 10 product-hotspot integration', function () {
       return entity.id === hotspot.id;
     })).toEqual(hotspot);
     expect(store.getState().snapshot!.project.productContents).toEqual([content]);
+  });
+});
+
+describe('M2.3 Task 11 content Inspector wiring', () => {
+  it('creates the first Fixture content only when metadata is confirmed', async () => {
+    const { store } = await sandboxProject('Fixture content authoring');
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const fixture: Fixture = {
+      id: '00000000-0000-4000-8000-000000000301',
+      name: 'North display',
+      tags: ['featured'],
+      floorId: floor.id,
+      layerId: floor.layers[0]!.id,
+      transform: {
+        translation: { x: 1_000, y: 500 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      locked: false,
+      type: 'fixture',
+      kind: 'display-table',
+      size: { width: 1_200, height: 600 },
+    };
+    await store.applyPlanEdit({
+      reason: 'create',
+      changes: [{ id: fixture.id, before: null, after: fixture }],
+    });
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    const makeId = vi.fn(() => '00000000-0000-4000-8000-000000000302');
+    render(<PlanEditor store={store} dependencies={{ sessionStore, makeId }} />);
+    const user = userEvent.setup();
+
+    await user.click(rowByData('data-entity-id', fixture.id));
+
+    expect(screen.getByRole('heading', { name: '产品内容' })).toBeVisible();
+    expect(screen.getByLabelText('内容名称')).toHaveValue('North display');
+    expect(screen.getByLabelText('内容描述')).toHaveValue('');
+    expect(screen.getByLabelText('内容标签')).toHaveValue('featured');
+    expect(makeId).not.toHaveBeenCalled();
+    expect(store.getState().snapshot!.project.productContents).toEqual([]);
+
+    await user.clear(screen.getByLabelText('内容名称'));
+    await user.type(screen.getByLabelText('内容名称'), 'North product');
+    await user.type(screen.getByLabelText('内容描述'), 'Featured product copy');
+    await user.click(screen.getByRole('button', { name: '应用内容' }));
+
+    await waitFor(() => {
+      expect(store.getState().snapshot!.project.productContents).toHaveLength(1);
+    });
+    const created = store.getState().snapshot!.project.productContents[0]!;
+    expect(created).toEqual({
+      id: '00000000-0000-4000-8000-000000000302',
+      name: 'North product',
+      tags: ['featured'],
+      targetEntityId: fixture.id,
+      description: 'Featured product copy',
+      mediaAssetIds: [],
+    });
+    expect(makeId).toHaveBeenCalledOnce();
+
+    await act(async () => store.undo());
+    expect(store.getState().snapshot!.project.productContents).toEqual([]);
+    await act(async () => store.redo());
+    expect(store.getState().snapshot!.project.productContents).toEqual([created]);
+  });
+
+  it('edits existing hotspot content without allocating a replacement identity', async () => {
+    const { store } = await sandboxProject('Hotspot content authoring');
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const hotspot: PointOfInterest = {
+      id: '00000000-0000-4000-8000-000000000303',
+      name: 'Existing hotspot',
+      tags: [],
+      floorId: floor.id,
+      layerId: floor.layers[0]!.id,
+      transform: {
+        translation: { x: 250, y: -400 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+      locked: false,
+      type: 'poi',
+      kind: 'product-hotspot',
+    };
+    const before: ProductContent = {
+      id: '00000000-0000-4000-8000-000000000304',
+      name: 'Existing product',
+      tags: ['north'],
+      targetEntityId: hotspot.id,
+      description: 'Before copy',
+      mediaAssetIds: [],
+    };
+    await store.applySnapshotRecordPatches([
+      {
+        collection: 'entities',
+        changes: [{ id: hotspot.id, before: null, after: hotspot }],
+      },
+      {
+        collection: 'productContents',
+        changes: [{ id: before.id, before: null, after: before }],
+      },
+    ]);
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    const makeId = vi.fn(() => '00000000-0000-4000-8000-000000000305');
+    render(<PlanEditor store={store} dependencies={{ sessionStore, makeId }} />);
+    const user = userEvent.setup();
+
+    await user.click(rowByData('data-entity-id', hotspot.id));
+    expect(screen.getByLabelText('内容名称')).toHaveValue('Existing product');
+    await user.clear(screen.getByLabelText('内容描述'));
+    await user.type(screen.getByLabelText('内容描述'), 'After copy');
+    await user.click(screen.getByRole('button', { name: '应用内容' }));
+
+    await waitFor(() => {
+      expect(store.getState().snapshot!.project.productContents[0]!.description)
+        .toBe('After copy');
+    });
+    expect(store.getState().snapshot!.project.productContents[0]).toEqual({
+      ...before,
+      description: 'After copy',
+    });
+    expect(makeId).not.toHaveBeenCalled();
+
+    await act(async () => store.undo());
+    expect(store.getState().snapshot!.project.productContents).toEqual([before]);
+    await act(async () => store.redo());
+    expect(store.getState().snapshot!.project.productContents[0]!.description)
+      .toBe('After copy');
   });
 });
