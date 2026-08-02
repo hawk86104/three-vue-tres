@@ -11,9 +11,11 @@ import {
   type ProductContent,
   type ProjectSnapshot,
   type RouteNetwork,
+  type SpatialEntity,
 } from "@aethertwin/core-model";
 
 export const snapshotRecordCollections = [
+  'entities',
   "assets",
   "planReferences",
   "openings",
@@ -28,6 +30,7 @@ export const snapshotRecordCollections = [
 export type SnapshotRecordCollection = (typeof snapshotRecordCollections)[number];
 
 export interface SnapshotRecordByCollection {
+  readonly entities: SpatialEntity;
   readonly assets: AssetRecord;
   readonly planReferences: PlanReference;
   readonly openings: Opening;
@@ -200,6 +203,8 @@ function recordsFor(
   collection: SnapshotRecordCollection,
 ): readonly unknown[] {
   switch (collection) {
+    case 'entities':
+      return snapshot.project.entities;
     case "assets":
       return snapshot.assets;
     case "planReferences":
@@ -241,6 +246,7 @@ function withRecords(
 function applyPatch(
   state: ProjectSnapshot,
   value: unknown,
+  validateResult = true,
 ): {
   readonly next: ProjectSnapshot;
   readonly patch: ParsedRecordsPatch;
@@ -283,7 +289,11 @@ function applyPatch(
     }
   }
 
-  const next = parseSnapshot(withRecords(state, patch.collection, records));
+  const candidate = withRecords(state, patch.collection, records) as ProjectSnapshot;
+  if (!validateResult) {
+    return { next: candidate, patch, normalizedChanges };
+  }
+  const next = parseSnapshot(candidate);
   if (!structuralEquals(recordsFor(next, patch.collection), records)) {
     throw new Error("Snapshot records patch claimed after is not canonical");
   }
@@ -311,4 +321,27 @@ export const patchSnapshotRecordsCommand: CommandDefinition<
     };
   },
   applyInverse: (state, payload) => applyPatch(state, payload).next,
+};
+
+export const patchSnapshotRecordsDeferredValidationCommand: CommandDefinition<
+  ProjectSnapshot,
+  AnySnapshotRecordsPatch
+> = {
+  type: 'snapshot.records.patch',
+  prepare: (state, payload) => {
+    const { next, patch, normalizedChanges } = applyPatch(state, payload, false);
+    return {
+      next,
+      inversePayload: {
+        collection: patch.collection,
+        changes: [...normalizedChanges].reverse().map((change) => ({
+          id: change.id,
+          before: change.after,
+          after: change.before,
+          index: change.index,
+        })),
+      },
+    };
+  },
+  applyInverse: (state, payload) => applyPatch(state, payload, false).next,
 };

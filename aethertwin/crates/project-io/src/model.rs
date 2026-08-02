@@ -592,6 +592,8 @@ pub struct RecordChange<T> {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "collection", deny_unknown_fields)]
 pub enum SnapshotRecordsPatch {
+    #[serde(rename = "entities")]
+    Entities { changes: Vec<RecordChange<Value>> },
     #[serde(rename = "assets")]
     Assets {
         changes: Vec<RecordChange<AssetRecord>>,
@@ -659,6 +661,9 @@ impl SnapshotRecordsPatch {
 
     fn inverse_matches(&self, inverse: &Self, exact_index: bool) -> bool {
         match (self, inverse) {
+            (Self::Entities { changes }, Self::Entities { changes: reversed }) => {
+                changes_have_inverse_values(changes, reversed, exact_index)
+            }
             (Self::Assets { changes }, Self::Assets { changes: reversed }) => {
                 changes_have_inverse_values(changes, reversed, exact_index)
             }

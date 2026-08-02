@@ -976,3 +976,77 @@ fn content_and_routes_survive_checkpoint_reopen_and_dirty_recovery() {
     assert!(recovered.recovered);
     assert_eq!(recovered.snapshot, dirty);
 }
+
+#[test]
+fn product_hotspot_entity_and_content_replay_as_one_record_transaction() {
+    let opened = create("Product Hotspot Record Recovery");
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let floor = serde_json::to_value(&initial.project.floors[0]).unwrap();
+    let hotspot = json!({
+        "id": "90000000-0000-4000-8000-000000000020",
+        "name": "Recovered hotspot",
+        "tags": [],
+        "floorId": floor["id"],
+        "layerId": floor["layers"][0]["id"],
+        "transform": {
+            "translation": { "x": 1250, "y": -750 },
+            "rotation": 0,
+            "scale": { "x": 1, "y": 1 }
+        },
+        "locked": false,
+        "type": "poi",
+        "kind": "product-hotspot"
+    });
+    let content = json!({
+        "id": "90000000-0000-4000-8000-000000000021",
+        "name": "Recovered hotspot",
+        "tags": [],
+        "targetEntityId": hotspot["id"],
+        "description": "",
+        "mediaAssetIds": []
+    });
+    let entity_changes = vec![json!({
+        "id": hotspot["id"],
+        "before": null,
+        "after": hotspot,
+        "index": 0
+    })];
+    let content_changes = vec![json!({
+        "id": content["id"],
+        "before": null,
+        "after": content,
+        "index": 0
+    })];
+    let (entity_payload, entity_inverse) = patch("entities", entity_changes);
+    let (content_payload, content_inverse) = patch("productContents", content_changes);
+    let mut applied_value = serde_json::to_value(&initial).unwrap();
+    applied_value["sequence"] = json!(2);
+    applied_value["project"]["entities"]
+        .as_array_mut()
+        .unwrap()
+        .push(hotspot);
+    applied_value["project"]["productContents"]
+        .as_array_mut()
+        .unwrap()
+        .push(content);
+    let applied: ProjectSnapshot = serde_json::from_value(applied_value).unwrap();
+    let transaction_id = "90000000-0000-4000-8000-000000000022";
+
+    session
+        .commit(CommitBatch {
+            before: initial,
+            after: applied.clone(),
+            journal: vec![
+                operation(1, transaction_id, entity_payload, entity_inverse),
+                operation(2, transaction_id, content_payload, content_inverse),
+            ],
+        })
+        .unwrap();
+    assert_eq!(session.snapshot(), &applied);
+    drop(session);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert_eq!(recovered.snapshot, applied);
+    assert!(recovered.recovered);
+}

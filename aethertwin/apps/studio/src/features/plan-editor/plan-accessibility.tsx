@@ -4,6 +4,8 @@ import type { StoreApi } from "zustand/vanilla";
 import type { PlanEditorState } from "./editor-session";
 import type { InteractionController } from "./interaction-controller";
 
+import { useState, type FormEvent } from 'react';
+
 export interface PlanAccessibilityProps {
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
@@ -72,6 +74,27 @@ export function PlanAccessibility({
     }];
   });
   const roomRecognition = sessionStore.getState().roomRecognition;
+  const activeTool = sessionStore.getState().activeTool;
+  const [hotspotX, setHotspotX] = useState('0');
+  const [hotspotY, setHotspotY] = useState('0');
+  const hotspotPoint = {
+    x: Number(hotspotX.trim()),
+    y: Number(hotspotY.trim()),
+  };
+  const hotspotPointIsValid = hotspotX.trim() !== ''
+    && hotspotY.trim() !== ''
+    && Number.isFinite(hotspotPoint.x)
+    && Number.isFinite(hotspotPoint.y);
+
+  const submitProductHotspot = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!hotspotPointIsValid) return;
+    const canvas = event.currentTarget.closest('.studio-plan-canvas');
+    await controller.createAt(hotspotPoint);
+    if (canvas instanceof HTMLElement) canvas.focus();
+  };
 
   return (
     <section
@@ -79,6 +102,30 @@ export function PlanAccessibility({
       className="studio-plan-accessibility"
     >
       <h2>平面对象</h2>
+      {snapshot.project.profile === 'showroom'
+      && activeTool === 'product-hotspot' ? (
+        <form onSubmit={(event) => { void submitProductHotspot(event); }}>
+          <label htmlFor='product-hotspot-x'>产品热点 X 坐标 (mm)</label>
+          <input
+            id='product-hotspot-x'
+            inputMode='decimal'
+            type='text'
+            value={hotspotX}
+            onChange={(event) => setHotspotX(event.currentTarget.value)}
+          />
+          <label htmlFor='product-hotspot-y'>产品热点 Y 坐标 (mm)</label>
+          <input
+            id='product-hotspot-y'
+            inputMode='decimal'
+            type='text'
+            value={hotspotY}
+            onChange={(event) => setHotspotY(event.currentTarget.value)}
+          />
+          <button type='submit' disabled={!hotspotPointIsValid}>
+            在坐标创建产品热点
+          </button>
+        </form>
+      ) : null}
       {entities.length === 0 && references.length === 0 && openings.length === 0
       && (roomRecognition === null || roomRecognition.candidates.length === 0) ? (
         <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
@@ -105,6 +152,7 @@ export function PlanAccessibility({
             return (
               <li key={entity.id}>
                 <span>
+                  {entity.type === 'poi' ? `${entity.kind} · ` : ''}
                   {entity.type} · {entity.type === "fixture" ? `${fixtureDetails(entity)} · ` : ""}{entity.name} · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
                 </span>
                 <button

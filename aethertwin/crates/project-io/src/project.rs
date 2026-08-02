@@ -1,9 +1,9 @@
 use crate::lock::ProjectLock;
 use crate::model::{
     AssetRecord, CURRENT_SCHEMA_VERSION, CommitBatch, Floor, GuidedRoute, JournalAction,
-    JournalOperation, MaterialAssignment, MaterialDefinition, MediaAsset, Opening, PlanLayer,
-    PlanReference, ProductContent, RecordChange, RouteNetwork, SaveState, SceneEnvironment,
-    SnapshotRecordsPatch, canonical_asset_path, parse_contract_uuid,
+    JournalOperation, MaterialAssignment, MaterialDefinition, MediaAsset, NullableRecord, Opening,
+    PlanLayer, PlanReference, ProductContent, RecordChange, RouteNetwork, SaveState,
+    SceneEnvironment, SnapshotRecordsPatch, canonical_asset_path, parse_contract_uuid,
 };
 use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
@@ -721,8 +721,9 @@ pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> 
         {
             return Err(ProjectIoError::DatabaseError);
         }
-        apply_operation(&mut replayed, operation)?;
+        apply_operation_without_snapshot_validation(&mut replayed, operation)?;
     }
+    validate_replayed_snapshot(&replayed)?;
     if replayed != batch.after {
         return Err(ProjectIoError::DatabaseError);
     }
@@ -961,6 +962,34 @@ fn apply_entity_patch(
     })
 }
 
+fn entity_record_payload(changes: &[RecordChange<Value>]) -> EntityPatchPayload {
+    EntityPatchPayload {
+        reason: PlanEditReason::Properties,
+        changes: changes
+            .iter()
+            .map(|change| EntityPatchChange {
+                id: change.id.clone(),
+                before: change.before.0.clone().unwrap_or(Value::Null),
+                after: change.after.0.clone().unwrap_or(Value::Null),
+                index: change.index,
+            })
+            .collect(),
+    }
+}
+
+fn entity_record_changes(payload: EntityPatchPayload) -> Vec<RecordChange<Value>> {
+    payload
+        .changes
+        .into_iter()
+        .map(|change| RecordChange {
+            id: change.id,
+            before: NullableRecord((!change.before.is_null()).then_some(change.before)),
+            after: NullableRecord((!change.after.is_null()).then_some(change.after)),
+            index: change.index,
+        })
+        .collect()
+}
+
 fn wall_patch_side(value: &Value, expected_id: &str) -> Result<(), ProjectIoError> {
     if value.is_null() {
         return Ok(());
@@ -1141,6 +1170,9 @@ fn validate_record_changes<T: SnapshotPatchRecord>(
 
 fn validate_snapshot_records_patch(patch: &SnapshotRecordsPatch) -> Result<(), ProjectIoError> {
     match patch {
+        SnapshotRecordsPatch::Entities { changes } => {
+            validate_entity_patch_payload(&entity_record_payload(changes))
+        }
         SnapshotRecordsPatch::Assets { changes } => validate_record_changes(changes),
         SnapshotRecordsPatch::PlanReferences { changes } => validate_record_changes(changes),
         SnapshotRecordsPatch::Openings { changes } => validate_record_changes(changes),
@@ -1237,6 +1269,12 @@ fn apply_snapshot_records_patch(
     patch: &SnapshotRecordsPatch,
 ) -> Result<SnapshotRecordsPatch, ProjectIoError> {
     match patch {
+        SnapshotRecordsPatch::Entities { changes } => {
+            let normalized = apply_entity_patch(snapshot, &entity_record_payload(changes))?;
+            Ok(SnapshotRecordsPatch::Entities {
+                changes: entity_record_changes(normalized),
+            })
+        }
         SnapshotRecordsPatch::Assets { changes } => Ok(SnapshotRecordsPatch::Assets {
             changes: apply_record_changes(&mut snapshot.assets, changes)?,
         }),
@@ -1342,7 +1380,7 @@ fn validate_entity_floor_layer_references(
     Ok(())
 }
 
-fn apply_operation(
+fn apply_operation_without_snapshot_validation(
     snapshot: &mut ProjectSnapshot,
     operation: &JournalOperation,
 ) -> Result<(), ProjectIoError> {
@@ -1479,9 +1517,36 @@ fn apply_operation(
         _ => return Err(ProjectIoError::DatabaseError),
     }
     candidate.sequence = operation.sequence;
-    candidate.validate()?;
-    validate_entity_floor_layer_references(&candidate)?;
     *snapshot = candidate;
+    Ok(())
+}
+
+fn validate_replayed_snapshot(snapshot: &ProjectSnapshot) -> Result<(), ProjectIoError> {
+    snapshot.validate()?;
+    validate_entity_floor_layer_references(snapshot)
+}
+
+fn replay_operations_at_transaction_boundaries(
+    snapshot: &mut ProjectSnapshot,
+    operations: &[JournalOperation],
+    after_sequence: u64,
+) -> Result<(), ProjectIoError> {
+    let mut current_transaction_id: Option<&str> = None;
+    for operation in operations
+        .iter()
+        .filter(|operation| operation.sequence > after_sequence)
+    {
+        if let Some(transaction_id) = current_transaction_id {
+            if transaction_id != operation.transaction_id.as_str() {
+                validate_replayed_snapshot(snapshot)?;
+            }
+        }
+        apply_operation_without_snapshot_validation(snapshot, operation)?;
+        current_transaction_id = Some(operation.transaction_id.as_str());
+    }
+    if current_transaction_id.is_some() {
+        validate_replayed_snapshot(snapshot)?;
+    }
     Ok(())
 }
 
@@ -1782,10 +1847,8 @@ fn reconstruct_recovery(
         {
             continue;
         }
-        let replayed = operations
-            .iter()
-            .filter(|operation| operation.sequence > row_sequence)
-            .try_for_each(|operation| apply_operation(&mut snapshot, operation));
+        let replayed =
+            replay_operations_at_transaction_boundaries(&mut snapshot, &operations, row_sequence);
         if replayed.is_err()
             || snapshot.sequence != last_committed
             || validate_entity_invariants(&connection, &snapshot).is_err()

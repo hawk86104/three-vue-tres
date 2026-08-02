@@ -16,6 +16,7 @@ import {
   alignmentGuides,
   applyPlanReferenceTransform,
   boxSelect,
+  createProductHotspotIntent,
   duplicateEntities,
   entityWorldVertices,
   findSnap,
@@ -68,6 +69,7 @@ export interface InteractionControllerDeps {
 
 export interface InteractionController {
   handle(event: PlanPointerEvent): Promise<void>;
+  createAt(point: Point2): Promise<void>;
   keyDown(
     key:
       | "Enter"
@@ -91,6 +93,7 @@ const MAX_PIXELS_PER_MILLIMETRE = 10_000;
 const WHEEL_ZOOM_SENSITIVITY = 0.001;
 const PREVIEW_OPENING_ID = "00000000-0000-4000-8000-000000000000";
 const PREVIEW_FIXTURE_ID = "00000000-0000-4000-8000-000000000000";
+const PREVIEW_PRODUCT_HOTSPOT_ID = '00000000-0000-4000-8000-000000000010';
 const OPENING_DEFAULTS: Readonly<Record<OpeningCreationTool, {
   readonly width: number;
   readonly height: number;
@@ -200,6 +203,13 @@ type ControllerGesture =
 interface SnappedPoint {
   readonly point: Point2;
   readonly snap: SnapResult;
+}
+
+interface ProductHotspotPreview {
+  readonly point: Point2;
+  readonly sessionId: string;
+  readonly floorId: string;
+  readonly layerId: string;
 }
 
 function identityTransform(translation: Point2 = { x: 0, y: 0 }) {
@@ -609,6 +619,22 @@ function catalogueFixturePlacement(
   };
 }
 
+function productHotspotPreviewEntity(
+  preview: ProductHotspotPreview,
+): SpatialEntity {
+  return {
+    id: PREVIEW_PRODUCT_HOTSPOT_ID,
+    name: 'Product Hotspot',
+    tags: [],
+    floorId: preview.floorId,
+    layerId: preview.layerId,
+    transform: identityTransform(preview.point),
+    locked: false,
+    type: 'poi',
+    kind: 'product-hotspot',
+  };
+}
+
 function poiEntity(
   gesture: Extract<ControllerGesture, { kind: "poi-create" }>,
 ): SpatialEntity {
@@ -800,6 +826,8 @@ export function createInteractionController(
 ): InteractionController {
   let gesture: ControllerGesture | null = null;
   let commitToken: symbol | null = null;
+  let productHotspotPreview: ProductHotspotPreview | null = null;
+  let productHotspotPointerId: number | null = null;
 
   const clearGesture = (): void => {
     gesture = null;
@@ -866,6 +894,148 @@ export function createInteractionController(
     const state = deps.store.getState();
     if (state.gestureActive) state.updateDraft(draft);
     else state.beginGesture(draft);
+  };
+
+  const clearProductHotspotPreview = (): void => {
+    productHotspotPreview = null;
+    productHotspotPointerId = null;
+    const state = deps.store.getState();
+    if (state.draft?.kind === 'create' && state.draft.tool === 'product-hotspot') {
+      deps.store.setState({ draft: null, gestureActive: false });
+    }
+  };
+
+  const publishProductHotspotDraft = (
+    preview: ProductHotspotPreview,
+  ): void => {
+    deps.store.getState().updateDraft({
+      kind: 'create',
+      tool: 'product-hotspot',
+      points: [preview.point],
+      preview: [productHotspotPreviewEntity(preview)],
+    });
+    deps.store.setState({ gestureActive: false });
+  };
+
+  const publishProductHotspotPreview = (
+    event: PlanPointerEvent,
+  ): ProductHotspotPreview | null => {
+    const state = deps.store.getState();
+    const snapshot = deps.getSnapshot();
+    const context = activeContext(snapshot, state);
+    if (
+      snapshot.project.profile !== 'showroom'
+      || state.activeTool !== 'product-hotspot'
+      || context.creationLayer === null
+    ) {
+      clearProductHotspotPreview();
+      return null;
+    }
+    const preview: ProductHotspotPreview = {
+      point: snappedPoint(event, context, state).point,
+      sessionId: state.sessionId,
+      floorId: state.activeFloorId,
+      layerId: context.creationLayer.id,
+    };
+    productHotspotPreview = preview;
+    publishProductHotspotDraft(preview);
+    return preview;
+  };
+
+  const commitProductHotspot = async (
+    preview: ProductHotspotPreview,
+  ): Promise<void> => {
+    if (commitToken !== null) return;
+    const stateAtStart = deps.store.getState();
+    const snapshot = deps.getSnapshot();
+    const context = activeContext(snapshot, stateAtStart);
+    const layerIsEligible = context.creationLayer?.id === preview.layerId
+      && context.editableLayerIds.has(preview.layerId);
+    if (
+      snapshot.project.profile !== 'showroom'
+      || stateAtStart.activeTool !== 'product-hotspot'
+      || stateAtStart.sessionId !== preview.sessionId
+      || stateAtStart.activeFloorId !== preview.floorId
+      || !layerIsEligible
+      || !Number.isFinite(preview.point.x)
+      || !Number.isFinite(preview.point.y)
+    ) {
+      clearProductHotspotPreview();
+      return;
+    }
+    if (deps.applySnapshotRecordPatches === undefined) {
+      clearProductHotspotPreview();
+      deps.onError(new Error('Product hotspot mutations are unavailable.'));
+      return;
+    }
+
+    let entityId: string;
+    let contentId: string;
+    try {
+      entityId = deps.makeId();
+      contentId = deps.makeId();
+    } catch (error) {
+      clearProductHotspotPreview();
+      deps.onError(error);
+      return;
+    }
+    const result = createProductHotspotIntent({
+      entityId,
+      contentId,
+      floorId: preview.floorId,
+      layerId: preview.layerId,
+      point: preview.point,
+      name: 'Product Hotspot',
+    });
+    if (!result.ok) {
+      clearProductHotspotPreview();
+      deps.onError(result.issue);
+      return;
+    }
+
+    const selectionBefore = [...stateAtStart.selectedIds];
+    const token = Symbol('product-hotspot-commit');
+    commitToken = token;
+    productHotspotPreview = null;
+    stateAtStart.finishGesture();
+    try {
+      await deps.applySnapshotRecordPatches([
+        {
+          collection: 'entities',
+          changes: [{ id: entityId, before: null, after: result.value.entity }],
+        },
+        {
+          collection: 'productContents',
+          changes: [{ id: contentId, before: null, after: result.value.content }],
+        },
+      ]);
+    } catch (error) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (
+        state.sessionId !== preview.sessionId
+        || state.activeFloorId !== preview.floorId
+        || state.activeTool !== 'product-hotspot'
+      ) return;
+      productHotspotPreview = preview;
+      publishProductHotspotDraft(preview);
+      if (sameSelection(state.selectedIds, selectionBefore)) {
+        state.setSelection(selectionBefore);
+      }
+      deps.onError(error);
+      return;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (
+      state.sessionId !== preview.sessionId
+      || state.activeFloorId !== preview.floorId
+      || state.activeTool !== 'product-hotspot'
+    ) return;
+    if (sameSelection(state.selectedIds, selectionBefore)) {
+      state.setSelection([entityId]);
+    }
   };
 
   const commit = async (
@@ -1785,12 +1955,77 @@ export function createInteractionController(
   };
 
   return {
+    async createAt(point) {
+      try {
+        synchronizeGesture();
+        if (commitToken !== null) return;
+        if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+          clearProductHotspotPreview();
+          deps.onError(new Error('Product hotspot coordinates must be finite.'));
+          return;
+        }
+        const state = deps.store.getState();
+        const snapshot = deps.getSnapshot();
+        const context = activeContext(snapshot, state);
+        if (
+          snapshot.project.profile !== 'showroom'
+          || state.activeTool !== 'product-hotspot'
+          || context.creationLayer === null
+        ) {
+          clearProductHotspotPreview();
+          return;
+        }
+        await commitProductHotspot({
+          point: { x: point.x, y: point.y },
+          sessionId: state.sessionId,
+          floorId: state.activeFloorId,
+          layerId: context.creationLayer.id,
+        });
+      } catch (error) {
+        clearProductHotspotPreview();
+        deps.onError(error);
+      }
+    },
+
     async handle(event) {
       try {
         synchronizeGesture();
         if (commitToken !== null) return;
 
         const activeTool = deps.store.getState().activeTool;
+        if (activeTool !== 'product-hotspot' && productHotspotPreview !== null) {
+          clearProductHotspotPreview();
+        }
+        if (activeTool === 'product-hotspot' && event.type !== 'wheel') {
+          if (event.type === 'pointercancel') {
+            if (
+              productHotspotPointerId !== null
+              && productHotspotPointerId !== event.pointerId
+            ) return;
+            clearProductHotspotPreview();
+          } else if (event.type === 'pointermove') {
+            if (
+              productHotspotPointerId !== null
+              && productHotspotPointerId !== event.pointerId
+            ) return;
+            publishProductHotspotPreview(event);
+          } else if (event.type === 'pointerdown') {
+            if ((event.buttons & 1) === 0) return;
+            if (
+              productHotspotPointerId !== null
+              && productHotspotPointerId !== event.pointerId
+            ) return;
+            if (publishProductHotspotPreview(event) !== null) {
+              productHotspotPointerId = event.pointerId;
+            }
+          } else if (productHotspotPointerId === event.pointerId) {
+            productHotspotPointerId = null;
+            if (productHotspotPreview !== null) {
+              await commitProductHotspot(productHotspotPreview);
+            }
+          }
+          return;
+        }
         if (
           activeTool === "fixture"
           && deps.getSnapshot().project.profile === "showroom"
@@ -1855,6 +2090,7 @@ export function createInteractionController(
           state.clearOpeningPreview();
           if (
             isOpeningCreationTool(state.activeTool)
+            || state.activeTool === 'product-hotspot'
             || (
               state.activeTool === "fixture"
               && deps.getSnapshot().project.profile === "showroom"
@@ -1995,6 +2231,7 @@ export function createInteractionController(
       synchronizeGesture();
       if (commitToken !== null) return;
       clearGesture();
+      clearProductHotspotPreview();
       deps.store.getState().clearOpeningPreview();
     },
   };

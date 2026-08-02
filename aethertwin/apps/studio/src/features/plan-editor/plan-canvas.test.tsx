@@ -306,6 +306,11 @@ function pointerEvent(
 
 function inputController() {
   return {
+    createAt: vi.fn(async function (
+      point: { readonly x: number; readonly y: number },
+    ) {
+      void point;
+    }),
     handle: vi.fn(async (event: PlanPointerEvent) => {
       void event;
     }),
@@ -743,5 +748,75 @@ describe("PlanCanvas Task 9 opening parity", () => {
     expect(screen.getByRole("button", {
       name: `删除门窗：${lockedOpening.name}`,
     })).toBeDisabled();
+  });
+});
+
+describe('PlanCanvas Task 10 product-hotspot accessible parity', function () {
+  it('uses an exact keyboard coordinate and returns canvas focus', async function () {
+    const user = userEvent.setup();
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const hotspot = {
+      id: '00000000-0000-4000-8000-000000000050',
+      name: 'Featured product',
+      tags: [],
+      type: 'poi',
+      kind: 'product-hotspot',
+      floorId: harness.floorA.id,
+      layerId: harness.floorA.layers[0]!.id,
+      locked: false,
+      transform: {
+        translation: { x: 600, y: 400 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    } as const;
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project,
+        profile: 'showroom',
+        entities: [...harness.snapshot.project.entities, hotspot],
+        productContents: [{
+          id: '00000000-0000-4000-8000-000000000051',
+          name: hotspot.name,
+          tags: [],
+          targetEntityId: hotspot.id,
+          description: '',
+          mediaAssetIds: [],
+        }],
+      },
+    });
+    const controller = inputController();
+    act(function () {
+      harness.store.getState().setActiveTool('product-hotspot');
+    });
+
+    render(<PlanCanvas
+      {...createPlanCanvasProps(harness, renderer)}
+      snapshot={snapshot}
+      controller={controller}
+    />);
+    await waitFor(function () {
+      expect(renderer.initCount).toBe(1);
+    });
+
+    await user.click(screen.getByRole('button', { name: /Featured product/ }));
+    expect([...harness.store.getState().selectedIds]).toEqual([hotspot.id]);
+    expect(screen.getByText(/product-hotspot.*Featured product.*已选择/)).toBeVisible();
+
+    const x = screen.getByLabelText('产品热点 X 坐标 (mm)');
+    const y = screen.getByLabelText('产品热点 Y 坐标 (mm)');
+    await user.clear(x);
+    await user.type(x, '1250');
+    await user.clear(y);
+    await user.type(y, '-750');
+    const create = screen.getByRole('button', { name: '在坐标创建产品热点' });
+    create.focus();
+    await user.keyboard('{Enter}');
+
+    expect(controller.createAt).toHaveBeenCalledOnce();
+    expect(controller.createAt).toHaveBeenCalledWith({ x: 1_250, y: -750 });
+    expect(screen.getByRole('region', { name: '二维平面画布' })).toHaveFocus();
   });
 });

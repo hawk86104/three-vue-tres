@@ -2514,3 +2514,60 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
     expect(within(catalogue).queryByText(/generic|通用/i)).not.toBeInTheDocument();
   });
 });
+
+describe('PlanEditor Task 10 product-hotspot integration', function () {
+  it('creates one hotspot/content command and undoes or redoes both', async function () {
+    const { store } = await sandboxProject('Product hotspot placement');
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    const user = userEvent.setup();
+    render(<PlanEditor
+      store={store}
+      dependencies={{ sessionStore, assetPicker: null }}
+    />);
+
+    await user.click(screen.getByRole('button', { name: '产品热点' }));
+    expect(sessionStore.getState().activeTool).toBe('product-hotspot');
+    const x = screen.getByLabelText('产品热点 X 坐标 (mm)');
+    const y = screen.getByLabelText('产品热点 Y 坐标 (mm)');
+    await user.clear(x);
+    await user.type(x, '1250');
+    await user.clear(y);
+    await user.type(y, '-750');
+    await user.click(screen.getByRole('button', {
+      name: '在坐标创建产品热点',
+    }));
+
+    await waitFor(function () {
+      expect(
+        store.getState().snapshot!.project.productContents,
+        store.getState().error?.message,
+      ).toHaveLength(1);
+    });
+    const created = store.getState().snapshot!;
+    const hotspot = created.project.entities.find(function (entity) {
+      return entity.type === 'poi' && entity.kind === 'product-hotspot';
+    })!;
+    const content = created.project.productContents[0]!;
+    expect(hotspot.transform.translation).toEqual({ x: 1_250, y: -750 });
+    expect(hotspot).not.toHaveProperty('spatial3D');
+    expect(content.targetEntityId).toBe(hotspot.id);
+    expect([...sessionStore.getState().selectedIds]).toEqual([hotspot.id]);
+
+    await act(async function () {
+      await store.undo();
+    });
+    expect(store.getState().snapshot!.project.entities.some(function (entity) {
+      return entity.id === hotspot.id;
+    })).toBe(false);
+    expect(store.getState().snapshot!.project.productContents).toEqual([]);
+
+    await act(async function () {
+      await store.redo();
+    });
+    expect(store.getState().snapshot!.project.entities.find(function (entity) {
+      return entity.id === hotspot.id;
+    })).toEqual(hotspot);
+    expect(store.getState().snapshot!.project.productContents).toEqual([content]);
+  });
+});

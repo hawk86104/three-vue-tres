@@ -383,6 +383,7 @@ export function renderPlanEditorFixture(
   });
   const controller = {
     handle: baseController.handle,
+    createAt: baseController.createAt,
     keyDown: baseController.keyDown,
     copy: vi.fn(() => baseController.copy()),
     paste: vi.fn((offset?: { readonly x: number; readonly y: number }) => (

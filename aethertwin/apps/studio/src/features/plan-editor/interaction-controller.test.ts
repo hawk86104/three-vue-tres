@@ -1524,6 +1524,288 @@ function assetsForReferences(
     });
   });
 });
+// Task 10 product-hotspot RED coverage.
+describe('InteractionController Task 10 product-hotspot creation', function () {
+  it('previews at the snapped point without allocating IDs', async function () {
+    const snapshot = taskTenShowroomSnapshot();
+    const makeId = vi.fn(function () {
+      return '00000000-0000-4000-8000-000000000100';
+    });
+    const harness = createSnapshotController(snapshot, { makeId });
+    harness.store.getState().setActiveTool('product-hotspot');
+
+    await harness.controller.handle(
+      eventAt('pointermove', 250, 50, { buttons: 0 }),
+    );
+
+    expect(harness.store.getState().draft).toMatchObject({
+      kind: 'create',
+      tool: 'product-hotspot',
+      points: [{ x: 200, y: 0 }],
+      preview: [{
+        type: 'poi',
+        kind: 'product-hotspot',
+        transform: { translation: { x: 200, y: 0 } },
+      }],
+    });
+    expect(makeId).not.toHaveBeenCalled();
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+  });
+
+  it('confirms exactly one atomic entity/content transaction', async function () {
+    const snapshot = taskTenShowroomSnapshot();
+    const makeId = vi.fn()
+      .mockReturnValueOnce('00000000-0000-4000-8000-000000000100')
+      .mockReturnValueOnce('00000000-0000-4000-8000-000000000101');
+    const harness = createSnapshotController(snapshot, { makeId });
+    harness.store.getState().setActiveTool('product-hotspot');
+
+    await harness.controller.handle(
+      eventAt('pointermove', 250, 50, { buttons: 0 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerdown', 250, 50, { buttons: 1 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0 }),
+    );
+
+    expect(makeId).toHaveBeenCalledTimes(2);
+    expect(harness.applySnapshotRecordPatches).toHaveBeenCalledOnce();
+    const patches = vi.mocked(harness.applySnapshotRecordPatches).mock.calls[0]![0];
+    expect(patches).toHaveLength(2);
+    expect(patches.map(function (patch) { return patch.collection; })).toEqual([
+      'entities',
+      'productContents',
+    ]);
+    expect(patches[0]?.changes).toHaveLength(1);
+    expect(patches[1]?.changes).toHaveLength(1);
+    expect(patches[0]?.changes[0]?.before).toBeNull();
+    expect(patches[1]?.changes[0]?.before).toBeNull();
+    const entity = patches[0]?.changes[0]?.after;
+    const content = patches[1]?.changes[0]?.after;
+    expect(entity).toEqual({
+      id: '00000000-0000-4000-8000-000000000100',
+      name: 'Product Hotspot',
+      tags: [],
+      type: 'poi',
+      kind: 'product-hotspot',
+      floorId: snapshot.project.floors[0]!.id,
+      layerId: snapshot.project.floors[0]!.layers[0]!.id,
+      locked: false,
+      transform: {
+        translation: { x: 200, y: 0 },
+        rotation: 0,
+        scale: { x: 1, y: 1 },
+      },
+    });
+    expect(entity).not.toHaveProperty('spatial3D');
+    expect(content).toEqual({
+      id: '00000000-0000-4000-8000-000000000101',
+      name: 'Product Hotspot',
+      tags: [],
+      targetEntityId: '00000000-0000-4000-8000-000000000100',
+      description: '',
+      mediaAssetIds: [],
+    });
+    expect([...harness.store.getState().selectedIds]).toEqual([
+      '00000000-0000-4000-8000-000000000100',
+    ]);
+    expect(harness.store.getState().draft).toBeNull();
+
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0 }),
+    );
+    expect(harness.applySnapshotRecordPatches).toHaveBeenCalledOnce();
+  });
+
+  it('requires a matching primary pointerdown before confirmation', async function () {
+    const snapshot = taskTenShowroomSnapshot();
+    const harness = createSnapshotController(snapshot);
+    harness.store.getState().setActiveTool('product-hotspot');
+
+    await harness.controller.handle(
+      eventAt('pointermove', 250, 50, { buttons: 0, pointerId: 7 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0, pointerId: 7 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerdown', 250, 50, { buttons: 2, pointerId: 7 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0, pointerId: 7 }),
+    );
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+
+    await harness.controller.handle(
+      eventAt('pointerdown', 250, 50, { buttons: 1, pointerId: 7 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0, pointerId: 8 }),
+    );
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0, pointerId: 7 }),
+    );
+    expect(harness.applySnapshotRecordPatches).toHaveBeenCalledOnce();
+  });
+
+  it('selects only after persistence and ignores a stale completion', async function () {
+    const snapshot = taskTenShowroomSnapshot();
+    let resolveCommit!: () => void;
+    const applySnapshotRecordPatches = vi.fn(function () {
+      return new Promise<void>(function (resolve) {
+        resolveCommit = resolve;
+      });
+    });
+    const harness = createSnapshotController(snapshot, {
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool('product-hotspot');
+    await harness.controller.handle(
+      eventAt('pointermove', 250, 50, { buttons: 0 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerdown', 250, 50, { buttons: 1 }),
+    );
+    const completion = harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0 }),
+    );
+    await Promise.resolve();
+
+    expect(applySnapshotRecordPatches).toHaveBeenCalledOnce();
+    expect([...harness.store.getState().selectedIds]).toEqual([]);
+    harness.store.getState().replaceSession(
+      'replacement-after-product-hotspot-commit',
+      snapshot.project.floors[0]!.id,
+    );
+    resolveCommit();
+    await completion;
+
+    expect([...harness.store.getState().selectedIds]).toEqual([]);
+    expect(harness.store.getState().draft).toBeNull();
+    expect(harness.errors).toEqual([]);
+  });
+
+  it('rejects locked and hidden creation layers', async function () {
+    for (const guard of ['locked', 'hidden'] as const) {
+      const base = taskTenShowroomSnapshot();
+      const floor = base.project.floors[0]!;
+      const snapshot = parseSnapshotV3({
+        ...base,
+        project: {
+          ...base.project,
+          floors: [{
+            ...floor,
+            layers: floor.layers.map(function (layer) {
+              return {
+                ...layer,
+                locked: guard === 'locked',
+                visible: guard !== 'hidden',
+              };
+            }),
+          }, ...base.project.floors.slice(1)],
+        },
+      });
+      const makeId = vi.fn(function () {
+        return '00000000-0000-4000-8000-000000000100';
+      });
+      const harness = createSnapshotController(snapshot, { makeId });
+      harness.store.getState().setActiveTool('product-hotspot');
+
+      await harness.controller.handle(
+        eventAt('pointermove', 250, 50, { buttons: 0 }),
+      );
+      await harness.controller.handle(
+        eventAt('pointerdown', 250, 50, { buttons: 1 }),
+      );
+      await harness.controller.handle(
+        eventAt('pointerup', 250, 50, { buttons: 0 }),
+      );
+      expect(harness.store.getState().draft).toBeNull();
+      expect(makeId).not.toHaveBeenCalled();
+      expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    }
+  });
+
+  it('cancels stale floor and session previews before allocation', async function () {
+    for (const scope of ['floor', 'session'] as const) {
+      const snapshot = taskTenShowroomSnapshot();
+      const makeId = vi.fn(function () {
+        return '00000000-0000-4000-8000-000000000100';
+      });
+      const harness = createSnapshotController(snapshot, { makeId });
+      harness.store.getState().setActiveTool('product-hotspot');
+      await harness.controller.handle(
+        eventAt('pointermove', 250, 50, { buttons: 0 }),
+      );
+      await harness.controller.handle(
+        eventAt('pointerdown', 250, 50, { buttons: 1 }),
+      );
+      expect(harness.store.getState().draft).not.toBeNull();
+
+      if (scope === 'floor') {
+        harness.store.getState().setActiveFloor(
+          snapshot.project.floors[1]!.id,
+        );
+      } else {
+        harness.store.getState().replaceSession(
+          'replacement-product-hotspot-session',
+          snapshot.project.floors[0]!.id,
+        );
+      }
+      await harness.controller.handle(
+        eventAt('pointerup', 250, 50, { buttons: 0 }),
+      );
+
+      expect(harness.store.getState().draft).toBeNull();
+      expect(makeId).not.toHaveBeenCalled();
+      expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rereads a newly locked layer before allocating IDs', async function () {
+    let current = taskTenShowroomSnapshot();
+    const makeId = vi.fn(function () {
+      return '00000000-0000-4000-8000-000000000100';
+    });
+    const harness = createSnapshotController(current, {
+      getSnapshot: function () { return current; },
+      makeId,
+    });
+    harness.store.getState().setActiveTool('product-hotspot');
+    await harness.controller.handle(
+      eventAt('pointermove', 250, 50, { buttons: 0 }),
+    );
+    await harness.controller.handle(
+      eventAt('pointerdown', 250, 50, { buttons: 1 }),
+    );
+    expect(harness.store.getState().draft).not.toBeNull();
+
+    const floor = current.project.floors[0]!;
+    current = parseSnapshotV3({
+      ...current,
+      project: {
+        ...current.project,
+        floors: [{
+          ...floor,
+          layers: floor.layers.map(function (layer) {
+            return { ...layer, locked: true };
+          }),
+        }, ...current.project.floors.slice(1)],
+      },
+    });
+    await harness.controller.handle(
+      eventAt('pointerup', 250, 50, { buttons: 0 }),
+    );
+
+    expect(harness.store.getState().draft).toBeNull();
+    expect(makeId).not.toHaveBeenCalled();
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+  });
+});
 
 describe("InteractionController keyboard grid movement", () => {
   it.each([
@@ -2146,3 +2428,11 @@ describe("InteractionController Task 9 opening selection and mutation", () => {
     expect([...harness.store.getState().selectedIds]).toEqual([]);
   });
 });
+
+function taskTenShowroomSnapshot(): ProjectSnapshot {
+  const base = createPlanEditorTestHarness();
+  return parseSnapshotV3({
+    ...base.snapshot,
+    project: { ...base.snapshot.project, profile: 'showroom' },
+  });
+}

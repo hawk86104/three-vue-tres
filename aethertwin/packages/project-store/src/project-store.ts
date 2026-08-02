@@ -36,6 +36,7 @@ import {
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
 import {
+  patchSnapshotRecordsDeferredValidationCommand,
   patchSnapshotRecordsCommand,
   type AnySnapshotRecordsPatch,
 } from "./snapshot-records-command";
@@ -359,7 +360,12 @@ export class ProjectStore {
     return this.enqueueMutation(() =>
       this.mutate((bus) =>
         bus.transaction(ownedPatches.map((patch) =>
-          commandIntent(patchSnapshotRecordsCommand, patch))),
+          commandIntent(
+            patch.collection === 'entities'
+              ? patchSnapshotRecordsDeferredValidationCommand
+              : patchSnapshotRecordsCommand,
+            patch,
+          ))),
       ),
     );
   }
