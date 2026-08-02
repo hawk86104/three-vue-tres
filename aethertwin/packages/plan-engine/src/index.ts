@@ -5,6 +5,12 @@ export {
   type CalibrationPreview,
 } from "./calibration";
 export { entityWorldBounds, entityWorldVertices } from "./bounds";
+export {
+  createProductHotspotIntent,
+  reorderProductMedia,
+  type CreateProductHotspotInput,
+  type ProductHotspotIntent,
+} from "./content";
 export { screenToWorld, worldToScreen, type ViewportTransform } from "./coordinates";
 export {
   dimensionGeometry,
