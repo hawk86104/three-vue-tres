@@ -3,9 +3,11 @@ import type {
   Bounds2,
   Point2,
   ProjectSnapshot,
+  RouteNodeKind,
   SpatialEntity,
 } from "@aethertwin/core-model";
 import type { CalibrationPreview, ViewportTransform } from "@aethertwin/plan-engine";
+import type { ResolvedRoute } from "@aethertwin/route-engine";
 
 export interface PlanRoomCandidate {
   readonly key: string;
@@ -40,6 +42,8 @@ export interface PlanRendererInput {
   readonly draft: readonly SpatialEntity[] | null;
   readonly calibrationPreview?: CalibrationPreview | null;
   readonly roomCandidates?: readonly PlanRoomCandidate[];
+  readonly activeRouteNetworkId?: string | null;
+  readonly resolvedRoute?: ResolvedRoute | null;
 }
 
 export interface ProjectAssetSource {
@@ -100,7 +104,9 @@ export type RenderGeometry =
       readonly assetId: string;
       readonly corners: readonly [Point2, Point2, Point2, Point2];
       readonly opacity: number;
-    };
+    }
+  | { readonly kind: "route-node"; readonly center: Point2; readonly nodeKind: RouteNodeKind }
+  | { readonly kind: "route-edge"; readonly start: Point2; readonly end: Point2; readonly resolved: boolean };
 
 export interface RenderNode {
   readonly key: string;

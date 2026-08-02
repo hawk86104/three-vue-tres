@@ -11,7 +11,9 @@ import {
   type PlanReference,
   type PlanLayer,
   type PointOfInterest,
+  type ProductContent,
   type ProjectSnapshot,
+  type RouteNetwork,
   type SpaceUnit,
   type SpatialEntity,
   type SpatialEntityBase,
@@ -24,6 +26,7 @@ import {
   previewCalibration,
   worldToScreen,
 } from "@aethertwin/plan-engine";
+import type { ResolvedRoute } from "@aethertwin/route-engine";
 import { describe, expect, it, vi } from "vitest";
 import { projectScene } from "@aethertwin/render-plan-2d/scene-projection";
 import type { PlanRendererInput } from "./types";
@@ -136,6 +139,7 @@ function planReferenceAt(
 function snapshotWith(
   entities: readonly SpatialEntity[],
   planReferences: readonly PlanReference[] = [],
+  projectOverrides: Partial<ProjectSnapshot["project"]> = {},
 ): ProjectSnapshot {
   const assetIds = [...new Set(planReferences.map(({ assetId }) => assetId))];
   return parseSnapshotV3({
@@ -144,6 +148,7 @@ function snapshotWith(
       ...base.project,
       floors: [floorA, floorB],
       entities,
+      ...projectOverrides,
       planReferences,
     },
     assets: assetIds.map(assetRecord),
@@ -843,5 +848,272 @@ describe("projectScene M2.2 building overlays", () => {
     expect(repeated.nodes.map(({ key }) => key)).toEqual(
       first.nodes.map(({ key }) => key),
     );
+  });
+});
+
+describe("projectScene M2.3 showroom routes", () => {
+  function showroomNetwork(): RouteNetwork {
+    const entrance = {
+      id: uuid(300),
+      name: "Entrance",
+      tags: [],
+      position: { x: -100, y: 0 },
+      floorId: floorA.id,
+      kind: "entrance" as const,
+    };
+    const stop = {
+      id: uuid(301),
+      name: "Product stop",
+      tags: [],
+      position: { x: 100, y: 0 },
+      floorId: floorA.id,
+      kind: "showroom-stop" as const,
+    };
+    const junction = {
+      id: uuid(302),
+      name: "Turn",
+      tags: [],
+      position: { x: 100, y: 100 },
+      floorId: floorA.id,
+      kind: "junction" as const,
+    };
+    const otherStart = {
+      id: uuid(303),
+      name: "Other floor start",
+      tags: [],
+      position: { x: 0, y: 0 },
+      floorId: floorB.id,
+      kind: "entrance" as const,
+    };
+    const otherEnd = {
+      id: uuid(304),
+      name: "Other floor end",
+      tags: [],
+      position: { x: 50, y: 0 },
+      floorId: floorB.id,
+      kind: "junction" as const,
+    };
+    return {
+      id: uuid(320),
+      name: "Showroom network",
+      tags: [],
+      nodes: [junction, otherEnd, entrance, stop, otherStart],
+      edges: [
+        {
+          id: uuid(311),
+          name: "Stop to turn",
+          tags: [],
+          from: stop.id,
+          to: junction.id,
+          distance: 100,
+          bidirectional: true,
+          accessible: true,
+          enabled: true,
+          width: 1200,
+          weight: 1,
+        },
+        {
+          id: uuid(312),
+          name: "Other floor edge",
+          tags: [],
+          from: otherStart.id,
+          to: otherEnd.id,
+          distance: 50,
+          bidirectional: true,
+          accessible: true,
+          enabled: true,
+          width: 1200,
+          weight: 1,
+        },
+        {
+          id: uuid(310),
+          name: "Entrance to stop",
+          tags: [],
+          from: entrance.id,
+          to: stop.id,
+          distance: 200,
+          bidirectional: false,
+          accessible: true,
+          enabled: true,
+          width: 1200,
+          weight: 1,
+        },
+      ],
+    };
+  }
+
+  it("uses a distinct product-hotspot style without changing durable identity", () => {
+    const hotspot: PointOfInterest = {
+      ...entityBase(330),
+      type: "poi",
+      kind: "product-hotspot",
+      radius: 12,
+    };
+    const content: ProductContent = {
+      id: uuid(331),
+      name: "Hotspot content",
+      tags: [],
+      targetEntityId: hotspot.id,
+      description: "Local product media",
+      mediaAssetIds: [],
+    };
+    const snapshot = snapshotWith([hotspot], [], { productContents: [content] });
+
+    const node = projectScene(inputFor(snapshot, {
+      selectedIds: new Set([hotspot.id]),
+    })).nodes.find(({ key }) => key === hotspot.id);
+
+    expect(node).toMatchObject({
+      key: hotspot.id,
+      entityId: hotspot.id,
+      styleToken: "entity-poi-product-hotspot",
+      selected: true,
+    });
+  });
+
+  it("projects one active-floor network with durable IDs and ordered route overlays", () => {
+    const network = showroomNetwork();
+    const inactiveStart = {
+      id: uuid(340),
+      name: "Inactive start",
+      tags: [],
+      position: { x: -200, y: -100 },
+      floorId: floorA.id,
+      kind: "entrance" as const,
+    };
+    const inactiveEnd = {
+      id: uuid(341),
+      name: "Inactive end",
+      tags: [],
+      position: { x: -150, y: -100 },
+      floorId: floorA.id,
+      kind: "junction" as const,
+    };
+    const inactiveEdge = {
+      id: uuid(342),
+      name: "Inactive edge",
+      tags: [],
+      from: inactiveStart.id,
+      to: inactiveEnd.id,
+      distance: 50,
+      bidirectional: true,
+      accessible: true,
+      enabled: true,
+      width: 1200,
+      weight: 1,
+    };
+    const inactiveNetwork: RouteNetwork = {
+      id: uuid(343),
+      name: "Inactive network",
+      tags: [],
+      nodes: [inactiveStart, inactiveEnd],
+      edges: [inactiveEdge],
+    };
+    const [junction, otherEnd, entrance, stop, otherStart] = network.nodes;
+    const [bidirectional, otherFloorEdge, directed] = network.edges;
+    const resolvedRoute: ResolvedRoute = {
+      nodeIds: [entrance!.id, stop!.id, junction!.id],
+      edgeIds: [directed!.id, bidirectional!.id],
+      totalDistance: 300,
+      turnPoints: [entrance!.position, stop!.position, junction!.position],
+    };
+    const snapshot = snapshotWith([], [], { routeNetworks: [inactiveNetwork, network] });
+    const scene = projectScene(inputFor(snapshot, {
+      activeRouteNetworkId: network.id,
+      resolvedRoute,
+      selectedIds: new Set([entrance!.id, directed!.id]),
+    }));
+    const routeNodes = scene.nodes.filter(({ geometry, layer }) => (
+      geometry.kind === "route-node" && layer === "content"
+    ));
+    const authoredEdges = scene.nodes.filter(({ geometry, layer }) => (
+      geometry.kind === "route-edge" && !geometry.resolved && layer === "content"
+    ));
+    const resolvedEdges = scene.nodes.filter(({ geometry }) => (
+      geometry.kind === "route-edge" && geometry.resolved
+    ));
+
+    expect(routeNodes.map(({ key, entityId, styleToken }) => ({ key, entityId, styleToken }))).toEqual([
+      { key: entrance!.id, entityId: entrance!.id, styleToken: "route-node-entrance" },
+      { key: stop!.id, entityId: stop!.id, styleToken: "route-node-showroom-stop" },
+      { key: junction!.id, entityId: junction!.id, styleToken: "route-node-junction" },
+    ].sort((left, right) => left.key.localeCompare(right.key)));
+    expect(routeNodes.find(({ key }) => key === entrance!.id)?.geometry).toEqual({
+      kind: "route-node",
+      center: { x: 300, y: 300 },
+      nodeKind: "entrance",
+    });
+    expect(routeNodes.some(({ entityId }) => (
+      entityId === otherStart!.id || entityId === otherEnd!.id
+    ))).toBe(false);
+    expect(routeNodes.some(({ entityId }) => (
+      entityId === inactiveStart.id || entityId === inactiveEnd.id
+    ))).toBe(false);
+    expect(authoredEdges.map(({ key, entityId, styleToken, geometry }) => ({
+      key,
+      entityId,
+      styleToken,
+      geometry,
+    }))).toEqual([
+      {
+        key: directed!.id,
+        entityId: directed!.id,
+        styleToken: "route-edge-directed",
+        geometry: {
+          kind: "route-edge",
+          start: { x: 300, y: 300 },
+          end: { x: 500, y: 300 },
+          resolved: false,
+        },
+      },
+      {
+        key: bidirectional!.id,
+        entityId: bidirectional!.id,
+        styleToken: "route-edge-bidirectional",
+        geometry: {
+          kind: "route-edge",
+          start: { x: 500, y: 300 },
+          end: { x: 500, y: 200 },
+          resolved: false,
+        },
+      },
+    ].sort((left, right) => left.key.localeCompare(right.key)));
+    expect(authoredEdges.some(({ entityId }) => entityId === otherFloorEdge!.id)).toBe(false);
+    expect(authoredEdges.some(({ entityId }) => entityId === inactiveEdge.id)).toBe(false);
+    expect(resolvedEdges.map(({ entityId }) => entityId)).toEqual([
+      directed!.id,
+      bidirectional!.id,
+    ]);
+    expect(resolvedEdges.every(({ styleToken }) => styleToken === "route-edge-resolved")).toBe(true);
+
+    const selectionKeys = scene.nodes
+      .filter(({ styleToken }) => styleToken.startsWith("selection-route-"))
+      .map(({ key }) => key);
+    expect(selectionKeys).toEqual([
+      `__aethertwin:selection:${directed!.id}`,
+      `__aethertwin:selection:${entrance!.id}`,
+    ].sort());
+    const lastAuthoredIndex = Math.max(...authoredEdges.map((edge) => scene.nodes.indexOf(edge)));
+    const firstResolvedIndex = Math.min(...resolvedEdges.map((edge) => scene.nodes.indexOf(edge)));
+    const firstSelectionIndex = Math.min(...selectionKeys.map((key) => (
+      scene.nodes.findIndex((node) => node.key === key)
+    )));
+    expect(lastAuthoredIndex).toBeLessThan(firstResolvedIndex);
+    expect(firstResolvedIndex).toBeLessThan(firstSelectionIndex);
+  });
+  it("hides authored and resolved route records for null or unknown active IDs", () => {
+    const network = showroomNetwork();
+    const snapshot = snapshotWith([], [], { routeNetworks: [network] });
+
+    for (const activeRouteNetworkId of [null, uuid(999)]) {
+      const scene = projectScene(inputFor(snapshot, {
+        activeRouteNetworkId,
+        resolvedRoute: null,
+      }));
+
+      expect(scene.nodes.some(({ geometry }) => (
+        geometry.kind === "route-node" || geometry.kind === "route-edge"
+      ))).toBe(false);
+    }
   });
 });

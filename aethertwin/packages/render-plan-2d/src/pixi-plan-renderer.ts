@@ -352,6 +352,27 @@ function paintFor(node: RenderNode): {
       fillAlpha: 0.08,
     };
   }
+  if (node.styleToken === "entity-poi-product-hotspot") {
+    return { color: 0xf2b84b, alpha: 1, width: 2, fillAlpha: 0.24 };
+  }
+  if (node.styleToken === "route-edge-resolved") {
+    return { color: 0x67d5b5, alpha: 1, width: 4, fillAlpha: 0 };
+  }
+  if (node.styleToken === "route-edge-directed") {
+    return { color: 0xf2b84b, alpha: 0.95, width: 2, fillAlpha: 0 };
+  }
+  if (node.styleToken === "route-edge-bidirectional") {
+    return { color: 0x86a5c7, alpha: 0.85, width: 2, fillAlpha: 0 };
+  }
+  if (node.styleToken === "route-node-entrance") {
+    return { color: 0x67d5b5, alpha: 1, width: 2, fillAlpha: 0.2 };
+  }
+  if (node.styleToken === "route-node-showroom-stop") {
+    return { color: 0xf2b84b, alpha: 1, width: 2, fillAlpha: 0.24 };
+  }
+  if (node.styleToken === "route-node-junction") {
+    return { color: 0x9fb4ce, alpha: 0.95, width: 2, fillAlpha: 0.16 };
+  }
   if (node.styleToken.startsWith("opening-")) {
     return { color: 0xe7f3ff, alpha: node.locked ? 0.55 : 0.95, width: 2, fillAlpha: 0 };
   }
@@ -400,6 +421,22 @@ function drawNode(graphics: Graphics, node: RenderNode): void {
     case "circle":
       graphics.circle(geometry.center.x, geometry.center.y, geometry.radius)
         .fill({ color: paint.color, alpha: Math.max(paint.fillAlpha, 0.18) })
+        .stroke(stroke);
+      break;
+    case "route-node": {
+      const radius = geometry.nodeKind === "showroom-stop"
+        ? 7
+        : geometry.nodeKind === "entrance"
+          ? 6
+          : 5;
+      graphics.circle(geometry.center.x, geometry.center.y, radius)
+        .fill({ color: paint.color, alpha: Math.max(paint.fillAlpha, 0.18) })
+        .stroke(stroke);
+      break;
+    }
+    case "route-edge":
+      graphics.moveTo(geometry.start.x, geometry.start.y)
+        .lineTo(geometry.end.x, geometry.end.y)
         .stroke(stroke);
       break;
     case "dimension":

@@ -4,6 +4,9 @@ import type {
   Opening,
   PlanReference,
   Point2,
+  RouteEdge,
+  RouteNetwork,
+  RouteNode,
   SpatialEntity,
   Wall,
 } from "@aethertwin/core-model";
@@ -25,11 +28,13 @@ import type {
   RenderScene,
 } from "./types";
 
+const RESOLVED_ROUTE_NAMESPACE = "__aethertwin:resolved-route:";
 const GRID_NAMESPACE = "__aethertwin:grid:";
 const DRAFT_NAMESPACE = "__aethertwin:draft:";
 const SELECTION_NAMESPACE = "__aethertwin:selection:";
 const ROOM_CANDIDATE_NAMESPACE = "__aethertwin:room-candidate:";
 const GRID_TARGET_PIXELS = 32;
+const ROUTE_NODE_RADIUS_PIXELS = 6;
 const POI_MIN_MARKER_PIXELS = 6;
 const POI_POLYGON_SEGMENTS = 32;
 
@@ -265,6 +270,7 @@ function entityProjection(
 }
 
 function styleTokenFor(entity: SpatialEntity): string {
+  if (entity.type === "poi" && entity.kind === "product-hotspot") return "entity-poi-product-hotspot";
   if (entity.type === "dimension") return "dimension";
   if (entity.type === "fixture") return `entity-fixture-${entity.kind}`;
   return `entity-${entity.type}`;
@@ -422,6 +428,175 @@ function projectRoomCandidate(
     selected: candidate.selected,
     locked: false,
   };
+}
+
+function projectRouteNode(
+  node: RouteNode,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  selected: boolean,
+): readonly [RenderNode, RenderNode | null] | null {
+  const worldBounds = { min: node.position, max: node.position };
+  if (!intersects(worldBounds, viewportBounds)) return null;
+  const center = worldToScreen(node.position, viewport);
+  const bounds = {
+    min: {
+      x: center.x - ROUTE_NODE_RADIUS_PIXELS,
+      y: center.y - ROUTE_NODE_RADIUS_PIXELS,
+    },
+    max: {
+      x: center.x + ROUTE_NODE_RADIUS_PIXELS,
+      y: center.y + ROUTE_NODE_RADIUS_PIXELS,
+    },
+  };
+  const renderNode: RenderNode = {
+    key: node.id,
+    entityId: node.id,
+    layer: "content",
+    geometry: { kind: "route-node", center, nodeKind: node.kind },
+    bounds,
+    styleToken: `route-node-${node.kind}`,
+    selected,
+    locked: false,
+  };
+  if (!selected) return [renderNode, null];
+  return [
+    renderNode,
+    {
+      ...renderNode,
+      key: `${SELECTION_NAMESPACE}${node.id}`,
+      layer: "overlay",
+      styleToken: "selection-route-node",
+    },
+  ];
+}
+
+function projectRouteEdge(
+  edge: RouteEdge,
+  nodesById: ReadonlyMap<string, RouteNode>,
+  activeFloorId: string,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  selected: boolean,
+): readonly [RenderNode, RenderNode | null] | null {
+  const from = nodesById.get(edge.from);
+  const to = nodesById.get(edge.to);
+  if (
+    from === undefined
+    || to === undefined
+    || from.floorId !== activeFloorId
+    || to.floorId !== activeFloorId
+  ) return null;
+  const worldBounds = boundsFromPoints([from.position, to.position]);
+  if (!intersects(worldBounds, viewportBounds)) return null;
+  const start = worldToScreen(from.position, viewport);
+  const end = worldToScreen(to.position, viewport);
+  const renderNode: RenderNode = {
+    key: edge.id,
+    entityId: edge.id,
+    layer: "content",
+    geometry: { kind: "route-edge", start, end, resolved: false },
+    bounds: boundsFromPoints([start, end]),
+    styleToken: edge.bidirectional
+      ? "route-edge-bidirectional"
+      : "route-edge-directed",
+    selected,
+    locked: false,
+  };
+  if (!selected) return [renderNode, null];
+  return [
+    renderNode,
+    {
+      ...renderNode,
+      key: `${SELECTION_NAMESPACE}${edge.id}`,
+      layer: "overlay",
+      styleToken: "selection-route-edge",
+    },
+  ];
+}
+
+function projectAuthoredRouteNetwork(
+  network: RouteNetwork,
+  activeFloorId: string,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  selectedIds: ReadonlySet<string>,
+  content: RenderNode[],
+  overlay: RenderNode[],
+): void {
+  const nodesById = new Map(network.nodes.map((node) => [node.id, node]));
+  for (const node of network.nodes) {
+    if (node.floorId !== activeFloorId) continue;
+    const projected = projectRouteNode(
+      node,
+      viewport,
+      viewportBounds,
+      selectedIds.has(node.id),
+    );
+    if (projected === null) continue;
+    content.push(projected[0]);
+    if (projected[1] !== null) overlay.push(projected[1]);
+  }
+  for (const edge of network.edges) {
+    const projected = projectRouteEdge(
+      edge,
+      nodesById,
+      activeFloorId,
+      viewport,
+      viewportBounds,
+      selectedIds.has(edge.id),
+    );
+    if (projected === null) continue;
+    content.push(projected[0]);
+    if (projected[1] !== null) overlay.push(projected[1]);
+  }
+}
+
+function projectResolvedRoute(
+  network: RouteNetwork,
+  route: NonNullable<PlanRendererInput["resolvedRoute"]>,
+  activeFloorId: string,
+  viewport: ViewportTransform,
+  viewportBounds: Bounds2,
+  selectedIds: ReadonlySet<string>,
+): readonly RenderNode[] {
+  if (route.nodeIds.length !== route.edgeIds.length + 1) return [];
+  const nodesById = new Map(network.nodes.map((node) => [node.id, node]));
+  const edgesById = new Map(network.edges.map((edge) => [edge.id, edge]));
+  const projected: RenderNode[] = [];
+  for (let index = 0; index < route.edgeIds.length; index += 1) {
+    const from = nodesById.get(route.nodeIds[index]!);
+    const to = nodesById.get(route.nodeIds[index + 1]!);
+    const edge = edgesById.get(route.edgeIds[index]!);
+    if (
+      from === undefined
+      || to === undefined
+      || edge === undefined
+      || !edge.enabled
+      || from.floorId !== activeFloorId
+      || to.floorId !== activeFloorId
+    ) return [];
+    const traversesForward = edge.from === from.id && edge.to === to.id;
+    const traversesReverse = edge.bidirectional
+      && edge.from === to.id
+      && edge.to === from.id;
+    if (!traversesForward && !traversesReverse) return [];
+    const worldBounds = boundsFromPoints([from.position, to.position]);
+    if (!intersects(worldBounds, viewportBounds)) continue;
+    const start = worldToScreen(from.position, viewport);
+    const end = worldToScreen(to.position, viewport);
+    projected.push({
+      key: `${RESOLVED_ROUTE_NAMESPACE}${index.toString().padStart(6, "0")}:${edge.id}`,
+      entityId: edge.id,
+      layer: "annotation",
+      geometry: { kind: "route-edge", start, end, resolved: true },
+      bounds: boundsFromPoints([start, end]),
+      styleToken: "route-edge-resolved",
+      selected: selectedIds.has(edge.id),
+      locked: false,
+    });
+  }
+  return projected;
 }
 
 function adaptiveGridStep(pixelsPerMillimetre: number): number {
@@ -584,6 +759,33 @@ export function projectScene(input: PlanRendererInput): RenderScene {
     if (projected === null) continue;
     content.push(projected[0]);
     if (projected[1] !== null) overlay.push(projected[1]);
+  }
+
+  const activeRouteNetwork = input.activeRouteNetworkId == null
+    ? undefined
+    : input.snapshot.project.routeNetworks.find(
+        (network) => network.id === input.activeRouteNetworkId,
+      );
+  if (activeRouteNetwork !== undefined) {
+    projectAuthoredRouteNetwork(
+      activeRouteNetwork,
+      input.activeFloorId,
+      input.viewport,
+      viewportBounds,
+      input.selectedIds,
+      content,
+      overlay,
+    );
+    if (input.resolvedRoute != null) {
+      annotation.push(...projectResolvedRoute(
+        activeRouteNetwork,
+        input.resolvedRoute,
+        input.activeFloorId,
+        input.viewport,
+        viewportBounds,
+        input.selectedIds,
+      ));
+    }
   }
 
   if (input.draft !== null) {

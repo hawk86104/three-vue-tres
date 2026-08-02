@@ -238,6 +238,9 @@ importers:
       '@aethertwin/plan-engine':
         specifier: workspace:*
         version: link:../plan-engine
+      '@aethertwin/route-engine':
+        specifier: workspace:*
+        version: link:../route-engine
       pixi.js:
         specifier: 8.19.0
         version: 8.19.0

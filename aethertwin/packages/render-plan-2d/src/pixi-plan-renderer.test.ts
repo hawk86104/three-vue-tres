@@ -7,7 +7,9 @@ import {
   type Fixture,
   type Floor,
   type PlanReference,
+  type RouteNetwork,
 } from "@aethertwin/core-model";
+import type { ResolvedRoute } from "@aethertwin/route-engine";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pixiRendererModule from "./pixi-plan-renderer";
 import { PixiPlanRenderer } from "./pixi-plan-renderer";
@@ -1347,5 +1349,243 @@ describe("Pixi M2.2 opening symbols", () => {
     expect(graphics?.destroyed).toBe(true);
     expect(graphics?.destroyedWhileParented).toBe(false);
     port.destroy();
+  });
+});
+
+describe("Pixi M2.3 route records", () => {
+  function routeNodeRecord(
+    key: string,
+    nodeKind: "junction" | "entrance" | "showroom-stop",
+    layer: RenderNode["layer"] = "content",
+    styleToken = `route-node-${nodeKind}`,
+  ): RenderNode {
+    return {
+      key,
+      entityId: key,
+      layer,
+      geometry: {
+        kind: "route-node",
+        center: { x: 100, y: 100 },
+        nodeKind,
+      },
+      bounds: {
+        min: { x: 94, y: 94 },
+        max: { x: 106, y: 106 },
+      },
+      styleToken,
+      selected: styleToken.startsWith("selection-"),
+      locked: false,
+    };
+  }
+
+  function routeEdgeRecord(
+    key: string,
+    resolved: boolean,
+    layer: RenderNode["layer"],
+    styleToken: string,
+  ): RenderNode {
+    return {
+      key,
+      entityId: key,
+      layer,
+      geometry: {
+        kind: "route-edge",
+        start: { x: 100, y: 100 },
+        end: { x: 240, y: 180 },
+        resolved,
+      },
+      bounds: {
+        min: { x: 100, y: 100 },
+        max: { x: 240, y: 180 },
+      },
+      styleToken,
+      selected: styleToken.startsWith("selection-"),
+      locked: false,
+    };
+  }
+
+  function rendererRouteNetwork(): RouteNetwork {
+    const entrance = {
+      id: uuid(400),
+      name: "Entrance",
+      tags: [],
+      position: { x: -100, y: 0 },
+      floorId: floorA.id,
+      kind: "entrance" as const,
+    };
+    const stop = {
+      id: uuid(401),
+      name: "Stop",
+      tags: [],
+      position: { x: 100, y: 0 },
+      floorId: floorA.id,
+      kind: "showroom-stop" as const,
+    };
+    return {
+      id: uuid(402),
+      name: "Renderer route",
+      tags: [],
+      nodes: [stop, entrance],
+      edges: [{
+        id: uuid(403),
+        name: "Directed visit",
+        tags: [],
+        from: entrance.id,
+        to: stop.id,
+        distance: 200,
+        bidirectional: false,
+        accessible: true,
+        enabled: true,
+        width: 1200,
+        weight: 1,
+      }],
+    };
+  }
+
+  it("draws immutable authored, resolved, and selection records in layer order", async () => {
+    const port = pixiRendererModule.createPixiRenderPort(unusedSourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+    const authoredNode = routeNodeRecord("authored-node", "entrance");
+    const authoredEdge = routeEdgeRecord(
+      "authored-edge",
+      false,
+      "content",
+      "route-edge-directed",
+    );
+    const resolvedEdge = routeEdgeRecord(
+      "resolved-edge",
+      true,
+      "annotation",
+      "route-edge-resolved",
+    );
+    const selection = routeEdgeRecord(
+      "selected-edge",
+      false,
+      "overlay",
+      "selection-route-edge",
+    );
+
+    port.upsert(selection);
+    port.upsert(resolvedEdge);
+    port.upsert(authoredEdge);
+    port.upsert(authoredNode);
+
+    const stage = latestApplication().stage;
+    expect(stage.children.map(({ label }) => label)).toEqual([
+      "grid",
+      "reference",
+      "content",
+      "annotation",
+      "overlay",
+      "interaction",
+    ]);
+    const content = stage.children.find(({ label }) => label === "content")!;
+    const annotation = stage.children.find(({ label }) => label === "annotation")!;
+    const overlay = stage.children.find(({ label }) => label === "overlay")!;
+    const nodeGraphics = content.children.find(({ label }) => label === authoredNode.key) as
+      InstanceType<typeof pixiHarness.TestGraphics>;
+    const authoredGraphics = content.children.find(({ label }) => label === authoredEdge.key) as
+      InstanceType<typeof pixiHarness.TestGraphics>;
+    const resolvedGraphics = annotation.children[0] as
+      InstanceType<typeof pixiHarness.TestGraphics>;
+    const selectionGraphics = overlay.children[0] as
+      InstanceType<typeof pixiHarness.TestGraphics>;
+
+    expect(nodeGraphics.commands.map(({ method }) => method)).toEqual([
+      "circle",
+      "fill",
+      "stroke",
+    ]);
+    expect(authoredGraphics.commands.map(({ method }) => method)).toEqual([
+      "moveTo",
+      "lineTo",
+      "stroke",
+    ]);
+    expect(resolvedGraphics.commands.map(({ method }) => method)).toEqual([
+      "moveTo",
+      "lineTo",
+      "stroke",
+    ]);
+    expect(selectionGraphics.commands.map(({ method }) => method)).toEqual([
+      "moveTo",
+      "lineTo",
+      "stroke",
+    ]);
+    const authoredStroke = authoredGraphics.commands.find(
+      ({ method }) => method === "stroke",
+    )?.args[0];
+    const resolvedStroke = resolvedGraphics.commands.find(
+      ({ method }) => method === "stroke",
+    )?.args[0];
+    const selectionStroke = selectionGraphics.commands.find(
+      ({ method }) => method === "stroke",
+    )?.args[0];
+    expect(authoredStroke).toBeDefined();
+    expect(resolvedStroke).not.toEqual(authoredStroke);
+    expect(selectionStroke).not.toEqual(authoredStroke);
+    expect(selectionStroke).not.toEqual(resolvedStroke);
+    for (const graphics of [nodeGraphics, authoredGraphics, resolvedGraphics, selectionGraphics]) {
+      expect(graphics).not.toHaveProperty("nodeIds");
+      expect(graphics).not.toHaveProperty("edgeIds");
+      expect(graphics).not.toHaveProperty("turnPoints");
+      expect(graphics).not.toHaveProperty("totalDistance");
+    }
+
+    port.remove(authoredNode.key);
+    port.remove(authoredEdge.key);
+    port.remove(resolvedEdge.key);
+    port.remove(selection.key);
+    expect(content.children).toHaveLength(0);
+    expect(annotation.children).toHaveLength(0);
+    expect(overlay.children).toHaveLength(0);
+    expect([nodeGraphics, authoredGraphics, resolvedGraphics, selectionGraphics].every(
+      ({ destroyed, destroyedWhileParented }) => destroyed && !destroyedWhileParented,
+    )).toBe(true);
+    port.destroy();
+  });
+
+  it("reconciles route visibility and removes every stale projected record", async () => {
+    const network = rendererRouteNetwork();
+    const [stop, entrance] = network.nodes;
+    const edge = network.edges[0]!;
+    const resolvedRoute: ResolvedRoute = {
+      nodeIds: [entrance!.id, stop!.id],
+      edgeIds: [edge.id],
+      totalDistance: edge.distance,
+      turnPoints: [entrance!.position, stop!.position],
+    };
+    const routeSnapshot = parseSnapshotV3({
+      ...snapshot,
+      project: { ...snapshot.project, routeNetworks: [network] },
+    });
+    const activeInput: PlanRendererInput = {
+      ...rendererInput(),
+      snapshot: routeSnapshot,
+      activeRouteNetworkId: network.id,
+      resolvedRoute,
+      selectedIds: new Set([entrance!.id, edge.id]),
+    };
+    const port = new FakePlanRenderPort();
+    const renderer = new PixiPlanRenderer(unusedSourcePort, () => port);
+    await renderer.init({} as HTMLElement, { handle: () => undefined });
+
+    renderer.update(activeInput);
+    const routeRecords = port.upsertedNodes.filter(({ geometry }) => (
+      geometry.kind === "route-node" || geometry.kind === "route-edge"
+    ));
+    expect(routeRecords).toHaveLength(6);
+    expect(routeRecords.map(({ entityId }) => entityId)).toEqual(expect.arrayContaining([
+      entrance!.id,
+      stop!.id,
+      edge.id,
+    ]));
+    renderer.update({
+      ...activeInput,
+      activeRouteNetworkId: null,
+      resolvedRoute: null,
+    });
+
+    expect(new Set(port.removedKeys)).toEqual(new Set(routeRecords.map(({ key }) => key)));
+    renderer.destroy();
   });
 });

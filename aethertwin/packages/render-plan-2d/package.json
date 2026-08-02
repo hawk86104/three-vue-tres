@@ -15,6 +15,7 @@
   "dependencies": {
     "@aethertwin/core-model": "workspace:*",
     "@aethertwin/plan-engine": "workspace:*",
+    "@aethertwin/route-engine": "workspace:*",
     "pixi.js": "8.19.0"
   }
 }
