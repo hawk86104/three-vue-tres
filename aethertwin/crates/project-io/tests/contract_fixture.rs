@@ -1,6 +1,6 @@
 use project_io::{
-    AssetRecord, Floor, PlanLayer, ProjectIoError, ProjectManifest, ProjectProfile,
-    ProjectSnapshot, SpatialProject,
+    AssetRecord, Floor, MediaAssetKind, PlanLayer, ProjectIoError, ProjectManifest, ProjectProfile,
+    ProjectSnapshot, RouteNodeKind, SpatialProject,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -160,6 +160,22 @@ fn snapshot_fixtures_deserialize_and_preserve_every_version_exactly() {
     let v3: ProjectSnapshot = serde_json::from_slice(&source).unwrap();
     assert_eq!(v3.schema_version, 3);
     assert_eq!(serde_json::to_value(v3).unwrap(), expected);
+}
+
+#[test]
+fn content_and_route_records_use_public_typed_contracts() {
+    let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/contracts/content-routes.v1.json");
+    let fixture: Value = serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+    let expected = fixture["baseSnapshot"].clone();
+    let snapshot: ProjectSnapshot = serde_json::from_value(expected.clone()).unwrap();
+
+    assert_eq!(snapshot.project.media_assets[0].kind, MediaAssetKind::Image);
+    assert_eq!(
+        snapshot.project.route_networks[0].nodes[2].kind,
+        RouteNodeKind::ShowroomStop
+    );
+    assert_eq!(serde_json::to_value(snapshot).unwrap(), expected);
 }
 
 fn complete_v3_reference_snapshot() -> Value {

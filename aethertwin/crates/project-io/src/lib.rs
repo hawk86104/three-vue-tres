@@ -10,9 +10,10 @@ mod schema;
 
 pub use error::ProjectIoError;
 pub use model::{
-    AssetRecord, CheckpointResult, CommitBatch, CreateProjectRequest, Floor, JournalAction,
-    JournalOperation, OpenedProject, PlanLayer, ProjectManifest, ProjectProfile, ProjectSnapshot,
-    SaveState, SpatialProject,
+    AssetRecord, CheckpointResult, CommitBatch, CreateProjectRequest, Floor, GuidedRoute,
+    JournalAction, JournalOperation, MediaAsset, MediaAssetKind, OpenedProject, PlanLayer,
+    ProductContent, ProjectManifest, ProjectProfile, ProjectSnapshot, RouteEdge, RouteNetwork,
+    RouteNode, RouteNodeKind, SaveState, SpatialProject,
 };
 pub use paths::validate_relative_resource_path;
 pub use project::{

@@ -24,6 +24,7 @@ const MAX_COLLECTION_JSON_BYTES: usize = 16 * 1024 * 1024;
 const MAX_INTRINSIC_AXIS: u64 = 16_384;
 const MAX_DECODED_PIXELS: u64 = 268_435_456;
 const MAX_WORLD_COORDINATE_MM: f64 = 1_000_000_000.0;
+const ROUTE_GEOMETRY_EPSILON_MM: f64 = 1e-7;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -176,9 +177,6 @@ pub struct ProductContent {
 pub enum MediaAssetKind {
     Image,
     Video,
-    Audio,
-    Model,
-    Document,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -193,6 +191,14 @@ pub struct MediaAsset {
     pub kind: MediaAssetKind,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RouteNodeKind {
+    Junction,
+    Entrance,
+    ShowroomStop,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RouteNode {
@@ -203,7 +209,7 @@ pub struct RouteNode {
     pub position: Point2,
     #[serde(with = "contract_uuid")]
     pub floor_id: Uuid,
-    pub kind: String,
+    pub kind: RouteNodeKind,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -354,11 +360,11 @@ pub struct SpatialProject {
     #[serde(default)]
     pub vendors: Vec<serde_json::Value>,
     #[serde(default)]
-    pub product_contents: Vec<serde_json::Value>,
+    pub product_contents: Vec<ProductContent>,
     #[serde(default)]
-    pub media_assets: Vec<serde_json::Value>,
+    pub media_assets: Vec<MediaAsset>,
     #[serde(default)]
-    pub route_networks: Vec<serde_json::Value>,
+    pub route_networks: Vec<RouteNetwork>,
     #[serde(default)]
     pub themes: Vec<serde_json::Value>,
     #[serde(default)]
@@ -791,17 +797,21 @@ impl ProjectSnapshot {
             }
         }
 
-        let collections = [
+        let deferred_collections = [
             &self.project.entities,
             &self.project.vendors,
-            &self.project.product_contents,
-            &self.project.media_assets,
-            &self.project.route_networks,
             &self.project.themes,
             &self.project.camera_shots,
             &self.project.story_sequences,
         ];
-        if self.schema_version == 1 && collections.iter().any(|collection| !collection.is_empty()) {
+        if self.schema_version == 1
+            && (deferred_collections
+                .iter()
+                .any(|collection| !collection.is_empty())
+                || !self.project.product_contents.is_empty()
+                || !self.project.media_assets.is_empty()
+                || !self.project.route_networks.is_empty())
+        {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
         if self.schema_version < 3
@@ -814,13 +824,18 @@ impl ProjectSnapshot {
         {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
-        for collection in collections {
+        for collection in deferred_collections {
             validate_json_collection(collection)?;
         }
+        validate_typed_collection(&self.project.product_contents)?;
+        validate_typed_collection(&self.project.media_assets)?;
+        validate_typed_collection(&self.project.route_networks)?;
 
         let mut entity_types = BTreeMap::new();
         let mut entity_geometries = BTreeMap::new();
         let mut wall_geometries = Vec::new();
+        let mut product_target_ids = BTreeSet::new();
+        let mut product_hotspot_ids = BTreeSet::new();
         for entity in &self.project.entities {
             let source = entity
                 .as_object()
@@ -853,6 +868,14 @@ impl ProjectSnapshot {
             if entity_type == "wall" {
                 wall_geometries.push(wall_geometry_from_entity(source)?);
             }
+            if entity_type == "fixture" {
+                product_target_ids.insert(id);
+            } else if entity_type == "poi"
+                && source.get("kind").and_then(Value::as_str) == Some("product-hotspot")
+            {
+                product_target_ids.insert(id);
+                product_hotspot_ids.insert(id);
+            }
             entity_types.insert(id, entity_type.to_owned());
             entity_geometries.insert(id, geometry);
         }
@@ -876,13 +899,21 @@ impl ProjectSnapshot {
             }
         }
 
-        let route_nodes =
-            register_route_networks(&self.project.route_networks, &floor_ids, &mut identities)?;
         let _vendor_ids = register_json_record_ids(&self.project.vendors, &mut identities)?;
-        let _product_content_ids =
-            register_json_record_ids(&self.project.product_contents, &mut identities)?;
-        let media_asset_ids =
-            register_json_record_ids(&self.project.media_assets, &mut identities)?;
+        for content in &self.project.product_contents {
+            validate_record(content.id, &content.name, &mut identities)?;
+        }
+        let mut media_asset_ids = BTreeSet::new();
+        for media_asset in &self.project.media_assets {
+            validate_record(media_asset.id, &media_asset.name, &mut identities)?;
+            media_asset_ids.insert(media_asset.id);
+        }
+        let route_nodes = register_route_networks(
+            &self.project.route_networks,
+            &floor_ids,
+            self.schema_version == 3,
+            &mut identities,
+        )?;
         let _theme_ids = register_json_record_ids(&self.project.themes, &mut identities)?;
         let camera_shot_ids =
             register_json_record_ids(&self.project.camera_shots, &mut identities)?;
@@ -898,14 +929,21 @@ impl ProjectSnapshot {
         validate_product_references(
             &self.project.product_contents,
             &entity_ids,
+            &product_target_ids,
+            &product_hotspot_ids,
             &media_asset_ids,
+            self.schema_version == 3,
         )?;
-        validate_media_asset_references(&self.project.media_assets, &asset_ids)?;
+        let assets_by_id: BTreeMap<_, _> =
+            self.assets.iter().map(|asset| (asset.id, asset)).collect();
+        validate_media_asset_references(
+            &self.project.media_assets,
+            &assets_by_id,
+            self.schema_version == 3,
+        )?;
         validate_story_references(&self.project.story_sequences, &camera_shot_ids)?;
 
         if self.schema_version == 3 {
-            let assets_by_id: BTreeMap<_, _> =
-                self.assets.iter().map(|asset| (asset.id, asset)).collect();
             for reference in &self.project.plan_references {
                 validate_record(reference.id, &reference.name, &mut identities)?;
                 if !floor_ids.contains(&reference.floor_id)
@@ -946,14 +984,18 @@ impl ProjectSnapshot {
                     return Err(ProjectIoError::InvalidProjectStructure);
                 }
                 let mut route_floor = None;
+                let mut previous_node_id = None;
                 for node_id in &route.stop_node_ids {
                     let floor = nodes
                         .get(node_id)
                         .ok_or(ProjectIoError::InvalidProjectStructure)?;
-                    if route_floor.is_some_and(|candidate| candidate != *floor) {
+                    if route_floor.is_some_and(|candidate| candidate != *floor)
+                        || previous_node_id == Some(*node_id)
+                    {
                         return Err(ProjectIoError::InvalidProjectStructure);
                     }
                     route_floor = Some(*floor);
+                    previous_node_id = Some(*node_id);
                 }
             }
 
@@ -1184,34 +1226,54 @@ fn validate_vendor_references(
 }
 
 fn validate_product_references(
-    values: &[Value],
+    values: &[ProductContent],
     entity_ids: &BTreeSet<Uuid>,
+    product_target_ids: &BTreeSet<Uuid>,
+    product_hotspot_ids: &BTreeSet<Uuid>,
     media_asset_ids: &BTreeSet<Uuid>,
+    strict_v3: bool,
 ) -> Result<(), ProjectIoError> {
+    let mut content_target_ids = BTreeSet::new();
     for value in values {
-        let source = value
-            .as_object()
-            .ok_or(ProjectIoError::InvalidProjectStructure)?;
-        if !entity_ids.contains(&json_uuid(source, "targetEntityId")?)
-            || json_uuid_array(source, "mediaAssetIds")?
-                .iter()
-                .any(|id| !media_asset_ids.contains(id))
+        if !entity_ids.contains(&value.target_entity_id)
+            || (strict_v3 && !product_target_ids.contains(&value.target_entity_id))
+            || (strict_v3 && !content_target_ids.insert(value.target_entity_id))
         {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
+        let mut content_media_ids = BTreeSet::new();
+        for media_asset_id in &value.media_asset_ids {
+            if !media_asset_ids.contains(media_asset_id)
+                || (strict_v3 && !content_media_ids.insert(*media_asset_id))
+            {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+    }
+    if strict_v3
+        && product_hotspot_ids
+            .iter()
+            .any(|id| !content_target_ids.contains(id))
+    {
+        return Err(ProjectIoError::InvalidProjectStructure);
     }
     Ok(())
 }
 
 fn validate_media_asset_references(
-    values: &[Value],
-    asset_ids: &BTreeSet<Uuid>,
+    values: &[MediaAsset],
+    assets_by_id: &BTreeMap<Uuid, &AssetRecord>,
+    strict_v3: bool,
 ) -> Result<(), ProjectIoError> {
     for value in values {
-        let source = value
-            .as_object()
+        let asset = assets_by_id
+            .get(&value.asset_id)
             .ok_or(ProjectIoError::InvalidProjectStructure)?;
-        if !asset_ids.contains(&json_uuid(source, "assetId")?) {
+        let matching_type = match value.kind {
+            MediaAssetKind::Image => is_image_media(&asset.media_type),
+            MediaAssetKind::Video => is_video_media(&asset.media_type),
+        };
+        if strict_v3 && !matching_type {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
     }
@@ -1251,48 +1313,111 @@ fn register_json_record_ids(
     Ok(ids)
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum RouteBucketAxis {
+    Index(i64),
+    Exact(u64),
+}
+
+fn route_bucket_axis(coordinate: f64) -> (RouteBucketAxis, Vec<RouteBucketAxis>) {
+    let index = (coordinate / (ROUTE_GEOMETRY_EPSILON_MM * 2.0)).floor();
+    if index.is_finite() && index.abs() <= TYPESCRIPT_MAX_SAFE_INTEGER as f64 {
+        let index = index as i64;
+        return (
+            RouteBucketAxis::Index(index),
+            vec![
+                RouteBucketAxis::Index(index - 1),
+                RouteBucketAxis::Index(index),
+                RouteBucketAxis::Index(index + 1),
+            ],
+        );
+    }
+    let exact = RouteBucketAxis::Exact(if coordinate == 0.0 {
+        0.0_f64.to_bits()
+    } else {
+        coordinate.to_bits()
+    });
+    (exact, vec![exact])
+}
+
 fn register_route_networks(
-    values: &[Value],
+    values: &[RouteNetwork],
     floor_ids: &BTreeSet<Uuid>,
+    strict_v3: bool,
     identities: &mut BTreeSet<Uuid>,
 ) -> Result<BTreeMap<Uuid, BTreeMap<Uuid, Uuid>>, ProjectIoError> {
     let mut result = BTreeMap::new();
-    for value in values {
-        let source = value
-            .as_object()
-            .ok_or(ProjectIoError::InvalidProjectStructure)?;
-        let (network_id, _) = json_record_base(source, identities)?;
-        let nodes = source
-            .get("nodes")
-            .and_then(Value::as_array)
-            .ok_or(ProjectIoError::InvalidProjectStructure)?;
-        let edges = source
-            .get("edges")
-            .and_then(Value::as_array)
-            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    for network in values {
+        validate_record(network.id, &network.name, identities)?;
         let mut network_nodes = BTreeMap::new();
-        for node in nodes {
-            let node = node
-                .as_object()
+        let mut node_positions = BTreeMap::new();
+        let mut nodes_by_bucket: BTreeMap<(Uuid, RouteBucketAxis, RouteBucketAxis), Vec<Point2>> =
+            BTreeMap::new();
+        for node in &network.nodes {
+            validate_record(node.id, &node.name, identities)?;
+            if !floor_ids.contains(&node.floor_id)
+                || !finite_point(node.position)
+                || network_nodes.insert(node.id, node.floor_id).is_some()
+            {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            if strict_v3 {
+                let (home_x, neighbor_x) = route_bucket_axis(node.position.x);
+                let (home_y, neighbor_y) = route_bucket_axis(node.position.y);
+                for x in &neighbor_x {
+                    for y in &neighbor_y {
+                        if nodes_by_bucket
+                            .get(&(node.floor_id, *x, *y))
+                            .is_some_and(|candidates| {
+                                candidates.iter().any(|prior| {
+                                    (node.position.x - prior.x).hypot(node.position.y - prior.y)
+                                        <= ROUTE_GEOMETRY_EPSILON_MM
+                                })
+                            })
+                        {
+                            return Err(ProjectIoError::InvalidProjectStructure);
+                        }
+                    }
+                }
+                nodes_by_bucket
+                    .entry((node.floor_id, home_x, home_y))
+                    .or_default()
+                    .push(node.position);
+            }
+            node_positions.insert(node.id, node.position);
+        }
+        let mut directed_arcs = BTreeSet::new();
+        for edge in &network.edges {
+            validate_record(edge.id, &edge.name, identities)?;
+            let from_floor = network_nodes
+                .get(&edge.from)
                 .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            let (node_id, _) = json_record_base(node, identities)?;
-            let floor_id = json_uuid(node, "floorId")?;
-            if !floor_ids.contains(&floor_id) || network_nodes.insert(node_id, floor_id).is_some() {
+            let to_floor = network_nodes
+                .get(&edge.to)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let from = node_positions
+                .get(&edge.from)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let to = node_positions
+                .get(&edge.to)
+                .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            let expected_distance = (to.x - from.x).hypot(to.y - from.y);
+            if !finite_positive(edge.distance)
+                || !finite_positive(edge.width)
+                || !edge.weight.is_finite()
+                || edge.weight < 1.0
+                || (strict_v3
+                    && (edge.from == edge.to
+                        || from_floor != to_floor
+                        || !expected_distance.is_finite()
+                        || (edge.distance - expected_distance).abs() > ROUTE_GEOMETRY_EPSILON_MM
+                        || !directed_arcs.insert((edge.from, edge.to))
+                        || (edge.bidirectional && !directed_arcs.insert((edge.to, edge.from)))))
+            {
                 return Err(ProjectIoError::InvalidProjectStructure);
             }
         }
-        for edge in edges {
-            let edge = edge
-                .as_object()
-                .ok_or(ProjectIoError::InvalidProjectStructure)?;
-            json_record_base(edge, identities)?;
-            let from = json_uuid(edge, "from")?;
-            let to = json_uuid(edge, "to")?;
-            if !network_nodes.contains_key(&from) || !network_nodes.contains_key(&to) {
-                return Err(ProjectIoError::InvalidProjectStructure);
-            }
-        }
-        result.insert(network_id, network_nodes);
+        result.insert(network.id, network_nodes);
     }
     Ok(result)
 }
@@ -1333,8 +1458,16 @@ fn asset_policy(media_type: &str) -> Option<(&'static str, u64)> {
     }
 }
 
-fn is_plan_media(media_type: &str) -> bool {
+fn is_image_media(media_type: &str) -> bool {
     matches!(media_type, "image/png" | "image/jpeg" | "image/svg+xml")
+}
+
+fn is_video_media(media_type: &str) -> bool {
+    matches!(media_type, "video/mp4" | "video/webm")
+}
+
+fn is_plan_media(media_type: &str) -> bool {
+    is_image_media(media_type)
 }
 
 fn validate_plan_reference(reference: &PlanReference) -> Result<(), ProjectIoError> {
@@ -1446,6 +1579,16 @@ fn finite_non_negative(value: f64) -> bool {
 
 fn bounded(value: f64, minimum: f64, maximum: f64) -> bool {
     value.is_finite() && value >= minimum && value <= maximum
+}
+
+fn validate_typed_collection<T: Serialize>(values: &[T]) -> Result<(), ProjectIoError> {
+    let values = values
+        .iter()
+        .map(|value| {
+            serde_json::to_value(value).map_err(|_| ProjectIoError::InvalidProjectStructure)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    validate_json_collection(&values)
 }
 
 fn validate_json_collection(values: &[serde_json::Value]) -> Result<(), ProjectIoError> {

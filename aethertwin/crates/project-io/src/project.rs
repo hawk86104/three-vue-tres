@@ -1232,21 +1232,6 @@ where
     Ok(normalized)
 }
 
-fn typed_records<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, ProjectIoError> {
-    values
-        .iter()
-        .cloned()
-        .map(|value| serde_json::from_value(value).map_err(|_| ProjectIoError::DatabaseError))
-        .collect()
-}
-
-fn record_values<T: Serialize>(records: &[T]) -> Result<Vec<Value>, ProjectIoError> {
-    records
-        .iter()
-        .map(|record| serde_json::to_value(record).map_err(|_| ProjectIoError::DatabaseError))
-        .collect()
-}
-
 fn apply_snapshot_records_patch(
     snapshot: &mut ProjectSnapshot,
     patch: &SnapshotRecordsPatch,
@@ -1264,27 +1249,16 @@ fn apply_snapshot_records_patch(
             changes: apply_record_changes(&mut snapshot.project.openings, changes)?,
         }),
         SnapshotRecordsPatch::ProductContents { changes } => {
-            let mut records = typed_records::<ProductContent>(&snapshot.project.product_contents)?;
-            let normalized = apply_record_changes(&mut records, changes)?;
-            snapshot.project.product_contents = record_values(&records)?;
             Ok(SnapshotRecordsPatch::ProductContents {
-                changes: normalized,
+                changes: apply_record_changes(&mut snapshot.project.product_contents, changes)?,
             })
         }
-        SnapshotRecordsPatch::MediaAssets { changes } => {
-            let mut records = typed_records::<MediaAsset>(&snapshot.project.media_assets)?;
-            let normalized = apply_record_changes(&mut records, changes)?;
-            snapshot.project.media_assets = record_values(&records)?;
-            Ok(SnapshotRecordsPatch::MediaAssets {
-                changes: normalized,
-            })
-        }
+        SnapshotRecordsPatch::MediaAssets { changes } => Ok(SnapshotRecordsPatch::MediaAssets {
+            changes: apply_record_changes(&mut snapshot.project.media_assets, changes)?,
+        }),
         SnapshotRecordsPatch::RouteNetworks { changes } => {
-            let mut records = typed_records::<RouteNetwork>(&snapshot.project.route_networks)?;
-            let normalized = apply_record_changes(&mut records, changes)?;
-            snapshot.project.route_networks = record_values(&records)?;
             Ok(SnapshotRecordsPatch::RouteNetworks {
-                changes: normalized,
+                changes: apply_record_changes(&mut snapshot.project.route_networks, changes)?,
             })
         }
         SnapshotRecordsPatch::GuidedRoutes { changes } => Ok(SnapshotRecordsPatch::GuidedRoutes {
@@ -1606,34 +1580,28 @@ fn normalized_entity_rows(
             opening,
         )?);
     }
-    for value in &snapshot.project.product_contents {
-        let record: ProductContent =
-            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    for record in &snapshot.project.product_contents {
         rows.push(normalized_typed_row(
             record.id,
             "product-content",
             Some(record.target_entity_id),
-            &record,
+            record,
         )?);
     }
-    for value in &snapshot.project.media_assets {
-        let record: MediaAsset =
-            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    for record in &snapshot.project.media_assets {
         rows.push(normalized_typed_row(
             record.id,
             "media-asset",
             Some(project_id),
-            &record,
+            record,
         )?);
     }
-    for value in &snapshot.project.route_networks {
-        let network: RouteNetwork =
-            serde_json::from_value(value.clone()).map_err(|_| ProjectIoError::DatabaseError)?;
+    for network in &snapshot.project.route_networks {
         rows.push(normalized_typed_row(
             network.id,
             "route-network",
             Some(project_id),
-            &network,
+            network,
         )?);
         for node in &network.nodes {
             rows.push(normalized_typed_row(
