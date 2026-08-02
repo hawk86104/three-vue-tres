@@ -4,6 +4,9 @@ import {
   type Opening,
   type PlanReference,
   type ProjectSnapshot,
+  type RouteEdge,
+  type RouteNetwork,
+  type RouteNode,
   type Wall,
 } from "@aethertwin/core-model";
 import {
@@ -16,6 +19,11 @@ import type {
   BuildingStructurePatch,
 } from "@aethertwin/project-store";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
+import type {
+  InsertRouteSegmentInput,
+  Result as RouteResult,
+  RouteMutationError,
+} from "@aethertwin/route-engine";
 import { describe, expect, it, vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
 import {
@@ -68,6 +76,9 @@ function createSnapshotController(
     readonly applyBuildingStructurePatch?: (
       patch: BuildingStructurePatch,
     ) => Promise<void>;
+    readonly insertRouteSegment?: (
+      input: InsertRouteSegmentInput,
+    ) => RouteResult<RouteNetwork, RouteMutationError>;
   } = {},
 ) {
   const activeFloorId = snapshot.project.floors[0]!.id;
@@ -106,6 +117,9 @@ function createSnapshotController(
     applyPlanReferencePatch,
     applySnapshotRecordPatches,
     applyBuildingStructurePatch,
+    ...(options.insertRouteSegment === undefined
+      ? {}
+      : { insertRouteSegment: options.insertRouteSegment }),
     onError: (error) => errors.push(error),
   } as Parameters<typeof createInteractionController>[0] & {
     readonly applyPlanReferencePatch: (
@@ -2436,3 +2450,398 @@ function taskTenShowroomSnapshot(): ProjectSnapshot {
     project: { ...base.snapshot.project, profile: 'showroom' },
   });
 }
+
+function routeNode(
+  id: string,
+  floorId: string,
+  x: number,
+  y: number,
+): RouteNode {
+  return {
+    id,
+    name: "Route node",
+    tags: [],
+    floorId,
+    position: { x, y },
+    kind: "junction",
+  };
+}
+
+function routeEdge(
+  id: string,
+  from: RouteNode,
+  to: RouteNode,
+): RouteEdge {
+  return {
+    id,
+    name: "Route segment",
+    tags: [],
+    from: from.id,
+    to: to.id,
+    distance: Math.hypot(
+      to.position.x - from.position.x,
+      to.position.y - from.position.y,
+    ),
+    bidirectional: true,
+    accessible: true,
+    enabled: true,
+    width: 1_200,
+    weight: 1,
+  };
+}
+
+function routeNetwork(
+  id: string,
+  nodes: readonly RouteNode[] = [],
+  edges: readonly RouteEdge[] = [],
+): RouteNetwork {
+  return { id, name: "Route network", tags: [], nodes, edges };
+}
+
+function snapshotWithRoutes(
+  base: ProjectSnapshot,
+  networks: readonly RouteNetwork[],
+): ProjectSnapshot {
+  return parseSnapshotV3({
+    ...base,
+    project: {
+      ...base.project,
+      profile: "showroom",
+      routeNetworks: networks,
+    },
+  });
+}
+
+describe("InteractionController Task 12 route authoring", () => {
+  it("requires a matching primary pointerdown before route pointerup authors", async () => {
+    const snapshot = taskTenShowroomSnapshot();
+    const harness = createSnapshotController(snapshot);
+    harness.store.getState().setActiveTool("route-node");
+
+    await harness.controller.handle(eventAt("pointerup", 50, 50, {
+      buttons: 0,
+      pointerId: 1,
+    }));
+    await harness.controller.handle(eventAt("pointerdown", 50, 50, {
+      buttons: 2,
+      pointerId: 1,
+    }));
+    await harness.controller.handle(eventAt("pointerup", 50, 50, {
+      buttons: 0,
+      pointerId: 1,
+    }));
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+
+    await harness.controller.handle(eventAt("pointerdown", 50, 50, {
+      buttons: 1,
+      pointerId: 1,
+    }));
+    await harness.controller.handle(eventAt("pointerup", 50, 50, {
+      buttons: 0,
+      pointerId: 2,
+    }));
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+
+    await harness.controller.handle(eventAt("pointerup", 50, 50, {
+      buttons: 0,
+      pointerId: 1,
+    }));
+    expect(harness.applySnapshotRecordPatches).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates route pointer ownership across tool, floor, and session changes", async () => {
+    const snapshot = taskTenShowroomSnapshot();
+    const harness = createSnapshotController(snapshot);
+    const floorA = snapshot.project.floors[0]!;
+    const floorB = snapshot.project.floors[1]!;
+    harness.store.getState().setActiveTool("route-node");
+
+    await harness.controller.handle(eventAt("pointerdown", 50, 50));
+    harness.store.getState().setActiveTool("route-edge");
+    harness.store.getState().setActiveTool("route-node");
+    await harness.controller.handle(eventAt("pointerup", 50, 50));
+
+    await harness.controller.handle(eventAt("pointerdown", 50, 50));
+    harness.store.getState().setActiveFloor(floorB.id);
+    await harness.controller.handle(eventAt("pointerup", 50, 50));
+    harness.store.getState().setActiveFloor(floorA.id);
+
+    await harness.controller.handle(eventAt("pointerdown", 50, 50));
+    harness.store.getState().replaceSession("route-pointer-new-session", floorA.id);
+    harness.store.getState().setActiveTool("route-node");
+    await harness.controller.handle(eventAt("pointerup", 50, 50));
+
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    await click(harness.controller, 50, 50);
+    expect(harness.applySnapshotRecordPatches).toHaveBeenCalledOnce();
+  });
+
+  it("creates the first network and junction through exactly one routeNetworks record patch", async () => {
+    const base = taskTenShowroomSnapshot();
+    let current = base;
+    const ids = [
+      "00000000-0000-4000-8000-000000000700",
+      "00000000-0000-4000-8000-000000000701",
+    ];
+    const applySnapshotRecordPatches = vi.fn(async (
+      patches: readonly AnySnapshotRecordsPatch[],
+    ) => {
+      const patch = patches[0];
+      const after = patch?.collection === "routeNetworks"
+        ? patch.changes[0]?.after as RouteNetwork | null | undefined
+        : undefined;
+      if (after == null) throw new Error("Expected a route network creation.");
+      current = snapshotWithRoutes(base, [after]);
+    });
+    const harness = createSnapshotController(base, {
+      getSnapshot: () => current,
+      makeId: () => ids.shift()!,
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool("route-node");
+
+    await harness.controller.createAt({ x: 125, y: 250 });
+
+    const network = current.project.routeNetworks[0]!;
+    expect(applySnapshotRecordPatches).toHaveBeenCalledOnce();
+    expect(applySnapshotRecordPatches).toHaveBeenCalledWith([{
+      collection: "routeNetworks",
+      changes: [{
+        id: network.id,
+        before: null,
+        after: network,
+      }],
+    }]);
+    expect(network).toEqual(routeNetwork(
+      "00000000-0000-4000-8000-000000000700",
+      [routeNode(
+        "00000000-0000-4000-8000-000000000701",
+        base.project.floors[0]!.id,
+        125,
+        250,
+      )],
+    ));
+    expect(harness.store.getState().routeAuthoring.networkId).toBe(network.id);
+    expect([...harness.store.getState().selectedIds]).toEqual([network.nodes[0]!.id]);
+  });
+
+  it("keeps the first edge click transient, then rereads and replaces one current network", async () => {
+    const base = taskTenShowroomSnapshot();
+    const floorId = base.project.floors[0]!.id;
+    const left = routeNode("00000000-0000-4000-8000-000000000710", floorId, 0, 0);
+    const right = routeNode("00000000-0000-4000-8000-000000000711", floorId, 1_000, 0);
+    const original = routeNetwork(
+      "00000000-0000-4000-8000-000000000712",
+      [left, right],
+      [routeEdge("00000000-0000-4000-8000-000000000713", left, right)],
+    );
+    let current = snapshotWithRoutes(base, [original]);
+    const applySnapshotRecordPatches = vi.fn(async (
+      patches: readonly AnySnapshotRecordsPatch[],
+    ) => {
+      const patch = patches[0];
+      const after = patch?.collection === "routeNetworks"
+        ? patch.changes[0]?.after as RouteNetwork | null | undefined
+        : undefined;
+      if (after == null) throw new Error("Expected a route network replacement.");
+      current = snapshotWithRoutes(base, [after]);
+    });
+    let nextId = 720;
+    const harness = createSnapshotController(current, {
+      getSnapshot: () => current,
+      makeId: () => `00000000-0000-4000-8000-${(nextId++).toString().padStart(12, "0")}`,
+      applySnapshotRecordPatches,
+    });
+    harness.store.getState().setActiveTool("route-edge");
+    harness.store.getState().setActiveRouteNetwork({
+      sessionId: harness.store.getState().sessionId,
+      floorId,
+      networkId: null,
+      tool: "route-edge",
+    }, original.id);
+
+    await harness.controller.createAt({ x: 500, y: -500 });
+    expect(applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(harness.store.getState().routeAuthoring.segmentStart).toEqual({ x: 500, y: -500 });
+
+    const staleOriginal = original;
+    current = snapshotWithRoutes(base, [{ ...original, name: "Latest route network" }]);
+    await harness.controller.createAt({ x: 500, y: 500 });
+
+    expect(applySnapshotRecordPatches).toHaveBeenCalledOnce();
+    const patch = applySnapshotRecordPatches.mock.calls[0]![0][0]!;
+    expect(patch.collection).toBe("routeNetworks");
+    if (patch.collection !== "routeNetworks") throw new Error("Expected routeNetworks patch.");
+    expect(patch.changes).toHaveLength(1);
+    expect(patch.changes[0]!.before).not.toBe(staleOriginal);
+    expect(patch.changes[0]!.before).toMatchObject({ name: "Latest route network" });
+    const after = patch.changes[0]!.after!;
+    const crossing = after.nodes.find(({ position }) => position.x === 500 && position.y === 0);
+    expect(crossing).toBeDefined();
+    expect(after.nodes).toHaveLength(5);
+    expect(after.edges).toHaveLength(4);
+    expect(after.edges.filter(({ from, to }) => (
+      from === crossing!.id || to === crossing!.id
+    ))).toHaveLength(4);
+    expect(harness.store.getState().routeAuthoring.segmentStart).toBeNull();
+    expect([...harness.store.getState().selectedIds]).toHaveLength(1);
+  });
+
+  it("does not retarget a second edge click when the active network disappeared", async () => {
+    const base = taskTenShowroomSnapshot();
+    const floorId = base.project.floors[0]!.id;
+    const original = routeNetwork(
+      "00000000-0000-4000-8000-000000000725",
+    );
+    let current = snapshotWithRoutes(base, [original]);
+    const makeId = vi.fn(() => "00000000-0000-4000-8000-000000000726");
+    const harness = createSnapshotController(current, {
+      getSnapshot: () => current,
+      makeId,
+    });
+    harness.store.getState().setActiveTool("route-edge");
+    harness.store.getState().setActiveRouteNetwork({
+      sessionId: harness.store.getState().sessionId,
+      floorId,
+      networkId: null,
+      tool: "route-edge",
+    }, original.id);
+
+    await harness.controller.createAt({ x: 0, y: 0 });
+    current = snapshotWithRoutes(base, []);
+    await harness.controller.createAt({ x: 1_000, y: 0 });
+
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(makeId).not.toHaveBeenCalled();
+    expect(harness.store.getState().routeAuthoring.segmentStart).toEqual({ x: 0, y: 0 });
+    expect(String(harness.errors.at(-1))).toContain(
+      "active route network no longer exists",
+    );
+  });
+
+  it("does not overwrite a newer active network or selection after a late commit", async () => {
+    const base = taskTenShowroomSnapshot();
+    const first = routeNetwork("00000000-0000-4000-8000-000000000727");
+    const second = routeNetwork("00000000-0000-4000-8000-000000000728");
+    const snapshot = snapshotWithRoutes(base, [first, second]);
+    let resolveApply: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      resolveApply = resolve;
+    });
+    const applySnapshotRecordPatches = vi.fn(() => pending);
+    const harness = createSnapshotController(snapshot, {
+      applySnapshotRecordPatches,
+    });
+    const floorId = base.project.floors[0]!.id;
+    harness.store.getState().setActiveTool("route-node");
+    harness.store.getState().setActiveRouteNetwork({
+      sessionId: harness.store.getState().sessionId,
+      floorId,
+      networkId: null,
+      tool: "route-node",
+    }, first.id);
+
+    const commit = harness.controller.createAt({ x: 100, y: 200 });
+    await Promise.resolve();
+    expect(applySnapshotRecordPatches).toHaveBeenCalledOnce();
+    harness.store.getState().setActiveRouteNetwork({
+      sessionId: harness.store.getState().sessionId,
+      floorId,
+      networkId: first.id,
+      tool: "route-node",
+    }, second.id);
+    harness.store.getState().setSelection(["newer-selection"]);
+    resolveApply();
+    await commit;
+
+    expect(harness.store.getState().routeAuthoring.networkId).toBe(second.id);
+    expect([...harness.store.getState().selectedIds]).toEqual(["newer-selection"]);
+  });
+
+  it("surfaces typed collinear and complexity failures without mutation or ID allocation", async () => {
+    const base = taskTenShowroomSnapshot();
+    const floorId = base.project.floors[0]!.id;
+    const left = routeNode("00000000-0000-4000-8000-000000000730", floorId, 0, 0);
+    const right = routeNode("00000000-0000-4000-8000-000000000731", floorId, 1_000, 0);
+    const original = routeNetwork(
+      "00000000-0000-4000-8000-000000000732",
+      [left, right],
+      [routeEdge("00000000-0000-4000-8000-000000000733", left, right)],
+    );
+    const current = snapshotWithRoutes(base, [original]);
+    const makeId = vi.fn(() => "00000000-0000-4000-8000-000000000734");
+    const harness = createSnapshotController(current, { makeId });
+    harness.store.getState().setActiveTool("route-edge");
+    harness.store.getState().setActiveRouteNetwork({
+      sessionId: harness.store.getState().sessionId,
+      floorId,
+      networkId: null,
+      tool: "route-edge",
+    }, original.id);
+
+    await harness.controller.createAt({ x: 250, y: 0 });
+    await harness.controller.createAt({ x: 750, y: 0 });
+
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(makeId).not.toHaveBeenCalled();
+    expect(String(harness.errors.at(-1))).toContain("ROUTE_COLLINEAR_OVERLAP");
+    expect(harness.store.getState().routeAuthoring.segmentStart).toEqual({ x: 250, y: 0 });
+
+    const complexity = createSnapshotController(current, {
+      makeId,
+      insertRouteSegment: () => ({
+        ok: false,
+        error: {
+          code: "ROUTE_COMPLEXITY_LIMIT",
+          message: "Route insertion exceeded 100,000 intersection checks.",
+        },
+      }),
+    });
+    complexity.store.getState().setActiveTool("route-edge");
+    complexity.store.getState().setActiveRouteNetwork({
+      sessionId: complexity.store.getState().sessionId,
+      floorId,
+      networkId: null,
+      tool: "route-edge",
+    }, original.id);
+    await complexity.controller.createAt({ x: -100, y: -100 });
+    await complexity.controller.createAt({ x: -100, y: 100 });
+
+    expect(complexity.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(String(complexity.errors.at(-1))).toContain("ROUTE_COMPLEXITY_LIMIT");
+    expect(complexity.store.getState().routeAuthoring.segmentStart).toEqual({ x: -100, y: -100 });
+  });
+
+  it("rejects a floor with no visible unlocked layer and Escape cancels only the edge draft", async () => {
+    const base = taskTenShowroomSnapshot();
+    const locked = parseSnapshotV3({
+      ...base,
+      project: {
+        ...base.project,
+        floors: base.project.floors.map((floor, index) => index === 0 ? {
+          ...floor,
+          layers: floor.layers.map((layer) => ({ ...layer, locked: true })),
+        } : floor),
+      },
+    });
+    const harness = createSnapshotController(locked);
+    harness.store.getState().setActiveTool("route-edge");
+
+    await harness.controller.createAt({ x: 0, y: 0 });
+    expect(harness.store.getState().routeAuthoring.segmentStart).toBeNull();
+    expect(harness.applySnapshotRecordPatches).not.toHaveBeenCalled();
+    expect(String(harness.errors.at(-1))).toContain("visible, unlocked layer");
+
+    const editable = createSnapshotController(base);
+    editable.store.getState().setActiveTool("route-edge");
+    await editable.controller.createAt({ x: 10, y: 20 });
+    await editable.controller.keyDown("Escape");
+    expect(editable.store.getState().activeTool).toBe("route-edge");
+    expect(editable.store.getState().routeAuthoring).toEqual({
+      networkId: null,
+      segmentStart: null,
+      stopDraft: [],
+    });
+    expect(editable.applySnapshotRecordPatches).not.toHaveBeenCalled();
+  });
+});

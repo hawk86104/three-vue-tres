@@ -10,6 +10,8 @@ import type {
   PlanReference,
   PointOfInterest,
   ProductContent,
+  RouteNetwork,
+  RouteNode,
   SpaceUnit,
   SpatialEntity,
   Wall,
@@ -48,6 +50,66 @@ const stores: ProjectStore[] = [];
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", PlanEditorResizeObserver);
+});
+
+describe("PlanEditor M2.3 Task 12 route integration", () => {
+  it("keeps nested route-node selection in the shared Inspector and makes kind edits undoable", async () => {
+    const { store } = await sandboxProject("Route authoring");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const node: RouteNode = {
+      id: "00000000-0000-4000-8000-000000000820",
+      name: "Visitor junction",
+      tags: [],
+      floorId: floor.id,
+      position: { x: 500, y: 750 },
+      kind: "junction",
+    };
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000000821",
+      name: "Visitor route",
+      tags: [],
+      nodes: [node],
+      edges: [],
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "routeNetworks",
+      changes: [{ id: network.id, before: null, after: network }],
+    }]);
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(<PlanEditor store={store} dependencies={{ sessionStore }} />);
+    act(() => {
+      sessionStore.getState().setActiveTool("route-node");
+      sessionStore.getState().setActiveRouteNetwork({
+        sessionId: sessionStore.getState().sessionId,
+        floorId: floor.id,
+        networkId: null,
+        tool: "route-node",
+      }, network.id);
+      sessionStore.getState().setSelection([node.id]);
+    });
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole("heading", { name: "路线节点" })).toBeVisible();
+    expect(screen.getByLabelText("路线节点名称")).toHaveValue("Visitor junction");
+    expect([...sessionStore.getState().selectedIds]).toEqual([node.id]);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "路线节点类型" }),
+      "showroom-stop",
+    );
+    await user.click(screen.getByRole("button", { name: "应用路线节点" }));
+
+    await waitFor(() => expect(
+      store.getState().snapshot!.project.routeNetworks[0]!.nodes[0]!.kind,
+    ).toBe("showroom-stop"));
+    expect([...sessionStore.getState().selectedIds]).toEqual([node.id]);
+
+    await act(async () => store.undo());
+    expect(store.getState().snapshot!.project.routeNetworks[0]!.nodes[0]!.kind)
+      .toBe("junction");
+    await act(async () => store.redo());
+    expect(store.getState().snapshot!.project.routeNetworks[0]!.nodes[0]!.kind)
+      .toBe("showroom-stop");
+  });
 });
 
 function track(store: ProjectStore): ProjectStore {

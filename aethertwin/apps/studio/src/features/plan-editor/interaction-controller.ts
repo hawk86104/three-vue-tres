@@ -9,6 +9,8 @@ import {
   type PlanReference,
   type Point2,
   type ProjectSnapshot,
+  type RouteNetwork,
+  type RouteNode,
   type SpatialEntity,
   type Wall,
 } from "@aethertwin/core-model";
@@ -41,12 +43,19 @@ import type {
   BuildingStructurePatch,
 } from "@aethertwin/project-store";
 import type { PlanPointerEvent } from "@aethertwin/render-plan-2d";
+import {
+  insertRouteSegment as insertRouteSegmentDefault,
+  type InsertRouteSegmentInput,
+  type Result as RouteResult,
+  type RouteMutationError,
+} from "@aethertwin/route-engine";
 import type { StoreApi } from "zustand/vanilla";
 import type {
   OpeningCreationTool,
   OpeningPreviewState,
   PlanEditorState,
   PlanTool,
+  RouteAuthoringScope,
 } from "./editor-session";
 
 export interface InteractionControllerDeps {
@@ -64,6 +73,9 @@ export interface InteractionControllerDeps {
   readonly applyBuildingStructurePatch?: (
     patch: BuildingStructurePatch,
   ) => Promise<void>;
+  readonly insertRouteSegment?: (
+    input: InsertRouteSegmentInput,
+  ) => RouteResult<RouteNetwork, RouteMutationError>;
   readonly onError: (error: unknown) => void;
 }
 
@@ -799,6 +811,54 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+function routeAuthoringScope(state: PlanEditorState): RouteAuthoringScope {
+  return {
+    sessionId: state.sessionId,
+    floorId: state.activeFloorId,
+    networkId: state.routeAuthoring.networkId,
+    tool: state.activeTool,
+  };
+}
+
+function activeRouteNetwork(
+  snapshot: ProjectSnapshot,
+  state: PlanEditorState,
+): RouteNetwork | null {
+  if (state.routeAuthoring.networkId !== null) {
+    return snapshot.project.routeNetworks.find(
+        ({ id }) => id === state.routeAuthoring.networkId,
+      ) ?? null;
+  }
+  return snapshot.project.routeNetworks[0] ?? null;
+}
+
+function routeError(error: RouteMutationError): Error {
+  return Object.assign(new Error(`${error.code}: ${error.message}`), {
+    code: error.code,
+  });
+}
+
+function validatedRouteNetworkReplacement(
+  snapshot: ProjectSnapshot,
+  before: RouteNetwork | null,
+  after: RouteNetwork,
+): RouteNetwork {
+  const routeNetworks = before === null
+    ? [...snapshot.project.routeNetworks, after]
+    : snapshot.project.routeNetworks.map((network) => (
+        network.id === before.id ? after : network
+      ));
+  const parsed = parseSnapshotV3({
+    ...snapshot,
+    project: { ...snapshot.project, routeNetworks },
+  });
+  const validated = parsed.project.routeNetworks.find(({ id }) => id === after.id);
+  if (validated === undefined) {
+    throw new Error("Validated route network candidate was not retained.");
+  }
+  return validated;
+}
+
 function cursorCentredZoom(
   event: PlanPointerEvent,
   viewport: ViewportTransform,
@@ -828,6 +888,43 @@ export function createInteractionController(
   let commitToken: symbol | null = null;
   let productHotspotPreview: ProductHotspotPreview | null = null;
   let productHotspotPointerId: number | null = null;
+  let routePointer: {
+    readonly pointerId: number;
+    readonly sessionId: string;
+    readonly floorId: string;
+    readonly tool: "route-node" | "route-edge";
+  } | null = null;
+  let releaseRoutePointerScope: (() => void) | null = null;
+
+  const clearRoutePointer = (): void => {
+    routePointer = null;
+    const release = releaseRoutePointerScope;
+    releaseRoutePointerScope = null;
+    release?.();
+  };
+
+  const ownRoutePointer = (
+    pointerId: number,
+    tool: "route-node" | "route-edge",
+  ): void => {
+    clearRoutePointer();
+    const state = deps.store.getState();
+    routePointer = {
+      pointerId,
+      sessionId: state.sessionId,
+      floorId: state.activeFloorId,
+      tool,
+    };
+    releaseRoutePointerScope = deps.store.subscribe((next, previous) => {
+      if (
+        next.sessionId !== previous.sessionId
+        || next.activeFloorId !== previous.activeFloorId
+        || next.activeTool !== previous.activeTool
+      ) {
+        clearRoutePointer();
+      }
+    });
+  };
 
   const clearGesture = (): void => {
     gesture = null;
@@ -1035,6 +1132,203 @@ export function createInteractionController(
     ) return;
     if (sameSelection(state.selectedIds, selectionBefore)) {
       state.setSelection([entityId]);
+    }
+  };
+
+  const publishRouteNetwork = async (
+    scope: RouteAuthoringScope,
+    before: RouteNetwork | null,
+    after: RouteNetwork,
+    selectedNodeId: string,
+  ): Promise<void> => {
+    if (commitToken !== null) return;
+    if (deps.applySnapshotRecordPatches === undefined) {
+      const error = new Error("Route-network mutations are unavailable.");
+      deps.store.getState().setRouteAuthoringPersistenceError(scope, error.message);
+      deps.onError(error);
+      return;
+    }
+    const selectionBefore = [...deps.store.getState().selectedIds];
+    const token = Symbol("route-network-commit");
+    commitToken = token;
+    try {
+      await deps.applySnapshotRecordPatches([{
+        collection: "routeNetworks",
+        changes: [{ id: after.id, before, after }],
+      }]);
+    } catch (value) {
+      if (commitToken === token) commitToken = null;
+      const state = deps.store.getState();
+      if (
+        state.sessionId === scope.sessionId
+        && state.activeFloorId === scope.floorId
+        && state.activeTool === scope.tool
+        && state.routeAuthoring.networkId === scope.networkId
+      ) {
+        state.setRouteAuthoringPersistenceError(
+          scope,
+          errorMessage(value),
+        );
+      }
+      deps.onError(value);
+      return;
+    }
+
+    if (commitToken === token) commitToken = null;
+    const state = deps.store.getState();
+    if (
+      state.sessionId !== scope.sessionId
+      || state.activeFloorId !== scope.floorId
+      || state.activeTool !== scope.tool
+      || state.routeAuthoring.networkId !== scope.networkId
+    ) return;
+    if (!state.setActiveRouteNetwork(scope, after.id)) return;
+    const current = deps.store.getState();
+    current.clearRouteAuthoringDrafts(routeAuthoringScope(current));
+    if (sameSelection(current.selectedIds, selectionBefore)) {
+      current.setSelection([selectedNodeId]);
+    }
+  };
+
+  const commitRouteNode = async (
+    point: Point2,
+    snapshot: ProjectSnapshot,
+    state: PlanEditorState,
+  ): Promise<void> => {
+    const scope = routeAuthoringScope(state);
+    const before = activeRouteNetwork(snapshot, state);
+    if (state.routeAuthoring.networkId !== null && before === null) {
+      const error = new Error("The active route network no longer exists.");
+      state.setRouteAuthoringPersistenceError(scope, error.message);
+      deps.onError(error);
+      return;
+    }
+    try {
+      const networkId = before?.id ?? deps.makeId();
+      const node: RouteNode = {
+        id: deps.makeId(),
+        name: "Route node",
+        tags: [],
+        floorId: state.activeFloorId,
+        position: { x: point.x, y: point.y },
+        kind: "junction",
+      };
+      const candidate: RouteNetwork = before === null
+        ? {
+            id: networkId,
+            name: "Route network",
+            tags: [],
+            nodes: [node],
+            edges: [],
+          }
+        : { ...before, nodes: [...before.nodes, node] };
+      const after = validatedRouteNetworkReplacement(snapshot, before, candidate);
+      await publishRouteNetwork(scope, before, after, node.id);
+    } catch (value) {
+      deps.store.getState().setRouteAuthoringPersistenceError(scope, errorMessage(value));
+      deps.onError(value);
+    }
+  };
+
+  const commitRouteEdge = async (
+    point: Point2,
+    snapshot: ProjectSnapshot,
+    state: PlanEditorState,
+  ): Promise<void> => {
+    const start = state.routeAuthoring.segmentStart;
+    if (start === null) {
+      const selected = activeRouteNetwork(snapshot, state);
+      if (state.routeAuthoring.networkId !== null && selected === null) {
+        const scope = routeAuthoringScope(state);
+        const error = new Error("The active route network no longer exists.");
+        state.setRouteAuthoringPersistenceError(scope, error.message);
+        deps.onError(error);
+        return;
+      }
+      if (
+        selected !== null
+        && state.routeAuthoring.networkId !== selected.id
+        && !state.setActiveRouteNetwork(routeAuthoringScope(state), selected.id)
+      ) return;
+      const current = deps.store.getState();
+      current.setRouteSegmentStart(routeAuthoringScope(current), point);
+      return;
+    }
+
+    const scope = routeAuthoringScope(state);
+    const before = activeRouteNetwork(snapshot, state);
+    if (state.routeAuthoring.networkId !== null && before === null) {
+      const error = new Error("The active route network no longer exists.");
+      state.setRouteAuthoringPersistenceError(scope, error.message);
+      deps.onError(error);
+      return;
+    }
+    try {
+      const network: RouteNetwork = before ?? {
+        id: deps.makeId(),
+        name: "Route network",
+        tags: [],
+        nodes: [],
+        edges: [],
+      };
+      const insert = deps.insertRouteSegment ?? insertRouteSegmentDefault;
+      const result = insert({
+        network,
+        floorId: state.activeFloorId,
+        start,
+        end: point,
+        idSource: {
+          next: () => deps.makeId(),
+        },
+      });
+      if (!result.ok) {
+        const error = routeError(result.error);
+        state.setRouteAuthoringPersistenceError(scope, error.message);
+        deps.onError(error);
+        return;
+      }
+      const after = validatedRouteNetworkReplacement(snapshot, before, result.value);
+      const selectedNode = [...after.nodes]
+        .filter(({ floorId }) => floorId === state.activeFloorId)
+        .sort((left, right) => (
+          Math.hypot(
+            left.position.x - point.x,
+            left.position.y - point.y,
+          ) - Math.hypot(
+            right.position.x - point.x,
+            right.position.y - point.y,
+          )
+          || left.id.localeCompare(right.id)
+        ))[0];
+      if (selectedNode === undefined) {
+        throw new Error("Route insertion returned no selectable endpoint.");
+      }
+      await publishRouteNetwork(scope, before, after, selectedNode.id);
+    } catch (value) {
+      deps.store.getState().setRouteAuthoringPersistenceError(scope, errorMessage(value));
+      deps.onError(value);
+    }
+  };
+
+  const authorRoutePoint = async (point: Point2): Promise<void> => {
+    if (commitToken !== null) return;
+    const state = deps.store.getState();
+    if (state.activeTool !== "route-node" && state.activeTool !== "route-edge") return;
+    const snapshot = deps.getSnapshot();
+    const context = activeContext(snapshot, state);
+    if (snapshot.project.profile !== "showroom") return;
+    if (context.creationLayer === null) {
+      deps.onError(new Error("No visible, unlocked layer is available for route authoring."));
+      return;
+    }
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      deps.onError(new Error("Route coordinates must be finite."));
+      return;
+    }
+    if (state.activeTool === "route-node") {
+      await commitRouteNode(point, snapshot, state);
+    } else {
+      await commitRouteEdge(point, snapshot, state);
     }
   };
 
@@ -1959,6 +2253,18 @@ export function createInteractionController(
       try {
         synchronizeGesture();
         if (commitToken !== null) return;
+        const activeTool = deps.store.getState().activeTool;
+        if (
+          activeTool !== "route-node"
+          && activeTool !== "route-edge"
+          && routePointer !== null
+        ) {
+          clearRoutePointer();
+        }
+        if (activeTool === "route-node" || activeTool === "route-edge") {
+          await authorRoutePoint(point);
+          return;
+        }
         if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
           clearProductHotspotPreview();
           deps.onError(new Error('Product hotspot coordinates must be finite.'));
@@ -1993,8 +2299,45 @@ export function createInteractionController(
         if (commitToken !== null) return;
 
         const activeTool = deps.store.getState().activeTool;
+        if (
+          activeTool !== "route-node"
+          && activeTool !== "route-edge"
+          && routePointer !== null
+        ) {
+          clearRoutePointer();
+        }
         if (activeTool !== 'product-hotspot' && productHotspotPreview !== null) {
           clearProductHotspotPreview();
+        }
+        if (
+          (activeTool === "route-node" || activeTool === "route-edge")
+          && event.type !== "wheel"
+        ) {
+          if (event.type === "pointercancel") {
+            if (routePointer !== null && routePointer.pointerId !== event.pointerId) return;
+            clearRoutePointer();
+          } else if (event.type === "pointerdown") {
+            if ((event.buttons & 1) === 0) return;
+            if (routePointer !== null && routePointer.pointerId !== event.pointerId) return;
+            ownRoutePointer(event.pointerId, activeTool);
+          } else if (
+            event.type === "pointerup"
+            && routePointer !== null
+            && routePointer.pointerId === event.pointerId
+          ) {
+            const state = deps.store.getState();
+            const owned = routePointer;
+            clearRoutePointer();
+            if (
+              state.sessionId !== owned.sessionId
+              || state.activeFloorId !== owned.floorId
+              || state.activeTool !== owned.tool
+            ) return;
+            await authorRoutePoint(
+              snappedPoint(event, contextNow(), state).point,
+            );
+          }
+          return;
         }
         if (activeTool === 'product-hotspot' && event.type !== 'wheel') {
           if (event.type === 'pointercancel') {
@@ -2086,6 +2429,7 @@ export function createInteractionController(
 
         if (key === "Escape") {
           const state = deps.store.getState();
+          clearRoutePointer();
           clearGesture();
           state.clearOpeningPreview();
           if (
@@ -2230,6 +2574,7 @@ export function createInteractionController(
     cancel() {
       synchronizeGesture();
       if (commitToken !== null) return;
+      clearRoutePointer();
       clearGesture();
       clearProductHotspotPreview();
       deps.store.getState().clearOpeningPreview();

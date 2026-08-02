@@ -66,6 +66,7 @@ import { PlanCanvas } from "./plan-canvas";
 import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
+import { RouteInspector } from "./route-inspector";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -444,11 +445,17 @@ export function PlanEditor({
     const openingIds = new Set(
       snapshot?.project.openings.map(({ id }) => id) ?? [],
     );
+    const routeNodeIds = new Set(
+      snapshot?.project.routeNetworks.flatMap(({ nodes }) => (
+        nodes.map(({ id }) => id)
+      )) ?? [],
+    );
     if (
       selectedIds.length === 1
       && !entityIds.has(selectedIds[0]!)
       && !referenceIds.has(selectedIds[0]!)
       && !openingIds.has(selectedIds[0]!)
+      && !routeNodeIds.has(selectedIds[0]!)
     ) {
       sessionStore.getState().setSelection([]);
       return;
@@ -458,6 +465,9 @@ export function PlanEditor({
         const selectedId = selectedIds[0]!;
         if (referenceIds.has(selectedId)) {
           return { kind: "plan-reference", referenceId: selectedId };
+        }
+        if (routeNodeIds.has(selectedId)) {
+          return { kind: "project" };
         }
         return openingIds.has(selectedId)
           ? { kind: "opening", openingId: selectedId }
@@ -528,6 +538,19 @@ export function PlanEditor({
   const selectedIds = sessionState.selectedIds;
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0]! : null;
+  const selectedRouteNode = selectedId === null ? null : (
+    snapshot.project.routeNetworks.flatMap((network) => {
+      const node = network.nodes.find(({ id }) => id === selectedId);
+      return node === undefined ? [] : [{ network, node }];
+    })[0] ?? null
+  );
+  const selectedRouteNodeEditable = selectedRouteNode !== null
+    && selectedRouteNode.node.floorId === sessionState.activeFloorId
+    && (
+      snapshot.project.floors
+        .find(({ id }) => id === sessionState.activeFloorId)
+        ?.layers.some((layer) => layer.visible && !layer.locked) ?? false
+    );
   const selectedCalibrationReference = selectedId === null
     ? null
     : editableCalibrationReference(
@@ -1252,7 +1275,8 @@ export function PlanEditor({
         </div>
       }
       inspector={
-        <PlanInspector
+        selectedRouteNode === null ? (
+          <PlanInspector
           snapshot={snapshot}
           assetIssues={state.assetIssues}
           assetOperationBusy={assetImportBusy}
@@ -1306,7 +1330,46 @@ export function PlanEditor({
           onRepairProductMedia={runProductMediaRepair}
           resolveAsset={resolveProjectAsset}
           onError={(error) => setActionError(errorValue(error))}
-        />
+          />
+        ) : (
+          <RouteInspector
+            network={selectedRouteNode.network}
+            node={selectedRouteNode.node}
+            editable={selectedRouteNodeEditable}
+            onApplyRouteNetworkPatch={async (before, after) => {
+              const currentSnapshot = store.getState().snapshot;
+              const currentSession = sessionStore.getState();
+              const currentNetwork = currentSnapshot?.project.routeNetworks.find(
+                ({ id }) => id === before.id,
+              );
+              const currentNode = currentNetwork?.nodes.find(
+                ({ id }) => id === selectedRouteNode.node.id,
+              );
+              const currentFloor = currentSnapshot?.project.floors.find(
+                ({ id }) => id === currentSession.activeFloorId,
+              );
+              if (
+                currentSnapshot === null
+                || currentNetwork === undefined
+                || currentNode === undefined
+                || currentFloor === undefined
+                || currentNode.floorId !== currentSession.activeFloorId
+                || !currentFloor.layers.some(
+                  (layer) => layer.visible && !layer.locked,
+                )
+                || currentSession.selectedIds.size !== 1
+                || !currentSession.selectedIds.has(currentNode.id)
+              ) {
+                throw new Error("Route-node selection is no longer editable.");
+              }
+              await store.applySnapshotRecordPatches([{
+                collection: "routeNetworks",
+                changes: [{ id: before.id, before, after }],
+              }]);
+            }}
+            onError={(error) => setActionError(errorValue(error))}
+          />
+        )
       }
     />
   );

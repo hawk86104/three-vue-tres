@@ -118,6 +118,7 @@ function rendererInput(
         represented: representedKeys.has(candidate.key),
         selected: candidate.key === recognition.selectedCandidateKey,
       })),
+    activeRouteNetworkId: state.routeAuthoring.networkId,
   };
 }
 

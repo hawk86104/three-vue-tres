@@ -125,10 +125,19 @@ describe("PlanCanvas lifecycle", () => {
 
     act(() => {
       harness.store.getState().setSelection([harness.fixture.id]);
+      const state = harness.store.getState();
+      state.setActiveRouteNetwork({
+        sessionId: state.sessionId,
+        floorId: state.activeFloorId,
+        networkId: null,
+        tool: state.activeTool,
+      }, "00000000-0000-4000-8000-000000000700");
     });
     await waitFor(() => expect(
       renderer.updateInputs.at(-1)?.selectedIds.has(harness.fixture.id),
     ).toBe(true));
+    expect(renderer.updateInputs.at(-1)?.activeRouteNetworkId)
+      .toBe("00000000-0000-4000-8000-000000000700");
     expect(props.store.resolveAsset).not.toHaveBeenCalled();
 
     view.unmount();
