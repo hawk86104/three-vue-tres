@@ -1,4 +1,5 @@
-import type { PlanReference, Point2, ProjectSnapshot } from "@aethertwin/core-model";
+import type { GuidedRoute, PlanReference, Point2, ProjectSnapshot } from "@aethertwin/core-model";
+import { resolveGuidedRoute } from "@aethertwin/route-engine";
 import {
   planReferenceSourceToWorld,
   planReferenceWorldToSource,
@@ -35,6 +36,7 @@ export interface PlanCanvasProps {
   readonly activeFloorId: string;
   readonly sessionStore: StoreApi<PlanEditorState>;
   readonly controller: InteractionController;
+  readonly guidedRouteDraftActive?: boolean;
   readonly rendererFactory?: PlanRendererFactory;
   readonly onError: (error: unknown) => void;
   readonly onStartCalibration?: (
@@ -87,10 +89,41 @@ function snapshotWithTransientPreview(
   };
 }
 
+function resolvedRouteFromSnapshot(
+  snapshot: ProjectSnapshot,
+  state: PlanEditorState,
+  guidedRouteDraftActive: boolean,
+) {
+  const networkId = state.routeAuthoring.networkId;
+  if (networkId === null) return null;
+  const network = snapshot.project.routeNetworks.find(({ id }) => id === networkId);
+  if (network === undefined) return null;
+  const saved = snapshot.project.guidedRoutes.find(
+    (route) => route.routeNetworkId === network.id,
+  ) ?? null;
+  const stopNodeIds = guidedRouteDraftActive
+    ? state.routeAuthoring.stopDraft
+    : saved?.stopNodeIds ?? [];
+  if (
+    stopNodeIds.length < 2
+    || stopNodeIds.some((nodeId, index) => index > 0 && nodeId === stopNodeIds[index - 1])
+  ) return null;
+  const candidate: GuidedRoute = {
+    id: saved?.id ?? `transient-guided-route:${network.id}`,
+    name: saved?.name ?? "导览路线",
+    tags: saved?.tags ?? [],
+    routeNetworkId: network.id,
+    stopNodeIds,
+  };
+  const result = resolveGuidedRoute(network, candidate);
+  return result.ok ? result.value : null;
+}
+
 function rendererInput(
   snapshot: ProjectSnapshot,
   activeFloorId: string,
   state: PlanEditorState,
+  guidedRouteDraftActive: boolean,
 ): PlanRendererInput {
   const renderSnapshot = snapshotWithTransientPreview(snapshot, state);
   const recognition = state.roomRecognition;
@@ -119,6 +152,7 @@ function rendererInput(
         selected: candidate.key === recognition.selectedCandidateKey,
       })),
     activeRouteNetworkId: state.routeAuthoring.networkId,
+    resolvedRoute: resolvedRouteFromSnapshot(snapshot, state, guidedRouteDraftActive),
   };
 }
 
@@ -215,6 +249,7 @@ export function PlanCanvas({
   activeFloorId,
   sessionStore,
   controller,
+  guidedRouteDraftActive = false,
   rendererFactory,
   onError,
   onStartCalibration,
@@ -250,7 +285,7 @@ export function PlanCanvas({
   );
   const getSnapshot = useCallback(() => sessionStore.getState(), [sessionStore]);
   const sessionState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const input = rendererInput(snapshot, activeFloorId, sessionState);
+  const input = rendererInput(snapshot, activeFloorId, sessionState, guidedRouteDraftActive);
   const latestInputRef = useRef(input);
   latestInputRef.current = input;
 

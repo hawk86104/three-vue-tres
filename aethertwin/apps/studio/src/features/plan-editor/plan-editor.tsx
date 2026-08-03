@@ -16,8 +16,10 @@ import {
   type PlanEditIntent,
   type RoomRecognitionResult,
 } from "@aethertwin/plan-engine";
+import { resolveGuidedRoute } from "@aethertwin/route-engine";
 import type {
   Fixture,
+  GuidedRoute,
   MediaAsset,
   PlanReference,
   PointOfInterest,
@@ -67,6 +69,7 @@ import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
 import { RouteInspector } from "./route-inspector";
+import { RoutePanel } from "./route-panel";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -284,6 +287,7 @@ export function PlanEditor({
     ?? (state.projectPath?.startsWith("sandbox://") ? "sandbox" : "desktop");
   const [importProgress, setImportProgress] = useState<AssetImportProgress | null>(null);
   const [assetImportBusy, setAssetImportBusy] = useState(false);
+  const [routePanelOpen, setRoutePanelOpen] = useState(false);
   const [context, setContext] = useState<InspectorContext>({ kind: "project" });
   const activeAssetOperation = useRef<{
     readonly operationId: string;
@@ -291,6 +295,7 @@ export function PlanEditor({
     readonly failureMessage: string;
   } | null>(null);
   const calibrationInitiator = useRef<HTMLButtonElement | null>(null);
+  const routePanelTrigger = useRef<HTMLButtonElement | null>(null);
   const assetPickerPending = useRef(false);
   const treeTabRef = useRef<HTMLButtonElement>(null);
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
@@ -551,6 +556,28 @@ export function PlanEditor({
         .find(({ id }) => id === sessionState.activeFloorId)
         ?.layers.some((layer) => layer.visible && !layer.locked) ?? false
     );
+  const activeRouteNetwork = sessionState.routeAuthoring.networkId === null
+    ? null
+    : snapshot.project.routeNetworks.find(
+      ({ id }) => id === sessionState.routeAuthoring.networkId,
+    ) ?? null;
+  const activeGuidedRoute = snapshot.project.guidedRoutes.length === 1
+    ? snapshot.project.guidedRoutes[0]!
+    : null;
+  const guidedRouteNetwork = activeGuidedRoute === null
+    ? null
+    : snapshot.project.routeNetworks.find(
+      ({ id }) => id === activeGuidedRoute.routeNetworkId,
+    ) ?? null;
+  const activeFloorNetworks = snapshot.project.routeNetworks.filter((network) => (
+    network.nodes.some((node) => node.floorId === sessionState.activeFloorId)
+  ));
+  const routeActionsAvailable = snapshot.project.guidedRoutes.length > 1
+    ? activeFloorNetworks.length > 0
+    : activeGuidedRoute === null
+      ? activeFloorNetworks.length > 0
+      : guidedRouteNetwork !== null
+        && guidedRouteNetwork.nodes.some((node) => node.floorId === sessionState.activeFloorId);
   const selectedCalibrationReference = selectedId === null
     ? null
     : editableCalibrationReference(
@@ -1014,6 +1041,96 @@ export function PlanEditor({
     setContext({ kind: "plan-reference", referenceId });
   }
 
+  function selectRouteNode(nodeId: string): void {
+    sessionStore.getState().setSelection([nodeId]);
+    setContext({ kind: "project" });
+  }
+
+  function openGuidedRoutePanel(initiator: HTMLButtonElement): void {
+    const currentSnapshot = store.getState().snapshot;
+    const current = sessionStore.getState();
+    if (currentSnapshot === null) return;
+    const routes = currentSnapshot.project.guidedRoutes;
+    if (routes.length > 1) {
+      setActionError(new Error("项目只能有一条导览路线，请先修复项目数据。"));
+      return;
+    }
+    const currentFloorNetworks = currentSnapshot.project.routeNetworks.filter((candidate) => (
+      candidate.nodes.some((node) => node.floorId === current.activeFloorId)
+    ));
+    const selectedNodeId = current.selectedIds.size === 1
+      ? [...current.selectedIds][0]!
+      : null;
+    const selectedNetwork = selectedNodeId === null ? null : currentFloorNetworks.find((candidate) => (
+      candidate.nodes.some((node) => node.id === selectedNodeId)
+    )) ?? null;
+    const activeNetwork = currentFloorNetworks.find(
+      ({ id }) => id === current.routeAuthoring.networkId,
+    ) ?? null;
+    const savedNetwork = routes.length === 1
+      ? currentFloorNetworks.find(({ id }) => id === routes[0]!.routeNetworkId) ?? null
+      : null;
+    const network = savedNetwork
+      ?? selectedNetwork
+      ?? activeNetwork
+      ?? [...currentFloorNetworks].sort((left, right) => (
+        left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+      ))[0];
+    if (network === undefined) return;
+    current.setActiveTool("route-node");
+    const next = sessionStore.getState();
+    next.setActiveRouteNetwork({
+      sessionId: next.sessionId,
+      floorId: next.activeFloorId,
+      networkId: next.routeAuthoring.networkId,
+      tool: next.activeTool,
+    }, network.id);
+    routePanelTrigger.current = initiator;
+    setRoutePanelOpen(true);
+  }
+
+  async function confirmGuidedRoute(
+    before: GuidedRoute | null,
+    after: GuidedRoute,
+  ): Promise<void> {
+    const current = store.getState().snapshot;
+    if (current === null) throw new Error("当前项目已不可用。");
+    const routes = current.project.guidedRoutes;
+    if (routes.length > 1) {
+      throw new Error("项目只能有一条导览路线，请先修复项目数据。");
+    }
+    const currentBefore = routes[0] ?? null;
+    if (
+      (before === null && currentBefore !== null)
+      || (before !== null && (currentBefore === null || currentBefore.id !== before.id))
+      || (currentBefore !== null && after.routeNetworkId !== currentBefore.routeNetworkId)
+    ) {
+      throw new Error("导览路线已发生变化，请重新打开编辑器。");
+    }
+    const currentNetwork = current.project.routeNetworks.find(
+      ({ id }) => id === after.routeNetworkId,
+    );
+    if (
+      currentNetwork === undefined
+      || !currentNetwork.nodes.some((node) => node.floorId === sessionStore.getState().activeFloorId)
+    ) {
+      throw new Error("当前路线网络已不可用。");
+    }
+    const resolution = resolveGuidedRoute(currentNetwork, after);
+    if (!resolution.ok) throw new Error("导览路线已无法解析，请检查站点连接。");
+    await store.applySnapshotRecordPatches([{
+      collection: "guidedRoutes",
+      changes: [{ id: after.id, before: currentBefore, after }],
+    }]);
+  }
+
+  function returnGuidedRouteFocus(): void {
+    setRoutePanelOpen(false);
+    queueMicrotask(() => {
+      if (routePanelTrigger.current?.isConnected) routePanelTrigger.current.focus();
+    });
+  }
+
   function selectTool(tool: PlanTool, initiator: HTMLButtonElement): void {
     sessionStore.getState().setActiveTool(tool);
     if (tool !== "door" && tool !== "window") {
@@ -1101,6 +1218,7 @@ export function PlanEditor({
       onLayerSelect={selectLayer}
       onEntitySelect={selectEntity}
       onReferenceSelect={selectPlanReference}
+      onRouteNodeSelect={selectRouteNode}
       onApplyFloorPatch={(change: FloorChange) => runAction(
         () => store.applyFloorPatch(change),
       )}
@@ -1188,6 +1306,10 @@ export function PlanEditor({
               void runPlanAssetImport(initiator);
             },
           })}
+          {...(!routeActionsAvailable ? {} : {
+            onEditRouteStops: openGuidedRoutePanel,
+            onPreviewGuidedRoute: openGuidedRoutePanel,
+          })}
         />
       }
       tree={treePanel}
@@ -1260,6 +1382,18 @@ export function PlanEditor({
               onReturnFocus={returnCalibrationFocus}
             />
           )}
+          {!routePanelOpen || activeRouteNetwork === null ? null : (
+            <RoutePanel
+              network={activeRouteNetwork}
+              route={activeGuidedRoute?.routeNetworkId === activeRouteNetwork.id
+                ? activeGuidedRoute
+                : null}
+              sessionStore={sessionStore}
+              makeId={makeId}
+              onConfirm={confirmGuidedRoute}
+              onReturnFocus={returnGuidedRouteFocus}
+            />
+          )}
           {dependencies?.workspace?.(workspaceContext) ?? (
             <PlanCanvas
               store={store}
@@ -1268,6 +1402,7 @@ export function PlanEditor({
               activeFloorId={sessionState.activeFloorId}
               sessionStore={sessionStore}
               controller={controller}
+              guidedRouteDraftActive={routePanelOpen}
               onError={(error) => setActionError(errorValue(error))}
               onStartCalibration={startCalibration}
             />

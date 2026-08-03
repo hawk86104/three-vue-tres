@@ -133,6 +133,8 @@ export interface PlanToolbarProps {
   readonly importFloorPlanDisabled?: boolean;
   readonly onCalibrate?: (initiator: HTMLButtonElement) => void;
   readonly onRecognizeRooms?: (initiator: HTMLButtonElement) => void;
+  readonly onEditRouteStops?: (initiator: HTMLButtonElement) => void;
+  readonly onPreviewGuidedRoute?: (initiator: HTMLButtonElement) => void;
 }
 
 export function PlanToolbar({
@@ -143,6 +145,8 @@ export function PlanToolbar({
   importFloorPlanDisabled = false,
   onCalibrate,
   onRecognizeRooms,
+  onEditRouteStops,
+  onPreviewGuidedRoute,
 }: PlanToolbarProps) {
   return (
     <div className="studio-plan-toolbar" data-profile={profile}>
@@ -177,17 +181,27 @@ export function PlanToolbar({
                 </Button>
               );
             })}
-            {group.disabledActions?.map(({ id, label }) => (
-              <Button
-                key={id}
-                variant="secondary"
-                className="studio-plan-toolbar__action"
-                data-action={id}
-                disabled
-              >
-                {label}
-              </Button>
-            ))}
+            {group.disabledActions?.map(({ id, label }) => {
+              const onClick = id === "edit-route-stops"
+                ? onEditRouteStops
+                : id === "preview-guided-route"
+                  ? onPreviewGuidedRoute
+                  : undefined;
+              return (
+                <Button
+                  key={id}
+                  variant="secondary"
+                  className="studio-plan-toolbar__action"
+                  data-action={id}
+                  disabled={onClick === undefined}
+                  onClick={onClick === undefined
+                    ? undefined
+                    : (event) => onClick(event.currentTarget)}
+                >
+                  {label}
+                </Button>
+              );
+            })}
             {profile === "showroom"
             && group.tools.some(({ tool }) => tool === "space-unit")
             && onRecognizeRooms !== undefined ? (

@@ -10,6 +10,8 @@ import type {
   PlanReference,
   PointOfInterest,
   ProductContent,
+  GuidedRoute,
+  RouteEdge,
   RouteNetwork,
   RouteNode,
   SpaceUnit,
@@ -2761,5 +2763,254 @@ describe('M2.3 Task 11 content Inspector wiring', () => {
     await act(async () => store.redo());
     expect(store.getState().snapshot!.project.productContents[0]!.description)
       .toBe('After copy');
+  });
+});
+
+describe("PlanEditor M2.3 Task 13 guided-route integration", () => {
+  it("persists one confirmed route with the exact user-authored stop order and restores focus to the route trigger", async () => {
+    const { store } = await sandboxProject("Guided route authoring");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const nodes: readonly RouteNode[] = [
+      { id: "00000000-0000-4000-8000-000000001371", name: "Entrance", tags: [], floorId: floor.id, position: { x: 0, y: 0 }, kind: "entrance" },
+      { id: "00000000-0000-4000-8000-000000001372", name: "Gallery", tags: [], floorId: floor.id, position: { x: 100, y: 0 }, kind: "showroom-stop" },
+      { id: "00000000-0000-4000-8000-000000001373", name: "Lounge", tags: [], floorId: floor.id, position: { x: 200, y: 0 }, kind: "showroom-stop" },
+    ];
+    const edge = (id: string, from: string, to: string): RouteEdge => ({
+      id, name: id, tags: [], from, to, distance: 100, bidirectional: true,
+      accessible: true, enabled: true, width: 1200, weight: 1,
+    });
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000001374",
+      name: "Visitor circuit",
+      tags: [],
+      nodes,
+      edges: [
+        edge("00000000-0000-4000-8000-000000001375", nodes[0]!.id, nodes[1]!.id),
+        edge("00000000-0000-4000-8000-000000001376", nodes[1]!.id, nodes[2]!.id),
+      ],
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "routeNetworks",
+      changes: [{ id: network.id, before: null, after: network }],
+    }]);
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(<PlanEditor store={store} dependencies={{
+      sessionStore,
+      makeId: () => "00000000-0000-4000-8000-000000001377",
+    }} />);
+    const user = userEvent.setup();
+    const trigger = screen.getByRole("button", { name: "编辑停靠点" });
+    expect(trigger).toBeEnabled();
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "添加站点：Entrance" }));
+    await user.click(screen.getByRole("button", { name: "添加站点：Gallery" }));
+    await user.click(screen.getByRole("button", { name: "添加站点：Lounge" }));
+    await user.click(screen.getByRole("button", { name: "上移站点：Lounge" }));
+    await user.click(screen.getByRole("button", { name: "确认导览路线" }));
+
+    await waitFor(() => expect(store.getState().snapshot!.project.guidedRoutes).toEqual([{
+      id: "00000000-0000-4000-8000-000000001377",
+      name: "导览路线",
+      tags: [],
+      routeNetworkId: network.id,
+      stopNodeIds: [nodes[0]!.id, nodes[2]!.id, nodes[1]!.id],
+    }]));
+    expect(trigger).toHaveFocus();
+  });
+
+  it("keeps the persisted route and shared tree/canvas selection exact when a draft contains a NO_ROUTE pair", async () => {
+    const { store } = await sandboxProject("Guided route failure");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const entrance: RouteNode = { id: "00000000-0000-4000-8000-000000001381", name: "Entrance", tags: [], floorId: floor.id, position: { x: 0, y: 0 }, kind: "entrance" };
+    const connected: RouteNode = { id: "00000000-0000-4000-8000-000000001382", name: "Connected gallery", tags: [], floorId: floor.id, position: { x: 100, y: 0 }, kind: "showroom-stop" };
+    const isolated: RouteNode = { id: "00000000-0000-4000-8000-000000001383", name: "Isolated gallery", tags: [], floorId: floor.id, position: { x: 400, y: 0 }, kind: "showroom-stop" };
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000001384", name: "Broken circuit", tags: [],
+      nodes: [entrance, connected, isolated],
+      edges: [{
+        id: "00000000-0000-4000-8000-000000001385", name: "arrival edge", tags: [],
+        from: entrance.id, to: connected.id, distance: 100, bidirectional: true,
+        accessible: true, enabled: true, width: 1200, weight: 1,
+      }],
+    };
+    const saved: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000001386", name: "Saved visitor route", tags: [],
+      routeNetworkId: network.id, stopNodeIds: [entrance.id, connected.id],
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "routeNetworks",
+      changes: [{ id: network.id, before: null, after: network }],
+    }, {
+      collection: "guidedRoutes",
+      changes: [{ id: saved.id, before: null, after: saved }],
+    }]);
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(<PlanEditor store={store} dependencies={{ sessionStore }} />);
+    const user = userEvent.setup();
+
+    await user.click(within(screen.getByRole("tree")).getByRole("button", {
+      name: "选择路线节点：Connected gallery",
+    }));
+    expect([...sessionStore.getState().selectedIds]).toEqual([connected.id]);
+    const canvas = screen.getByRole("region", { name: "二维平面画布" });
+    expect(within(canvas).getByRole("button", { name: "选择路线节点：Connected gallery" }))
+      .toHaveAttribute("aria-pressed", "true");
+
+    const preview = screen.getByRole("button", { name: "预览路线" });
+    expect(preview).toBeEnabled();
+    await user.click(preview);
+    await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("NO_ROUTE");
+    expect(store.getState().snapshot!.project.guidedRoutes).toEqual([saved]);
+    expect([...sessionStore.getState().selectedIds]).toEqual([connected.id]);
+    expect(screen.getByRole("button", { name: "确认导览路线" })).toBeDisabled();
+  });
+});
+
+describe("PlanEditor M2.3 Task 13 global curated-route regressions", () => {
+  function routeNode(id: string, name: string, floorId: string): RouteNode {
+    return {
+      id, name, tags: [], floorId, position: { x: Number(id.slice(-3)), y: 0 },
+      kind: name === "Entrance" ? "entrance" : "showroom-stop",
+    };
+  }
+
+  function routeNetwork(
+    id: string,
+    name: string,
+    first: RouteNode,
+    second: RouteNode,
+    third?: RouteNode,
+  ): RouteNetwork {
+    const nodes = third === undefined ? [first, second] : [first, second, third];
+    return {
+      id, name, tags: [], nodes,
+      edges: nodes.slice(1).map((node, index): RouteEdge => ({
+        id: `${id.slice(0, -4)}${(Number(id.slice(-4)) + 4000 + index).toString().padStart(4, "0")}`,
+        name: `${name} ${index + 1}`,
+        tags: [],
+        from: nodes[index]!.id,
+        to: node.id,
+        distance: Math.hypot(
+          node.position.x - nodes[index]!.position.x,
+          node.position.y - nodes[index]!.position.y,
+        ),
+        bidirectional: true,
+        accessible: true,
+        enabled: true,
+        width: 1200,
+        weight: 1,
+      })),
+    };
+  }
+
+  it("edits the one existing curated route and its network even when route authoring currently points at another network", async () => {
+    const { store } = await sandboxProject("Global guided route");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const a1 = routeNode("00000000-0000-4000-8000-000000001401", "Entrance", floor.id);
+    const a2 = routeNode("00000000-0000-4000-8000-000000001402", "A stop", floor.id);
+    const b1 = routeNode("00000000-0000-4000-8000-000000001411", "B entrance", floor.id);
+    const b2 = routeNode("00000000-0000-4000-8000-000000001412", "B saved stop", floor.id);
+    const b3 = routeNode("00000000-0000-4000-8000-000000001413", "B added stop", floor.id);
+    const networkA = routeNetwork("00000000-0000-4000-8000-000000001420", "Network A", a1, a2);
+    const networkB = routeNetwork("00000000-0000-4000-8000-000000001421", "Network B", b1, b2, b3);
+    const saved: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000001422", name: "Only route", tags: [],
+      routeNetworkId: networkB.id, stopNodeIds: [b1.id, b2.id],
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "routeNetworks",
+      changes: [
+        { id: networkA.id, before: null, after: networkA },
+        { id: networkB.id, before: null, after: networkB },
+      ],
+    }, {
+      collection: "guidedRoutes",
+      changes: [{ id: saved.id, before: null, after: saved }],
+    }]);
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    render(<PlanEditor store={store} dependencies={{ sessionStore }} />);
+    act(() => {
+      const state = sessionStore.getState();
+      state.setActiveTool("route-node");
+      state.setActiveRouteNetwork({
+        sessionId: state.sessionId, floorId: floor.id, networkId: null, tool: "route-node",
+      }, networkA.id);
+      state.setSelection([a1.id]);
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "编辑停靠点" }));
+    expect(screen.getByLabelText("导览路线：Network B")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "添加站点：B added stop" }));
+    await user.click(screen.getByRole("button", { name: "确认导览路线" }));
+
+    await waitFor(() => expect(store.getState().snapshot!.project.guidedRoutes).toEqual([{
+      ...saved,
+      stopNodeIds: [b1.id, b2.id, b3.id],
+    }]));
+  });
+
+  it.each([
+    ["selected route node", "00000000-0000-4000-8000-000000001431", "00000000-0000-4000-8000-000000001441", "00000000-0000-4000-8000-000000001440", "Network A"],
+    ["active route network", null, "00000000-0000-4000-8000-000000001441", "00000000-0000-4000-8000-000000001441", "Network B"],
+    ["network UUID order", null, null, "00000000-0000-4000-8000-000000001440", "Network A"],
+  ] as const)(
+    "chooses the %s network when no guided route is saved",
+    async (_caseName, selectedNodeId, activeNetworkId, expectedNetworkId, expectedName) => {
+      const { store } = await sandboxProject("New global route");
+      const floor = store.getState().snapshot!.project.floors[0]!;
+      const a1 = routeNode("00000000-0000-4000-8000-000000001431", "Entrance", floor.id);
+      const a2 = routeNode("00000000-0000-4000-8000-000000001433", "A stop", floor.id);
+      const b1 = routeNode("00000000-0000-4000-8000-000000001432", "B entrance", floor.id);
+      const b2 = routeNode("00000000-0000-4000-8000-000000001434", "B stop", floor.id);
+      const networkA = routeNetwork("00000000-0000-4000-8000-000000001440", "Network A", a1, a2);
+      const networkB = routeNetwork("00000000-0000-4000-8000-000000001441", "Network B", b1, b2);
+      await store.applySnapshotRecordPatches([{
+        collection: "routeNetworks",
+        changes: [
+          { id: networkB.id, before: null, after: networkB },
+          { id: networkA.id, before: null, after: networkA },
+        ],
+      }]);
+      const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+      render(<PlanEditor store={store} dependencies={{ sessionStore }} />);
+      act(() => {
+        const state = sessionStore.getState();
+        state.setActiveTool("route-node");
+        if (activeNetworkId !== null) {
+          state.setActiveRouteNetwork({
+            sessionId: state.sessionId, floorId: floor.id, networkId: null, tool: "route-node",
+          }, activeNetworkId);
+        }
+        if (selectedNodeId !== null) state.setSelection([selectedNodeId]);
+      });
+      await userEvent.click(screen.getByRole("button", { name: "编辑停靠点" }));
+      expect(screen.getByLabelText(`导览路线：${expectedName}`)).toBeVisible();
+      expect(sessionStore.getState().routeAuthoring.networkId).toBe(expectedNetworkId);
+      cleanup();
+    },
+  );
+
+  it("safely rejects editing when the project already contains more than one guided route", async () => {
+    const { store } = await sandboxProject("Ambiguous global route");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const first = routeNode("00000000-0000-4000-8000-000000001441", "Entrance", floor.id);
+    const second = routeNode("00000000-0000-4000-8000-000000001442", "Stop", floor.id);
+    const network = routeNetwork("00000000-0000-4000-8000-000000001443", "Only network", first, second);
+    const routes: readonly GuidedRoute[] = [
+      { id: "00000000-0000-4000-8000-000000001444", name: "First", tags: [], routeNetworkId: network.id, stopNodeIds: [first.id, second.id] },
+      { id: "00000000-0000-4000-8000-000000001445", name: "Second", tags: [], routeNetworkId: network.id, stopNodeIds: [first.id, second.id] },
+    ];
+    await store.applySnapshotRecordPatches([{
+      collection: "routeNetworks",
+      changes: [{ id: network.id, before: null, after: network }],
+    }, {
+      collection: "guidedRoutes",
+      changes: routes.map((route) => ({ id: route.id, before: null, after: route })),
+    }]);
+    render(<PlanEditor store={store} />);
+    await userEvent.click(screen.getByRole("button", { name: "预览路线" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("只能有一条导览路线");
+    expect(store.getState().snapshot!.project.guidedRoutes).toEqual(routes);
   });
 });

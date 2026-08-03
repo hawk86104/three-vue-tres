@@ -3,6 +3,7 @@ import type {
   PlanLayer,
   PlanReference,
   ProjectSnapshot,
+  RouteNode,
   SpatialEntity,
 } from "@aethertwin/core-model";
 import { Button, Field } from "@aethertwin/design-system";
@@ -242,6 +243,7 @@ export interface FloorTreeProps {
   readonly onLayerSelect: (floorId: string, layerId: string) => void;
   readonly onEntitySelect: (entityId: string, additive: boolean) => void;
   readonly onReferenceSelect?: (referenceId: string) => void;
+  readonly onRouteNodeSelect?: (nodeId: string) => void;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
 }
 
@@ -253,6 +255,7 @@ export function FloorTree({
   onLayerSelect,
   onEntitySelect,
   onReferenceSelect = () => undefined,
+  onRouteNodeSelect = () => undefined,
   onApplyFloorPatch,
 }: FloorTreeProps) {
   const activeEntities = snapshot.project.entities.filter(
@@ -261,6 +264,9 @@ export function FloorTree({
   const activeReferences = snapshot.project.planReferences.filter(
     (reference) => reference.floorId === activeFloorId,
   );
+  const activeRouteNodes = snapshot.project.routeNetworks.flatMap((network) => (
+    network.nodes.filter((node) => node.floorId === activeFloorId)
+  ));
 
   return (
     <div className="studio-floor-tree">
@@ -318,6 +324,37 @@ export function FloorTree({
                     onReferenceSelect={onReferenceSelect}
                     onApplyFloorPatch={onApplyFloorPatch}
                   />
+                ))}
+                {active && activeRouteNodes.map((node: RouteNode) => (
+                  <li
+                    key={node.id}
+                    role="treeitem"
+                    aria-label={node.name}
+                    aria-selected={selectedIds.has(node.id)}
+                    className={
+                      selectedIds.has(node.id)
+                        ? "studio-floor-tree__entity studio-floor-tree__entity--selected"
+                        : "studio-floor-tree__entity"
+                    }
+                    data-route-node-id={node.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRouteNodeSelect(node.id);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="studio-floor-tree__selection studio-floor-tree__entity-selection"
+                      aria-label={`选择路线节点：${node.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRouteNodeSelect(node.id);
+                      }}
+                    >
+                      <span>{node.name}</span>
+                      <small>{node.kind}</small>
+                    </button>
+                  </li>
                 ))}
               </ul>
             </li>

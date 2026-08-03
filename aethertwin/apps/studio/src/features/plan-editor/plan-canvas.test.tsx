@@ -3,8 +3,12 @@
 import "@testing-library/jest-dom/vitest";
 import {
   parseSnapshotV3,
+  type GuidedRoute,
   type Opening,
   type PlanReference,
+  type RouteEdge,
+  type RouteNetwork,
+  type RouteNode,
   type Wall,
 } from "@aethertwin/core-model";
 import type {
@@ -12,7 +16,7 @@ import type {
   PlanPointerEvent,
 } from "@aethertwin/render-plan-2d";
 import {
-  act, cleanup, fireEvent, render, screen, waitFor,
+  act, cleanup, fireEvent, render, screen, waitFor, within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -827,5 +831,196 @@ describe('PlanCanvas Task 10 product-hotspot accessible parity', function () {
     expect(controller.createAt).toHaveBeenCalledOnce();
     expect(controller.createAt).toHaveBeenCalledWith({ x: 1_250, y: -750 });
     expect(screen.getByRole('region', { name: '二维平面画布' })).toHaveFocus();
+  });
+});
+
+describe("PlanCanvas Task 13 guided-route preview", () => {
+  it("derives a resolved overlay from the current snapshot and shares route-node selection with the accessible canvas mirror", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const nodeA: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001351", name: "Arrival", tags: [],
+      floorId: harness.floorA.id, position: { x: 0, y: 0 }, kind: "entrance",
+    };
+    const nodeB: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001352", name: "Centre gallery", tags: [],
+      floorId: harness.floorA.id, position: { x: 100, y: 0 }, kind: "showroom-stop",
+    };
+    const nodeC: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001353", name: "Final gallery", tags: [],
+      floorId: harness.floorA.id, position: { x: 200, y: 0 }, kind: "showroom-stop",
+    };
+    const edge = (id: string, from: string, to: string, distance: number): RouteEdge => ({
+      id, name: id, tags: [], from, to, distance, bidirectional: true,
+      accessible: true, enabled: true, width: 1200, weight: 1,
+    });
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000001354", name: "Gallery circuit", tags: [],
+      nodes: [nodeA, nodeB, nodeC],
+      edges: [
+        edge("00000000-0000-4000-8000-000000001355", nodeA.id, nodeB.id, 100),
+        edge("00000000-0000-4000-8000-000000001356", nodeB.id, nodeC.id, 100),
+      ],
+    };
+    const route: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000001357", name: "Showroom visit", tags: [],
+      routeNetworkId: network.id, stopNodeIds: [nodeA.id, nodeC.id],
+    };
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project,
+        profile: "showroom",
+        routeNetworks: [network],
+        guidedRoutes: [route],
+      },
+    });
+    act(() => {
+      const state = harness.store.getState();
+      state.setActiveTool("route-node");
+      state.setActiveRouteNetwork({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: null, tool: "route-node",
+      }, network.id);
+      state.setRouteStopDraft({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: network.id, tool: "route-node",
+      }, route.stopNodeIds);
+    });
+
+    render(<PlanCanvas {...createPlanCanvasProps(harness, renderer)} snapshot={snapshot} />);
+    await waitFor(() => expect(renderer.updateInputs.at(-1)?.resolvedRoute).toEqual({
+      nodeIds: [nodeA.id, nodeB.id, nodeC.id],
+      edgeIds: [
+        "00000000-0000-4000-8000-000000001355",
+        "00000000-0000-4000-8000-000000001356",
+      ],
+      totalDistance: 200,
+      turnPoints: [{ x: 0, y: 0 }, { x: 200, y: 0 }],
+    }));
+
+    const canvas = screen.getByRole("region", { name: "二维平面画布" });
+    await userEvent.click(within(canvas).getByRole("button", {
+      name: "选择路线节点：Centre gallery",
+    }));
+    expect([...harness.store.getState().selectedIds]).toEqual([nodeB.id]);
+  });
+
+  it("does not fall back to saved stops when an active guided-route draft is empty", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const entrance: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001361", name: "Arrival", tags: [],
+      floorId: harness.floorA.id, position: { x: 0, y: 0 }, kind: "entrance",
+    };
+    const gallery: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001362", name: "Gallery", tags: [],
+      floorId: harness.floorA.id, position: { x: 100, y: 0 }, kind: "showroom-stop",
+    };
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000001363", name: "Saved circuit", tags: [],
+      nodes: [entrance, gallery],
+      edges: [{
+        id: "00000000-0000-4000-8000-000000001364", name: "arrival edge", tags: [],
+        from: entrance.id, to: gallery.id, distance: 100, bidirectional: true,
+        accessible: true, enabled: true, width: 1200, weight: 1,
+      }],
+    };
+    const route: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000001365", name: "Saved route", tags: [],
+      routeNetworkId: network.id, stopNodeIds: [entrance.id, gallery.id],
+    };
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project, profile: "showroom",
+        routeNetworks: [network], guidedRoutes: [route],
+      },
+    });
+    act(() => {
+      const state = harness.store.getState();
+      state.setActiveTool("route-node");
+      state.setActiveRouteNetwork({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: null, tool: "route-node",
+      }, network.id);
+      state.setRouteStopDraft({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: network.id, tool: "route-node",
+      }, []);
+    });
+
+    render(<PlanCanvas
+      {...createPlanCanvasProps(harness, renderer)}
+      snapshot={snapshot}
+      guidedRouteDraftActive
+    />);
+    await waitFor(() => expect(renderer.updateInputs.at(-1)?.resolvedRoute).toBeNull());
+  });
+
+  it("uses the current saved route instead of a non-empty stale draft after the route panel closes", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    const arrival: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001366", name: "Arrival", tags: [],
+      floorId: harness.floorA.id, position: { x: 0, y: 0 }, kind: "entrance",
+    };
+    const savedStop: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001367", name: "Saved stop", tags: [],
+      floorId: harness.floorA.id, position: { x: 100, y: 0 }, kind: "showroom-stop",
+    };
+    const staleStop: RouteNode = {
+      id: "00000000-0000-4000-8000-000000001368", name: "Stale stop", tags: [],
+      floorId: harness.floorA.id, position: { x: 200, y: 0 }, kind: "showroom-stop",
+    };
+    const network: RouteNetwork = {
+      id: "00000000-0000-4000-8000-000000001369", name: "Overlay circuit", tags: [],
+      nodes: [arrival, savedStop, staleStop],
+      edges: [
+        {
+          id: "00000000-0000-4000-8000-000000001370", name: "saved edge", tags: [],
+          from: arrival.id, to: savedStop.id, distance: 100, bidirectional: true,
+          accessible: true, enabled: true, width: 1200, weight: 1,
+        },
+        {
+          id: "00000000-0000-4000-8000-000000001371", name: "stale edge", tags: [],
+          from: savedStop.id, to: staleStop.id, distance: 100, bidirectional: true,
+          accessible: true, enabled: true, width: 1200, weight: 1,
+        },
+      ],
+    };
+    const route: GuidedRoute = {
+      id: "00000000-0000-4000-8000-000000001372", name: "Saved overlay", tags: [],
+      routeNetworkId: network.id, stopNodeIds: [arrival.id, savedStop.id],
+    };
+    const snapshot = parseSnapshotV3({
+      ...harness.snapshot,
+      project: {
+        ...harness.snapshot.project, profile: "showroom",
+        routeNetworks: [network], guidedRoutes: [route],
+      },
+    });
+    act(() => {
+      const state = harness.store.getState();
+      state.setActiveTool("route-node");
+      state.setActiveRouteNetwork({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: null, tool: "route-node",
+      }, network.id);
+      state.setRouteStopDraft({
+        sessionId: state.sessionId, floorId: harness.floorA.id,
+        networkId: network.id, tool: "route-node",
+      }, [arrival.id, staleStop.id]);
+    });
+
+    render(<PlanCanvas
+      {...createPlanCanvasProps(harness, renderer)}
+      snapshot={snapshot}
+      guidedRouteDraftActive={false}
+    />);
+    await waitFor(() => expect(renderer.updateInputs.at(-1)?.resolvedRoute).toMatchObject({
+      nodeIds: [arrival.id, savedStop.id],
+      totalDistance: 100,
+    }));
   });
 });

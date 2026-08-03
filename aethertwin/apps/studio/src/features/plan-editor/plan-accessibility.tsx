@@ -1,4 +1,4 @@
-import type { Fixture, ProjectSnapshot, Wall } from "@aethertwin/core-model";
+import type { Fixture, ProjectSnapshot, RouteNode, Wall } from "@aethertwin/core-model";
 import { showroomFixture } from "@aethertwin/mode-showroom";
 import type { StoreApi } from "zustand/vanilla";
 import type { PlanEditorState } from "./editor-session";
@@ -59,6 +59,9 @@ export function PlanAccessibility({
   ));
   const references = snapshot.project.planReferences.filter((reference) => (
     reference.floorId === activeFloorId && visibleLayers.has(reference.layerId)
+  ));
+  const routeNodes = snapshot.project.routeNetworks.flatMap((network) => (
+    network.nodes.filter((node) => node.floorId === activeFloorId)
   ));
   const wallsById = new Map(
     entities
@@ -126,7 +129,7 @@ export function PlanAccessibility({
           </button>
         </form>
       ) : null}
-      {entities.length === 0 && references.length === 0 && openings.length === 0
+      {entities.length === 0 && references.length === 0 && routeNodes.length === 0 && openings.length === 0
       && (roomRecognition === null || roomRecognition.candidates.length === 0) ? (
         <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
       ) : (
@@ -160,6 +163,24 @@ export function PlanAccessibility({
                   aria-label={`选择对象：${entity.name}`}
                   aria-pressed={selected}
                   onClick={() => sessionStore.getState().setSelection([entity.id])}
+                >
+                  选择
+                </button>
+              </li>
+            );
+          })}
+          {routeNodes.map((node: RouteNode) => {
+            const selected = selectedIds.has(node.id);
+            return (
+              <li key={node.id} data-route-node-id={node.id}>
+                <span>
+                  路线节点 · {node.name} · {node.kind} · {selected ? "已选择" : "未选择"}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`选择路线节点：${node.name}`}
+                  aria-pressed={selected}
+                  onClick={() => sessionStore.getState().setSelection([node.id])}
                 >
                   选择
                 </button>
