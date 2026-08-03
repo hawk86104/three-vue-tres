@@ -133,6 +133,7 @@ export interface PlanToolbarProps {
   readonly importFloorPlanDisabled?: boolean;
   readonly onCalibrate?: (initiator: HTMLButtonElement) => void;
   readonly onRecognizeRooms?: (initiator: HTMLButtonElement) => void;
+  readonly onAttachProductMedia?: (initiator: HTMLButtonElement) => void;
   readonly onEditRouteStops?: (initiator: HTMLButtonElement) => void;
   readonly onPreviewGuidedRoute?: (initiator: HTMLButtonElement) => void;
 }
@@ -145,6 +146,7 @@ export function PlanToolbar({
   importFloorPlanDisabled = false,
   onCalibrate,
   onRecognizeRooms,
+  onAttachProductMedia,
   onEditRouteStops,
   onPreviewGuidedRoute,
 }: PlanToolbarProps) {
@@ -182,11 +184,13 @@ export function PlanToolbar({
               );
             })}
             {group.disabledActions?.map(({ id, label }) => {
-              const onClick = id === "edit-route-stops"
-                ? onEditRouteStops
-                : id === "preview-guided-route"
-                  ? onPreviewGuidedRoute
-                  : undefined;
+              const onClick = id === "attach-product-media"
+                ? onAttachProductMedia
+                : id === "edit-route-stops"
+                  ? onEditRouteStops
+                  : id === "preview-guided-route"
+                    ? onPreviewGuidedRoute
+                    : undefined;
               return (
                 <Button
                   key={id}

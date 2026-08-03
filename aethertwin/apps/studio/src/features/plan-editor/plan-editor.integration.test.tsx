@@ -11,11 +11,15 @@ import {
   type Fixture,
   type Opening,
   type PlanReference,
+  type PointOfInterest,
+  type ProductContent,
+  type RouteNetwork,
   type SpaceUnit,
   type Wall,
 } from "@aethertwin/core-model";
 import { SHOWROOM_FIXTURE_CATALOGUE } from "@aethertwin/mode-showroom";
 import { ProjectStore, SandboxProjectBackend } from "@aethertwin/project-store";
+import { insertRouteSegment, resolveGuidedRoute } from "@aethertwin/route-engine";
 import { createPlanEditorStore } from "./editor-session";
 import { PlanCanvas } from "./plan-canvas";
 import { PlanEditor } from "./plan-editor";
@@ -103,7 +107,7 @@ describe("PlanEditor M1 integration", () => {
       expect(document.querySelector('[data-save-state="saved"]')).toBeVisible();
     });
 
-    for (const deferred of ["3D", "路线", "导入", "导出"]) {
+    for (const deferred of ["3D", "路线", "导出"]) {
       expect(screen.queryByRole("button", { name: new RegExp(deferred, "i") }))
         .not.toBeInTheDocument();
     }
@@ -143,6 +147,34 @@ function jpegBytes(width: number, height: number): Uint8Array {
   bytes.push((width >>> 8) & 0xff, width & 0xff);
   bytes.push(3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 0xff, 0xd9);
   return Uint8Array.from(bytes);
+}
+
+function mp4Bytes(): Uint8Array {
+  return Uint8Array.from([
+    0x00, 0x00, 0x00, 0x0c,
+    0x66, 0x74, 0x79, 0x70,
+    0x69, 0x73, 0x6f, 0x6d,
+  ]);
+}
+
+function sandboxProductRequest(
+  bytes: Uint8Array,
+  operationId: string,
+  role: "content-image" | "content-video",
+) {
+  const owned = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  return {
+    operationId,
+    role,
+    source: {
+      kind: "sandbox-blob" as const,
+      blob: new Blob([owned], { type: "application/octet-stream" }),
+      displayName: role === "content-video" ? "milestone-video.mp4" : "milestone-image.png",
+    },
+  };
 }
 
 function sandboxAssetRequest(
@@ -611,5 +643,272 @@ describe("PlanEditor M2.2 vertical integration", () => {
     const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
     expect(within(catalogue).queryByText(/generic|\u901a\u7528/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("PlanEditor M2.3 milestone vertical integration", () => {
+  it("reopens ten media-backed hotspots with exact accessible selection, content order, and a resolved guided route", async () => {
+    installObjectUrlSupport();
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    task14Stores.push(store);
+    await store.create({
+      name: "M2.3 Studio milestone",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const projectPath = store.getState().projectPath!;
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const layerId = floor.layers[0]!.id;
+    const hotspots: PointOfInterest[] = Array.from({ length: 10 }, (_, index) => ({
+      id: `b4000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      name: `Milestone hotspot ${index + 1}`,
+      tags: ["m2.3"],
+      floorId: floor.id,
+      layerId,
+      transform: {
+        ...identityTransform2D,
+        translation: { x: index * 1_000, y: 1_000 },
+      },
+      locked: false,
+      type: "poi",
+      kind: "product-hotspot",
+    }));
+    const emptyContents: ProductContent[] = hotspots.map((hotspot, index) => ({
+      id: `b4100000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      name: `Milestone product ${index + 1}`,
+      tags: ["showroom"],
+      targetEntityId: hotspot.id,
+      description: `Product ${index + 1}`,
+      mediaAssetIds: [],
+    }));
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "entities",
+        changes: hotspots.map((hotspot) => ({ id: hotspot.id, before: null, after: hotspot })),
+      },
+      {
+        collection: "productContents",
+        changes: emptyContents.map((content) => ({ id: content.id, before: null, after: content })),
+      },
+    ]);
+
+    const imageMediaId = "b4200000-0000-4000-8000-000000000001";
+    const imageImport = await store.importProductMedia({
+      request: sandboxProductRequest(
+        pngBytes(640, 480),
+        "b4300000-0000-4000-8000-000000000001",
+        "content-image",
+      ),
+      media: {
+        id: imageMediaId,
+        name: "Milestone hero image",
+        tags: ["local"],
+        kind: "image",
+      },
+      contentBefore: emptyContents[0]!,
+      contentAfter: { ...emptyContents[0]!, mediaAssetIds: [imageMediaId] },
+    });
+    const videoMediaId = "b4200000-0000-4000-8000-000000000002";
+    const videoImport = await store.importProductMedia({
+      request: sandboxProductRequest(
+        mp4Bytes(),
+        "b4300000-0000-4000-8000-000000000002",
+        "content-video",
+      ),
+      media: {
+        id: videoMediaId,
+        name: "Milestone walkthrough",
+        tags: ["local"],
+        kind: "video",
+      },
+      contentBefore: emptyContents[1]!,
+      contentAfter: { ...emptyContents[1]!, mediaAssetIds: [videoMediaId] },
+    });
+    expect(imageImport.asset).toMatchObject({
+      mediaType: "image/png",
+      size: pngBytes(640, 480).byteLength,
+    });
+    expect(videoImport.asset).toMatchObject({
+      mediaType: "video/mp4",
+      size: mp4Bytes().byteLength,
+    });
+
+    const sharedLocalMedia = hotspots.slice(2).map((_hotspot, index) => ({
+      id: `b4200000-0000-4000-8000-${String(index + 3).padStart(12, "0")}`,
+      name: `Milestone local image ${index + 3}`,
+      tags: ["local"],
+      assetId: imageImport.asset.id,
+      kind: "image" as const,
+    }));
+    const detailVideo = {
+      id: "b4200000-0000-4000-8000-000000000011",
+      name: "Milestone detail video",
+      tags: ["local"],
+      assetId: videoImport.asset.id,
+      kind: "video" as const,
+    };
+    const importedContents = store.getState().snapshot!.project.productContents;
+    const firstWithImage = importedContents.find(({ id }) => id === emptyContents[0]!.id)!;
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "mediaAssets",
+        changes: [...sharedLocalMedia, detailVideo].map((media) => ({
+          id: media.id,
+          before: null,
+          after: media,
+        })),
+      },
+      {
+        collection: "productContents",
+        changes: [
+          {
+            id: firstWithImage.id,
+            before: firstWithImage,
+            after: {
+              ...firstWithImage,
+              mediaAssetIds: [...firstWithImage.mediaAssetIds, detailVideo.id],
+            },
+          },
+          ...sharedLocalMedia.map((media, index) => ({
+            id: emptyContents[index + 2]!.id,
+            before: emptyContents[index + 2]!,
+            after: {
+              ...emptyContents[index + 2]!,
+              mediaAssetIds: [media.id],
+            },
+          })),
+        ],
+      },
+    ]);
+
+    const entranceId = "b4400000-0000-4000-8000-000000000001";
+    const junctionId = "b4400000-0000-4000-8000-000000000002";
+    const stopId = "b4400000-0000-4000-8000-000000000003";
+    const baseNetwork: RouteNetwork = {
+      id: "b4400000-0000-4000-8000-000000000004",
+      name: "Milestone visitor network",
+      tags: ["showroom"],
+      nodes: [
+        { id: entranceId, name: "Entrance", tags: [], floorId: floor.id, position: { x: 0, y: 0 }, kind: "entrance" },
+        { id: junctionId, name: "Junction", tags: [], floorId: floor.id, position: { x: 1_000, y: 0 }, kind: "junction" },
+        { id: stopId, name: "Showroom stop", tags: [], floorId: floor.id, position: { x: 2_000, y: 0 }, kind: "showroom-stop" },
+      ],
+      edges: [],
+    };
+    let nextRouteId = 1;
+    const inserted = insertRouteSegment({
+      network: baseNetwork,
+      floorId: floor.id,
+      start: { x: 0, y: 0 },
+      end: { x: 2_000, y: 0 },
+      idSource: {
+        next: () => `b4500000-0000-4000-8000-${String(nextRouteId++).padStart(12, "0")}`,
+      },
+    });
+    if (!inserted.ok) throw new Error(inserted.error.code);
+    const network = inserted.value;
+    const guided = {
+      id: "b4600000-0000-4000-8000-000000000001",
+      name: "Only milestone guide",
+      tags: [],
+      routeNetworkId: network.id,
+      stopNodeIds: [entranceId, stopId],
+    };
+    const resolved = resolveGuidedRoute(network, guided);
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: {
+        nodeIds: [entranceId, junctionId, stopId],
+        totalDistance: 2_000,
+      },
+    });
+    await store.applySnapshotRecordPatches([
+      { collection: "routeNetworks", changes: [{ id: network.id, before: null, after: network }] },
+      { collection: "guidedRoutes", changes: [{ id: guided.id, before: null, after: guided }] },
+    ]);
+
+    const complete = store.getState().snapshot!;
+    expect(complete.schemaVersion).toBe(3);
+    expect(complete.project.entities.filter((entity) => (
+      entity.type === "poi" && entity.kind === "product-hotspot"
+    ))).toHaveLength(10);
+    expect(complete.project.productContents).toHaveLength(10);
+    for (const hotspot of hotspots) {
+      const owned = complete.project.productContents.filter(
+        ({ targetEntityId }) => targetEntityId === hotspot.id,
+      );
+      expect(owned).toHaveLength(1);
+      expect(owned[0]!.mediaAssetIds.length).toBeGreaterThanOrEqual(1);
+    }
+    expect(complete.project.guidedRoutes).toEqual([guided]);
+    expect(new Set(guided.stopNodeIds).size).toBe(guided.stopNodeIds.length);
+
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    const assetPicker = { pick: vi.fn(async () => null) };
+    const view = render(
+      <PlanEditor
+        store={store}
+        backendMode="sandbox"
+        dependencies={{ sessionStore, assetPicker }}
+      />,
+    );
+    const user = userEvent.setup();
+    expect(screen.getByRole("button", { name: "\u6dfb\u52a0\u5a92\u4f53" })).toBeDisabled();
+    const accessibility = document.querySelector(".studio-plan-accessibility");
+    if (!(accessibility instanceof HTMLElement)) {
+      throw new Error("Missing PlanEditor accessibility region");
+    }
+    expect(accessibility).toHaveAttribute("aria-label");
+    const hotspotSelection = within(accessibility).getByRole("button", {
+      name: new RegExp(`${hotspots[0]!.name}$`),
+    });
+    await user.click(hotspotSelection);
+    expect([...sessionStore.getState().selectedIds]).toEqual([hotspots[0]!.id]);
+    expect(hotspotSelection).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "\u4ea7\u54c1\u5185\u5bb9" })).toBeVisible();
+    const attachMedia = screen.getByRole("button", { name: "\u6dfb\u52a0\u5a92\u4f53" });
+    expect(attachMedia).toBeEnabled();
+    await user.click(attachMedia);
+    expect(screen.getByRole("button", { name: "\u5bfc\u5165\u56fe\u7247" })).toHaveFocus();
+    expect(assetPicker.pick).not.toHaveBeenCalled();
+    const description = screen.getByLabelText("\u5185\u5bb9\u63cf\u8ff0");
+    await user.clear(description);
+    await user.type(description, "Edited in the milestone inspector");
+    await user.click(screen.getByRole("button", { name: "\u5e94\u7528\u5185\u5bb9" }));
+    await waitFor(() => expect(
+      store.getState().snapshot!.project.productContents.find(
+        ({ targetEntityId }) => targetEntityId === hotspots[0]!.id,
+      )!.description,
+    ).toBe("Edited in the milestone inspector"));
+    await user.click(screen.getByRole("button", {
+      name: `\u4e0a\u79fb ${detailVideo.name}`,
+    }));
+    await waitFor(() => {
+      const content = store.getState().snapshot!.project.productContents.find(
+        ({ targetEntityId }) => targetEntityId === hotspots[0]!.id,
+      )!;
+      expect(content.description).toBe("Edited in the milestone inspector");
+      expect(content.mediaAssetIds).toEqual([detailVideo.id, imageMediaId]);
+    });
+
+    const stopSelection = within(accessibility).getByRole("button", {
+      name: /Showroom stop/,
+    });
+    await user.click(stopSelection);
+    expect([...sessionStore.getState().selectedIds]).toEqual([stopId]);
+    expect(stopSelection).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "\u9884\u89c8\u8def\u7ebf" }));
+    expect(await screen.findByTestId("guided-route-preview")).toHaveTextContent("2000 mm");
+
+    await user.click(screen.getByRole("button", { name: "\u4fdd\u5b58" }));
+    await waitFor(() => expect(store.getState().saveState).toBe("saved"));
+    const checkpoint = structuredClone(store.getState().snapshot!);
+    expect(checkpoint.checkpointSequence).toBe(checkpoint.sequence);
+    await user.click(screen.getByRole("button", { name: "\u5173\u95ed" }));
+    await waitFor(() => expect(store.getState().projectPath).toBeNull());
+    view.unmount();
+    await store.open(projectPath);
+    expect(store.getState().snapshot).toEqual(checkpoint);
   });
 });

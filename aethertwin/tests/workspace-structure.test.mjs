@@ -187,7 +187,11 @@ test("M2.2 package ownership keeps geometry, topology, catalogue, rendering, and
   assert.deepEqual(internalDependencies("mode-showroom"), ["@aethertwin/core-model"]);
   assert.deepEqual(
     internalDependencies("render-plan-2d"),
-    ["@aethertwin/core-model", "@aethertwin/plan-engine"],
+    [
+      "@aethertwin/core-model",
+      "@aethertwin/plan-engine",
+      "@aethertwin/route-engine",
+    ],
   );
   assert.deepEqual(
     internalDependencies("project-store"),
@@ -249,4 +253,38 @@ test("M2.3 route topology mutation has one pure package owner", () => {
   ]) {
     assert.equal(internalDependencies.includes(forbidden), false);
   }
+});
+
+test("M2.3 content, persistence, route resolution, and Studio wiring have explicit owners", () => {
+  const owners = [
+    ["packages/core-model/src/content-model.ts", "ProductContent"],
+    ["packages/plan-engine/src/content.ts", "reorderProductMedia"],
+    ["packages/project-store/src/snapshot-records-command.ts", "productContents"],
+    ["packages/route-engine/src/resolver.ts", "resolveGuidedRoute"],
+    ["apps/studio/src/features/plan-editor/content-inspector.tsx", "ContentInspector"],
+    ["apps/studio/src/features/plan-editor/route-panel.tsx", "RoutePanel"],
+  ];
+  for (const [relative, symbol] of owners) {
+    assert.ok(existsSync(join(root, relative)), `missing M2.3 owner: ${relative}`);
+    const source = readFileSync(join(root, relative), "utf8");
+    assert.ok(source.includes(symbol), `${relative} does not own ${symbol}`);
+  }
+
+  const exports = [
+    ["packages/core-model/src/index.ts", "content-model"],
+    ["packages/plan-engine/src/index.ts", "content"],
+    ["packages/project-store/src/index.ts", "snapshot-records-command"],
+    ["packages/route-engine/src/index.ts", "resolver"],
+  ];
+  for (const [relative, owner] of exports) {
+    const source = readFileSync(join(root, relative), "utf8");
+    assert.ok(source.includes(`from "./${owner}"`), `${relative} does not export ${owner}`);
+  }
+
+  const studio = JSON.parse(
+    readFileSync(join(root, "apps/studio/package.json"), "utf8"),
+  );
+  assert.equal(studio.dependencies["@aethertwin/core-model"], "workspace:*");
+  assert.equal(studio.dependencies["@aethertwin/project-store"], "workspace:*");
+  assert.equal(studio.dependencies["@aethertwin/route-engine"], "workspace:*");
 });

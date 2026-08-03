@@ -207,3 +207,36 @@ test("M2.3 exposes only implemented building, content, tour, and showroom-catalo
     );
   }
 });
+
+test("M2.3 toolbar renders exactly the three contextual content and route actions", () => {
+  const contextualDefinitions = [
+    ...planToolbar.matchAll(
+      /\{ id: "([^"]+)", label:/g,
+    ),
+  ].map((match) => match[1]);
+  assert.deepEqual(contextualDefinitions, [
+    "attach-product-media",
+    "edit-route-stops",
+    "preview-guided-route",
+  ]);
+  assert.match(
+    planToolbar,
+    /const onClick = id === "attach-product-media"\s*\?\s*onAttachProductMedia\s*:\s*id === "edit-route-stops"\s*\?\s*onEditRouteStops\s*:\s*id === "preview-guided-route"\s*\?\s*onPreviewGuidedRoute\s*:\s*undefined;/,
+  );
+  assert.match(planToolbar, /data-action=\{id\}/);
+  assert.match(planEditor, /onEditRouteStops: openGuidedRoutePanel/);
+  assert.match(planEditor, /onPreviewGuidedRoute: openGuidedRoutePanel/);
+  for (const forbiddenAction of [
+    "open-3d",
+    "edit-materials",
+    "edit-lighting",
+    "export",
+    "publish",
+  ]) {
+    assert.doesNotMatch(
+      planToolbar,
+      new RegExp(`data-action=[^\\n]*${forbiddenAction}`),
+      `forbidden post-M2.3 toolbar action: ${forbiddenAction}`,
+    );
+  }
+});

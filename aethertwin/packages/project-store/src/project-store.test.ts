@@ -10,6 +10,7 @@ import {
   type MediaAsset,
   type Opening,
   type PlanReference,
+  type PointOfInterest,
   type ProductContent,
   type ProjectSnapshot,
   type RouteNetwork,
@@ -278,6 +279,56 @@ function pngBytes(width: number, height: number): Uint8Array {
   bytes.set([8, 6, 0, 0, 0], 24);
   bytes.set([0x49, 0x45, 0x4e, 0x44], 37);
   return bytes;
+}
+
+function mp4Bytes(marker = 0x6d): Uint8Array {
+  return Uint8Array.from([
+    0x00, 0x00, 0x00, 0x0c,
+    0x66, 0x74, 0x79, 0x70,
+    0x69, 0x73, 0x6f, marker,
+  ]);
+}
+
+function sandboxProductMediaRequest(
+  bytes: Uint8Array,
+  operationId: string,
+  role: "content-image" | "content-video",
+): AssetImportRequest {
+  return {
+    operationId,
+    role,
+    source: {
+      kind: "sandbox-blob",
+      blob: new Blob([
+        bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer,
+      ], { type: "application/octet-stream" }),
+      displayName: role === "content-video" ? "showroom-product.mp4" : "showroom-product.png",
+    },
+  };
+}
+
+function milestoneHotspot(
+  snapshot: ProjectSnapshot,
+  index: number,
+): PointOfInterest {
+  const floor = snapshot.project.floors[0]!;
+  return {
+    id: `a3000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    name: `Milestone hotspot ${index + 1}`,
+    tags: ["m2.3"],
+    floorId: floor.id,
+    layerId: floor.layers[0]!.id,
+    transform: {
+      ...identityTransform2D,
+      translation: { x: index * 1_000, y: 1_000 },
+    },
+    locked: false,
+    type: "poi",
+    kind: "product-hotspot",
+  };
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -1223,6 +1274,249 @@ describe("ProjectStore product media orchestration", () => {
 });
 
 describe("ProjectStore content and route durability", () => {
+  it("keeps one complete schema-v3 showroom atomic, undoable, repairable, and reopenable", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "M2.3 milestone showroom",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const projectPath = store.getState().projectPath!;
+    const initial = store.getState().snapshot!;
+    const hotspots = Array.from({ length: 10 }, (_, index) => (
+      milestoneHotspot(initial, index)
+    ));
+    const emptyContents: ProductContent[] = hotspots.map((hotspot, index) => ({
+      id: `a3300000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      name: `Milestone product ${index + 1}`,
+      tags: ["showroom"],
+      targetEntityId: hotspot.id,
+      description: `Product ${index + 1}`,
+      mediaAssetIds: [],
+    }));
+    const commit = vi.spyOn(backend, "commit");
+
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "entities",
+        changes: hotspots.map((hotspot) => ({
+          id: hotspot.id,
+          before: null,
+          after: hotspot,
+        })),
+      },
+      {
+        collection: "productContents",
+        changes: emptyContents.map((content) => ({
+          id: content.id,
+          before: null,
+          after: content,
+        })),
+      },
+    ]);
+    const creationJournal = commit.mock.calls[0]![1].journal;
+    expect(creationJournal.map(({ payload }) => (
+      payload as { readonly collection: string }
+    ).collection)).toEqual(["entities", "productContents"]);
+    expect(new Set(creationJournal.map(({ transactionId }) => transactionId)).size).toBe(1);
+
+    for (const [index, hotspot] of hotspots.entries()) {
+      const before = store.getState().snapshot!.project.productContents.find(
+        ({ targetEntityId }) => targetEntityId === hotspot.id,
+      )!;
+      const video = index === 1;
+      const mediaId = `a3200000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
+      await store.importProductMedia({
+        request: sandboxProductMediaRequest(
+          video ? mp4Bytes() : pngBytes(100 + index, 50 + index),
+          `a3100000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          video ? "content-video" : "content-image",
+        ),
+        media: {
+          id: mediaId,
+          name: video ? "Milestone walkthrough" : `Milestone image ${index + 1}`,
+          tags: ["local"],
+          kind: video ? "video" : "image",
+        },
+        contentBefore: before,
+        contentAfter: {
+          ...before,
+          mediaAssetIds: [mediaId],
+        },
+      });
+    }
+
+    const firstContent = store.getState().snapshot!.project.productContents.find(
+      ({ targetEntityId }) => targetEntityId === hotspots[0]!.id,
+    )!;
+    const secondMediaId = "a3200000-0000-4000-8000-000000000011";
+    await store.importProductMedia({
+      request: sandboxProductMediaRequest(
+        mp4Bytes(0x32),
+        "a3100000-0000-4000-8000-000000000011",
+        "content-video",
+      ),
+      media: {
+        id: secondMediaId,
+        name: "Milestone detail video",
+        tags: ["local"],
+        kind: "video",
+      },
+      contentBefore: firstContent,
+      contentAfter: {
+        ...firstContent,
+        mediaAssetIds: [...firstContent.mediaAssetIds, secondMediaId],
+      },
+    });
+    const beforeEdit = store.getState().snapshot!.project.productContents.find(
+      ({ id }) => id === firstContent.id,
+    )!;
+    const editedAndReordered: ProductContent = {
+      ...beforeEdit,
+      name: "Edited milestone product",
+      description: "Edited and reordered through the durable record path",
+      mediaAssetIds: [secondMediaId, beforeEdit.mediaAssetIds[0]!],
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "productContents",
+      changes: [{ id: beforeEdit.id, before: beforeEdit, after: editedAndReordered }],
+    }]);
+    expect(store.getState().snapshot!.project.productContents.find(
+      ({ id }) => id === firstContent.id,
+    )).toEqual(editedAndReordered);
+
+    const missingAsset = nativeAsset(
+      "a3400000-0000-4000-8000-000000000001",
+      "e",
+    );
+    const missingMedia: MediaAsset = {
+      id: "a3500000-0000-4000-8000-000000000001",
+      name: "Repair candidate",
+      tags: ["local"],
+      assetId: missingAsset.id,
+      kind: "image",
+    };
+    const beforeMissing = store.getState().snapshot!.project.productContents.find(
+      ({ id }) => id === firstContent.id,
+    )!;
+    const withMissing: ProductContent = {
+      ...beforeMissing,
+      mediaAssetIds: [...beforeMissing.mediaAssetIds, missingMedia.id],
+    };
+    await store.applySnapshotRecordPatches([
+      {
+        collection: "assets",
+        changes: [{ id: missingAsset.id, before: null, after: missingAsset }],
+      },
+      {
+        collection: "mediaAssets",
+        changes: [{ id: missingMedia.id, before: null, after: missingMedia }],
+      },
+      {
+        collection: "productContents",
+        changes: [{ id: withMissing.id, before: beforeMissing, after: withMissing }],
+      },
+    ]);
+    await expect(store.resolveAsset(missingAsset.id)).rejects.toMatchObject({
+      code: "ASSET_MISSING",
+    });
+    const repaired = await store.replaceBrokenProductMedia(
+      missingMedia.id,
+      sandboxProductMediaRequest(
+        pngBytes(640, 480),
+        "a3100000-0000-4000-8000-000000000012",
+        "content-image",
+      ),
+    );
+    expect(repaired.id).toBe(missingMedia.id);
+    expect(repaired.assetId).not.toBe(missingAsset.id);
+    expect(store.getState().assetIssues).toEqual([]);
+    await store.undo();
+    expect(store.getState().snapshot!.project.mediaAssets.find(
+      ({ id }) => id === missingMedia.id,
+    )).toEqual(missingMedia);
+    await store.redo();
+    expect(store.getState().snapshot!.project.mediaAssets.find(
+      ({ id }) => id === missingMedia.id,
+    )).toEqual(repaired);
+
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const entranceId = "a3600000-0000-4000-8000-000000000001";
+    const junctionId = "a3600000-0000-4000-8000-000000000002";
+    const stopId = "a3600000-0000-4000-8000-000000000003";
+    const network: RouteNetwork = {
+      id: "a3600000-0000-4000-8000-000000000004",
+      name: "Connected milestone network",
+      tags: ["showroom"],
+      nodes: [
+        { id: entranceId, name: "Entrance", tags: [], floorId: floor.id, position: { x: 0, y: 0 }, kind: "entrance" },
+        { id: junctionId, name: "Junction", tags: [], floorId: floor.id, position: { x: 1_000, y: 0 }, kind: "junction" },
+        { id: stopId, name: "Showroom stop", tags: [], floorId: floor.id, position: { x: 2_000, y: 0 }, kind: "showroom-stop" },
+      ],
+      edges: [
+        { id: "a3600000-0000-4000-8000-000000000005", name: "Entrance link", tags: [], from: entranceId, to: junctionId, distance: 1_000, bidirectional: true, accessible: true, enabled: true, width: 1_200, weight: 1 },
+        { id: "a3600000-0000-4000-8000-000000000006", name: "Stop link", tags: [], from: junctionId, to: stopId, distance: 1_000, bidirectional: true, accessible: true, enabled: true, width: 1_200, weight: 1 },
+      ],
+    };
+    const guided: GuidedRoute = {
+      id: "a3600000-0000-4000-8000-000000000007",
+      name: "Only milestone guide",
+      tags: [],
+      routeNetworkId: network.id,
+      stopNodeIds: [entranceId, stopId],
+    };
+    await store.applySnapshotRecordPatches([
+      { collection: "routeNetworks", changes: [{ id: network.id, before: null, after: network }] },
+      { collection: "guidedRoutes", changes: [{ id: guided.id, before: null, after: guided }] },
+    ]);
+
+    const complete = store.getState().snapshot!;
+    expect(complete.schemaVersion).toBe(3);
+    const milestoneHotspots = complete.project.entities.filter((entity) => (
+      entity.type === "poi" && entity.kind === "product-hotspot"
+    ));
+    expect(milestoneHotspots).toHaveLength(10);
+    expect(complete.project.productContents).toHaveLength(10);
+    const mediaById = new Map(complete.project.mediaAssets.map((media) => [media.id, media]));
+    const assetById = new Map(complete.assets.map((asset) => [asset.id, asset]));
+    for (const hotspot of milestoneHotspots) {
+      const owned = complete.project.productContents.filter(
+        ({ targetEntityId }) => targetEntityId === hotspot.id,
+      );
+      expect(owned).toHaveLength(1);
+      expect(owned[0]!.mediaAssetIds.length).toBeGreaterThanOrEqual(1);
+      for (const mediaId of owned[0]!.mediaAssetIds) {
+        const media = mediaById.get(mediaId);
+        expect(media).toBeDefined();
+        expect(assetById.get(media!.assetId)?.relativePath).toMatch(/^assets\/sha256\//);
+      }
+    }
+    expect(complete.project.mediaAssets.some(({ kind }) => kind === "image")).toBe(true);
+    expect(complete.project.mediaAssets.some(({ kind }) => kind === "video")).toBe(true);
+    expect(network.nodes.map(({ kind }) => kind)).toEqual([
+      "entrance",
+      "junction",
+      "showroom-stop",
+    ]);
+    expect(complete.project.guidedRoutes).toEqual([guided]);
+    expect(new Set(guided.stopNodeIds).size).toBe(guided.stopNodeIds.length);
+    expect(guided.stopNodeIds.length).toBeGreaterThanOrEqual(2);
+
+    await store.save();
+    const checkpoint = structuredClone(store.getState().snapshot!);
+    expect(checkpoint.checkpointSequence).toBe(checkpoint.sequence);
+    await store.close();
+    await store.open(projectPath);
+    expect(store.getState().snapshot).toEqual(checkpoint);
+    expect(store.getState()).toMatchObject({
+      saveState: "saved",
+      canUndo: false,
+      canRedo: false,
+    });
+    await store.close();
+  });
+
   it("retries an exact heterogeneous transaction and preserves it through history and reopen", async () => {
     const backend = new ControlledAssetBackend();
     const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });

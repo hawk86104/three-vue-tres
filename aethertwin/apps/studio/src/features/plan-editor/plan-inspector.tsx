@@ -32,7 +32,7 @@ import type {
   ProjectAssetSource,
   ProjectStoreState,
 } from "@aethertwin/project-store";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type Ref } from "react";
 import { validateProjectName } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
 import { OpeningInspector } from "./opening-inspector";
@@ -1031,6 +1031,7 @@ function MultiInspector({
 }
 
 interface EntityInspectorWithContentProps {
+  readonly productMediaImageButtonRef?: Ref<HTMLButtonElement> | undefined;
   readonly snapshot: ProjectSnapshot;
   readonly assetIssues: readonly AssetIssue[];
   readonly assetOperationBusy: boolean;
@@ -1061,6 +1062,7 @@ interface EntityInspectorWithContentProps {
 }
 
 function EntityInspectorWithContent({
+  productMediaImageButtonRef,
   snapshot,
   assetIssues,
   assetOperationBusy,
@@ -1129,6 +1131,7 @@ function EntityInspectorWithContent({
     <div className="studio-inspector-stack">
       {entityInspector}
       <ContentInspector
+        importImageButtonRef={productMediaImageButtonRef}
         content={content}
         target={target}
         media={media}
@@ -1158,6 +1161,7 @@ function EntityInspectorWithContent({
 }
 
 export interface PlanInspectorProps {
+  readonly productMediaImageButtonRef?: Ref<HTMLButtonElement> | undefined;
   readonly snapshot: ProjectSnapshot;
   readonly assetIssues: readonly AssetIssue[];
   readonly assetOperationBusy: boolean;
@@ -1204,6 +1208,7 @@ export interface PlanInspectorProps {
 }
 
 export function PlanInspector({
+  productMediaImageButtonRef,
   snapshot,
   assetIssues,
   assetOperationBusy,
@@ -1352,6 +1357,7 @@ export function PlanInspector({
       <StatusNotice tone="error">对象不存在</StatusNotice>
     ) : (
       <EntityInspectorWithContent
+        productMediaImageButtonRef={productMediaImageButtonRef}
         snapshot={snapshot}
         assetIssues={assetIssues}
         assetOperationBusy={assetOperationBusy}

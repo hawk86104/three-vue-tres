@@ -296,6 +296,7 @@ export function PlanEditor({
   } | null>(null);
   const calibrationInitiator = useRef<HTMLButtonElement | null>(null);
   const routePanelTrigger = useRef<HTMLButtonElement | null>(null);
+  const productMediaImageButtonRef = useRef<HTMLButtonElement | null>(null);
   const assetPickerPending = useRef(false);
   const treeTabRef = useRef<HTMLButtonElement>(null);
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
@@ -499,6 +500,10 @@ export function PlanEditor({
     }
   }
 
+  function focusProductMediaImageImport(): void {
+    productMediaImageButtonRef.current?.focus();
+  }
+
   async function closeAndReturn() {
     setActionError(null);
     try {
@@ -543,6 +548,34 @@ export function PlanEditor({
   const selectedIds = sessionState.selectedIds;
 
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0]! : null;
+  const selectedEntity = selectedId === null
+    ? null
+    : snapshot.project.entities.find(({ id }) => id === selectedId) ?? null;
+  const selectedProductMediaTarget = selectedEntity?.type === "fixture"
+    || (selectedEntity?.type === "poi" && selectedEntity.kind === "product-hotspot")
+    ? selectedEntity
+    : null;
+  const selectedProductMediaLayer = selectedProductMediaTarget === null
+    || selectedProductMediaTarget.floorId !== sessionState.activeFloorId
+    ? null
+    : snapshot.project.floors
+        .find(({ id }) => id === sessionState.activeFloorId)
+        ?.layers.find(({ id }) => id === selectedProductMediaTarget.layerId) ?? null;
+  const selectedProductMediaContentAvailable = selectedProductMediaTarget?.type === "fixture"
+    || (selectedProductMediaTarget !== null
+      && snapshot.project.productContents.some(
+        ({ targetEntityId }) => targetEntityId === selectedProductMediaTarget.id,
+      ));
+  const productMediaAttachmentAvailable = assetPicker !== null
+    && !assetImportBusy
+    && selectedProductMediaTarget !== null
+    && context.kind === "entity"
+    && context.entityId === selectedProductMediaTarget.id
+    && !selectedProductMediaTarget.locked
+    && selectedProductMediaLayer !== null
+    && selectedProductMediaLayer.visible
+    && !selectedProductMediaLayer.locked
+    && selectedProductMediaContentAvailable;
   const selectedRouteNode = selectedId === null ? null : (
     snapshot.project.routeNetworks.flatMap((network) => {
       const node = network.nodes.find(({ id }) => id === selectedId);
@@ -1306,6 +1339,9 @@ export function PlanEditor({
               void runPlanAssetImport(initiator);
             },
           })}
+          {...(!productMediaAttachmentAvailable ? {} : {
+            onAttachProductMedia: focusProductMediaImageImport,
+          })}
           {...(!routeActionsAvailable ? {} : {
             onEditRouteStops: openGuidedRoutePanel,
             onPreviewGuidedRoute: openGuidedRoutePanel,
@@ -1412,6 +1448,7 @@ export function PlanEditor({
       inspector={
         selectedRouteNode === null ? (
           <PlanInspector
+          productMediaImageButtonRef={productMediaImageButtonRef}
           snapshot={snapshot}
           assetIssues={state.assetIssues}
           assetOperationBusy={assetImportBusy}

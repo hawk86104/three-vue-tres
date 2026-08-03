@@ -10,7 +10,7 @@ import type {
   ProjectAssetSource,
   ProjectStoreState,
 } from "@aethertwin/project-store";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Ref } from "react";
 
 export type ProductMediaRole = "content-image" | "content-video";
 type AssetIssue = ProjectStoreState["assetIssues"][number];
@@ -35,6 +35,7 @@ export interface ContentInspectorProps {
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
   readonly disabled?: boolean;
   readonly assetOperationBusy?: boolean;
+  readonly importImageButtonRef?: Ref<HTMLButtonElement> | undefined;
 }
 
 function parsedTags(value: string): readonly string[] {
@@ -109,6 +110,7 @@ export function ContentInspector({
   resolveAsset,
   disabled = false,
   assetOperationBusy = false,
+  importImageButtonRef,
 }: ContentInspectorProps) {
   const committedName = content.name;
   const committedDescription = content.description;
@@ -216,6 +218,7 @@ export function ContentInspector({
       </Button>
       <div className="studio-content-inspector__imports">
         <Button
+          ref={importImageButtonRef}
           variant="secondary"
           disabled={disabled || assetOperationBusy || importBusy}
           onClick={(event) => void runImport("content-image", event.currentTarget)}

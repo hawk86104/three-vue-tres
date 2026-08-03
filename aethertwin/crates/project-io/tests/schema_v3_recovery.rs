@@ -1050,3 +1050,230 @@ fn product_hotspot_entity_and_content_replay_as_one_record_transaction() {
     assert_eq!(recovered.snapshot, applied);
     assert!(recovered.recovered);
 }
+
+#[test]
+fn complete_m2_3_showroom_survives_checkpoint_reopen_and_dirty_recovery() {
+    let opened = create("Complete M2.3 Recovery");
+    let mut session = open_session(&opened.project_path, false).unwrap();
+    let initial = session.snapshot().clone();
+    let floor = serde_json::to_value(&initial.project.floors[0]).unwrap();
+    let floor_id = floor["id"].clone();
+    let layer_id = floor["layers"][0]["id"].clone();
+    let mut hotspots = Vec::new();
+    let mut assets = Vec::new();
+    let mut media_assets = Vec::new();
+    let mut contents = Vec::new();
+    for index in 0..10_u32 {
+        let suffix = format!("{:012}", index + 1);
+        let hotspot_id = format!("c1000000-0000-4000-8000-{suffix}");
+        let asset_id = format!("c1100000-0000-4000-8000-{suffix}");
+        let media_id = format!("c1200000-0000-4000-8000-{suffix}");
+        let content_id = format!("c1300000-0000-4000-8000-{suffix}");
+        let video = index == 1;
+        let digest = format!("{value:064x}", value = index + 1);
+        let extension = if video { "mp4" } else { "png" };
+        let media_type = if video { "video/mp4" } else { "image/png" };
+        let media_kind = if video { "video" } else { "image" };
+        hotspots.push(json!({
+            "id": hotspot_id,
+            "name": format!("Milestone hotspot {}", index + 1),
+            "tags": ["m2.3"],
+            "floorId": floor_id,
+            "layerId": layer_id,
+            "transform": {
+                "translation": { "x": index * 1000, "y": 1000 },
+                "rotation": 0,
+                "scale": { "x": 1, "y": 1 }
+            },
+            "locked": false,
+            "type": "poi",
+            "kind": "product-hotspot"
+        }));
+        assets.push(json!({
+            "id": asset_id,
+            "sha256": digest,
+            "relativePath": format!("assets/sha256/{}/{}.{}", &digest[..2], digest, extension),
+            "mediaType": media_type,
+            "size": if video { 12 } else { 45 }
+        }));
+        media_assets.push(json!({
+            "id": media_id,
+            "name": format!("Milestone media {}", index + 1),
+            "tags": ["local"],
+            "assetId": asset_id,
+            "kind": media_kind
+        }));
+        contents.push(json!({
+            "id": content_id,
+            "name": format!("Milestone product {}", index + 1),
+            "tags": ["showroom"],
+            "targetEntityId": hotspot_id,
+            "description": format!("Product {}", index + 1),
+            "mediaAssetIds": [media_id]
+        }));
+    }
+    let entrance_id = json!("c1400000-0000-4000-8000-000000000001");
+    let junction_id = json!("c1400000-0000-4000-8000-000000000002");
+    let stop_id = json!("c1400000-0000-4000-8000-000000000003");
+    let network = json!({
+        "id": "c1400000-0000-4000-8000-000000000004",
+        "name": "Connected milestone network",
+        "tags": ["showroom"],
+        "nodes": [
+            { "id": entrance_id, "name": "Entrance", "tags": [], "position": { "x": 0, "y": 0 }, "floorId": floor_id, "kind": "entrance" },
+            { "id": junction_id, "name": "Junction", "tags": [], "position": { "x": 1000, "y": 0 }, "floorId": floor_id, "kind": "junction" },
+            { "id": stop_id, "name": "Showroom stop", "tags": [], "position": { "x": 2000, "y": 0 }, "floorId": floor_id, "kind": "showroom-stop" }
+        ],
+        "edges": [
+            { "id": "c1400000-0000-4000-8000-000000000005", "name": "Entrance link", "tags": [], "from": entrance_id, "to": junction_id, "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 },
+            { "id": "c1400000-0000-4000-8000-000000000006", "name": "Stop link", "tags": [], "from": junction_id, "to": stop_id, "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 }
+        ]
+    });
+    let guided = json!({
+        "id": "c1400000-0000-4000-8000-000000000007",
+        "name": "Only milestone guide",
+        "tags": [],
+        "routeNetworkId": network["id"],
+        "stopNodeIds": [entrance_id, stop_id]
+    });
+    let collections = vec![
+        ("entities", hotspots),
+        ("assets", assets),
+        ("mediaAssets", media_assets),
+        ("productContents", contents),
+        ("routeNetworks", vec![network]),
+        ("guidedRoutes", vec![guided]),
+    ];
+    let transaction_id = "c1500000-0000-4000-8000-000000000001";
+    let mut applied_value = serde_json::to_value(&initial).unwrap();
+    let mut journal = Vec::new();
+    for (collection_index, (collection, records)) in collections.iter().enumerate() {
+        let changes = records
+            .iter()
+            .enumerate()
+            .map(|(index, record)| json!({
+                "id": record["id"],
+                "before": null,
+                "after": record,
+                "index": index
+            }))
+            .collect::<Vec<_>>();
+        let (payload, inverse_payload) = patch(collection, changes);
+        journal.push(operation(
+            u64::try_from(collection_index + 1).unwrap(),
+            transaction_id,
+            payload,
+            inverse_payload,
+        ));
+        let target = if *collection == "assets" {
+            &mut applied_value["assets"]
+        } else {
+            &mut applied_value["project"][*collection]
+        };
+        target.as_array_mut().unwrap().extend(records.iter().cloned());
+    }
+    applied_value["sequence"] = json!(6);
+    let applied: ProjectSnapshot = serde_json::from_value(applied_value).unwrap();
+    session
+        .commit(CommitBatch {
+            before: initial,
+            after: applied.clone(),
+            journal,
+        })
+        .unwrap();
+    let checkpoint = session.checkpoint(applied).unwrap().snapshot;
+    assert_eq!(checkpoint.sequence, 6);
+    assert_eq!(checkpoint.checkpoint_sequence, 6);
+    session.close().unwrap();
+
+    let mut reopened = open_session(&opened.project_path, false).unwrap();
+    assert_eq!(reopened.snapshot(), &checkpoint);
+    let checkpoint_value = serde_json::to_value(&checkpoint).unwrap();
+    let content_before = checkpoint_value["project"]["productContents"][0].clone();
+    let route_before = checkpoint_value["project"]["guidedRoutes"][0].clone();
+    let mut content_after = content_before.clone();
+    content_after["description"] = json!("Dirty recovered product copy");
+    let mut route_after = route_before.clone();
+    route_after["name"] = json!("Dirty recovered guide");
+    let content_changes = vec![json!({
+        "id": content_before["id"],
+        "before": content_before,
+        "after": content_after,
+        "index": 0
+    })];
+    let route_changes = vec![json!({
+        "id": route_before["id"],
+        "before": route_before,
+        "after": route_after,
+        "index": 0
+    })];
+    let (content_payload, content_inverse) = patch("productContents", content_changes);
+    let (route_payload, route_inverse) = patch("guidedRoutes", route_changes);
+    let mut dirty_value = checkpoint_value;
+    dirty_value["sequence"] = json!(8);
+    dirty_value["project"]["productContents"][0] = content_after;
+    dirty_value["project"]["guidedRoutes"][0] = route_after;
+    let dirty: ProjectSnapshot = serde_json::from_value(dirty_value).unwrap();
+    let dirty_transaction = "c1500000-0000-4000-8000-000000000002";
+    reopened
+        .commit(CommitBatch {
+            before: checkpoint,
+            after: dirty.clone(),
+            journal: vec![
+                operation(7, dirty_transaction, content_payload, content_inverse),
+                operation(8, dirty_transaction, route_payload, route_inverse),
+            ],
+        })
+        .unwrap();
+    assert_eq!(reopened.save_state(), SaveState::Dirty);
+    drop(reopened);
+
+    let recovered = recover_project(&opened.project_path, true).unwrap();
+    assert!(recovered.recovered);
+    assert_eq!(recovered.snapshot, dirty);
+    let recovered_value = serde_json::to_value(&recovered.snapshot).unwrap();
+    assert_eq!(recovered_value["schemaVersion"], 3);
+    let recovered_hotspots = recovered_value["project"]["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entity| entity["type"] == "poi" && entity["kind"] == "product-hotspot")
+        .collect::<Vec<_>>();
+    let recovered_contents = recovered_value["project"]["productContents"]
+        .as_array()
+        .unwrap();
+    assert_eq!(recovered_hotspots.len(), 10);
+    assert_eq!(recovered_contents.len(), 10);
+    for hotspot in recovered_hotspots {
+        let owned = recovered_contents
+            .iter()
+            .filter(|content| content["targetEntityId"] == hotspot["id"])
+            .collect::<Vec<_>>();
+        assert_eq!(owned.len(), 1);
+        assert!(!owned[0]["mediaAssetIds"].as_array().unwrap().is_empty());
+    }
+    let recovered_assets = recovered_value["assets"].as_array().unwrap();
+    assert!(recovered_assets.iter().all(|asset| {
+        asset["relativePath"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("assets/sha256/") && !path.contains('\\'))
+    }));
+    assert!(recovered_assets.iter().any(|asset| asset["mediaType"] == "image/png"));
+    assert!(recovered_assets.iter().any(|asset| asset["mediaType"] == "video/mp4"));
+    let networks = recovered_value["project"]["routeNetworks"].as_array().unwrap();
+    let routes = recovered_value["project"]["guidedRoutes"].as_array().unwrap();
+    assert_eq!(networks.len(), 1);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(
+        networks[0]["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["kind"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["entrance", "junction", "showroom-stop"]
+    );
+    let stop_ids = routes[0]["stopNodeIds"].as_array().unwrap();
+    assert!(stop_ids.len() >= 2);
+    assert_ne!(stop_ids[0], stop_ids[1]);
+}

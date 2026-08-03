@@ -131,7 +131,7 @@ test("offline scanning includes the M2.1 asset boundaries", () => {
   }
 });
 
-test("desktop M2.1 keeps exactly eight invokes, a custom protocol, and two permissions", () => {
+test("desktop M2.3 keeps exactly eight invokes, a custom protocol, and two permissions", () => {
   const host = readFileSync("crates/desktop-host/src/lib.rs", "utf8");
   const main = readFileSync("crates/desktop-host/src/main.rs", "utf8");
   const capability = JSON.parse(
@@ -172,6 +172,23 @@ test("offline scanning includes every M2.2 building workflow owner", () => {
     "packages/render-plan-2d/src/scene-projection.ts",
     "apps/studio/src/features/plan-editor/fixture-catalogue.tsx",
     "apps/studio/src/features/plan-editor/room-recognition-panel.tsx",
+  ]) {
+    assert.ok(normalized.includes(relative), `offline scan misses ${relative}`);
+  }
+});
+
+test("offline scanning includes every M2.3 content and guided-route workflow owner", () => {
+  const normalized = runtimeFiles.map((file) => file.replaceAll("\\", "/"));
+  for (const relative of [
+    "packages/core-model/src/content-model.ts",
+    "packages/plan-engine/src/content.ts",
+    "packages/project-store/src/snapshot-records-command.ts",
+    "packages/project-store/src/project-store.ts",
+    "packages/route-engine/src/insertion.ts",
+    "packages/route-engine/src/resolver.ts",
+    "apps/studio/src/features/plan-editor/content-inspector.tsx",
+    "apps/studio/src/features/plan-editor/route-inspector.tsx",
+    "apps/studio/src/features/plan-editor/route-panel.tsx",
   ]) {
     assert.ok(normalized.includes(relative), `offline scan misses ${relative}`);
   }
