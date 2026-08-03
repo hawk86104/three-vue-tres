@@ -7,6 +7,7 @@ import {
   type Boundary,
   type Fixture,
   type GuidedRoute,
+  type MaterialDefinition,
   type MediaAsset,
   type Opening,
   type PlanReference,
@@ -136,6 +137,8 @@ const MEDIA_A = "60000000-0000-4000-8000-000000000001";
 const MEDIA_B = "60000000-0000-4000-8000-000000000002";
 const CONTENT_A = "70000000-0000-4000-8000-000000000001";
 const CONTENT_B = "70000000-0000-4000-8000-000000000002";
+const MATERIAL_A = "80000000-0000-4000-8000-000000000001";
+const MATERIAL_B = "80000000-0000-4000-8000-000000000002";
 
 function task8Store(store: ProjectStore): Task8ProjectStore {
   return store as unknown as Task8ProjectStore;
@@ -215,6 +218,37 @@ function productMediaRequest(
       path: PRIVATE_SOURCE_PATH,
       displayName: role === "content-video" ? "product.webm" : "product.png",
     },
+  };
+}
+
+function materialTextureRequest(
+  operationId = IMPORT_OPERATION_A,
+  role: AssetImportRequest["role"] = "material-texture",
+): AssetImportRequest {
+  return {
+    operationId,
+    role,
+    source: {
+      kind: "native-path",
+      path: PRIVATE_SOURCE_PATH,
+      displayName: "showroom-material.png",
+    },
+  };
+}
+
+function materialDefinition(
+  id = MATERIAL_A,
+  assetId: string | null = null,
+): MaterialDefinition {
+  return {
+    id,
+    name: id === MATERIAL_A ? "Slate floor" : "Shared slate",
+    tags: ["showroom", "local"],
+    baseColor: "#445760",
+    roughness: 0.9,
+    metalness: 0,
+    opacity: 1,
+    assetId,
   };
 }
 
@@ -1272,6 +1306,804 @@ describe("ProjectStore product media orchestration", () => {
     await store.close();
   });
 });
+
+describe("ProjectStore material texture orchestration", () => {
+  async function seedMaterial(
+    store: ProjectStore,
+    material: MaterialDefinition = materialDefinition(),
+    asset: AssetRecord | null = null,
+  ): Promise<MaterialDefinition> {
+    await store.applySnapshotRecordPatches([
+      ...(asset === null ? [] : [{
+        collection: "assets" as const,
+        changes: [{ id: asset.id, before: null, after: asset }],
+      }]),
+      {
+        collection: "materials",
+        changes: [{ id: material.id, before: null, after: material }],
+      },
+    ]);
+    return store.getState().snapshot!.project.materials.find(
+      ({ id }) => id === material.id,
+    )!;
+  }
+
+  it("replaces a material texture in one transaction, retains old bytes, and undoes and redoes exactly", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Material texture",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const oldAsset = nativeAsset(ASSET_A, "a");
+    const before = await seedMaterial(
+      store,
+      materialDefinition(MATERIAL_A, oldAsset.id),
+      oldAsset,
+    );
+    const ownedBefore = structuredClone(before);
+    const callerBefore = structuredClone(before);
+    const request = materialTextureRequest(IMPORT_OPERATION_B);
+    const ownedRequest = structuredClone(request);
+    backend.nextImportResult = nativeImportResult(nativeAsset(ASSET_B, "b"));
+    const sequenceBefore = store.getState().snapshot!.sequence;
+    const commit = vi.spyOn(backend, "commit");
+
+    const importing = store.importMaterialTexture(request, callerBefore, vi.fn());
+    Reflect.set(request, "role", "content-image");
+    Reflect.set(callerBefore, "baseColor", "#ffffff");
+    (callerBefore.tags as string[]).reverse();
+    const created = await importing;
+    const expectedAfter: MaterialDefinition = {
+      ...ownedBefore,
+      assetId: ASSET_B,
+    };
+
+    expect(created).toEqual(expectedAfter);
+    expect(backend.importCalls).toEqual([{
+      projectPath: store.getState().projectPath,
+      request: ownedRequest,
+    }]);
+    expect(store.getState().snapshot).toMatchObject({
+      sequence: sequenceBefore + 2,
+      assets: [oldAsset, backend.nextImportResult.asset],
+      project: { materials: [expectedAfter] },
+    });
+    expect(commit).toHaveBeenCalledOnce();
+    const journal = commit.mock.calls[0]![1].journal;
+    expect(journal.map(({ payload }) => (
+      payload as { readonly collection: string }
+    ).collection)).toEqual(["assets", "materials"]);
+    expect(journal.map(({ payload }) => payload)).toEqual([
+      {
+        collection: "assets",
+        changes: [{
+          id: ASSET_B,
+          before: null,
+          after: backend.nextImportResult.asset,
+        }],
+      },
+      {
+        collection: "materials",
+        changes: [{
+          id: MATERIAL_A,
+          before: ownedBefore,
+          after: expectedAfter,
+        }],
+      },
+    ]);
+    expect(new Set(journal.map(({ transactionId }) => transactionId)).size).toBe(1);
+    expect(JSON.stringify(journal)).not.toContain(PRIVATE_SOURCE_PATH);
+
+    await store.undo();
+    expect(store.getState().snapshot!.assets).toEqual([oldAsset]);
+    expect(store.getState().snapshot!.project.materials).toEqual([ownedBefore]);
+    await store.redo();
+    expect(store.getState().snapshot!.assets).toEqual([
+      oldAsset,
+      backend.nextImportResult.asset,
+    ]);
+    expect(store.getState().snapshot!.project.materials).toEqual([expectedAfter]);
+    await store.close();
+  });
+
+  it("rejects invalid roles, non-image results, and bit-inexact stale material ownership without publishing", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Material validation",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const current = await seedMaterial(store, {
+      ...materialDefinition(),
+      roughness: -0,
+    });
+    const stateBefore = store.getState();
+    const commit = vi.spyOn(backend, "commit");
+
+    await expect(store.importMaterialTexture(
+      materialTextureRequest(IMPORT_OPERATION_A, "content-image"),
+      current,
+    )).rejects.toThrow(/material-texture|role/i);
+    await expect(store.importMaterialTexture(
+      materialTextureRequest(),
+      { ...current, roughness: 0 },
+    )).rejects.toThrow(/material|before|stale|ownership/i);
+    expect(backend.importCalls).toEqual([]);
+
+    backend.nextImportResult = nativeImportResult(
+      nativeAsset(ASSET_A, "a", "video/mp4"),
+    );
+    await expect(store.importMaterialTexture(
+      materialTextureRequest(),
+      current,
+    )).rejects.toThrow(/material|texture|image|media|role/i);
+
+    expect(backend.importCalls).toHaveLength(1);
+    expect(commit).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual(stateBefore);
+    await store.close();
+  });
+
+  it("publishes no asset or material reference when the combined commit fails", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Material commit failure",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const material = await seedMaterial(store);
+    const snapshotBefore = store.getState().snapshot!;
+    const failure = new Error("material transaction fsync failed");
+    backend.failNextCommit = failure;
+
+    await expect(store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    )).rejects.toBe(failure);
+
+    expect(store.getState().snapshot).toEqual(snapshotBefore);
+    expect(store.getState().saveState).toBe("error");
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([material]);
+    await store.close();
+  });
+
+  it("cancels a switched-project import against its captured path and drains it before replacement", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    const cancellation = Object.assign(new Error("Asset import cancelled"), {
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    const events: string[] = [];
+    backend.importImplementation = () => pending.promise.then(
+      (result) => {
+        events.push("native-drained");
+        return result;
+      },
+      (error) => {
+        events.push("native-drained");
+        throw error;
+      },
+    );
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Material A", location: "sandbox", profile: "showroom" });
+    const projectA = store.getState().projectPath!;
+    const material = await seedMaterial(store);
+    await store.create({ name: "Material B", location: "sandbox", profile: "showroom" });
+    const projectB = store.getState().projectPath!;
+    await store.open(projectA);
+
+    backend.cancelImplementation = async () => {
+      events.push("cancel-requested");
+    };
+    const openProject = backend.openProject.bind(backend);
+    const openProjectSpy = vi.spyOn(backend, "openProject").mockImplementation(
+      async (projectPath) => {
+        events.push(projectPath === projectB ? "open:B" : "open:other");
+        return openProject(projectPath);
+      },
+    );
+    const closeProject = backend.closeProject.bind(backend);
+    const closeProjectSpy = vi.spyOn(backend, "closeProject").mockImplementation(
+      async (projectPath) => {
+        events.push(projectPath === projectA ? "close:A" : "close:other");
+        return closeProject(projectPath);
+      },
+    );
+
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    const rejected = expect(importing).rejects.toMatchObject({
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+
+    let replacementSettled = false;
+    const replacing = store.open(projectB).then(() => {
+      replacementSettled = true;
+    });
+    await vi.waitFor(() => expect(backend.cancelCalls).toHaveLength(1));
+    await rejected;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(replacementSettled).toBe(false);
+    expect(openProjectSpy).not.toHaveBeenCalled();
+    expect(closeProjectSpy).not.toHaveBeenCalled();
+
+    pending.reject(cancellation);
+    await replacing;
+
+    expect(backend.cancelCalls).toEqual([{
+      projectPath: projectA,
+      operationId: IMPORT_OPERATION_A,
+    }]);
+    expect(events).toEqual([
+      "cancel-requested",
+      "native-drained",
+      "open:B",
+      "close:A",
+    ]);
+    expect(store.getState().projectPath).toBe(projectB);
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([]);
+    await expect(store.flush()).resolves.toBeUndefined();
+    await store.close();
+  });
+
+  it("honors cancellation requested before the native import phase starts", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    backend.importImplementation = () => pending.promise;
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Immediate material cancel",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const material = await seedMaterial(store);
+    const stateBefore = store.getState();
+
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    const rejected = expect(importing).rejects.toMatchObject({
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    await expect(
+      store.cancelAssetImport(IMPORT_OPERATION_A),
+    ).resolves.toBeUndefined();
+    await rejected;
+
+    expect(backend.importCalls).toEqual([]);
+    expect(backend.cancelCalls).toEqual([]);
+    await expect(store.flush()).resolves.toBeUndefined();
+    expect(store.getState()).toEqual(stateBefore);
+    await store.close();
+  });
+
+
+  it("discards a late texture result when the material changes during native import", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    backend.importImplementation = () => pending.promise;
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Stale material",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const before = await seedMaterial(store);
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      before,
+    );
+    const rejected = expect(importing).rejects.toThrow(
+      /material|before|stale|ownership|changed/i,
+    );
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+
+    const edited: MaterialDefinition = {
+      ...before,
+      baseColor: "#334455",
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: before.id, before, after: edited }],
+    }]);
+    pending.resolve(nativeImportResult());
+    await rejected;
+
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([edited]);
+    expect(store.getState()).toMatchObject({
+      saveState: "dirty",
+      error: null,
+    });
+    await store.close();
+  });
+
+  it("discards a late result and accepts a drained native operation-not-found cancellation race", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    backend.importImplementation = () => pending.promise;
+    backend.cancelImplementation = async () => {
+      throw Object.assign(new Error("Asset import operation not found"), {
+        code: "ASSET_IMPORT_OPERATION_NOT_FOUND",
+      });
+    };
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Old project", location: "sandbox", profile: "showroom" });
+    const projectA = store.getState().projectPath!;
+    const material = await seedMaterial(store);
+    await store.create({ name: "New project", location: "sandbox", profile: "showroom" });
+    const projectB = store.getState().projectPath!;
+    await store.open(projectA);
+
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    const rejected = expect(importing).rejects.toMatchObject({
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+    const replacing = store.open(projectB);
+    await vi.waitFor(() => expect(backend.cancelCalls).toHaveLength(1));
+    pending.resolve(nativeImportResult());
+    await rejected;
+    await replacing;
+
+    expect(backend.cancelCalls).toEqual([{
+      projectPath: projectA,
+      operationId: IMPORT_OPERATION_A,
+    }]);
+    expect(store.getState().projectPath).toBe(projectB);
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([]);
+    expect(store.getState()).toMatchObject({
+      saveState: "saved",
+      error: null,
+    });
+    await expect(store.flush()).resolves.toBeUndefined();
+    await store.close();
+  });
+
+  it("keeps flush pending after native cancellation until the import has drained", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    const cancellation = Object.assign(new Error("Asset import cancelled"), {
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    backend.importImplementation = () => pending.promise;
+    backend.cancelImplementation = async () => undefined;
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Cancelled material drain",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const material = await seedMaterial(store);
+    const stateBefore = store.getState();
+
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    const rejected = expect(importing).rejects.toMatchObject({
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+    await expect(
+      store.cancelAssetImport(IMPORT_OPERATION_A),
+    ).resolves.toBeUndefined();
+    await rejected;
+
+    let flushed = false;
+    const flushing = store.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(flushed).toBe(false);
+
+    pending.reject(cancellation);
+    await flushing;
+
+    expect(flushed).toBe(true);
+    expect(backend.cancelCalls).toEqual([{
+      projectPath: stateBefore.projectPath,
+      operationId: IMPORT_OPERATION_A,
+    }]);
+    expect(store.getState()).toEqual(stateBefore);
+    await store.close();
+  });
+
+  it("retains a pre-commit material import failure until a later mutation succeeds", async () => {
+    const backend = new ControlledAssetBackend();
+    const failure = new Error("material image decode failed");
+    backend.importImplementation = async () => {
+      throw failure;
+    };
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Material pre-commit failure",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const material = await seedMaterial(store);
+
+    await expect(store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    )).rejects.toBe(failure);
+    await expect(store.flush()).rejects.toBe(failure);
+
+    const edited: MaterialDefinition = {
+      ...material,
+      roughness: 0.55,
+    };
+    await store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: material.id, before: material, after: edited }],
+    }]);
+    await expect(store.flush()).resolves.toBeUndefined();
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([edited]);
+    await store.close();
+  });
+
+  it.each(["close", "dispose"] as const)(
+    "waits for native material import drain before $method",
+    async (method) => {
+      const backend = new ControlledAssetBackend();
+      const pending = cancellable<AssetImportResult>();
+      const cancellation = Object.assign(new Error("Asset import cancelled"), {
+        code: "ASSET_IMPORT_CANCELLED",
+      });
+      const events: string[] = [];
+      backend.importImplementation = () => pending.promise.then(
+        (result) => {
+          events.push("native-drained");
+          return result;
+        },
+        (error) => {
+          events.push("native-drained");
+          throw error;
+        },
+      );
+      backend.cancelImplementation = async () => {
+        events.push("cancel-requested");
+      };
+      const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+      await store.create({
+        name: "Lifecycle material",
+        location: "sandbox",
+        profile: "showroom",
+      });
+      const projectPath = store.getState().projectPath!;
+      const material = await seedMaterial(store);
+      const closeProject = backend.closeProject.bind(backend);
+      const closeProjectSpy = vi.spyOn(backend, "closeProject").mockImplementation(
+        async (closingPath) => {
+          events.push("close:A");
+          return closeProject(closingPath);
+        },
+      );
+
+      const importing = store.importMaterialTexture(
+        materialTextureRequest(),
+        material,
+      );
+      const rejected = expect(importing).rejects.toMatchObject({
+        code: "ASSET_IMPORT_CANCELLED",
+      });
+      await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+
+      let lifecycleSettled = false;
+      const lifecycle = (
+        method === "close" ? store.close() : store.dispose()
+      ).then(() => {
+        lifecycleSettled = true;
+      });
+      await vi.waitFor(() => expect(backend.cancelCalls).toHaveLength(1));
+      await rejected;
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(lifecycleSettled).toBe(false);
+      expect(closeProjectSpy).not.toHaveBeenCalled();
+      expect(store.getState().snapshot!.assets).toEqual([]);
+      expect(store.getState().snapshot!.project.materials).toEqual([material]);
+
+      pending.reject(cancellation);
+      await lifecycle;
+
+      expect(backend.cancelCalls).toEqual([{
+        projectPath,
+        operationId: IMPORT_OPERATION_A,
+      }]);
+      expect(events).toEqual([
+        "cancel-requested",
+        "native-drained",
+        "close:A",
+      ]);
+      expect(store.getState()).toMatchObject({
+        projectPath: null,
+        snapshot: null,
+        error: null,
+      });
+    },
+  );
+
+  it("cancels a ready material import locally without hiding an earlier mutation failure", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    backend.importImplementation = () => pending.promise;
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({
+      name: "Ready material cancel",
+      location: "sandbox",
+      profile: "showroom",
+    });
+    const material = await seedMaterial(store);
+    const edited: MaterialDefinition = {
+      ...material,
+      baseColor: "#224466",
+    };
+    const commitGate = cancellable<void>();
+    const failure = new Error("preceding material edit failed");
+    backend.failNextCommit = failure;
+    const commitImplementation = backend.commit.bind(backend);
+    const commit = vi.spyOn(backend, "commit").mockImplementation(
+      async (...args) => {
+        await commitGate.promise;
+        return commitImplementation(...args);
+      },
+    );
+
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    const rejected = expect(importing).rejects.toMatchObject({
+      code: "ASSET_IMPORT_CANCELLED",
+    });
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+    const blockingMutation = store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: material.id, before: material, after: edited }],
+    }]);
+    const blockingRejected = expect(blockingMutation).rejects.toBe(failure);
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
+
+    pending.resolve(nativeImportResult());
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await expect(
+      store.cancelAssetImport(IMPORT_OPERATION_A),
+    ).resolves.toBeUndefined();
+    await rejected;
+    expect(backend.cancelCalls).toEqual([]);
+
+    commitGate.resolve();
+    await blockingRejected;
+    await expect(store.flush()).rejects.toBe(failure);
+    expect(commit).toHaveBeenCalledOnce();
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([material]);
+    expect(store.getState()).toMatchObject({
+      saveState: "error",
+      error: failure,
+    });
+    await store.close();
+  });
+
+  it("keeps flush pending until an already-started material import commits", async () => {
+    const backend = new ControlledAssetBackend();
+    const pending = cancellable<AssetImportResult>();
+    backend.importImplementation = () => pending.promise;
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Flush material", location: "sandbox", profile: "showroom" });
+    const material = await seedMaterial(store);
+    const commitGate = cancellable<void>();
+    const commitImplementation = backend.commit.bind(backend);
+    const commit = vi.spyOn(backend, "commit").mockImplementation(async (...args) => {
+      await commitGate.promise;
+      return commitImplementation(...args);
+    });
+    const importing = store.importMaterialTexture(
+      materialTextureRequest(),
+      material,
+    );
+    await vi.waitFor(() => expect(backend.importCalls).toHaveLength(1));
+
+    let flushed = false;
+    const flushing = store.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(flushed).toBe(false);
+
+    pending.resolve(nativeImportResult());
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(flushed).toBe(false);
+    await expect(
+      store.cancelAssetImport(IMPORT_OPERATION_A),
+    ).rejects.toThrow(/committing|too late/i);
+    expect(backend.cancelCalls).toEqual([]);
+    commitGate.resolve();
+    await importing;
+    await flushing;
+    expect(flushed).toBe(true);
+    await store.close();
+  });
+
+  it("reports only current material codec issues and retains them until the last material reference is removed", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Renderer issues", location: "sandbox", profile: "showroom" });
+    const before = await seedMaterial(store);
+    const textured = await store.importMaterialTexture(
+      materialTextureRequest(),
+      before,
+    );
+    const assetId = textured.assetId!;
+    const epoch = store.getAssetSourceEpoch();
+
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch - 1);
+    expect(store.getState().assetIssues).toEqual([]);
+    expect(() => store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_MISSING",
+    } as never, epoch)).toThrow(/codec|renderer|issue/i);
+
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }]);
+    store.clearRendererAssetIssue(assetId, epoch - 1);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }]);
+    await store.setProjectTags(["issue-remains-transient"]);
+    expect(store.getState().assetIssues).toHaveLength(1);
+
+    const shared = materialDefinition(MATERIAL_B, assetId);
+    await store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: shared.id, before: null, after: shared }],
+    }]);
+    const untexturedA: MaterialDefinition = { ...textured, assetId: null };
+    await store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: textured.id, before: textured, after: untexturedA }],
+    }]);
+    expect(store.getState().assetIssues).toHaveLength(1);
+
+    const untexturedB: MaterialDefinition = { ...shared, assetId: null };
+    await store.applySnapshotRecordPatches([{
+      collection: "materials",
+      changes: [{ id: shared.id, before: shared, after: untexturedB }],
+    }]);
+    expect(store.getState().assetIssues).toEqual([]);
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    expect(store.getState().assetIssues).toEqual([]);
+    store.clearRendererAssetIssue(assetId, epoch);
+    expect(store.getState().assetIssues).toEqual([]);
+    await store.close();
+  });
+
+  it("does not let renderer reports overwrite or clear source issues, and resolve success preserves codec issues", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Issue precedence", location: "sandbox", profile: "showroom" });
+    const before = await seedMaterial(store);
+    const textured = await store.importMaterialTexture(
+      materialTextureRequest(),
+      before,
+    );
+    const assetId = textured.assetId!;
+    const epoch = store.getAssetSourceEpoch();
+    const ownedUrl = "blob:https://aethertwin.invalid/material-texture";
+    backend.resolveFailure = Object.assign(new Error("Missing texture bytes"), {
+      code: "ASSET_MISSING",
+    });
+
+    await expect(store.resolveAsset(assetId)).rejects.toMatchObject({
+      code: "ASSET_MISSING",
+    });
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    store.clearRendererAssetIssue(assetId, epoch);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_MISSING",
+    }]);
+
+    backend.resolveFailure = null;
+    backend.resolvedSource = { assetId, url: ownedUrl };
+    await store.resolveAsset(assetId);
+    expect(store.getState().assetIssues).toEqual([]);
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    await store.resolveAsset(assetId);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }]);
+    backend.resolveFailure = Object.assign(new Error("Corrupt texture bytes"), {
+      code: "ASSET_CORRUPT",
+    });
+    await expect(store.resolveAsset(assetId)).rejects.toMatchObject({
+      code: "ASSET_CORRUPT",
+    });
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_CORRUPT",
+    }]);
+
+    store.clearRendererAssetIssue(assetId, epoch);
+    expect(store.getState().assetIssues).toEqual([{
+      assetId,
+      code: "ASSET_CORRUPT",
+    }]);
+    backend.resolveFailure = null;
+    await store.resolveAsset(assetId);
+    expect(store.getState().assetIssues).toEqual([]);
+    await store.close();
+  });
+
+  it("clears a transient codec issue on import undo and does not revive it on redo", async () => {
+    const backend = new ControlledAssetBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    await store.create({ name: "Issue history", location: "sandbox", profile: "showroom" });
+    const before = await seedMaterial(store);
+    const textured = await store.importMaterialTexture(
+      materialTextureRequest(),
+      before,
+    );
+    const assetId = textured.assetId!;
+    const epoch = store.getAssetSourceEpoch();
+    store.reportRendererAssetIssue({
+      assetId,
+      code: "ASSET_CODEC_PREVIEW_UNAVAILABLE",
+    }, epoch);
+    expect(store.getState().assetIssues).toHaveLength(1);
+
+    await store.undo();
+    expect(store.getState().snapshot!.assets).toEqual([]);
+    expect(store.getState().snapshot!.project.materials).toEqual([before]);
+    expect(store.getState().assetIssues).toEqual([]);
+    await store.redo();
+    expect(store.getState().snapshot!.assets).toEqual([nativeImportResult().asset]);
+    expect(store.getState().snapshot!.project.materials).toEqual([textured]);
+    expect(store.getState().assetIssues).toEqual([]);
+    await store.close();
+  });
+});
+
 
 describe("ProjectStore content and route durability", () => {
   it("keeps one complete schema-v3 showroom atomic, undoable, repairable, and reopenable", async () => {

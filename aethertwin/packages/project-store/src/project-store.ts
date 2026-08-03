@@ -4,6 +4,7 @@ import {
   assertRoleAllowsMedia,
   composeInitialPlanReference,
   type AssetImportProgress,
+  type AssetImportResult,
   type AssetImportRequest,
   type AssetIssue,
   type AssetIssueCode,
@@ -15,6 +16,7 @@ import {
   type AssetMediaType,
   type AssetRecord,
   type MediaAsset,
+  type MaterialDefinition,
   type ProductContent,
   type ProjectManifest,
   type ProjectSnapshot,
@@ -76,6 +78,11 @@ export interface ProductMediaImportResult {
   readonly content: ProductContent;
 }
 
+export interface RendererAssetIssue {
+  readonly assetId: string;
+  readonly code: "ASSET_CODEC_PREVIEW_UNAVAILABLE";
+}
+
 export interface ProjectStoreOptions {
   readonly autosaveDelayMs?: number;
   readonly setTimeout?: typeof globalThis.setTimeout;
@@ -96,6 +103,31 @@ interface PreparedProject {
   readonly snapshot: ProjectSnapshot;
   readonly recovered: boolean;
   readonly bus: CommandBus<ProjectSnapshot>;
+}
+
+type MaterialTextureImportPhase =
+  | "queued" | "native" | "ready" | "committing" | "settled";
+
+interface ActiveMaterialTextureImport {
+  projectPath: string | null;
+  readonly operationId: string;
+  phase: MaterialTextureImportPhase;
+  cancelled: boolean;
+  cancelRequest: Promise<void> | null;
+  publicSettled: boolean;
+  readonly publicCompletion: Promise<MaterialDefinition>;
+  readonly resolvePublic: (material: MaterialDefinition) => void;
+  readonly rejectPublic: (error: unknown) => void;
+  drainCompletion: Promise<MaterialDefinition | null> | null;
+}
+
+interface StartedMaterialTextureImport {
+  readonly projectPath: string;
+  readonly projectId: string;
+  readonly bus: CommandBus<ProjectSnapshot>;
+  readonly assetSourceEpoch: number;
+  readonly materialBefore: MaterialDefinition;
+  readonly result: Promise<AssetImportResult>;
 }
 
 const initialState = (): ProjectStoreState =>
@@ -130,9 +162,13 @@ function safeAssetResolutionError(code: AssetIssueCode): Error & { readonly code
   return error;
 }
 
+function hasErrorCode(value: unknown, code: string): boolean {
+  return value !== null && typeof value === "object"
+    && (value as { readonly code?: unknown }).code === code;
+}
+
 function isImportCancellation(value: unknown): boolean {
-  return value !== null && typeof value === "object" &&
-    (value as { readonly code?: unknown }).code === "ASSET_IMPORT_CANCELLED";
+  return hasErrorCode(value, "ASSET_IMPORT_CANCELLED");
 }
 
 function assertProductMediaRole(
@@ -163,6 +199,77 @@ function sameProductContent(
     && left.targetEntityId === right.targetEntityId
     && left.description === right.description
     && sameStrings(left.mediaAssetIds, right.mediaAssetIds);
+}
+
+function exactStructureEquals(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) =>
+        exactStructureEquals(value, right[index]));
+  }
+  if (
+    left === null
+    || right === null
+    || typeof left !== "object"
+    || typeof right !== "object"
+  ) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  return exactStructureEquals(leftKeys, rightKeys)
+    && leftKeys.every((key) =>
+      exactStructureEquals(leftRecord[key], rightRecord[key]));
+}
+
+function sameMaterialDefinition(
+  left: MaterialDefinition,
+  right: MaterialDefinition,
+): boolean {
+  return exactStructureEquals(left, right);
+}
+
+function assertMaterialTextureRole(request: AssetImportRequest): void {
+  if (request.role !== "material-texture") {
+    throw new Error(
+      "Material texture imports require the material-texture role.",
+    );
+  }
+}
+
+function materialTextureCancellationError(): Error & {
+  readonly code: "ASSET_IMPORT_CANCELLED";
+} {
+  const error = new Error("Asset import cancelled.") as Error & {
+    readonly code: "ASSET_IMPORT_CANCELLED";
+  };
+  Object.defineProperty(error, "code", {
+    value: "ASSET_IMPORT_CANCELLED",
+    enumerable: true,
+  });
+  return error;
+}
+
+function assertRendererAssetIssue(issue: RendererAssetIssue): void {
+  if (
+    issue === null
+    || typeof issue !== "object"
+    || Array.isArray(issue)
+    || Object.keys(issue).length !== 2
+    || !Object.hasOwn(issue, "assetId")
+    || !Object.hasOwn(issue, "code")
+    || typeof issue.assetId !== "string"
+    || issue.code !== "ASSET_CODEC_PREVIEW_UNAVAILABLE"
+  ) {
+    throw new Error(
+      "Renderer asset issues must contain only an assetId and the codec preview issue code.",
+    );
+  }
 }
 
 function assertProductMediaInput(input: ProductMediaImportInput): void {
@@ -268,9 +375,15 @@ export class ProjectStore {
   private autosaveTimer: TimerHandle | null = null;
   private operationTail: Promise<void> = Promise.resolve();
   private assetSourceEpoch = 0;
+  private readonly activeMaterialTextureImports =
+    new Map<string, ActiveMaterialTextureImport>();
+  private readonly pendingMaterialTextureImports =
+    new Set<Promise<MaterialDefinition | null>>();
+
   private latestMutationOutcome: Promise<MutationOutcome> = Promise.resolve(
     successfulMutationOutcome,
   );
+  private materialTextureFailure: unknown | null = null;
   private activeCloseAttempt: Promise<void> | null = null;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
@@ -440,15 +553,251 @@ export class ProjectStore {
     }
   }
 
+  importMaterialTexture(
+    request: AssetImportRequest,
+    materialBefore: MaterialDefinition,
+    onProgress: (value: AssetImportProgress) => void = () => undefined,
+  ): Promise<MaterialDefinition> {
+    try {
+      const ownedRequest = structuredClone(request);
+      const ownedMaterialBefore = structuredClone(materialBefore);
+      assertMaterialTextureRole(ownedRequest);
+      if (
+        this.activeMaterialTextureImports.has(ownedRequest.operationId)
+      ) {
+        throw new Error("Asset import operation is already active.");
+      }
+
+      let resolvePublic!: (material: MaterialDefinition) => void;
+      let rejectPublic!: (error: unknown) => void;
+      const publicCompletion = new Promise<MaterialDefinition>(
+        (resolve, reject) => {
+          resolvePublic = resolve;
+          rejectPublic = reject;
+        },
+      );
+      const active: ActiveMaterialTextureImport = {
+        projectPath: this.state.projectPath,
+        operationId: ownedRequest.operationId,
+        phase: "queued",
+        cancelled: false,
+        cancelRequest: null,
+        publicSettled: false,
+        publicCompletion,
+        resolvePublic,
+        rejectPublic,
+        drainCompletion: null,
+      };
+      this.activeMaterialTextureImports.set(ownedRequest.operationId, active);
+
+      const drain = this.performMaterialTextureImport(
+        ownedRequest,
+        ownedMaterialBefore,
+        active,
+        onProgress,
+      );
+      active.drainCompletion = drain;
+      this.pendingMaterialTextureImports.add(drain);
+      void publicCompletion.then(
+        () => undefined,
+        () => undefined,
+      );
+
+      const cleanupDrain = (): void => {
+        this.pendingMaterialTextureImports.delete(drain);
+        active.phase = "settled";
+        if (
+          this.activeMaterialTextureImports.get(active.operationId) === active
+        ) {
+          this.activeMaterialTextureImports.delete(active.operationId);
+        }
+      };
+      void drain.then(
+        (material) => {
+          if (material === null) {
+            this.rejectMaterialTextureImport(
+              active,
+              materialTextureCancellationError(),
+            );
+          } else {
+            this.resolveMaterialTextureImport(active, material);
+          }
+          cleanupDrain();
+        },
+        (error) => {
+          if (!isImportCancellation(error)) {
+            this.materialTextureFailure = error;
+          }
+          this.rejectMaterialTextureImport(active, error);
+          cleanupDrain();
+        },
+      );
+      return publicCompletion;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  }
+
   cancelAssetImport(operationId: string): Promise<void> {
     if (this.disposed) {
       return Promise.reject(new Error("ProjectStore is disposed"));
     }
+    const active = this.activeMaterialTextureImports.get(operationId);
+    if (active !== undefined) {
+      if (active.phase === "committing") {
+        return Promise.reject(
+          new Error("Material texture import is committing; cancellation is too late."),
+        );
+      }
+      if (active.phase === "settled") return Promise.resolve();
+
+      this.signalMaterialTextureCancellation(active);
+      return active.phase === "native"
+        ? this.requestNativeMaterialTextureCancellation(active)
+        : Promise.resolve();
+    }
+
     const projectPath = this.state.projectPath;
     if (projectPath === null) {
       return Promise.reject(new Error("No project is open"));
     }
     return this.backend.cancelAssetImport(projectPath, operationId);
+  }
+
+  private resolveMaterialTextureImport(
+    active: ActiveMaterialTextureImport,
+    material: MaterialDefinition,
+  ): void {
+    if (active.publicSettled) return;
+    active.publicSettled = true;
+    active.resolvePublic(material);
+  }
+
+  private rejectMaterialTextureImport(
+    active: ActiveMaterialTextureImport,
+    error: unknown,
+  ): void {
+    if (active.publicSettled) return;
+    active.publicSettled = true;
+    active.rejectPublic(error);
+  }
+
+  private signalMaterialTextureCancellation(
+    active: ActiveMaterialTextureImport,
+  ): void {
+    if (active.cancelled) return;
+    active.cancelled = true;
+    this.rejectMaterialTextureImport(
+      active,
+      materialTextureCancellationError(),
+    );
+  }
+
+  private requestNativeMaterialTextureCancellation(
+    active: ActiveMaterialTextureImport,
+  ): Promise<void> {
+    if (active.cancelRequest !== null) return active.cancelRequest;
+    if (active.projectPath === null) {
+      active.cancelRequest = Promise.reject(new Error("No project is open"));
+      return active.cancelRequest;
+    }
+
+    let backendRequest: Promise<void>;
+    try {
+      backendRequest = this.backend.cancelAssetImport(
+        active.projectPath,
+        active.operationId,
+      );
+    } catch (error) {
+      backendRequest = Promise.reject(error);
+    }
+    active.cancelRequest = Promise.resolve(backendRequest).catch(
+      async (error) => {
+        if (
+          !hasErrorCode(error, "ASSET_IMPORT_OPERATION_NOT_FOUND")
+          || active.drainCompletion === null
+        ) {
+          throw error;
+        }
+        await Promise.allSettled([active.drainCompletion]);
+      },
+    );
+    return active.cancelRequest;
+  }
+
+  private async cancelAndDrainMaterialTextureImports(
+    projectPath: string,
+  ): Promise<void> {
+    const cancellable = [...this.activeMaterialTextureImports.values()]
+      .filter((active) =>
+        active.projectPath === projectPath
+        && (
+          active.phase === "queued"
+          || active.phase === "native"
+          || active.phase === "ready"
+        ));
+
+    const nativeImports = cancellable.filter(({ phase }) => phase === "native");
+    const cancelRequests: Promise<void>[] = [];
+    for (const active of cancellable) {
+      this.signalMaterialTextureCancellation(active);
+      if (active.phase === "native") {
+        cancelRequests.push(
+          this.requestNativeMaterialTextureCancellation(active),
+        );
+      }
+    }
+
+    await Promise.allSettled(
+      cancellable.map(({ publicCompletion }) => publicCompletion),
+    );
+    const cancelOutcomes = await Promise.allSettled(cancelRequests);
+    const drainOutcomes = await Promise.allSettled(
+      nativeImports.flatMap(({ drainCompletion }) =>
+        drainCompletion === null ? [] : [drainCompletion]),
+    );
+    const cancellationFailure = cancelOutcomes.find(
+      (outcome) => outcome.status === "rejected",
+    );
+    if (cancellationFailure?.status === "rejected") {
+      throw cancellationFailure.reason;
+    }
+    const drainFailure = drainOutcomes.find(
+      (outcome) => outcome.status === "rejected",
+    );
+    if (drainFailure?.status === "rejected") {
+      throw drainFailure.reason;
+    }
+  }
+
+  reportRendererAssetIssue(
+    issue: RendererAssetIssue,
+    sourceEpoch: number,
+  ): void {
+    assertRendererAssetIssue(issue);
+    if (this.disposed || sourceEpoch !== this.assetSourceEpoch) return;
+    const snapshot = this.state.snapshot;
+    if (
+      snapshot === null
+      || !snapshot.assets.some(({ id }) => id === issue.assetId)
+      || !snapshot.project.materials.some(({ assetId }) =>
+        assetId === issue.assetId)
+    ) {
+      return;
+    }
+    const current = this.state.assetIssues.find(({ assetId }) =>
+      assetId === issue.assetId);
+    if (current !== undefined) return;
+    this.setAssetIssue(issue);
+  }
+
+  clearRendererAssetIssue(assetId: string, sourceEpoch: number): void {
+    if (this.disposed || sourceEpoch !== this.assetSourceEpoch) return;
+    const current = this.state.assetIssues.find((issue) =>
+      issue.assetId === assetId);
+    if (current?.code === "ASSET_CODEC_PREVIEW_UNAVAILABLE") {
+      this.clearAssetIssue(assetId);
+    }
   }
 
   replaceBrokenPlanReference(
@@ -508,7 +857,7 @@ export class ProjectStore {
       if (parsed.protocol !== expectedProtocol || source.url.includes("\\")) {
         throw new Error("Invalid or unsafe backend asset URL scheme");
       }
-      this.clearAssetIssue(assetId);
+      this.clearAssetResolutionIssue(assetId);
       return Object.freeze({ assetId, url: source.url, mediaType: asset.mediaType });
     } catch (error) {
       const code = assetIssueCode(error);
@@ -536,15 +885,23 @@ export class ProjectStore {
     if (this.disposed) {
       return Promise.reject(new Error("ProjectStore is disposed"));
     }
-    const operationBoundary = this.operationTail;
-    const mutationBoundary = this.latestMutationOutcome;
-    return operationBoundary
-      .then(() => mutationBoundary)
-      .then((outcome) => {
-        if (!outcome.ok) {
-          throw outcome.error;
-        }
-      });
+    const materialImportBoundary = Promise.allSettled([
+      ...this.pendingMaterialTextureImports,
+    ]);
+    return materialImportBoundary.then(() => {
+      const operationBoundary = this.operationTail;
+      const mutationBoundary = this.latestMutationOutcome;
+      return operationBoundary
+        .then(() => mutationBoundary)
+        .then((outcome) => {
+          if (!outcome.ok) {
+            throw outcome.error;
+          }
+          if (this.materialTextureFailure !== null) {
+            throw this.materialTextureFailure;
+          }
+        });
+    });
   }
 
   close(): Promise<void> {
@@ -560,7 +917,14 @@ export class ProjectStore {
     this.clearAutosaveTimer();
     this.listeners.clear();
     const closeAttempt = this.activeCloseAttempt;
-    const pending = this.operationTail.then(() => closeAttempt ?? this.performClose());
+    const projectPath = this.state.projectPath;
+    const cancellationBarrier = projectPath === null
+      ? Promise.resolve()
+      : this.cancelAndDrainMaterialTextureImports(projectPath);
+    const operationBoundary = this.operationTail;
+    const pending = cancellationBarrier
+      .then(() => operationBoundary)
+      .then(() => closeAttempt ?? this.performClose());
     this.operationTail = pending.then(
       () => undefined,
       () => undefined,
@@ -670,6 +1034,126 @@ export class ProjectStore {
     return imported;
   }
 
+  private startMaterialTextureImport(
+    request: AssetImportRequest,
+    materialBefore: MaterialDefinition,
+    active: ActiveMaterialTextureImport,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<StartedMaterialTextureImport | null> {
+    return this.enqueueOperation(() => {
+      if (active.cancelled) return Promise.resolve(null);
+      if (
+        this.activeMaterialTextureImports.get(active.operationId) !== active
+      ) {
+        throw new Error("Material texture import ownership changed.");
+      }
+      const projectPath = this.requireProjectPath();
+      const snapshot = this.state.snapshot;
+      const bus = this.requireBus();
+      if (snapshot === null) throw new Error("No project is open");
+      active.projectPath = projectPath;
+      const current = snapshot.project.materials.find(({ id }) =>
+        id === materialBefore.id);
+      if (
+        current === undefined
+        || !sameMaterialDefinition(current, materialBefore)
+      ) {
+        throw new Error("Material texture ownership is stale.");
+      }
+
+      active.phase = "native";
+      const result = this.backend.importAsset(
+        projectPath,
+        request,
+        onProgress,
+      );
+      return Promise.resolve(Object.freeze({
+        projectPath,
+        projectId: snapshot.project.id,
+        bus,
+        assetSourceEpoch: this.assetSourceEpoch,
+        materialBefore,
+        result,
+      }));
+    });
+  }
+
+  private async performMaterialTextureImport(
+    request: AssetImportRequest,
+    materialBefore: MaterialDefinition,
+    active: ActiveMaterialTextureImport,
+    onProgress: (value: AssetImportProgress) => void,
+  ): Promise<MaterialDefinition | null> {
+    const started = await this.startMaterialTextureImport(
+      request,
+      materialBefore,
+      active,
+      onProgress,
+    );
+    if (started === null) return null;
+
+    let imported: AssetImportResult;
+    try {
+      imported = await started.result;
+    } catch (error) {
+      if (active.cancelled) return null;
+      throw error;
+    }
+    if (active.cancelled) return null;
+    assertRoleAllowsMedia(request.role, imported.asset.mediaType);
+    const asset = structuredClone(imported.asset);
+    active.phase = "ready";
+
+    return this.enqueueMaterialTextureCommit(async () => {
+      if (active.cancelled) return null;
+      active.phase = "committing";
+      const snapshot = this.state.snapshot;
+      if (
+        this.disposed
+        || this.bus !== started.bus
+        || this.state.projectPath !== started.projectPath
+        || this.assetSourceEpoch !== started.assetSourceEpoch
+        || snapshot === null
+        || snapshot.project.id !== started.projectId
+      ) {
+        throw new Error(
+          "Project changed while importing a material texture.",
+        );
+      }
+      const current = snapshot.project.materials.find(({ id }) =>
+        id === started.materialBefore.id);
+      if (
+        current === undefined
+        || !sameMaterialDefinition(current, started.materialBefore)
+      ) {
+        throw new Error("Material texture ownership is stale.");
+      }
+      if (snapshot.assets.some(({ id }) => id === asset.id)) {
+        throw new Error("Imported material texture asset already exists.");
+      }
+      const materialAfter: MaterialDefinition = {
+        ...started.materialBefore,
+        assetId: asset.id,
+      };
+      await this.mutate((bus) =>
+        bus.transaction([
+          commandIntent(patchSnapshotRecordsCommand, {
+            collection: "assets",
+            changes: [{ id: asset.id, before: null, after: asset }],
+          }),
+          commandIntent(patchSnapshotRecordsCommand, {
+            collection: "materials",
+            changes: [{
+              id: started.materialBefore.id,
+              before: started.materialBefore,
+              after: materialAfter,
+            }],
+          }),
+        ]));
+      return materialAfter;
+    });
+  }
+
   private async performBrokenReferenceReplacement(
     referenceId: string,
     request: AssetImportRequest,
@@ -769,13 +1253,16 @@ export class ProjectStore {
     const projectPath = this.state.projectPath;
     if (projectPath === null) {
       this.bus = null;
+      this.materialTextureFailure = null;
       this.publish(initialState());
       return;
     }
 
     try {
+      await this.cancelAndDrainMaterialTextureImports(projectPath);
       await this.backend.closeProject(projectPath);
       this.bus = null;
+      this.materialTextureFailure = null;
       this.publish(initialState());
     } catch (error) {
       this.publish({ ...this.state, saveState: "error", error: errorValue(error) });
@@ -789,6 +1276,9 @@ export class ProjectStore {
     let opened: OpenedProject | null = null;
     this.clearAutosaveTimer();
     try {
+      if (previousPath !== null) {
+        await this.cancelAndDrainMaterialTextureImports(previousPath);
+      }
       opened = await openProject();
       const prepared = this.prepareProject(opened);
       if (previousPath !== null) {
@@ -830,6 +1320,7 @@ export class ProjectStore {
   private install(prepared: PreparedProject): void {
     const { projectPath, manifest, snapshot, recovered, bus } = prepared;
     this.bus = bus;
+    this.materialTextureFailure = null;
     this.assetSourceEpoch += 1;
     this.publish({
       projectPath,
@@ -960,12 +1451,25 @@ export class ProjectStore {
     });
   }
 
+  private clearAssetResolutionIssue(assetId: string): void {
+    const issue = this.state.assetIssues.find((candidate) =>
+      candidate.assetId === assetId);
+    if (
+      issue?.code === "ASSET_MISSING"
+      || issue?.code === "ASSET_CORRUPT"
+    ) {
+      this.clearAssetIssue(assetId);
+    }
+  }
+
   private reconcileAssetIssues(snapshot: ProjectSnapshot): readonly AssetIssue[] {
     const assetIds = new Set(snapshot.assets.map(({ id }) => id));
     const referencedAssetIds = new Set(
       [
         ...snapshot.project.planReferences.map(({ assetId }) => assetId),
         ...snapshot.project.mediaAssets.map(({ assetId }) => assetId),
+        ...snapshot.project.materials.flatMap(({ assetId }) =>
+          assetId === null ? [] : [assetId]),
       ],
     );
     return this.state.assetIssues.filter(({ assetId }) =>
@@ -1007,10 +1511,29 @@ export class ProjectStore {
     return pending;
   }
 
+  private enqueueMaterialTextureCommit(
+    operation: () => Promise<MaterialDefinition | null>,
+  ): Promise<MaterialDefinition | null> {
+    const previousMutationOutcome = this.latestMutationOutcome;
+    const pending = this.enqueueOperation(operation);
+    this.latestMutationOutcome = pending.then(
+      (material) => {
+        if (material === null) return previousMutationOutcome;
+        this.materialTextureFailure = null;
+        return successfulMutationOutcome;
+      },
+      (error): MutationOutcome => ({ ok: false, error }),
+    );
+    return pending;
+  }
+
   private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
     const pending = this.enqueueOperation(operation);
     this.latestMutationOutcome = pending.then(
-      () => successfulMutationOutcome,
+      () => {
+        this.materialTextureFailure = null;
+        return successfulMutationOutcome;
+      },
       (error): MutationOutcome => ({ ok: false, error }),
     );
     return pending;

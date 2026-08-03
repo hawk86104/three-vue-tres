@@ -40,6 +40,7 @@ export {
   type ProjectAssetSource,
   type ProductMediaImportInput,
   type ProductMediaImportResult,
+  type RendererAssetIssue,
   type ProjectStoreOptions,
   type ProjectStoreState,
 } from "./project-store";
