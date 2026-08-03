@@ -38,6 +38,14 @@ Canonical mappings are PNG -> `.png`, JPEG -> `.jpg`, sanitized SVG -> `.svg`, M
 
 Native import publishes immutable bytes before record commit. Existing canonical destinations are reused only when regular-file identity, length, and digest match; a collision is never overwritten. Undo removes the record/reference but intentionally leaves immutable bytes. Orphan pruning is outside M2.1.
 
+## Product content and local media
+
+`ProductContent` contains UUID `id`, name/tags, one `targetEntityId`, description, and ordered `mediaAssetIds`. The target must be an existing `Fixture` or `PointOfInterest(kind="product-hotspot")`. Each target has at most one content record, and every product hotspot has exactly one; a fixture may have none. Media IDs within one content record are unique and their order is durable.
+
+`MediaAsset` contains UUID `id`, name/tags, one `assetId`, and `kind` (`image` or `video`). It references a durable `AssetRecord`; image media accepts PNG, JPEG, or sanitized SVG records, while video media accepts MP4 or WebM records. Media payload bytes are never embedded in `ProductContent` or `MediaAsset`. Their only durable location identity is the referenced asset's canonical `assets/sha256/<first-two-hex>/<sha256>.<canonical-extension>` path. Native absolute paths, drive/UNC paths, source filenames, `file://`, remote URLs, and remote fallback identities are invalid.
+
+Creating a product hotspot and its required content is one transaction. A new attachment uses the existing asset import boundary for bytes, then publishes the new `AssetRecord`, `MediaAsset`, and new-or-updated `ProductContent` in one CommandBus transaction. A metadata failure publishes none of those records. Repair imports a new immutable asset through the same boundary and retargets the existing `MediaAsset.assetId`; the media record ID and the product's ordered media IDs stay stable, and old immutable bytes are not deleted.
+
 ## Plan references and calibration
 
 A plan reference contains `id`, name/tags, `floorId`, `layerId`, `assetId`, intrinsic source size, source-to-world transform, opacity, `locked`, and optional calibration. `transform.translation` and rendered distances are millimetres; rotation is radians; scale converts source-image units to world millimetres.
@@ -51,6 +59,18 @@ An `Opening` is a project record with UUID `id`, name/tags, `wallId`, `kind` (`d
 `building.structure.patch` is a journal command, not a ninth native invoke. It carries exact `reason`, `wallChanges`, and `openingChanges`; every change has UUID `id`, exact `before`/`after`, and an optional normalized index. Wall and opening changes are applied to one candidate snapshot, schema-v3 parsing validates that final state once, and only that canonical snapshot is committed. Undo reverses both change lists and their normalized indexes exactly, so deleting a wall and all attached openings is atomic and recoverable.
 
 Catalogue fixture descriptors and primitive `parts` are runtime metadata and are never persisted. A placed showroom fixture stores only ordinary schema-v3 `Fixture` fields: catalogue `kind`, planar `size`, transform, and positive `spatial3D.height`. Existing standard fixtures may omit `spatial3D`; opening, selecting, saving unrelated edits, or reopening such a fixture must not materialize a height. Only an explicit fixture property Apply may persist the catalogue fallback height.
+
+## Route networks and guided routes
+
+A `RouteNetwork` is the durable owner of its authored `nodes` and `edges`. A node contains UUID `id`, name/tags, finite `position`, `floorId`, and `kind` (`junction`, `entrance`, or `showroom-stop`). An edge contains UUID `id`, name/tags, distinct `from`/`to` node IDs in the same network and floor, Euclidean `distance` in millimetres, positive `width`, finite `weight` of at least 1, and the boolean `enabled`, `bidirectional`, and `accessible` fields. Same-floor node positions within `1e-7` mm are duplicates. Stored edge distance must equal endpoint distance within `1e-7` mm.
+
+Directed arcs are derived from edges for topology validation and resolution rather than persisted as another collection. A unidirectional edge owns its `from -> to` arc; a bidirectional edge owns both directions. A second edge may not claim an already-owned directed arc, while two opposing unidirectional edges remain valid. Segment drafts, snap/intersection candidates, and insertion diagnostics are transient; successful authoring replaces one complete network record.
+
+A `GuidedRoute` contains UUID `id`, name/tags, one `routeNetworkId`, and only ordered `stopNodeIds`. It requires at least two stops from that network and one floor; adjacent IDs differ, while later repetition is allowed for loop tours. Resolved node IDs, edge IDs, total distance, turn points, `NO_ROUTE` diagnostics, previews, and stop drafts are not stored. Pure `route-engine` recomputes them from the current network and stop list.
+
+## Atomic history and recovery
+
+M2.3 adds no native invoke or storage migration. Content, media, route-network, and guided-route mutations use the existing allowlisted `snapshot.records.patch`. Exact `before`, normalized index, `after`, and reversed inverse changes are journaled with the transaction metadata; candidate final snapshots are parsed as schema v3 before publication. Apply, undo, redo, checkpoint/reopen, and confirmed dirty recovery reuse the same typed collection parsers and replay validation. A failed multi-record transaction, route insertion, route resolution, or recovery candidate never publishes a partial content/route state.
 
 ## SQLite storage migration 1
 

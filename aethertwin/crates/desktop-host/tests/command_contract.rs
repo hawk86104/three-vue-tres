@@ -1495,53 +1495,71 @@ fn m2_3_records_cross_the_existing_commit_checkpoint_close_and_open_commands() {
     let layer_id = value["project"]["floors"][0]["layers"][0]["id"].clone();
     let digest = "f".repeat(64);
     let records = [
-        ("entities", json!({
-            "id": "d1000000-0000-4000-8000-000000000001",
-            "name": "Native hotspot", "tags": ["m2.3"],
-            "floorId": floor_id, "layerId": layer_id,
-            "transform": { "translation": { "x": 1000, "y": 1000 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
-            "locked": false, "type": "poi", "kind": "product-hotspot"
-        })),
-        ("assets", json!({
-            "id": "d1000000-0000-4000-8000-000000000002",
-            "sha256": digest,
-            "relativePath": format!("assets/sha256/ff/{digest}.png"),
-            "mediaType": "image/png", "size": 45
-        })),
-        ("mediaAssets", json!({
-            "id": "d1000000-0000-4000-8000-000000000003",
-            "name": "Native image", "tags": ["local"],
-            "assetId": "d1000000-0000-4000-8000-000000000002", "kind": "image"
-        })),
-        ("productContents", json!({
-            "id": "d1000000-0000-4000-8000-000000000004",
-            "name": "Native product", "tags": ["showroom"],
-            "targetEntityId": "d1000000-0000-4000-8000-000000000001",
-            "description": "Typed M2.3 content",
-            "mediaAssetIds": ["d1000000-0000-4000-8000-000000000003"]
-        })),
-        ("routeNetworks", json!({
-            "id": "d1000000-0000-4000-8000-000000000008",
-            "name": "Native connected network", "tags": [],
-            "nodes": [
-                { "id": "d1000000-0000-4000-8000-000000000005", "name": "Entrance", "tags": [], "position": { "x": 0, "y": 0 }, "floorId": floor_id, "kind": "entrance" },
-                { "id": "d1000000-0000-4000-8000-000000000006", "name": "Junction", "tags": [], "position": { "x": 1000, "y": 0 }, "floorId": floor_id, "kind": "junction" },
-                { "id": "d1000000-0000-4000-8000-000000000007", "name": "Showroom stop", "tags": [], "position": { "x": 2000, "y": 0 }, "floorId": floor_id, "kind": "showroom-stop" }
-            ],
-            "edges": [
-                { "id": "d1000000-0000-4000-8000-000000000009", "name": "Entrance link", "tags": [], "from": "d1000000-0000-4000-8000-000000000005", "to": "d1000000-0000-4000-8000-000000000006", "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 },
-                { "id": "d1000000-0000-4000-8000-000000000010", "name": "Stop link", "tags": [], "from": "d1000000-0000-4000-8000-000000000006", "to": "d1000000-0000-4000-8000-000000000007", "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 }
-            ]
-        })),
-        ("guidedRoutes", json!({
-            "id": "d1000000-0000-4000-8000-000000000011",
-            "name": "Only native guide", "tags": [],
-            "routeNetworkId": "d1000000-0000-4000-8000-000000000008",
-            "stopNodeIds": [
-                "d1000000-0000-4000-8000-000000000005",
-                "d1000000-0000-4000-8000-000000000007"
-            ]
-        })),
+        (
+            "entities",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000001",
+                "name": "Native hotspot", "tags": ["m2.3"],
+                "floorId": floor_id, "layerId": layer_id,
+                "transform": { "translation": { "x": 1000, "y": 1000 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+                "locked": false, "type": "poi", "kind": "product-hotspot"
+            }),
+        ),
+        (
+            "assets",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000002",
+                "sha256": digest,
+                "relativePath": format!("assets/sha256/ff/{digest}.png"),
+                "mediaType": "image/png", "size": 45
+            }),
+        ),
+        (
+            "mediaAssets",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000003",
+                "name": "Native image", "tags": ["local"],
+                "assetId": "d1000000-0000-4000-8000-000000000002", "kind": "image"
+            }),
+        ),
+        (
+            "productContents",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000004",
+                "name": "Native product", "tags": ["showroom"],
+                "targetEntityId": "d1000000-0000-4000-8000-000000000001",
+                "description": "Typed M2.3 content",
+                "mediaAssetIds": ["d1000000-0000-4000-8000-000000000003"]
+            }),
+        ),
+        (
+            "routeNetworks",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000008",
+                "name": "Native connected network", "tags": [],
+                "nodes": [
+                    { "id": "d1000000-0000-4000-8000-000000000005", "name": "Entrance", "tags": [], "position": { "x": 0, "y": 0 }, "floorId": floor_id, "kind": "entrance" },
+                    { "id": "d1000000-0000-4000-8000-000000000006", "name": "Junction", "tags": [], "position": { "x": 1000, "y": 0 }, "floorId": floor_id, "kind": "junction" },
+                    { "id": "d1000000-0000-4000-8000-000000000007", "name": "Showroom stop", "tags": [], "position": { "x": 2000, "y": 0 }, "floorId": floor_id, "kind": "showroom-stop" }
+                ],
+                "edges": [
+                    { "id": "d1000000-0000-4000-8000-000000000009", "name": "Entrance link", "tags": [], "from": "d1000000-0000-4000-8000-000000000005", "to": "d1000000-0000-4000-8000-000000000006", "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 },
+                    { "id": "d1000000-0000-4000-8000-000000000010", "name": "Stop link", "tags": [], "from": "d1000000-0000-4000-8000-000000000006", "to": "d1000000-0000-4000-8000-000000000007", "distance": 1000, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 }
+                ]
+            }),
+        ),
+        (
+            "guidedRoutes",
+            json!({
+                "id": "d1000000-0000-4000-8000-000000000011",
+                "name": "Only native guide", "tags": [],
+                "routeNetworkId": "d1000000-0000-4000-8000-000000000008",
+                "stopNodeIds": [
+                    "d1000000-0000-4000-8000-000000000005",
+                    "d1000000-0000-4000-8000-000000000007"
+                ]
+            }),
+        ),
     ];
     for (collection, record) in &records {
         let target = if *collection == "assets" {
@@ -1589,8 +1607,20 @@ fn m2_3_records_cross_the_existing_commit_checkpoint_close_and_open_commands() {
     )
     .unwrap();
     assert_eq!(checkpoint["snapshot"]["schemaVersion"], 3);
-    assert_eq!(checkpoint["snapshot"]["project"]["productContents"].as_array().unwrap().len(), 1);
-    assert_eq!(checkpoint["snapshot"]["project"]["routeNetworks"][0]["nodes"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        checkpoint["snapshot"]["project"]["productContents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        checkpoint["snapshot"]["project"]["routeNetworks"][0]["nodes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
     invoke(
         &webview,
         "close_project",

@@ -93,9 +93,7 @@ fn patch(collection: &str, changes: Vec<Value>) -> (Value, Value) {
     )
 }
 
-fn showroom_replay_records(
-    snapshot: &ProjectSnapshot,
-) -> (Value, Vec<(&'static str, Value)>) {
+fn showroom_replay_records(snapshot: &ProjectSnapshot) -> (Value, Vec<(&'static str, Value)>) {
     let floor = serde_json::to_value(&snapshot.project.floors[0]).unwrap();
     let floor_id = floor["id"].clone();
     let layer_id = floor["layers"][0]["id"].clone();
@@ -207,7 +205,10 @@ fn with_showroom_replay_records(
 ) -> ProjectSnapshot {
     let mut value = serde_json::to_value(snapshot).unwrap();
     value["sequence"] = json!(sequence);
-    value["project"]["entities"].as_array_mut().unwrap().push(fixture.clone());
+    value["project"]["entities"]
+        .as_array_mut()
+        .unwrap()
+        .push(fixture.clone());
     for (collection, record) in records {
         let target = if *collection == "assets" {
             &mut value["assets"]
@@ -1151,12 +1152,14 @@ fn complete_m2_3_showroom_survives_checkpoint_reopen_and_dirty_recovery() {
         let changes = records
             .iter()
             .enumerate()
-            .map(|(index, record)| json!({
-                "id": record["id"],
-                "before": null,
-                "after": record,
-                "index": index
-            }))
+            .map(|(index, record)| {
+                json!({
+                    "id": record["id"],
+                    "before": null,
+                    "after": record,
+                    "index": index
+                })
+            })
             .collect::<Vec<_>>();
         let (payload, inverse_payload) = patch(collection, changes);
         journal.push(operation(
@@ -1170,7 +1173,10 @@ fn complete_m2_3_showroom_survives_checkpoint_reopen_and_dirty_recovery() {
         } else {
             &mut applied_value["project"][*collection]
         };
-        target.as_array_mut().unwrap().extend(records.iter().cloned());
+        target
+            .as_array_mut()
+            .unwrap()
+            .extend(records.iter().cloned());
     }
     applied_value["sequence"] = json!(6);
     let applied: ProjectSnapshot = serde_json::from_value(applied_value).unwrap();
@@ -1258,10 +1264,22 @@ fn complete_m2_3_showroom_survives_checkpoint_reopen_and_dirty_recovery() {
             .as_str()
             .is_some_and(|path| path.starts_with("assets/sha256/") && !path.contains('\\'))
     }));
-    assert!(recovered_assets.iter().any(|asset| asset["mediaType"] == "image/png"));
-    assert!(recovered_assets.iter().any(|asset| asset["mediaType"] == "video/mp4"));
-    let networks = recovered_value["project"]["routeNetworks"].as_array().unwrap();
-    let routes = recovered_value["project"]["guidedRoutes"].as_array().unwrap();
+    assert!(
+        recovered_assets
+            .iter()
+            .any(|asset| asset["mediaType"] == "image/png")
+    );
+    assert!(
+        recovered_assets
+            .iter()
+            .any(|asset| asset["mediaType"] == "video/mp4")
+    );
+    let networks = recovered_value["project"]["routeNetworks"]
+        .as_array()
+        .unwrap();
+    let routes = recovered_value["project"]["guidedRoutes"]
+        .as_array()
+        .unwrap();
     assert_eq!(networks.len(), 1);
     assert_eq!(routes.len(), 1);
     assert_eq!(

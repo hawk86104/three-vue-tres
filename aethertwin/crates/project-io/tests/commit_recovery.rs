@@ -1859,9 +1859,7 @@ fn snapshot_plan_reference(snapshot: &ProjectSnapshot, asset: &AssetRecord, id: 
     })
 }
 
-fn showroom_replay_records(
-    snapshot: &ProjectSnapshot,
-) -> (Value, Vec<(&'static str, Value)>) {
+fn showroom_replay_records(snapshot: &ProjectSnapshot) -> (Value, Vec<(&'static str, Value)>) {
     let floor = serde_json::to_value(&snapshot.project.floors[0]).unwrap();
     let floor_id = floor["id"].clone();
     let layer_id = floor["layers"][0]["id"].clone();
@@ -1973,7 +1971,10 @@ fn with_showroom_replay_records(
 ) -> ProjectSnapshot {
     let mut value = serde_json::to_value(snapshot).unwrap();
     value["sequence"] = json!(sequence);
-    value["project"]["entities"].as_array_mut().unwrap().push(fixture.clone());
+    value["project"]["entities"]
+        .as_array_mut()
+        .unwrap()
+        .push(fixture.clone());
     for (collection, record) in records {
         let target = if *collection == "assets" {
             &mut value["assets"]
@@ -2493,10 +2494,7 @@ fn content_and_route_record_batch_is_atomic_and_exactly_retryable() {
             transaction_id,
             "snapshot.records.patch",
             snapshot_record_payload(collection, changes.clone()),
-            snapshot_record_payload(
-                collection,
-                inverse_snapshot_record_changes(&changes),
-            ),
+            snapshot_record_payload(collection, inverse_snapshot_record_changes(&changes)),
             JournalAction::Apply,
         ));
     }
