@@ -17,6 +17,10 @@ const roleOptions = {
     accept: ".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml",
     filter: { name: "\u4ea7\u54c1\u56fe\u7247", extensions: ["png", "jpg", "jpeg", "svg"] },
   },
+  "material-texture": {
+    accept: ".png,.jpg,.svg",
+    filter: { name: "\u6750\u8d28\u7eb9\u7406", extensions: ["png", "jpg", "svg"] },
+  },
   "content-video": {
     accept: ".mp4,.webm,video/mp4,video/webm",
     filter: { name: "\u4ea7\u54c1\u89c6\u9891", extensions: ["mp4", "webm"] },

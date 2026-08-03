@@ -30,6 +30,22 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     bytes
 }
 
+fn jpeg(width: u16, height: u16) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 17, 8];
+    bytes.extend_from_slice(&height.to_be_bytes());
+    bytes.extend_from_slice(&width.to_be_bytes());
+    bytes.extend_from_slice(&[3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 0xff, 0xd9]);
+    bytes
+}
+
+fn mp4() -> Vec<u8> {
+    let mut bytes = 24_u32.to_be_bytes().to_vec();
+    bytes.extend_from_slice(b"ftypisom");
+    bytes.extend_from_slice(&0_u32.to_be_bytes());
+    bytes.extend_from_slice(b"isomiso2");
+    bytes
+}
+
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -910,4 +926,65 @@ fn validates_request_role_size_and_error_redaction_without_path_or_os_text() {
     )
     .unwrap_err();
     assert_eq!(error.code(), "ASSET_TOO_LARGE");
+}
+
+#[test]
+fn material_texture_accepts_safe_images_and_rejects_video_unsafe_svg_and_remote_urls() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("material-textures.twinproj");
+    fs::create_dir(&root).unwrap();
+    let observer = RecordingObserver::default();
+
+    for (name, bytes, expected_media_type) in [
+        ("texture.png", png(2, 3), "image/png"),
+        ("texture.jpg", jpeg(4, 5), "image/jpeg"),
+        (
+            "texture.svg",
+            br#"<svg width="6" height="7"><rect width="1" height="1"/></svg>"#.to_vec(),
+            "image/svg+xml",
+        ),
+    ] {
+        let source = temp.path().join(name);
+        fs::write(&source, bytes).unwrap();
+        let result = import_project_asset(
+            request(&root, &source, AssetImportRole::MaterialTexture),
+            &observer,
+        )
+        .unwrap();
+        assert_eq!(result.asset.media_type, expected_media_type);
+        assert!(matches!(result.facts, AssetMediaFacts::Image { .. }));
+    }
+
+    let video = temp.path().join("texture.mp4");
+    fs::write(&video, mp4()).unwrap();
+    let error = import_project_asset(
+        request(&root, &video, AssetImportRole::MaterialTexture),
+        &observer,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "ASSET_ROLE_MEDIA_MISMATCH");
+
+    let unsafe_svg = temp.path().join("unsafe.svg");
+    fs::write(
+        &unsafe_svg,
+        br#"<svg width="1" height="1"><image href="https://example.test/x.png"/></svg>"#,
+    )
+    .unwrap();
+    let error = import_project_asset(
+        request(&root, &unsafe_svg, AssetImportRole::MaterialTexture),
+        &observer,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "UNSAFE_SVG");
+
+    let error = import_project_asset(
+        request(
+            &root,
+            Path::new("https://example.test/texture.png"),
+            AssetImportRole::MaterialTexture,
+        ),
+        &observer,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "INVALID_ASSET_IMPORT_REQUEST");
 }

@@ -722,7 +722,7 @@ fn asset_import_invoke_dtos_are_exact_and_native_errors_redact_source_details() 
     let valid_import = json!({
         "sessionId": opened.session_id,
         "operationId": operation_id,
-        "role": "plan-reference",
+        "role": "material-texture",
         "sourcePath": source_path
     });
 
@@ -734,6 +734,8 @@ fn asset_import_invoke_dtos_are_exact_and_native_errors_redact_source_details() 
     invalid_role["role"] = json!("visitor");
     let mut relative_path = valid_import.clone();
     relative_path["sourcePath"] = json!("private/source.png");
+    let mut remote_url = valid_import.clone();
+    remote_url["sourcePath"] = json!("https://example.test/texture.png");
     let mut trimmed_path = valid_import.clone();
     trimmed_path["sourcePath"] = json!(format!(" {} ", source_path));
     let mut missing_path = valid_import.clone();
@@ -748,6 +750,7 @@ fn asset_import_invoke_dtos_are_exact_and_native_errors_redact_source_details() 
         snake_case_import,
         invalid_role,
         relative_path,
+        remote_url,
         trimmed_path,
         missing_path,
         noncanonical_operation,

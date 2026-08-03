@@ -89,6 +89,35 @@ describe("asset media policy", () => {
     })).toThrow(AssetPolicyError);
   });
 
+  it("accepts PNG, JPEG, and safe SVG media for a material-texture role but rejects video", () => {
+    for (const media of [
+      { displayName: "texture.png", signature: "image/png", byteLength: 1, facts: { kind: "image", width: 1, height: 1 } },
+      { displayName: "texture.jpg", signature: "image/jpeg", byteLength: 1, facts: { kind: "image", width: 1, height: 1 } },
+      { displayName: "texture.svg", signature: "image/svg+xml", byteLength: 1, facts: { kind: "image", width: 1, height: 1 } },
+    ] as const) {
+      expect(() => assertAssetImportRequest({
+        operationId: uuid,
+        role: "material-texture",
+        source: { kind: "native-path", path: `C:\\picked\\${media.displayName}`, displayName: media.displayName },
+        media,
+      })).not.toThrow();
+    }
+    expect(() => assertAssetImportRequest({
+      operationId: uuid,
+      role: "material-texture",
+      source: { kind: "native-path", path: "C:\\picked\\texture.webm", displayName: "texture.webm" },
+      media: { displayName: "texture.webm", signature: "video/webm", byteLength: 1, facts: { kind: "video" } },
+    })).toThrow(AssetPolicyError);
+  });
+
+  it("rejects remote URLs masquerading as native asset paths", () => {
+    expect(() => assertAssetImportRequest({
+      operationId: uuid,
+      role: "content-image",
+      source: { kind: "native-path", path: "https://example.test/texture.png", displayName: "texture.png" },
+    })).toThrow(AssetPolicyError);
+  });
+
   it("rejects an unknown runtime role before it can use image policy", () => {
     const untypedRequest = {
       operationId: uuid,

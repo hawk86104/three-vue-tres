@@ -156,7 +156,9 @@ pub(crate) fn validate_role(
     media_type: AssetMediaType,
 ) -> Result<(), AssetIoError> {
     let allowed = match role {
-        AssetImportRole::PlanReference | AssetImportRole::ContentImage => media_type.is_image(),
+        AssetImportRole::PlanReference
+        | AssetImportRole::ContentImage
+        | AssetImportRole::MaterialTexture => media_type.is_image(),
         AssetImportRole::ContentVideo => !media_type.is_image(),
     };
     if allowed {

@@ -1,6 +1,6 @@
 import type { AssetMediaType, AssetRecord, PlanReference } from "@aethertwin/core-model";
 
-export type AssetImportRole = "plan-reference" | "content-image" | "content-video";
+export type AssetImportRole = "plan-reference" | "content-image" | "content-video" | "material-texture";
 
 export type AssetImportSource =
   | { readonly kind: "native-path"; readonly path: string; readonly displayName: string }

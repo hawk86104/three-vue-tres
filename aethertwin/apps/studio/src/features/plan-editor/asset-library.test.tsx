@@ -615,6 +615,10 @@ describe('M2.3 Task 11 product-media picker roles', () => {
       name: '产品图片',
       extensions: ['png', 'jpg', 'jpeg', 'svg'],
     }],
+    ['material-texture', {
+      name: '\u6750\u8d28\u7eb9\u7406',
+      extensions: ['png', 'jpg', 'svg'],
+    }],
     ['content-video', {
       name: '产品视频',
       extensions: ['mp4', 'webm'],
@@ -639,6 +643,10 @@ describe('M2.3 Task 11 product-media picker roles', () => {
     [
       'content-image',
       '.png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml',
+    ],
+    [
+      'material-texture',
+      '.png,.jpg,.svg',
     ],
     [
       'content-video',

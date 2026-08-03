@@ -1184,6 +1184,15 @@ describe("TauriProjectBackend", () => {
       ),
       importRequest(),
     ],
+    [
+      "material texture SVG",
+      mediaImportResult(
+        "image/svg+xml",
+        42,
+        { kind: "image", width: 640, height: 480 },
+      ),
+      importRequest(IMPORT_OPERATION, "material-texture"),
+    ],
   ] as const)("accepts the native %s", async (_label, result, request) => {
     await expect(importNativeResult(result, request)).resolves.toEqual(result);
   });

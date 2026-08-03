@@ -26,7 +26,7 @@ const ASSET_IMPORT_STAGES = [
   "complete",
 ] as const;
 type AssetImportStage = (typeof ASSET_IMPORT_STAGES)[number];
-type AssetImportRole = "plan-reference" | "content-image" | "content-video";
+type AssetImportRole = "plan-reference" | "content-image" | "content-video" | "material-texture";
 type AssetImportSource =
   | {
       readonly kind: "native-path";
@@ -83,6 +83,7 @@ const IMPORT_ROLES = new Set<AssetImportRole>([
   "plan-reference",
   "content-image",
   "content-video",
+  "material-texture",
 ]);
 const VIDEO_MEDIA_TYPES = new Set<AssetMediaType>(["video/mp4", "video/webm"]);
 

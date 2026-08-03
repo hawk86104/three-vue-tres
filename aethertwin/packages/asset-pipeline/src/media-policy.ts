@@ -27,7 +27,7 @@ const EXTENSIONS: Readonly<Record<AssetMediaType, ClassifiedAssetMedia["canonica
 });
 
 const IMAGE_MEDIA: ReadonlySet<AssetMediaType> = new Set(["image/png", "image/jpeg", "image/svg+xml"]);
-const IMPORT_ROLES: ReadonlySet<AssetImportRole> = new Set(["plan-reference", "content-image", "content-video"]);
+const IMPORT_ROLES: ReadonlySet<AssetImportRole> = new Set(["plan-reference", "content-image", "content-video", "material-texture"]);
 const VIDEO_MEDIA: ReadonlySet<AssetMediaType> = new Set(["video/mp4", "video/webm"]);
 
 export class AssetPolicyError extends Error {
@@ -118,7 +118,10 @@ function assertSource(source: AssetImportSource): void {
   if (sanitizeAssetDisplayName(source.displayName) === "asset" && source.displayName.trim() !== "asset") {
     throw new AssetPolicyError("INVALID_ASSET_DISPLAY_NAME", "The import display name must include a basename.");
   }
-  if (source.kind === "native-path" && source.path.length === 0) {
+  if (source.kind === "native-path" && (
+    source.path.length === 0
+    || /^(?:https?|ftp|file):\/\//i.test(source.path)
+  )) {
     throw new AssetPolicyError("INVALID_ASSET_SOURCE", "The native import source must include a path.");
   }
 }

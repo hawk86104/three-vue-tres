@@ -24,6 +24,7 @@ pub enum AssetImportRole {
     PlanReference,
     ContentImage,
     ContentVideo,
+    MaterialTexture,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -191,12 +192,25 @@ pub fn import_project_asset(
 fn validate_request(request: &ImportRequest) -> Result<(), AssetIoError> {
     if request.project_root.as_os_str().is_empty()
         || request.source.as_os_str().is_empty()
+        || is_url_source(&request.source)
         || !matches!(request.operation_id.get_version_num(), 1..=5)
         || request.operation_id.get_variant() != uuid::Variant::RFC4122
     {
         return Err(AssetIoError::InvalidAssetImportRequest);
     }
     Ok(())
+}
+
+fn is_url_source(path: &PathBuf) -> bool {
+    path.to_str().is_some_and(|value| {
+        ["http://", "https://", "ftp://", "file://"]
+            .iter()
+            .any(|prefix| {
+                value
+                    .get(..prefix.len())
+                    .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
+            })
+    })
 }
 
 fn notify(

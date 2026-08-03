@@ -604,6 +604,7 @@ impl ImportProjectAssetDto {
             "plan-reference" => AssetImportRole::PlanReference,
             "content-image" => AssetImportRole::ContentImage,
             "content-video" => AssetImportRole::ContentVideo,
+            "material-texture" => AssetImportRole::MaterialTexture,
             _ => return Err(HostError::IpcInvalidRequest),
         };
         let source_path = strict_native_path(&self.source_path)?;
