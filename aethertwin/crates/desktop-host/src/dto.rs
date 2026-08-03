@@ -216,6 +216,9 @@ fn validate_payload_shapes(batch: &CommitBatch) -> Result<(), HostError> {
                 exact_entity_patch_pair(&operation.payload, &operation.inverse_payload)
             }
             "snapshot.records.patch" => true,
+            "scene.environment.patch" => {
+                exact_scene_environment_patch_pair(&operation.payload, &operation.inverse_payload)
+            }
             "building.structure.patch" => {
                 exact_building_patch_pair(&operation.payload, &operation.inverse_payload)
             }
@@ -235,6 +238,46 @@ fn exact_object(value: &Value, keys: &[&str]) -> bool {
     value.as_object().is_some_and(|object| {
         object.len() == keys.len() && keys.iter().all(|key| object.contains_key(*key))
     })
+}
+
+fn exact_scene_environment(value: &Value) -> bool {
+    exact_object(
+        value,
+        &[
+            "backgroundColor",
+            "ambient",
+            "key",
+            "shadowsEnabled",
+            "shadowSoftness",
+        ],
+    ) && value["backgroundColor"].as_str().is_some()
+        && exact_object(&value["ambient"], &["color", "intensity"])
+        && value["ambient"]["color"].as_str().is_some()
+        && value["ambient"]["intensity"].as_f64().is_some()
+        && exact_object(&value["key"], &["color", "intensity", "direction"])
+        && value["key"]["color"].as_str().is_some()
+        && value["key"]["intensity"].as_f64().is_some()
+        && value["key"]["direction"]
+            .as_array()
+            .is_some_and(|direction| {
+                direction.len() == 3
+                    && direction
+                        .iter()
+                        .all(|component| component.as_f64().is_some())
+            })
+        && value["shadowsEnabled"].as_bool().is_some()
+        && value["shadowSoftness"].as_f64().is_some()
+}
+
+fn exact_scene_environment_patch_pair(payload: &Value, inverse: &Value) -> bool {
+    exact_object(payload, &["before", "after"])
+        && exact_object(inverse, &["before", "after"])
+        && exact_scene_environment(&payload["before"])
+        && exact_scene_environment(&payload["after"])
+        && exact_scene_environment(&inverse["before"])
+        && exact_scene_environment(&inverse["after"])
+        && payload["before"] == inverse["after"]
+        && payload["after"] == inverse["before"]
 }
 
 fn plan_reason(value: &Value) -> bool {

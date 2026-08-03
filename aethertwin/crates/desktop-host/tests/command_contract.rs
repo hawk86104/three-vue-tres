@@ -1641,3 +1641,122 @@ fn m2_3_records_cross_the_existing_commit_checkpoint_close_and_open_commands() {
     )
     .unwrap();
 }
+
+#[test]
+fn scene_environment_patch_dto_is_allowlisted_and_strict() {
+    let root = tempdir().unwrap();
+    let app = with_invoke_handler(tauri::test::mock_builder().manage(AppService::default()))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .unwrap();
+    let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let opened = invoke(
+        &webview,
+        "create_project",
+        json!({
+            "payload": {
+                "parent": root.path(),
+                "name": "Scene Environment DTO",
+                "profile": "showroom"
+            }
+        }),
+    )
+    .unwrap();
+    let opened: desktop_host::OpenedProjectDto = serde_json::from_value(opened).unwrap();
+    let before_environment =
+        serde_json::to_value(&opened.snapshot.project.scene_environment).unwrap();
+    let mut changed = opened.snapshot.clone();
+    changed.project.scene_environment.background_color = "#203040".into();
+    changed.project.scene_environment.ambient.color = "#aabbcc".into();
+    changed.project.scene_environment.ambient.intensity = 4.0;
+    changed.project.scene_environment.key.color = "#ddeeff".into();
+    changed.project.scene_environment.key.intensity = 8.0;
+    changed.project.scene_environment.key.direction = [-100.0, 0.0, 100.0];
+    changed.project.scene_environment.shadows_enabled = false;
+    changed.project.scene_environment.shadow_softness = 1.0;
+    changed.sequence = 1;
+    let after_environment = serde_json::to_value(&changed.project.scene_environment).unwrap();
+    let payload = json!({
+        "before": before_environment,
+        "after": after_environment
+    });
+    let inverse = json!({
+        "before": after_environment,
+        "after": before_environment
+    });
+    let reversed = |value: &Value| {
+        json!({
+            "before": value["after"],
+            "after": value["before"]
+        })
+    };
+
+    let mut unknown_root = payload.clone();
+    unknown_root["extra"] = json!(true);
+    let mut missing_after = payload.clone();
+    missing_after.as_object_mut().unwrap().remove("after");
+    let mut unknown_nested = payload.clone();
+    unknown_nested["after"]["ambient"]["extra"] = json!(true);
+    let mut out_of_range = payload.clone();
+    out_of_range["after"]["key"]["intensity"] = json!(8.01);
+    let mut zero_direction = payload.clone();
+    zero_direction["after"]["key"]["direction"] = json!([0, 0, 0]);
+    let mut wrong_inverse = inverse.clone();
+    wrong_inverse["after"] = wrong_inverse["before"].clone();
+
+    for (candidate, candidate_inverse) in [
+        (unknown_root.clone(), reversed(&unknown_root)),
+        (missing_after, inverse.clone()),
+        (unknown_nested.clone(), reversed(&unknown_nested)),
+        (out_of_range.clone(), reversed(&out_of_range)),
+        (zero_direction.clone(), reversed(&zero_direction)),
+        (payload.clone(), wrong_inverse),
+    ] {
+        let invalid_batch = plan_batch(
+            &opened.snapshot,
+            &changed,
+            "scene.environment.patch",
+            candidate,
+            candidate_inverse,
+        );
+        assert_invalid_ipc(
+            &invoke(
+                &webview,
+                "commit_project",
+                json!({
+                    "payload": {
+                        "sessionId": opened.session_id.clone(),
+                        "batch": invalid_batch
+                    }
+                }),
+            )
+            .unwrap_err(),
+        );
+    }
+
+    let valid_batch = plan_batch(
+        &opened.snapshot,
+        &changed,
+        "scene.environment.patch",
+        payload,
+        inverse,
+    );
+    invoke(
+        &webview,
+        "commit_project",
+        json!({
+            "payload": {
+                "sessionId": opened.session_id.clone(),
+                "batch": valid_batch
+            }
+        }),
+    )
+    .unwrap();
+    invoke(
+        &webview,
+        "close_project",
+        json!({ "payload": { "sessionId": opened.session_id } }),
+    )
+    .unwrap();
+}

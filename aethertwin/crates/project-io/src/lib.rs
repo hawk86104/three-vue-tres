@@ -6,6 +6,7 @@ mod model;
 mod opening_geometry;
 mod paths;
 mod project;
+mod scene_environment_command;
 mod schema;
 
 pub use error::ProjectIoError;

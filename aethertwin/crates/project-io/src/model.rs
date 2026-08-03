@@ -1541,7 +1541,9 @@ fn validate_plan_bounds(reference: &PlanReference) -> Result<(), ProjectIoError>
     Ok(())
 }
 
-fn validate_scene_environment(environment: &SceneEnvironment) -> Result<(), ProjectIoError> {
+pub(crate) fn validate_scene_environment(
+    environment: &SceneEnvironment,
+) -> Result<(), ProjectIoError> {
     if !valid_color(&environment.background_color)
         || !valid_color(&environment.ambient.color)
         || !valid_color(&environment.key.color)

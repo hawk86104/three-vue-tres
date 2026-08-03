@@ -9,6 +9,10 @@ use crate::paths::{
     PROJECT_SUFFIX, RecoveryCopy, StagingWorkspace, canonical_parent, normalize_project_name,
     validate_project_extension, validate_project_structure,
 };
+use crate::scene_environment_command::{
+    apply_scene_environment_patch, same_scene_environment, scene_environment_has_exact_inverse,
+    scene_environment_patch,
+};
 use crate::schema::{
     checkpoint_wal, create_database, latest_snapshot, open_database, read_meta, snapshot_checksum,
     timestamp_now, upsert_meta,
@@ -426,7 +430,13 @@ impl ProjectSession {
     }
 
     fn commit_inner(&mut self, batch: CommitBatch) -> Result<(), ProjectIoError> {
-        if self.closed || batch.before != self.snapshot {
+        if self.closed
+            || batch.before != self.snapshot
+            || !same_scene_environment(
+                &batch.before.project.scene_environment,
+                &self.snapshot.project.scene_environment,
+            )
+        {
             return Err(ProjectIoError::DatabaseError);
         }
         validate_commit_batch(&batch)?;
@@ -632,7 +642,13 @@ fn validate_checkpoint_request(
 ) -> Result<(), ProjectIoError> {
     current.validate()?;
     requested.validate()?;
-    if current == requested && current.schema_version == CURRENT_SCHEMA_VERSION {
+    if current == requested
+        && same_scene_environment(
+            &current.project.scene_environment,
+            &requested.project.scene_environment,
+        )
+        && current.schema_version == CURRENT_SCHEMA_VERSION
+    {
         return Ok(());
     }
     if current.schema_version != 1
@@ -724,7 +740,12 @@ pub fn validate_commit_batch(batch: &CommitBatch) -> Result<(), ProjectIoError> 
         apply_operation_without_snapshot_validation(&mut replayed, operation)?;
     }
     validate_replayed_snapshot(&replayed)?;
-    if replayed != batch.after {
+    if replayed != batch.after
+        || !same_scene_environment(
+            &replayed.project.scene_environment,
+            &batch.after.project.scene_environment,
+        )
+    {
         return Err(ProjectIoError::DatabaseError);
     }
     Ok(())
@@ -1501,6 +1522,18 @@ fn apply_operation_without_snapshot_validation(
                     }
                 }
             }
+        }
+        "scene.environment.patch" => {
+            let payload = scene_environment_patch(&operation.payload)?;
+            let inverse = scene_environment_patch(&operation.inverse_payload)?;
+            if !scene_environment_has_exact_inverse(&payload, &inverse) {
+                return Err(ProjectIoError::DatabaseError);
+            }
+            let selected = match operation.action {
+                JournalAction::Undo => &inverse,
+                JournalAction::Apply | JournalAction::Redo => &payload,
+            };
+            apply_scene_environment_patch(&mut candidate, selected)?;
         }
         "plan.floor.patch" => {
             let payload = floor_patch(&operation.payload)?;
