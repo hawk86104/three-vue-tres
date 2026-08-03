@@ -17,6 +17,10 @@ export {
   type BuildingWallChange,
 } from "./building-structure-command";
 export {
+  patchSceneEnvironmentCommand,
+  type SceneEnvironmentPatch,
+} from "./scene-environment-command";
+export {
   patchSnapshotRecordsCommand,
   snapshotRecordCollections,
   type AnySnapshotRecordsPatch,

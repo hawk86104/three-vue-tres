@@ -36,6 +36,10 @@ import {
 import { renameProjectCommand, setProjectTagsCommand } from "./project-commands";
 import { patchFloorCommand, patchPlanEntitiesCommand } from "./plan-commands";
 import {
+  patchSceneEnvironmentCommand,
+  type SceneEnvironmentPatch,
+} from "./scene-environment-command";
+import {
   patchSnapshotRecordsDeferredValidationCommand,
   patchSnapshotRecordsCommand,
   type AnySnapshotRecordsPatch,
@@ -350,6 +354,14 @@ export class ProjectStore {
     return this.enqueueMutation(() =>
       this.mutate((bus) =>
         bus.execute(patchBuildingStructureCommand, ownedPatch)),
+    );
+  }
+
+  applySceneEnvironmentPatch(patch: SceneEnvironmentPatch): Promise<void> {
+    const ownedPatch = structuredClone(patch);
+    return this.enqueueMutation(() =>
+      this.mutate((bus) =>
+        bus.execute(patchSceneEnvironmentCommand, ownedPatch)),
     );
   }
 
