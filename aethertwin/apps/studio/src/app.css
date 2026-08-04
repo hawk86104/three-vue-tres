@@ -601,6 +601,13 @@ input {
   border-color: color-mix(in srgb, var(--aether-accent) 45%, var(--aether-border));
 }
 
+.studio-plan-toolbar__renderer-status {
+  min-width: 0;
+  max-width: 36ch;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .studio-plan-sidebar,
 .studio-asset-library {
   display: grid;

@@ -154,9 +154,11 @@ test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls"
   }
 });
 
-test("M2.3 exposes only implemented building, content, tour, and showroom-catalogue actions", () => {
-  const actionIds = [...showroomToolPolicy.matchAll(/action\("([^"]+)"/g)]
-    .map((match) => match[1]);
+test("M2.4 exposes exact showroom authoring and Preview actions", () => {
+  const actionIds = showroomToolPolicy
+    .split('action("')
+    .slice(1)
+    .map((fragment) => fragment.split('"')[0]);
   assert.deepEqual(actionIds, [
     "select",
     "pan",
@@ -176,23 +178,31 @@ test("M2.3 exposes only implemented building, content, tour, and showroom-catalo
     "route-edge",
     "edit-route-stops",
     "preview-guided-route",
+    "view-2d",
+    "view-3d",
+    "view-split",
+    "frame-selection",
+    "frame-route",
   ]);
-  assert.match(planToolbar, /id === "door" \|\| id === "window"/);
-  assert.match(planToolbar, /onClick=\{\(event\) => onRecognizeRooms\(event\.currentTarget\)\}/);
-  assert.match(fixtureCatalogue, /SHOWROOM_FIXTURE_CATALOGUE\.map/);
-  assert.match(fixtureCatalogue, /data-fixture-kind=\{descriptor\.kind\}/);
-  assert.match(fixtureCatalogue, /onClick=\{\(\) => onSelect\(descriptor\.kind\)\}/);
-  assert.doesNotMatch(showroomCatalogue, /fixture\("generic"/);
-  assert.match(roomRecognitionPanel, /onClick=\{onConfirmOne\}/);
-  assert.match(roomRecognitionPanel, /onClick=\{onConfirmAll\}/);
-  assert.match(roomRecognitionPanel, /onClick=\{onReplaceSelectedRoom\}/);
+  assert.equal(planToolbar.includes('id === "door" || id === "window"'), true);
+  assert.equal(
+    planToolbar.includes("onClick={(event) => onRecognizeRooms(event.currentTarget)}"),
+    true,
+  );
+  assert.equal(fixtureCatalogue.includes("SHOWROOM_FIXTURE_CATALOGUE.map"), true);
+  assert.equal(fixtureCatalogue.includes("data-fixture-kind={descriptor.kind}"), true);
+  assert.equal(fixtureCatalogue.includes("onClick={() => onSelect(descriptor.kind)}"), true);
+  assert.equal(showroomCatalogue.includes('fixture("generic"'), false);
+  assert.equal(roomRecognitionPanel.includes("onClick={onConfirmOne}"), true);
+  assert.equal(roomRecognitionPanel.includes("onClick={onConfirmAll}"), true);
+  assert.equal(roomRecognitionPanel.includes("onClick={onReplaceSelectedRoom}"), true);
 
-  const m23ActionSurface = [
+  const m24ActionSurface = [
     planToolbar,
     planEditor,
     fixtureCatalogue,
     roomRecognitionPanel,
-  ].join("\n");
+  ].join(String.fromCharCode(10));
   for (const forbiddenHandler of [
     "onOpen3D",
     "onEditMaterials",
@@ -200,32 +210,60 @@ test("M2.3 exposes only implemented building, content, tour, and showroom-catalo
     "onExport",
     "onPublish",
   ]) {
-    assert.doesNotMatch(
-      m23ActionSurface,
-      new RegExp(`\\b${forbiddenHandler}\\b`),
-      `forbidden post-M2.3 action: ${forbiddenHandler}`,
+    assert.equal(
+      m24ActionSurface.includes(forbiddenHandler),
+      false,
+      "forbidden post-M2.4 action: " + forbiddenHandler,
     );
   }
 });
 
-test("M2.3 toolbar renders exactly the three contextual content and route actions", () => {
-  const contextualDefinitions = [
-    ...planToolbar.matchAll(
-      /\{ id: "([^"]+)", label:/g,
-    ),
-  ].map((match) => match[1]);
+test("M2.4 toolbar wires Preview only for showroom and keeps Export absent", () => {
+  const contextualDefinitions = planToolbar
+    .split('{ id: "')
+    .slice(1)
+    .map((fragment) => fragment.split('"')[0]);
   assert.deepEqual(contextualDefinitions, [
     "attach-product-media",
     "edit-route-stops",
     "preview-guided-route",
   ]);
-  assert.match(
-    planToolbar,
-    /const onClick = id === "attach-product-media"\s*\?\s*onAttachProductMedia\s*:\s*id === "edit-route-stops"\s*\?\s*onEditRouteStops\s*:\s*id === "preview-guided-route"\s*\?\s*onPreviewGuidedRoute\s*:\s*undefined;/,
+  for (const actionId of [
+    "attach-product-media",
+    "edit-route-stops",
+    "preview-guided-route",
+    "view-2d",
+    "view-3d",
+    "view-split",
+    "frame-selection",
+    "frame-route",
+  ]) {
+    assert.equal(
+      planToolbar.includes('case "' + actionId + '"'),
+      true,
+      actionId + " must have an explicit action handler",
+    );
+  }
+  const marketStart = planToolbar.indexOf("  market: [");
+  const showroomStart = planToolbar.indexOf("  showroom: [");
+  assert.notEqual(marketStart, -1, "market tool groups must exist");
+  assert.notEqual(showroomStart, -1, "showroom tool groups must exist");
+  const marketGroups = planToolbar.slice(marketStart, showroomStart);
+  assert.equal(marketGroups.includes("showroomPreviewActions"), false);
+  assert.equal(marketGroups.includes("view-3d"), false);
+  assert.equal(marketGroups.includes("frame-selection"), false);
+  assert.equal(planToolbar.includes("actions: showroomPreviewActions"), true);
+  assert.equal(planToolbar.includes("data-action={id}"), true);
+  assert.equal(planToolbar.includes("aria-describedby="), true);
+  assert.equal(planEditor.includes("onEditRouteStops: openGuidedRoutePanel"), true);
+  assert.equal(planEditor.includes("onPreviewGuidedRoute: openGuidedRoutePanel"), true);
+  assert.equal(planEditor.includes("onViewModeChange="), true);
+  assert.equal(planEditor.includes('requestSceneFrame("selection")'), true);
+  assert.equal(planEditor.includes('requestSceneFrame("route")'), true);
+  assert.equal(
+    planEditor.includes("rendererError={sessionState.rendererError}"),
+    true,
   );
-  assert.match(planToolbar, /data-action=\{id\}/);
-  assert.match(planEditor, /onEditRouteStops: openGuidedRoutePanel/);
-  assert.match(planEditor, /onPreviewGuidedRoute: openGuidedRoutePanel/);
   for (const forbiddenAction of [
     "open-3d",
     "edit-materials",
@@ -233,10 +271,10 @@ test("M2.3 toolbar renders exactly the three contextual content and route action
     "export",
     "publish",
   ]) {
-    assert.doesNotMatch(
-      planToolbar,
-      new RegExp(`data-action=[^\\n]*${forbiddenAction}`),
-      `forbidden post-M2.3 toolbar action: ${forbiddenAction}`,
+    assert.equal(
+      showroomToolPolicy.includes('action("' + forbiddenAction + '"'),
+      false,
+      "forbidden post-M2.4 toolbar action: " + forbiddenAction,
     );
   }
 });

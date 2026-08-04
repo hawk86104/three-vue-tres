@@ -616,4 +616,138 @@ describe("plan editor session", () => {
       stopDraft: [],
     });
   });
+  it("owns and restores per-floor 3D cameras while invalidating old renderer scopes", () => {
+    const { floorA, floorB } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "scene-session-a",
+    });
+    const cameraA = {
+      position: { x: 1, y: 2, z: 3 },
+      target: { x: 4, y: 5, z: 6 },
+      fieldOfView: 45,
+    };
+    const scopeA = store.getState().beginSceneRenderer();
+
+    expect(store.getState().rendererStatus).toBe("initializing");
+    expect(store.getState().setSceneCamera(scopeA, cameraA)).toBe(true);
+    cameraA.position.x = 999;
+    expect(store.getState().sceneCamera).toEqual({
+      position: { x: 1, y: 2, z: 3 },
+      target: { x: 4, y: 5, z: 6 },
+      fieldOfView: 45,
+    });
+    expect(Object.isFrozen(store.getState().sceneCamera)).toBe(true);
+    expect(Object.isFrozen(store.getState().sceneCamera?.position)).toBe(true);
+
+    expect(store.getState().setActiveFloor(floorB.id)).toBe(true);
+    expect(store.getState()).toMatchObject({
+      activeFloorId: floorB.id,
+      sceneCamera: null,
+      rendererStatus: "idle",
+      rendererError: null,
+    });
+    expect(store.getState().setSceneCamera(scopeA, {
+      position: { x: 10, y: 20, z: 30 },
+      target: { x: 0, y: 0, z: 0 },
+      fieldOfView: 60,
+    })).toBe(false);
+
+    const scopeB = store.getState().beginSceneRenderer();
+    expect(store.getState().setSceneCamera(scopeB, {
+      position: { x: -1, y: -2, z: -3 },
+      target: { x: 0, y: 0, z: 0 },
+      fieldOfView: 50,
+    })).toBe(true);
+    expect(store.getState().setActiveFloor(floorA.id)).toBe(true);
+    expect(store.getState().sceneCamera).toEqual({
+      position: { x: 1, y: 2, z: 3 },
+      target: { x: 4, y: 5, z: 6 },
+      fieldOfView: 45,
+    });
+    expect(store.getState().setSceneRendererStatus(scopeB, "ready", null)).toBe(false);
+  });
+
+  it("guards view modes, consumes scoped frame requests once, and resets sessions", () => {
+    const { floorA } = createPlanEditorTestHarness();
+    const store = createPlanEditorStore({
+      activeFloorId: floorA.id,
+      sessionId: "scene-session-a",
+    });
+
+    expect(store.getState()).toMatchObject({
+      viewMode: "2d",
+      sceneCamera: null,
+      rendererStatus: "idle",
+      rendererError: null,
+      sceneFrameRequest: null,
+    });
+    expect(store.getState().setViewMode("3d")).toBe(true);
+    expect(store.getState().viewMode).toBe("3d");
+
+    const firstScope = store.getState().beginSceneRenderer();
+    expect(store.getState().requestSceneFrame("selection")).toBe(true);
+    const selectionRequest = store.getState().sceneFrameRequest;
+    expect(selectionRequest).toMatchObject({
+      id: 1,
+      target: "selection",
+      sessionId: firstScope.sessionId,
+      floorId: firstScope.floorId,
+      generation: firstScope.generation,
+    });
+    expect(Object.isFrozen(selectionRequest)).toBe(true);
+    expect(
+      store.getState().consumeSceneFrameRequest(firstScope, selectionRequest!.id),
+    ).toBe("selection");
+    expect(store.getState().sceneFrameRequest).toBeNull();
+    expect(
+      store.getState().consumeSceneFrameRequest(firstScope, selectionRequest!.id),
+    ).toBeNull();
+
+    expect(store.getState().requestSceneFrame("route")).toBe(true);
+    const routeRequest = store.getState().sceneFrameRequest;
+    expect(routeRequest).toMatchObject({ id: 2, target: "route" });
+    const currentScope = store.getState().beginSceneRenderer();
+    expect(store.getState().sceneFrameRequest).toBeNull();
+    expect(
+      store.getState().consumeSceneFrameRequest(firstScope, routeRequest!.id),
+    ).toBeNull();
+    expect(store.getState().setSceneRendererStatus(firstScope, "ready", null)).toBe(false);
+
+    expect(store.getState().setSceneRendererStatus(
+      currentScope,
+      "failed",
+      new Error("WebGL unavailable"),
+    )).toBe(true);
+    expect(store.getState()).toMatchObject({
+      viewMode: "2d",
+      rendererStatus: "failed",
+      rendererError: "WebGL unavailable",
+    });
+    expect(store.getState().setViewMode("3d")).toBe(false);
+    expect(store.getState().setViewMode("split")).toBe(false);
+    expect(store.getState().setViewMode("2d")).toBe(true);
+
+    expect(store.getState().retireSceneRenderer(currentScope)).toBe(true);
+    expect(store.getState().sceneFrameRequest).toBeNull();
+    expect(store.getState().setSceneRendererStatus(currentScope, "ready", null)).toBe(false);
+    expect(store.getState()).toMatchObject({
+      rendererStatus: "destroyed",
+      rendererError: null,
+    });
+
+    const replacedScope = store.getState().beginSceneRenderer();
+    store.getState().requestSceneFrame("scene");
+    store.getState().setViewMode("split");
+    store.getState().replaceSession("scene-session-b", floorA.id);
+    expect(store.getState()).toMatchObject({
+      sessionId: "scene-session-b",
+      viewMode: "2d",
+      sceneCamera: null,
+      rendererStatus: "idle",
+      rendererError: null,
+      sceneFrameRequest: null,
+    });
+    expect(store.getState().setSceneRendererStatus(replacedScope, "ready", null)).toBe(false);
+  });
 });

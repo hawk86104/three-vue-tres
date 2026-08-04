@@ -4,14 +4,16 @@ import {
   SHOWROOM_TOOL_GROUPS,
   type ShowroomToolActionId,
 } from "@aethertwin/mode-showroom";
-import type { PlanTool } from "./editor-session";
+import type { SceneRendererStatus } from "@aethertwin/render-scene-3d";
+import type { PlanTool, SceneViewMode } from "./editor-session";
+import { useEffect, useId, useRef } from "react";
 
 interface ToolDefinition {
   readonly tool: PlanTool;
   readonly label: string;
 }
 
-interface DisabledToolAction {
+interface ToolActionDefinition {
   readonly id: ShowroomToolActionId;
   readonly label: string;
 }
@@ -19,7 +21,7 @@ interface DisabledToolAction {
 interface ToolGroup {
   readonly label: string;
   readonly tools: readonly ToolDefinition[];
-  readonly disabledActions?: readonly DisabledToolAction[];
+  readonly actions?: readonly ToolActionDefinition[];
 }
 
 const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
@@ -76,13 +78,16 @@ const showroomTourTools: readonly ToolDefinition[] = Object.freeze(
     )) ?? [],
 );
 
-const showroomContentActions: readonly DisabledToolAction[] = Object.freeze([
+const showroomContentActions: readonly ToolActionDefinition[] = Object.freeze([
   { id: "attach-product-media", label: "\u6dfb\u52a0\u5a92\u4f53" },
 ]);
-const showroomTourActions: readonly DisabledToolAction[] = Object.freeze([
+const showroomTourActions: readonly ToolActionDefinition[] = Object.freeze([
   { id: "edit-route-stops", label: "\u7f16\u8f91\u505c\u9760\u70b9" },
   { id: "preview-guided-route", label: "\u9884\u89c8\u8def\u7ebf" },
 ]);
+const showroomPreviewActions: readonly ToolActionDefinition[] =
+  SHOWROOM_TOOL_GROUPS.find(({ id }) => id === "preview")?.actions
+  ?? Object.freeze([]);
 const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
   market: [
     { label: "选择", tools: [toolById.select, toolById.pan] },
@@ -115,12 +120,17 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
     {
       label: "内容",
       tools: showroomContentTools,
-      disabledActions: showroomContentActions,
+      actions: showroomContentActions,
     },
     {
       label: "导览",
       tools: showroomTourTools,
-      disabledActions: showroomTourActions,
+      actions: showroomTourActions,
+    },
+    {
+      label: "预览",
+      tools: [],
+      actions: showroomPreviewActions,
     },
   ],
 };
@@ -128,6 +138,12 @@ const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
 export interface PlanToolbarProps {
   readonly profile: ProjectProfile;
   readonly activeTool: PlanTool;
+  readonly viewMode: SceneViewMode;
+  readonly rendererStatus: SceneRendererStatus;
+  readonly rendererError: string | null;
+  readonly onViewModeChange: (mode: SceneViewMode, initiator: HTMLButtonElement) => void;
+  readonly onFrameSelection: (initiator: HTMLButtonElement) => void;
+  readonly onFrameRoute: (initiator: HTMLButtonElement) => void;
   readonly onToolChange: (tool: PlanTool, initiator: HTMLButtonElement) => void;
   readonly onImportFloorPlan?: (initiator: HTMLButtonElement) => void;
   readonly importFloorPlanDisabled?: boolean;
@@ -141,6 +157,12 @@ export interface PlanToolbarProps {
 export function PlanToolbar({
   profile,
   activeTool,
+  viewMode,
+  rendererStatus,
+  rendererError,
+  onViewModeChange,
+  onFrameSelection,
+  onFrameRoute,
   onToolChange,
   onImportFloorPlan,
   importFloorPlanDisabled = false,
@@ -150,6 +172,32 @@ export function PlanToolbar({
   onEditRouteStops,
   onPreviewGuidedRoute,
 }: PlanToolbarProps) {
+  const rendererUnavailable =
+    rendererStatus === "failed" || rendererStatus === "disabled";
+  const showRendererIssue = profile === "showroom" && rendererUnavailable;
+  const rendererStatusId = useId();
+  const twoDButtonRef = useRef<HTMLButtonElement>(null);
+  const previousRendererUnavailable = useRef(false);
+
+  useEffect(() => {
+    const newlyUnavailable =
+      showRendererIssue && !previousRendererUnavailable.current;
+    previousRendererUnavailable.current = showRendererIssue;
+    if (!newlyUnavailable) return;
+    const activeElement = document.activeElement;
+    const action = activeElement instanceof HTMLElement
+      ? activeElement.dataset.action
+      : undefined;
+    if (action !== "view-3d" && action !== "view-split") return;
+    queueMicrotask(() => {
+      if (document.activeElement !== activeElement) return;
+      if (twoDButtonRef.current?.isConnected) twoDButtonRef.current.focus();
+    });
+  }, [showRendererIssue]);
+
+  const rendererIssueText = rendererStatus === "disabled"
+    ? "3D 预览已停用"
+    : "3D 预览不可用";
   return (
     <div className="studio-plan-toolbar" data-profile={profile}>
       {profileGroups[profile].map((group) => (
@@ -183,21 +231,58 @@ export function PlanToolbar({
                 </Button>
               );
             })}
-            {group.disabledActions?.map(({ id, label }) => {
-              const onClick = id === "attach-product-media"
-                ? onAttachProductMedia
-                : id === "edit-route-stops"
-                  ? onEditRouteStops
-                  : id === "preview-guided-route"
-                    ? onPreviewGuidedRoute
-                    : undefined;
+            {group.actions?.map(({ id, label }) => {
+              let mode: SceneViewMode | null = null;
+              let onClick: ((initiator: HTMLButtonElement) => void) | undefined;
+              switch (id) {
+                case "attach-product-media":
+                  onClick = onAttachProductMedia;
+                  break;
+                case "edit-route-stops":
+                  onClick = onEditRouteStops;
+                  break;
+                case "preview-guided-route":
+                  onClick = onPreviewGuidedRoute;
+                  break;
+                case "view-2d":
+                  mode = "2d";
+                  onClick = (initiator) => onViewModeChange("2d", initiator);
+                  break;
+                case "view-3d":
+                  mode = "3d";
+                  onClick = (initiator) => onViewModeChange("3d", initiator);
+                  break;
+                case "view-split":
+                  mode = "split";
+                  onClick = (initiator) => onViewModeChange("split", initiator);
+                  break;
+                case "frame-selection":
+                  onClick = onFrameSelection;
+                  break;
+                case "frame-route":
+                  onClick = onFrameRoute;
+                  break;
+              }
+              const active = mode !== null && mode === viewMode;
+              const unavailableViewAction =
+                id === "view-3d" || id === "view-split";
+              const disabled = onClick === undefined
+                || (rendererUnavailable && unavailableViewAction);
               return (
                 <Button
+                  ref={id === "view-2d" ? twoDButtonRef : undefined}
                   key={id}
-                  variant="secondary"
+                  variant={active ? "primary" : "secondary"}
                   className="studio-plan-toolbar__action"
+                  aria-pressed={mode === null ? undefined : active}
+                  aria-describedby={
+                    rendererUnavailable && unavailableViewAction
+                      ? rendererStatusId
+                      : undefined
+                  }
+                  data-active={active ? "true" : undefined}
                   data-action={id}
-                  disabled={onClick === undefined}
+                  disabled={disabled}
                   onClick={onClick === undefined
                     ? undefined
                     : (event) => onClick(event.currentTarget)}
@@ -241,6 +326,18 @@ export function PlanToolbar({
           </div>
         </div>
       ))}
+      {!showRendererIssue ? null : (
+        <div
+          id={rendererStatusId}
+          className="studio-plan-toolbar__renderer-status"
+          role="status"
+          aria-label="3D 预览状态"
+          aria-live="polite"
+        >
+          <strong>{rendererIssueText}</strong>
+          <span>：{rendererError ?? "当前环境无法启动 WebGL。"}</span>
+        </div>
+      )}
     </div>
   );
 }

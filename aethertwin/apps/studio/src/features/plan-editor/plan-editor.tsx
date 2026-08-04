@@ -147,14 +147,78 @@ function useProjectState(store: ProjectStore): ProjectStoreState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+type PlanEditorSessionView = Pick<
+  PlanEditorState,
+  | "activeFloorId"
+  | "activeTool"
+  | "sidePanel"
+  | "selectedIds"
+  | "draft"
+  | "calibrationDraft"
+  | "openingPreview"
+  | "roomRecognition"
+  | "routeAuthoring"
+  | "selectedFixtureKind"
+  | "viewMode"
+  | "rendererStatus"
+  | "rendererError"
+>;
+
+function selectPlanEditorSessionView(
+  state: PlanEditorState,
+): PlanEditorSessionView {
+  return {
+    activeFloorId: state.activeFloorId,
+    activeTool: state.activeTool,
+    sidePanel: state.sidePanel,
+    selectedIds: state.selectedIds,
+    draft: state.draft,
+    calibrationDraft: state.calibrationDraft,
+    openingPreview: state.openingPreview,
+    roomRecognition: state.roomRecognition,
+    routeAuthoring: state.routeAuthoring,
+    selectedFixtureKind: state.selectedFixtureKind,
+    viewMode: state.viewMode,
+    rendererStatus: state.rendererStatus,
+    rendererError: state.rendererError,
+  };
+}
+
+function samePlanEditorSessionView(
+  left: PlanEditorSessionView,
+  right: PlanEditorSessionView,
+): boolean {
+  return left.activeFloorId === right.activeFloorId
+    && left.activeTool === right.activeTool
+    && left.sidePanel === right.sidePanel
+    && left.selectedIds === right.selectedIds
+    && left.draft === right.draft
+    && left.calibrationDraft === right.calibrationDraft
+    && left.openingPreview === right.openingPreview
+    && left.roomRecognition === right.roomRecognition
+    && left.routeAuthoring === right.routeAuthoring
+    && left.selectedFixtureKind === right.selectedFixtureKind
+    && left.viewMode === right.viewMode
+    && left.rendererStatus === right.rendererStatus
+    && left.rendererError === right.rendererError;
+}
+
 function useSessionState(
   store: StoreApi<PlanEditorState>,
-): PlanEditorState {
+): PlanEditorSessionView {
+  const cached = useRef<PlanEditorSessionView | null>(null);
   const subscribe = useCallback(
     (listener: () => void) => store.subscribe(listener),
     [store],
   );
-  const getSnapshot = useCallback(() => store.getState(), [store]);
+  const getSnapshot = useCallback(() => {
+    const next = selectPlanEditorSessionView(store.getState());
+    if (cached.current !== null && samePlanEditorSessionView(cached.current, next)) {
+      return cached.current;
+    }
+    cached.current = next;
+    return next;
+  }, [store]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
@@ -1326,6 +1390,18 @@ export function PlanEditor({
         <PlanToolbar
           profile={snapshot.project.profile}
           activeTool={sessionState.activeTool}
+          viewMode={sessionState.viewMode}
+          rendererStatus={sessionState.rendererStatus}
+          rendererError={sessionState.rendererError}
+          onViewModeChange={(mode) => {
+            sessionStore.getState().setViewMode(mode);
+          }}
+          onFrameSelection={() => {
+            sessionStore.getState().requestSceneFrame("selection");
+          }}
+          onFrameRoute={() => {
+            sessionStore.getState().requestSceneFrame("route");
+          }}
           onToolChange={selectTool}
           onRecognizeRooms={() => void runRoomRecognition()}
           {...(selectedCalibrationReference === null ? {} : {

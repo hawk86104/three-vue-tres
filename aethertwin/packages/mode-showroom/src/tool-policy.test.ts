@@ -49,6 +49,17 @@ const expectedGroups = [
       { id: "preview-guided-route", label: "Preview Route" },
     ],
   },
+  {
+    id: "preview",
+    label: "Preview",
+    actions: [
+      { id: "view-2d", label: "2D" },
+      { id: "view-3d", label: "3D" },
+      { id: "view-split", label: "Split" },
+      { id: "frame-selection", label: "Frame Selection" },
+      { id: "frame-route", label: "Frame Route" },
+    ],
+  },
 ] as const;
 
 function expectDeepFrozen(value: unknown): void {

@@ -678,6 +678,11 @@ const showroomToolLabels = [
   "\u8def\u7ebf\u8fb9",
   "\u7f16\u8f91\u505c\u9760\u70b9",
   "\u9884\u89c8\u8def\u7ebf",
+  "2D",
+  "3D",
+  "Split",
+  "Frame Selection",
+  "Frame Route",
 ] as const;
 
 function rowByData(attribute: string, id: string): HTMLElement {
@@ -704,7 +709,7 @@ describe("PlanEditor Task 10 shell", () => {
     ["market", ["选择", "场地", "空间单元", "标记"], marketToolLabels],
     [
       "showroom",
-      ["选择", "建筑", "展具", "内容", "导览"],
+      ["选择", "建筑", "展具", "内容", "导览", "预览"],
       showroomToolLabels,
     ],
   ] as const)(
@@ -778,7 +783,7 @@ describe("PlanEditor Task 10 shell", () => {
     expect(screen.getByRole("button", { name: "\u5c55\u5177" })).toBeVisible();
   });
 
-  it("exposes only the M2.3 showroom content and tour entry points", async () => {
+  it("exposes the M2.4 showroom content, tour, and preview entry points", async () => {
     const user = userEvent.setup();
     const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
 
@@ -801,7 +806,7 @@ describe("PlanEditor Task 10 shell", () => {
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeDisabled();
     }
-    for (const deferredLabel of ["3D", "\u6750\u8d28", "\u706f\u5149", "\u5bfc\u51fa", "\u53d1\u5e03"]) {
+    for (const deferredLabel of ["\u6750\u8d28", "\u706f\u5149", "\u5bfc\u51fa", "\u53d1\u5e03"]) {
       expect(screen.queryByRole("button", { name: deferredLabel })).not.toBeInTheDocument();
     }
 
@@ -811,6 +816,127 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     }
   });
+  it("wires preview actions, explains renderer failures, and restores 2D focus", async () => {
+    const user = userEvent.setup();
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+
+    const twoD = screen.getByRole("button", { name: "2D" });
+    const threeD = screen.getByRole("button", { name: "3D" });
+    const split = screen.getByRole("button", { name: "Split" });
+    expect(twoD).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(threeD);
+    expect(sessionStore.getState().viewMode).toBe("3d");
+    expect(threeD).toHaveAttribute("aria-pressed", "true");
+    await user.click(split);
+    expect(sessionStore.getState().viewMode).toBe("split");
+    expect(split).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Frame Selection" }));
+    expect(sessionStore.getState().sceneFrameRequest).toMatchObject({
+      id: 1,
+      target: "selection",
+    });
+    await user.click(screen.getByRole("button", { name: "Frame Route" }));
+    expect(sessionStore.getState().sceneFrameRequest).toMatchObject({
+      id: 2,
+      target: "route",
+    });
+
+    split.focus();
+    expect(split).toHaveFocus();
+    const failedScope = sessionStore.getState().beginSceneRenderer();
+    act(() => {
+      sessionStore.getState().setSceneRendererStatus(
+        failedScope,
+        "failed",
+        new Error("WebGL unavailable"),
+      );
+    });
+    expect(sessionStore.getState().viewMode).toBe("2d");
+    expect(twoD).toHaveAttribute("aria-pressed", "true");
+    expect(threeD).toBeDisabled();
+    expect(split).toBeDisabled();
+    const status = screen.getByRole("status", { name: "3D 预览状态" });
+    expect(status).toHaveTextContent("WebGL unavailable");
+    expect(threeD).toHaveAttribute("aria-describedby", status.id);
+    expect(split).toHaveAttribute("aria-describedby", status.id);
+    await waitFor(() => expect(twoD).toHaveFocus());
+
+    const disabledScope = sessionStore.getState().beginSceneRenderer();
+    await waitFor(() => expect(threeD).toBeEnabled());
+    threeD.focus();
+    expect(threeD).toHaveFocus();
+    act(() => {
+      sessionStore.getState().setViewMode("3d");
+      sessionStore.getState().setSceneRendererStatus(
+        disabledScope,
+        "disabled",
+        new Error("GPU disabled"),
+      );
+    });
+    expect(screen.getByRole("status", { name: "3D 预览状态" }))
+      .toHaveTextContent("GPU disabled");
+    expect(threeD).toBeDisabled();
+    expect(split).toBeDisabled();
+    await waitFor(() => expect(twoD).toHaveFocus());
+    expect(screen.queryByRole("button", { name: /export/i })).not.toBeInTheDocument();
+
+    cleanup();
+    renderPlanEditorFixture({ profile: "market" });
+    for (const label of ["2D", "3D", "Split", "Frame Selection", "Frame Route"]) {
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps Inspector focus when the renderer becomes unavailable", async () => {
+    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+    const inspectorField = screen.getByLabelText("项目名称");
+    inspectorField.focus();
+    expect(inspectorField).toHaveFocus();
+
+    const scope = sessionStore.getState().beginSceneRenderer();
+    act(() => {
+      sessionStore.getState().setViewMode("3d");
+      sessionStore.getState().setSceneRendererStatus(
+        scope,
+        "failed",
+        new Error("WebGL unavailable"),
+      );
+    });
+
+    expect(sessionStore.getState().viewMode).toBe("2d");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(inspectorField).toHaveFocus();
+  });
+
+  it("does not rerender the parent editor for camera-only session updates", () => {
+    const workspace = vi.fn(() => (
+      <div data-testid="camera-isolated-workspace">Renderer override</div>
+    ));
+    const { sessionStore } = renderPlanEditorFixture({
+      profile: "showroom",
+      workspace,
+    });
+    const scope = sessionStore.getState().beginSceneRenderer();
+    act(() => {
+      sessionStore.getState().setSceneRendererStatus(scope, "ready", null);
+    });
+    const renderCount = workspace.mock.calls.length;
+
+    act(() => {
+      sessionStore.getState().setSceneCamera(scope, {
+        position: { x: 1, y: 2, z: 3 },
+        target: { x: 4, y: 5, z: 6 },
+        fieldOfView: 45,
+      });
+    });
+
+    expect(workspace).toHaveBeenCalledTimes(renderCount);
+  });
+
 
   it("clears the showroom fixture choice on floor switch and unmount", async () => {
     const user = userEvent.setup();
@@ -1339,7 +1465,7 @@ describe("PlanEditor Task 11 asset entry points", () => {
       "true",
     );
     expect(within(navigation).getByRole("region", { name: "\u8d44\u4ea7\u5e93" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|3D|\u5bfc\u51fa/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|\u5bfc\u51fa/ })).not.toBeInTheDocument();
   });
 
   it("keeps Task 11 controls absent when the import picker capability is unavailable", () => {

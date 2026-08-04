@@ -14,6 +14,11 @@ import type {
   ViewportTransform,
 } from "@aethertwin/plan-engine";
 import type { ShowroomFixtureKind } from "@aethertwin/mode-showroom";
+import type {
+  SceneCameraState,
+  SceneFrameTarget,
+  SceneRendererStatus,
+} from "@aethertwin/render-scene-3d";
 import { createStore, type StoreApi } from "zustand/vanilla";
 
 export type PlanTool =
@@ -67,6 +72,21 @@ export interface RouteAuthoringScope {
   readonly tool: PlanTool;
 }
 
+export type SceneViewMode = "2d" | "3d" | "split";
+
+export interface SceneRendererScope {
+  readonly sessionId: string;
+  readonly floorId: string;
+  readonly generation: number;
+}
+
+export interface SceneFrameRequest {
+  readonly id: number;
+  readonly target: SceneFrameTarget;
+  readonly sessionId: string;
+  readonly floorId: string;
+  readonly generation: number;
+}
 
 export type PlanSidePanel = "tree" | "assets";
 
@@ -119,8 +139,28 @@ export interface PlanEditorState {
   readonly selectedFixtureKind: ShowroomFixtureKind | null;
   readonly gestureActive: boolean;
   readonly clipboard: readonly SpatialEntity[];
+  readonly viewMode: SceneViewMode;
+  readonly sceneCamera: SceneCameraState | null;
+  readonly rendererStatus: SceneRendererStatus;
+  readonly rendererError: string | null;
+  readonly rendererGeneration: number;
+  readonly sceneFrameRequest: SceneFrameRequest | null;
   setActiveFloor(id: string): boolean;
   replaceSession(sessionId: string, activeFloorId: string): void;
+  setViewMode(mode: SceneViewMode): boolean;
+  beginSceneRenderer(): SceneRendererScope;
+  retireSceneRenderer(scope: SceneRendererScope): boolean;
+  setSceneCamera(scope: SceneRendererScope, camera: SceneCameraState): boolean;
+  setSceneRendererStatus(
+    scope: SceneRendererScope,
+    status: SceneRendererStatus,
+    error: Error | null,
+  ): boolean;
+  requestSceneFrame(target: SceneFrameTarget): boolean;
+  consumeSceneFrameRequest(
+    scope: SceneRendererScope,
+    requestId: number,
+  ): SceneFrameTarget | null;
   setActiveTool(tool: PlanTool): void;
   setSidePanel(panel: PlanSidePanel): void;
   setSelection(ids: readonly string[]): void;
@@ -233,6 +273,41 @@ function ownedRouteAuthoring(routeAuthoring: RouteAuthoringState): RouteAuthorin
   return ownValue(routeAuthoring);
 }
 
+function ownedSceneCamera(camera: SceneCameraState): SceneCameraState {
+  return ownValue(camera);
+}
+
+function validSceneCamera(camera: SceneCameraState): boolean {
+  return [
+    camera.position.x,
+    camera.position.y,
+    camera.position.z,
+    camera.target.x,
+    camera.target.y,
+    camera.target.z,
+    camera.fieldOfView,
+  ].every(Number.isFinite)
+    && camera.fieldOfView > 0
+    && camera.fieldOfView < 180;
+}
+
+function isCurrentSceneRendererScope(
+  state: PlanEditorState,
+  scope: SceneRendererScope,
+): boolean {
+  return state.sessionId === scope.sessionId
+    && state.activeFloorId === scope.floorId
+    && state.rendererGeneration === scope.generation;
+}
+
+function safeRendererError(error: Error | null): string | null {
+  if (error === null) return null;
+  const message = error.message.trim();
+  return message.length === 0
+    ? "3D renderer unavailable."
+    : message.slice(0, 512);
+}
+
 function emptyRouteAuthoring(networkId: string | null = null): RouteAuthoringState {
   return ownedRouteAuthoring({
     networkId,
@@ -266,6 +341,8 @@ export function createPlanEditorStore(
   },
 ): StoreApi<PlanEditorState> {
   const floorViewports = new Map<string, ViewportTransform>();
+  const floorCameras = new Map<string, SceneCameraState>();
+  let nextSceneFrameRequestId = 1;
   const initialSessionId = options.sessionId ?? transientSessionId();
   const initialViewport = ownedViewport(DEFAULT_VIEWPORT);
   floorViewports.set(options.activeFloorId, initialViewport);
@@ -286,39 +363,53 @@ export function createPlanEditorStore(
     selectedFixtureKind: null,
     gestureActive: false,
     clipboard: deepFreeze([] as SpatialEntity[]),
+    viewMode: "2d",
+    sceneCamera: null,
+    rendererStatus: "idle",
+    rendererError: null,
+    rendererGeneration: 0,
+    sceneFrameRequest: null,
 
     setActiveFloor(id) {
       const state = get();
       if (state.gestureActive) return false;
 
+      const sameFloor = id === state.activeFloorId;
       floorViewports.set(state.activeFloorId, ownedViewport(state.viewport));
+      if (state.sceneCamera !== null) {
+        floorCameras.set(state.activeFloorId, state.sceneCamera);
+      }
       const restored = ownedViewport(floorViewports.get(id) ?? DEFAULT_VIEWPORT);
       floorViewports.set(id, restored);
       set({
         activeFloorId: id,
         viewport: restored,
-        calibrationDraft: id === state.activeFloorId
-          ? state.calibrationDraft
-          : null,
-        openingPreview: id === state.activeFloorId
-          ? state.openingPreview
-          : null,
-        roomRecognition: id === state.activeFloorId
-          ? state.roomRecognition
-          : null,
-        routeAuthoring: id === state.activeFloorId
+        sceneCamera: sameFloor ? state.sceneCamera : floorCameras.get(id) ?? null,
+        rendererStatus: sameFloor ? state.rendererStatus : "idle",
+        rendererError: sameFloor ? state.rendererError : null,
+        rendererGeneration: sameFloor
+          ? state.rendererGeneration
+          : state.rendererGeneration + 1,
+        sceneFrameRequest: sameFloor ? state.sceneFrameRequest : null,
+        calibrationDraft: sameFloor ? state.calibrationDraft : null,
+        openingPreview: sameFloor ? state.openingPreview : null,
+        roomRecognition: sameFloor ? state.roomRecognition : null,
+        routeAuthoring: sameFloor
           ? state.routeAuthoring
           : emptyRouteAuthoring(),
-        selectedFixtureKind: id === state.activeFloorId
+        selectedFixtureKind: sameFloor
           ? state.selectedFixtureKind
           : null,
-        draft: id === state.activeFloorId ? state.draft : null,
+        draft: sameFloor ? state.draft : null,
       });
       return true;
     },
 
     replaceSession(sessionId, activeFloorId) {
+      const state = get();
       floorViewports.clear();
+      floorCameras.clear();
+      nextSceneFrameRequestId = 1;
       const viewport = ownedViewport(DEFAULT_VIEWPORT);
       floorViewports.set(activeFloorId, viewport);
       set({
@@ -337,7 +428,105 @@ export function createPlanEditorStore(
         selectedFixtureKind: null,
         gestureActive: false,
         clipboard: deepFreeze([] as SpatialEntity[]),
+        viewMode: "2d",
+        sceneCamera: null,
+        rendererStatus: "idle",
+        rendererError: null,
+        rendererGeneration: state.rendererGeneration + 1,
+        sceneFrameRequest: null,
       });
+    },
+
+    setViewMode(mode) {
+      const state = get();
+      if (
+        mode !== "2d"
+        && (state.rendererStatus === "failed" || state.rendererStatus === "disabled")
+      ) return false;
+      if (mode !== state.viewMode) set({ viewMode: mode });
+      return true;
+    },
+
+    beginSceneRenderer() {
+      const state = get();
+      const generation = state.rendererGeneration + 1;
+      const scope = ownValue<SceneRendererScope>({
+        sessionId: state.sessionId,
+        floorId: state.activeFloorId,
+        generation,
+      });
+      set({
+        rendererGeneration: generation,
+        rendererStatus: "initializing",
+        rendererError: null,
+        sceneFrameRequest: null,
+      });
+      return scope;
+    },
+
+    retireSceneRenderer(scope) {
+      const state = get();
+      if (!isCurrentSceneRendererScope(state, scope)) return false;
+      set({
+        rendererGeneration: state.rendererGeneration + 1,
+        rendererStatus: "destroyed",
+        rendererError: null,
+        sceneFrameRequest: null,
+      });
+      return true;
+    },
+
+    setSceneCamera(scope, camera) {
+      const state = get();
+      if (!isCurrentSceneRendererScope(state, scope) || !validSceneCamera(camera)) {
+        return false;
+      }
+      const owned = ownedSceneCamera(camera);
+      floorCameras.set(state.activeFloorId, owned);
+      set({ sceneCamera: owned });
+      return true;
+    },
+
+    setSceneRendererStatus(scope, status, error) {
+      const state = get();
+      if (!isCurrentSceneRendererScope(state, scope)) return false;
+      set({
+        rendererStatus: status,
+        rendererError: safeRendererError(error),
+        viewMode: status === "failed" || status === "disabled"
+          ? "2d"
+          : state.viewMode,
+      });
+      return true;
+    },
+
+    requestSceneFrame(target) {
+      const state = get();
+      const request = ownValue<SceneFrameRequest>({
+        id: nextSceneFrameRequestId,
+        target,
+        sessionId: state.sessionId,
+        floorId: state.activeFloorId,
+        generation: state.rendererGeneration,
+      });
+      nextSceneFrameRequestId += 1;
+      set({ sceneFrameRequest: request });
+      return true;
+    },
+
+    consumeSceneFrameRequest(scope, requestId) {
+      const state = get();
+      const request = state.sceneFrameRequest;
+      if (
+        request === null
+        || !isCurrentSceneRendererScope(state, scope)
+        || request.id !== requestId
+        || request.sessionId !== scope.sessionId
+        || request.floorId !== scope.floorId
+        || request.generation !== scope.generation
+      ) return null;
+      set({ sceneFrameRequest: null });
+      return request.target;
     },
 
     setActiveTool(tool) {

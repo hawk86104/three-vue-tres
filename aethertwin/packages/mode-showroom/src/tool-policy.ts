@@ -16,14 +16,20 @@ export type ShowroomToolActionId =
   | "route-node"
   | "route-edge"
   | "edit-route-stops"
-  | "preview-guided-route";
+  | "preview-guided-route"
+  | "view-2d"
+  | "view-3d"
+  | "view-split"
+  | "frame-selection"
+  | "frame-route";
 
 export type ShowroomToolGroupId =
   | "select"
   | "building"
   | "fixtures"
   | "content"
-  | "tour";
+  | "tour"
+  | "preview";
 
 export interface ToolActionDescriptor {
   readonly id: ShowroomToolActionId;
@@ -84,5 +90,12 @@ export const SHOWROOM_TOOL_GROUPS: readonly ToolGroupDescriptor[] =
       action("route-edge", "Route Edge"),
       action("edit-route-stops", "Edit Stops"),
       action("preview-guided-route", "Preview Route"),
+    ]),
+    group("preview", "Preview", [
+      action("view-2d", "2D"),
+      action("view-3d", "3D"),
+      action("view-split", "Split"),
+      action("frame-selection", "Frame Selection"),
+      action("frame-route", "Frame Route"),
     ]),
   ]);
