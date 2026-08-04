@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./scene-projection": "./src/scene-projection.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --root ../.. packages/render-scene-3d/src/scene-projection.test.ts",
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
