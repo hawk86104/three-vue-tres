@@ -1,5 +1,14 @@
 export { millimetresToScenePoint } from "./coordinates";
 export { projectScene } from "./scene-projection";
+export { createSceneReconciler } from "./scene-reconciler";
+export type {
+  SceneDisposableResource,
+  SceneRecordBinding,
+  SceneReconcilerDependencies,
+  SceneResourceFactory,
+  SceneResourceReconciler,
+} from "./scene-reconciler";
+
 
 export type {
   SceneAssetIssue,
