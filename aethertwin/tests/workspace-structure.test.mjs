@@ -288,3 +288,69 @@ test("M2.3 content, persistence, route resolution, and Studio wiring have explic
   assert.equal(studio.dependencies["@aethertwin/project-store"], "workspace:*");
   assert.equal(studio.dependencies["@aethertwin/route-engine"], "workspace:*");
 });
+test("M2.4 render-scene-3d boundary pins its runtime and workspace dependencies", () => {
+  const packageRoot = join(root, "packages/render-scene-3d");
+  const workspaceConfig = readFileSync(
+    join(root, "pnpm-workspace.yaml"),
+    "utf8",
+  );
+  const manifest = JSON.parse(
+    readFileSync(join(packageRoot, "package.json"), "utf8"),
+  );
+  const studio = JSON.parse(
+    readFileSync(join(root, "apps/studio/package.json"), "utf8"),
+  );
+  const index = readFileSync(join(packageRoot, "src/index.ts"), "utf8");
+  const types = readFileSync(join(packageRoot, "src/types.ts"), "utf8");
+
+  assert.equal(manifest.name, "@aethertwin/render-scene-3d");
+  assert.equal(manifest.exports["."], "./src/index.ts");
+  assert.equal(manifest.scripts.typecheck, "tsc -p tsconfig.json --noEmit");
+  assert.match(
+    workspaceConfig,
+    /(?:^|\r?\n)overrides:\r?\n  use-sync-external-store: 1\.6\.0(?:\r?\n|$)/u,
+  );
+  assert.deepEqual(
+    manifest.dependencies,
+    {
+      "@aethertwin/core-model": "workspace:*",
+      "@aethertwin/mode-showroom": "workspace:*",
+      "@aethertwin/plan-engine": "workspace:*",
+      "@aethertwin/route-engine": "workspace:*",
+      "@react-three/drei": "10.7.7",
+      "@react-three/fiber": "9.6.1",
+      "react": "19.2.7",
+      "react-dom": "19.2.7",
+      "three": "0.185.1",
+    },
+  );
+  for (const dependency of [
+    "@react-three/drei",
+    "@react-three/fiber",
+    "react",
+    "react-dom",
+    "three",
+  ]) {
+    assert.match(
+      manifest.dependencies[dependency],
+      /^\d+\.\d+\.\d+$/,
+      dependency + " must be an exact version",
+    );
+  }
+  assert.equal(studio.dependencies["@aethertwin/render-scene-3d"], "workspace:*");
+  for (const symbol of [
+    "SceneRendererInput",
+    "SceneRecord",
+    "SceneProjectionIssue",
+    "SceneRenderer",
+    "SceneRendererFactory",
+    "SceneCameraState",
+    "SceneExportPort",
+  ]) {
+    assert.ok(index.includes(symbol), "render-scene-3d index does not export " + symbol);
+    assert.ok(types.includes(symbol), "render-scene-3d types do not define " + symbol);
+  }
+  assert.equal(existsSync(join(packageRoot, ".gitkeep")), false);
+  assert.equal(existsSync(join(packageRoot, "src/.gitkeep")), false);
+  assert.doesNotMatch(JSON.stringify(manifest), /(?:https?:|\bcdn\b)/iu);
+});

@@ -1,0 +1,24 @@
+{
+  "name": "@aethertwin/render-scene-3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@aethertwin/core-model": "workspace:*",
+    "@aethertwin/mode-showroom": "workspace:*",
+    "@aethertwin/plan-engine": "workspace:*",
+    "@aethertwin/route-engine": "workspace:*",
+    "@react-three/drei": "10.7.7",
+    "@react-three/fiber": "9.6.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "three": "0.185.1"
+  }
+}

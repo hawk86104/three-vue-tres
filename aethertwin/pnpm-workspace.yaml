@@ -1,3 +1,6 @@
 packages:
   - apps/*
   - packages/*
+
+overrides:
+  use-sync-external-store: 1.6.0

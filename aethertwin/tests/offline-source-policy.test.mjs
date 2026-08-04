@@ -26,7 +26,7 @@ const runtimeFiles = globSync(
 );
 
 const urlPattern =
-  /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w])\/\/(?:[\p{L}\p{N}]|\[)[^\s"'`)}]*/giu;
+  /(?:https?|wss?):\/\/[^\s"'`)}]+|(?<![:\w\\])\/\/(?:[\p{L}\p{N}]|\[)[^\s"'`)}]*/giu;
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const acceptanceSpec = readFileSync("apps/studio/e2e/m0.spec.ts", "utf8");
 const tauriConfig = JSON.parse(readFileSync("crates/desktop-host/tauri.conf.json", "utf8"));
