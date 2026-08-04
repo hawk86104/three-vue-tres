@@ -5,6 +5,8 @@ import type {
 } from "@aethertwin/core-model";
 import { applyTransform } from "@aethertwin/plan-engine";
 import { millimetresToScenePoint } from "./coordinates";
+import { projectEnvironment } from "./environment-projection";
+import { projectMaterials } from "./material-projection";
 import { projectFixtureRecords } from "./fixture-projection";
 import { projectHotspotRecord } from "./hotspot-projection";
 import { projectRouteRecord } from "./route-projection";
@@ -218,7 +220,7 @@ function floorGeometry(
   };
 }
 
-function defaultFloorMaterial(selected: boolean): SceneMaterialProjection {
+function defaultFloorMaterial(): SceneMaterialProjection {
   return {
     role: "space-floor",
     definitionId: null,
@@ -227,7 +229,7 @@ function defaultFloorMaterial(selected: boolean): SceneMaterialProjection {
     metalness: 0,
     opacity: 1,
     textureAssetId: null,
-    selectedOverlay: selected,
+    textureColorSpace: null,
   };
 }
 
@@ -267,7 +269,9 @@ function projectFloor(
     selected,
     bounds: boundsFromPoints(scenePoints),
     geometry,
-    material: defaultFloorMaterial(selected),
+    material: defaultFloorMaterial(),
+    materialTargetId: entity.id,
+    selectionOverlay: null,
   };
 }
 
@@ -333,22 +337,35 @@ export function projectScene(input: SceneRendererInput): SceneProjection {
     else records.push(route);
   }
 
-  if (failures.size > 0) {
+  records.sort(({ key: left }, { key: right }) => left < right ? -1 : left > right ? 1 : 0);
+  const bounds = unionBounds(records);
+  const environment = projectEnvironment(input.snapshot.project.sceneEnvironment, bounds);
+  if (environment === null) {
+    recordFailure(failures, { code: "SCENE_INVALID_RECORD", sourceIds: [input.snapshot.project.id] });
+  }
+
+  if (failures.size > 0 || environment === null) {
     return deepFreeze({
       records: [],
       bounds: null,
       requiredTextureAssetIds: [],
+      environment: null,
       issues: [...failures.entries()]
         .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
         .map(([code, sourceIds]) => ({ code, sourceIds: [...sourceIds].sort() })),
     });
   }
 
-  records.sort(({ key: left }, { key: right }) => left < right ? -1 : left > right ? 1 : 0);
-  return deepFreeze({
+  const materials = projectMaterials(
+    input.snapshot,
     records,
-    bounds: unionBounds(records),
-    requiredTextureAssetIds: [],
+    input.assetIssues,
+  );
+  return deepFreeze({
+    records: materials.records,
+    bounds,
+    requiredTextureAssetIds: materials.requiredTextureAssetIds,
+    environment,
     issues: [],
   });
 }

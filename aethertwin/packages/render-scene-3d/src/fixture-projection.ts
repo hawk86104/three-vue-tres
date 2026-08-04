@@ -28,7 +28,7 @@ function fixtureFailure(fixture: Fixture): FixtureProjectionFailure {
   return { code: "SCENE_FIXTURE_PROJECTION_FAILED", sourceIds: [fixture.id] };
 }
 
-function fixtureMaterial(selected: boolean): SceneMaterialProjection {
+function fixtureMaterial(): SceneMaterialProjection {
   return {
     role: "fixture",
     definitionId: null,
@@ -37,7 +37,7 @@ function fixtureMaterial(selected: boolean): SceneMaterialProjection {
     metalness: 0.08,
     opacity: 1,
     textureAssetId: null,
-    selectedOverlay: selected,
+    textureColorSpace: null,
   };
 }
 
@@ -83,7 +83,14 @@ export function projectFixtureRecords(
       maxY: centerY + halfDepth,
       minZ: centerZ - halfHeight,
       maxZ: centerZ + halfHeight,
-    }, fixture.transform, elevation);
+    }, fixture.transform, elevation, {
+      minX: 0,
+      maxX: width,
+      minY: 0,
+      maxY: depth,
+      minZ: 0,
+      maxZ: height,
+    });
     if (geometry === null) return fixtureFailure(fixture);
     records.push({
       key: `fixture-part:${fixture.id}:${part.key}`,
@@ -93,7 +100,9 @@ export function projectFixtureRecords(
       selected,
       bounds: geometryBounds(geometry),
       geometry,
-      material: fixtureMaterial(selected),
+      material: fixtureMaterial(),
+      materialTargetId: fixture.id,
+      selectionOverlay: null,
     });
   }
   return records;

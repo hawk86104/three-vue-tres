@@ -47,7 +47,7 @@ function wallFailure(sourceIds: readonly string[]): WallProjectionFailure {
   };
 }
 
-function defaultWallMaterial(selected: boolean, opacity = 1): SceneMaterialProjection {
+function defaultWallMaterial(opacity = 1): SceneMaterialProjection {
   return {
     role: "wall",
     definitionId: null,
@@ -56,7 +56,7 @@ function defaultWallMaterial(selected: boolean, opacity = 1): SceneMaterialProje
     metalness: 0,
     opacity,
     textureAssetId: null,
-    selectedOverlay: selected,
+    textureColorSpace: null,
   };
 }
 
@@ -85,17 +85,21 @@ function appendQuad(
   },
   corners: readonly [SceneVector3, SceneVector3, SceneVector3, SceneVector3],
   desiredNormal: SceneVector3,
+  uvs: readonly [number, number, number, number, number, number, number, number],
 ): void {
   const faceNormal = cross(subtract(corners[1], corners[0]), subtract(corners[2], corners[0]));
   const ordered = dot(faceNormal, desiredNormal) >= 0
     ? corners
     : [corners[0], corners[3], corners[2], corners[1]] as const;
+  const orderedUvs: typeof uvs = dot(faceNormal, desiredNormal) >= 0
+    ? uvs
+    : [uvs[0], uvs[1], uvs[6], uvs[7], uvs[4], uvs[5], uvs[2], uvs[3]];
   const offset = geometry.positions.length / 3;
   for (const point of ordered) {
     geometry.positions.push(point.x, point.y, point.z);
     geometry.normals.push(desiredNormal.x, desiredNormal.y, desiredNormal.z);
   }
-  geometry.uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+  geometry.uvs.push(...orderedUvs);
   geometry.indices.push(offset, offset + 1, offset + 2, offset, offset + 2, offset + 3);
 }
 
@@ -121,6 +125,8 @@ function prismGeometry(
   elevation: number,
   baseHeight: number,
   topHeight: number,
+  totalLength: number,
+  wallHeight: number,
 ): SceneGeometry | null {
   if (
     !Number.isFinite(intervalStart)
@@ -128,6 +134,10 @@ function prismGeometry(
     || !Number.isFinite(elevation)
     || !Number.isFinite(baseHeight)
     || !Number.isFinite(topHeight)
+    || !Number.isFinite(totalLength)
+    || !Number.isFinite(wallHeight)
+    || totalLength <= GEOMETRY_EPSILON_MM
+    || wallHeight <= GEOMETRY_EPSILON_MM
     || intervalEnd - intervalStart <= GEOMETRY_EPSILON_MM
     || topHeight - baseHeight <= GEOMETRY_EPSILON_MM
   ) return null;
@@ -149,18 +159,22 @@ function prismGeometry(
   const endLeftTop = millimetresToScenePoint(endLeft, topElevation);
   const tangent = { x: segment.tangent.x, y: 0, z: -segment.tangent.y };
   const normal = { x: -segment.tangent.y, y: 0, z: -segment.tangent.x };
+  const startU = (segment.cumulativeStart + intervalStart) / totalLength;
+  const endU = (segment.cumulativeStart + intervalEnd) / totalLength;
+  const baseV = baseHeight / wallHeight;
+  const topV = topHeight / wallHeight;
   const geometry = { positions: [] as number[], indices: [] as number[], normals: [] as number[], uvs: [] as number[] };
 
-  appendQuad(geometry, [startLeftBottom, startRightBottom, endRightBottom, endLeftBottom], { x: 0, y: -1, z: 0 });
-  appendQuad(geometry, [startLeftTop, startRightTop, endRightTop, endLeftTop], { x: 0, y: 1, z: 0 });
+  appendQuad(geometry, [startLeftBottom, startRightBottom, endRightBottom, endLeftBottom], { x: 0, y: -1, z: 0 }, [startU, 1, startU, 0, endU, 0, endU, 1]);
+  appendQuad(geometry, [startLeftTop, startRightTop, endRightTop, endLeftTop], { x: 0, y: 1, z: 0 }, [startU, 1, startU, 0, endU, 0, endU, 1]);
   appendQuad(geometry, [startLeftBottom, startRightBottom, startRightTop, startLeftTop], {
     x: -tangent.x, y: 0, z: -tangent.z,
-  });
-  appendQuad(geometry, [endLeftBottom, endRightBottom, endRightTop, endLeftTop], tangent);
-  appendQuad(geometry, [startLeftBottom, endLeftBottom, endLeftTop, startLeftTop], normal);
+  }, [1, baseV, 0, baseV, 0, topV, 1, topV]);
+  appendQuad(geometry, [endLeftBottom, endRightBottom, endRightTop, endLeftTop], tangent, [1, baseV, 0, baseV, 0, topV, 1, topV]);
+  appendQuad(geometry, [startLeftBottom, endLeftBottom, endLeftTop, startLeftTop], normal, [startU, baseV, endU, baseV, endU, topV, startU, topV]);
   appendQuad(geometry, [startRightBottom, endRightBottom, endRightTop, startRightTop], {
     x: -normal.x, y: 0, z: -normal.z,
-  });
+  }, [startU, baseV, endU, baseV, endU, topV, startU, topV]);
   return { topology: "triangles", ...geometry };
 }
 
@@ -190,6 +204,8 @@ function prismRecord(
   elevation: number,
   baseHeight: number,
   topHeight: number,
+  totalLength: number,
+  wallHeight: number,
   selected: boolean,
   sourceIds: readonly string[],
 ): SceneRecord | null {
@@ -200,6 +216,8 @@ function prismRecord(
     elevation,
     baseHeight,
     topHeight,
+    totalLength,
+    wallHeight,
   );
   if (geometry === null) return null;
   return {
@@ -210,7 +228,9 @@ function prismRecord(
     selected,
     bounds: geometryBounds(geometry),
     geometry,
-    material: defaultWallMaterial(selected),
+    material: defaultWallMaterial(),
+    materialTargetId: wall.id,
+    selectionOverlay: null,
   };
 }
 
@@ -274,7 +294,9 @@ function openingRecord(
     selected,
     bounds: geometryBounds(geometry),
     geometry,
-    material: defaultWallMaterial(selected, OUTLINE_OPACITY),
+    material: defaultWallMaterial(OUTLINE_OPACITY),
+    materialTargetId: wall.id,
+    selectionOverlay: null,
   };
 }
 
@@ -333,8 +355,11 @@ export function projectWallRecords(
   const segments = wallMetricSegments(wall);
   const elevation = wall.spatial3D?.elevation ?? 0;
   const height = wall.spatial3D?.height ?? DEFAULT_WALL_HEIGHT_MM;
+  const totalLength = segments[segments.length - 1]?.cumulativeEnd ?? 0;
   if (
     segments.length === 0
+    || !Number.isFinite(totalLength)
+    || totalLength <= GEOMETRY_EPSILON_MM
     || !Number.isFinite(elevation)
     || !Number.isFinite(height)
     || height <= 0
@@ -357,7 +382,7 @@ export function projectWallRecords(
       if (intervalStart - cursor > GEOMETRY_EPSILON_MM) {
         const full = prismRecord(
           `wall-piece:${wall.id}:${segment.segmentIndex}:full:${fullIndex}`,
-          wall, segment, cursor, intervalStart, elevation, 0, height, selected, [wall.id],
+          wall, segment, cursor, intervalStart, elevation, 0, height, totalLength, height, selected, [wall.id],
         );
         if (full === null) return wallFailure([wall.id, item.opening.id]);
         records.push(full);
@@ -371,7 +396,7 @@ export function projectWallRecords(
         const sill = prismRecord(
           `wall-piece:${wall.id}:${segment.segmentIndex}:sill:${item.opening.id}`,
           wall, segment, intervalStart, intervalEnd, elevation,
-          0, item.opening.sillHeight, selected, [wall.id, item.opening.id],
+          0, item.opening.sillHeight, totalLength, height, selected, [wall.id, item.opening.id],
         );
         if (sill === null) return wallFailure([wall.id, item.opening.id]);
         records.push(sill);
@@ -380,7 +405,7 @@ export function projectWallRecords(
         const lintel = prismRecord(
           `wall-piece:${wall.id}:${segment.segmentIndex}:lintel:${item.opening.id}`,
           wall, segment, intervalStart, intervalEnd, elevation,
-          openingTop, height, selected, [wall.id, item.opening.id],
+          openingTop, height, totalLength, height, selected, [wall.id, item.opening.id],
         );
         if (lintel === null) return wallFailure([wall.id, item.opening.id]);
         records.push(lintel);
@@ -392,7 +417,7 @@ export function projectWallRecords(
     if (segment.length - cursor > GEOMETRY_EPSILON_MM) {
       const full = prismRecord(
         `wall-piece:${wall.id}:${segment.segmentIndex}:full:${fullIndex}`,
-        wall, segment, cursor, segment.length, elevation, 0, height, selected, [wall.id],
+        wall, segment, cursor, segment.length, elevation, 0, height, totalLength, height, selected, [wall.id],
       );
       if (full === null) return wallFailure([wall.id]);
       records.push(full);

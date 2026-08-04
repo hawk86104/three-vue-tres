@@ -210,7 +210,7 @@ describe("projectScene floor projection", () => {
     const projection = projectScene(inputFor(snapshotWith([selfIntersecting, valid, collinear])));
 
     expect(projection).toEqual({
-      records: [], bounds: null, requiredTextureAssetIds: [],
+      records: [], bounds: null, requiredTextureAssetIds: [], environment: null,
       issues: [{
         code: "SCENE_FLOOR_TRIANGULATION_FAILED",
         sourceIds: [collinear.id, selfIntersecting.id],

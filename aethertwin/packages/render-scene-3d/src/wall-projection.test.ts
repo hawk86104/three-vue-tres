@@ -181,6 +181,18 @@ describe("projectScene wall projection", () => {
       min: { x: 0, y: 0.5, z: -3 },
       max: { x: 2.1, y: 2.9, z: 0.1 },
     });
+    const first = recordByKey(
+      projection.records,
+      "wall-piece:" + source.id + ":0:full:0",
+    );
+    const second = recordByKey(
+      projection.records,
+      "wall-piece:" + source.id + ":1:full:0",
+    );
+    expect(new Set(first.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 0))).toEqual(new Set([0, 0.4]));
+    expect(new Set(first.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 1))).toEqual(new Set([0, 1]));
+    expect(new Set(second.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 0))).toEqual(new Set([0.4, 1]));
+    expect(new Set(second.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 1))).toEqual(new Set([0, 1]));
   });
 
   it("splits multiple openings into full-height, lintel, and sill pieces", () => {
@@ -195,9 +207,37 @@ describe("projectScene wall projection", () => {
       height: 1_200,
       sillHeight: 900,
     });
+    const assignedMaterial: ProjectSnapshot["project"]["materials"][number] = {
+      id: uuid(63),
+      name: "Assigned wall material",
+      tags: [],
+      baseColor: "#445566",
+      roughness: 0.4,
+      metalness: 0.2,
+      opacity: 0.5,
+      assetId: null,
+    };
+    const assignedAssignment: ProjectSnapshot["project"]["materialAssignments"][number] = {
+      id: uuid(64),
+      name: "Wall assignment",
+      tags: [],
+      materialId: assignedMaterial.id,
+      targetKind: "wall",
+      targetId: source.id,
+    };
+    const snapshot = snapshotWith([source], [windowOpening, door]);
+    const assignedSnapshot: ProjectSnapshot = {
+      ...snapshot,
+      project: {
+        ...snapshot.project,
+        materials: [assignedMaterial],
+        materialAssignments: [assignedAssignment],
+      },
+    };
+
 
     const projection = projectScene(inputFor(
-      snapshotWith([source], [windowOpening, door]),
+      assignedSnapshot,
       new Set([source.id, windowOpening.id]),
     ));
     const pieces = projection.records.filter(({ kind }) => kind === "wall-piece");
@@ -236,7 +276,7 @@ describe("projectScene wall projection", () => {
       selected: false,
       bounds: { min: { x: 1.5, y: 0.1 }, max: { x: 2.5, y: 2.2 } },
       geometry: { topology: "lines" },
-      material: { opacity: 0.24 },
+      material: { definitionId: assignedMaterial.id, opacity: 0.12 },
     });
     expect(windowProxy).toMatchObject({
       sourceIds: [source.id, windowOpening.id].sort(),
@@ -244,6 +284,18 @@ describe("projectScene wall projection", () => {
       selected: true,
       bounds: { min: { x: 5, y: 1 }, max: { x: 7, y: 2.2 } },
     });
+    const sill = recordByKey(
+      projection.records,
+      "wall-piece:" + source.id + ":0:sill:" + windowOpening.id,
+    );
+    const lintel = recordByKey(
+      projection.records,
+      "wall-piece:" + source.id + ":0:lintel:" + windowOpening.id,
+    );
+    expect(new Set(sill.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 0))).toEqual(new Set([0.5, 0.7]));
+    expect(new Set(sill.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 1))).toEqual(new Set([0, 0.3]));
+    expect(new Set(lintel.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 0))).toEqual(new Set([0.5, 0.7]));
+    expect(new Set(lintel.geometry.uvs.slice(32, 40).filter((_, index) => index % 2 === 1))).toEqual(new Set([0.7, 1]));
     expect(doorProxy.geometry.indices).toHaveLength(24);
   });
 
@@ -282,6 +334,7 @@ describe("projectScene wall projection", () => {
       records: [],
       bounds: null,
       requiredTextureAssetIds: [],
+      environment: null,
       issues: [{
         code: "SCENE_WALL_PROJECTION_FAILED",
         sourceIds: [invalidOpening.id, invalidWall.id].sort(),

@@ -17,7 +17,7 @@ export interface HotspotProjectionFailure {
   readonly sourceIds: readonly string[];
 }
 
-function hotspotMaterial(selected: boolean): SceneMaterialProjection {
+function hotspotMaterial(): SceneMaterialProjection {
   return {
     role: "hotspot",
     definitionId: null,
@@ -26,7 +26,7 @@ function hotspotMaterial(selected: boolean): SceneMaterialProjection {
     metalness: 0,
     opacity: 1,
     textureAssetId: null,
-    selectedOverlay: selected,
+    textureColorSpace: null,
   };
 }
 
@@ -80,6 +80,8 @@ export function projectHotspotRecord(
     selected,
     bounds: geometryBounds(geometry),
     geometry,
-    material: hotspotMaterial(selected),
+    material: hotspotMaterial(),
+    materialTargetId: null,
+    selectionOverlay: null,
   };
 }

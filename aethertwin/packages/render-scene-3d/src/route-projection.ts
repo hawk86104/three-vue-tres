@@ -73,7 +73,7 @@ function validResolvedRoute(
   }) && network.id.length > 0;
 }
 
-function routeMaterial(selected: boolean): SceneMaterialProjection {
+function routeMaterial(): SceneMaterialProjection {
   return {
     role: "route",
     definitionId: null,
@@ -82,7 +82,7 @@ function routeMaterial(selected: boolean): SceneMaterialProjection {
     metalness: 0,
     opacity: 1,
     textureAssetId: null,
-    selectedOverlay: selected,
+    textureColorSpace: null,
   };
 }
 
@@ -126,6 +126,8 @@ export function projectRouteRecord(
     selected,
     bounds: geometryBounds(geometry),
     geometry,
-    material: routeMaterial(selected),
+    material: routeMaterial(),
+    materialTargetId: null,
+    selectionOverlay: null,
   };
 }

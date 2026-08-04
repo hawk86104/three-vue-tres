@@ -79,7 +79,11 @@ export interface SceneMaterialProjection {
   readonly metalness: number;
   readonly opacity: number;
   readonly textureAssetId: string | null;
-  readonly selectedOverlay: boolean;
+  readonly textureColorSpace: "srgb" | null;
+}
+
+export interface SceneSelectionOverlay {
+  readonly color: "#58b8c4";
 }
 
 interface SceneRecordBase<Kind extends SceneRecordKind> {
@@ -91,6 +95,8 @@ interface SceneRecordBase<Kind extends SceneRecordKind> {
   readonly bounds: SceneBounds3;
   readonly geometry: SceneGeometry;
   readonly material: SceneMaterialProjection;
+  readonly materialTargetId: string | null;
+  readonly selectionOverlay: SceneSelectionOverlay | null;
 }
 
 export type SceneRecord =
@@ -113,10 +119,29 @@ export interface SceneProjectionIssue {
   readonly sourceIds: readonly string[];
 }
 
+export interface SceneEnvironmentProjection {
+  readonly backgroundColor: string;
+  readonly ambient: {
+    readonly color: string;
+    readonly intensity: number;
+  };
+  readonly key: {
+    readonly color: string;
+    readonly intensity: number;
+    readonly position: SceneVector3;
+  };
+  readonly shadows: {
+    readonly enabled: boolean;
+    readonly radius: number;
+    readonly cameraBounds: SceneBounds3 | null;
+  };
+}
+
 export interface SceneProjection {
   readonly records: readonly SceneRecord[];
   readonly bounds: SceneBounds3 | null;
   readonly requiredTextureAssetIds: readonly string[];
+  readonly environment: SceneEnvironmentProjection | null;
   readonly issues: readonly SceneProjectionIssue[];
 }
 
