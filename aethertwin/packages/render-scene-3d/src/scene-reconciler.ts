@@ -19,6 +19,7 @@ export interface SceneRecordBinding {
     material: SceneDisposableResource,
   ): void;
   detach(): void;
+  dispose?(): void;
 }
 
 export interface SceneResourceFactory {
@@ -144,6 +145,7 @@ class DefaultSceneResourceReconciler implements SceneResourceReconciler {
     const errors: unknown[] = [];
     for (const item of mounted) {
       this.runCleanup(errors, () => item.binding.detach());
+      this.runCleanup(errors, () => item.binding.dispose?.());
     }
     for (const item of mounted) {
       this.runCleanup(errors, () => item.geometry.dispose());
@@ -269,6 +271,7 @@ class DefaultSceneResourceReconciler implements SceneResourceReconciler {
     const errors: unknown[] = [];
     for (const item of removed) {
       this.runCleanup(errors, () => item.binding.detach());
+      this.runCleanup(errors, () => item.binding.dispose?.());
     }
     for (const item of prepared) {
       const existing = item.existing;
@@ -292,6 +295,9 @@ class DefaultSceneResourceReconciler implements SceneResourceReconciler {
     errors: unknown[],
   ): void {
     for (const item of [...prepared].reverse()) {
+      if (item.existing === undefined) {
+        this.runCleanup(errors, () => item.mounted.binding.dispose?.());
+      }
       if (item.materialAcquired) {
         this.runCleanup(errors, () => this.releaseMaterial(item.mounted.materialKey));
       }

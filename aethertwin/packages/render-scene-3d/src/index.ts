@@ -1,5 +1,7 @@
 export { millimetresToScenePoint } from "./coordinates";
 export { projectScene } from "./scene-projection";
+export { createSceneRenderer } from "./renderer";
+export { frameCameraToProjection } from "./scene-camera";
 export { createSceneReconciler } from "./scene-reconciler";
 export type {
   SceneDisposableResource,
@@ -8,6 +10,11 @@ export type {
   SceneResourceFactory,
   SceneResourceReconciler,
 } from "./scene-reconciler";
+export type {
+  SceneRendererBackend,
+  SceneRendererBackendEvents,
+  SceneRendererBackendFactory,
+} from "./renderer";
 
 
 export type {
