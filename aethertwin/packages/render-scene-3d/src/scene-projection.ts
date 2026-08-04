@@ -5,6 +5,9 @@ import type {
 } from "@aethertwin/core-model";
 import { applyTransform } from "@aethertwin/plan-engine";
 import { millimetresToScenePoint } from "./coordinates";
+import { projectFixtureRecords } from "./fixture-projection";
+import { projectHotspotRecord } from "./hotspot-projection";
+import { projectRouteRecord } from "./route-projection";
 import type {
   SceneBounds3,
   SceneGeometry,
@@ -15,15 +18,14 @@ import type {
   SceneRendererInput,
   SceneVector3,
 } from "./types";
-import {
-  projectWallRecords,
-  type WallProjectionFailure,
-} from "./wall-projection";
+import { projectWallRecords } from "./wall-projection";
 
-interface FloorProjectionFailure {
+interface ProjectionFailure {
   readonly code: SceneProjectionIssueCode;
   readonly sourceIds: readonly string[];
 }
+
+type FloorProjectionFailure = ProjectionFailure;
 
 type FloorEntity = SpaceUnit | Zone;
 
@@ -271,7 +273,7 @@ function projectFloor(
 
 function recordFailure(
   failures: Map<SceneProjectionIssueCode, Set<string>>,
-  failure: FloorProjectionFailure | WallProjectionFailure,
+  failure: ProjectionFailure,
 ): void {
   const sourceIds = failures.get(failure.code) ?? new Set<string>();
   for (const sourceId of failure.sourceIds) sourceIds.add(sourceId);
@@ -308,7 +310,27 @@ export function projectScene(input: SceneRendererInput): SceneProjection {
       );
       if ("code" in projected) recordFailure(failures, projected);
       else records.push(...projected);
+      continue;
     }
+
+    if (entity.type === "fixture") {
+      const projected = projectFixtureRecords(entity, selectedIds);
+      if ("code" in projected) recordFailure(failures, projected);
+      else records.push(...projected);
+      continue;
+    }
+
+    if (entity.type === "poi" && entity.kind === "product-hotspot") {
+      const projected = projectHotspotRecord(entity, selectedIds);
+      if ("code" in projected) recordFailure(failures, projected);
+      else records.push(projected);
+    }
+  }
+
+  const route = projectRouteRecord(input);
+  if (route !== null) {
+    if ("code" in route) recordFailure(failures, route);
+    else records.push(route);
   }
 
   if (failures.size > 0) {
