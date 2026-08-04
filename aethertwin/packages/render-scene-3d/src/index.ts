@@ -1,7 +1,6 @@
-export {
-  millimetresToScenePoint,
-  projectScene,
-} from "./scene-projection";
+export { millimetresToScenePoint } from "./coordinates";
+export { projectScene } from "./scene-projection";
+
 export type {
   SceneAssetIssue,
   SceneAssetIssueCode,

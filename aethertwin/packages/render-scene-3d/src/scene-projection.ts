@@ -4,6 +4,7 @@ import type {
   Zone,
 } from "@aethertwin/core-model";
 import { applyTransform } from "@aethertwin/plan-engine";
+import { millimetresToScenePoint } from "./coordinates";
 import type {
   SceneBounds3,
   SceneGeometry,
@@ -14,12 +15,14 @@ import type {
   SceneRendererInput,
   SceneVector3,
 } from "./types";
-
-const MILLIMETRES_PER_METRE = 1_000;
+import {
+  projectWallRecords,
+  type WallProjectionFailure,
+} from "./wall-projection";
 
 interface FloorProjectionFailure {
   readonly code: SceneProjectionIssueCode;
-  readonly sourceId: string;
+  readonly sourceIds: readonly string[];
 }
 
 type FloorEntity = SpaceUnit | Zone;
@@ -34,14 +37,6 @@ function deepFreeze<T>(value: T): T {
 
 function normalizeZero(value: number): number {
   return Object.is(value, -0) ? 0 : value;
-}
-
-export function millimetresToScenePoint(point: Point2, elevation: number): SceneVector3 {
-  return {
-    x: normalizeZero(point.x / MILLIMETRES_PER_METRE),
-    y: normalizeZero(elevation / MILLIMETRES_PER_METRE),
-    z: normalizeZero(-point.y / MILLIMETRES_PER_METRE),
-  };
 }
 
 function cross(a: Point2, b: Point2, c: Point2): number {
@@ -241,20 +236,20 @@ function projectFloor(
   const localPoints = entity.type === "zone" ? entity.polygon : entity.footprint;
   const indices = triangulate(localPoints);
   if (indices === null) {
-    return { code: "SCENE_FLOOR_TRIANGULATION_FAILED", sourceId: entity.id };
+    return { code: "SCENE_FLOOR_TRIANGULATION_FAILED", sourceIds: [entity.id] };
   }
 
   const elevation = entity.spatial3D?.elevation ?? 0;
-  if (!Number.isFinite(elevation)) return { code: "SCENE_INVALID_RECORD", sourceId: entity.id };
+  if (!Number.isFinite(elevation)) return { code: "SCENE_INVALID_RECORD", sourceIds: [entity.id] };
 
   let worldPoints: readonly Point2[];
   try {
     worldPoints = localPoints.map((point) => applyTransform(point, entity.transform));
   } catch {
-    return { code: "SCENE_INVALID_RECORD", sourceId: entity.id };
+    return { code: "SCENE_INVALID_RECORD", sourceIds: [entity.id] };
   }
   const geometry = floorGeometry(localPoints, worldPoints, elevation, indices);
-  if (geometry === null) return { code: "SCENE_INVALID_RECORD", sourceId: entity.id };
+  if (geometry === null) return { code: "SCENE_INVALID_RECORD", sourceIds: [entity.id] };
 
   const scenePoints = Array.from({ length: worldPoints.length }, (_, index) => ({
     x: geometry.positions[index * 3]!,
@@ -274,8 +269,13 @@ function projectFloor(
   };
 }
 
-function isFailure(value: SceneRecord | FloorProjectionFailure): value is FloorProjectionFailure {
-  return "code" in value;
+function recordFailure(
+  failures: Map<SceneProjectionIssueCode, Set<string>>,
+  failure: FloorProjectionFailure | WallProjectionFailure,
+): void {
+  const sourceIds = failures.get(failure.code) ?? new Set<string>();
+  for (const sourceId of failure.sourceIds) sourceIds.add(sourceId);
+  failures.set(failure.code, sourceIds);
 }
 
 export function projectScene(input: SceneRendererInput): SceneProjection {
@@ -291,16 +291,23 @@ export function projectScene(input: SceneRendererInput): SceneProjection {
     if (
       entity.floorId !== input.activeFloorId
       || !visibleLayerIds.has(entity.layerId)
-      || (entity.type !== "space-unit" && entity.type !== "zone")
     ) continue;
 
-    const projected = projectFloor(entity, selectedIds);
-    if (isFailure(projected)) {
-      const sourceIds = failures.get(projected.code) ?? new Set<string>();
-      sourceIds.add(projected.sourceId);
-      failures.set(projected.code, sourceIds);
-    } else {
-      records.push(projected);
+    if (entity.type === "space-unit" || entity.type === "zone") {
+      const projected = projectFloor(entity, selectedIds);
+      if ("code" in projected) recordFailure(failures, projected);
+      else records.push(projected);
+      continue;
+    }
+
+    if (entity.type === "wall") {
+      const projected = projectWallRecords(
+        entity,
+        input.snapshot.project.openings.filter(({ wallId }) => wallId === entity.id),
+        selectedIds,
+      );
+      if ("code" in projected) recordFailure(failures, projected);
+      else records.push(...projected);
     }
   }
 

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --root ../.. packages/render-scene-3d/src/scene-projection.test.ts",
+    "test": "vitest run --root ../.. packages/render-scene-3d/src",
     "build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
