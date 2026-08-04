@@ -732,6 +732,25 @@ describe("plan editor session", () => {
     expect(store.getState().sceneFrameRequest).toBeNull();
     expect(store.getState().setSceneRendererStatus(currentScope, "ready", null)).toBe(false);
     expect(store.getState()).toMatchObject({
+      rendererStatus: "failed",
+      rendererError: "WebGL unavailable",
+    });
+    expect(store.getState().requestSceneRendererRetry()).toBe(true);
+    expect(store.getState()).toMatchObject({
+      viewMode: "3d",
+      rendererStatus: "idle",
+      rendererError: null,
+    });
+    expect(store.getState().requestSceneRendererRetry()).toBe(false);
+
+    const destroyedScope = store.getState().beginSceneRenderer();
+    expect(store.getState().setSceneRendererStatus(
+      destroyedScope,
+      "ready",
+      null,
+    )).toBe(true);
+    expect(store.getState().retireSceneRenderer(destroyedScope)).toBe(true);
+    expect(store.getState()).toMatchObject({
       rendererStatus: "destroyed",
       rendererError: null,
     });

@@ -148,6 +148,7 @@ export interface PlanEditorState {
   setActiveFloor(id: string): boolean;
   replaceSession(sessionId: string, activeFloorId: string): void;
   setViewMode(mode: SceneViewMode): boolean;
+  requestSceneRendererRetry(): boolean;
   beginSceneRenderer(): SceneRendererScope;
   retireSceneRenderer(scope: SceneRendererScope): boolean;
   setSceneCamera(scope: SceneRendererScope, camera: SceneCameraState): boolean;
@@ -446,6 +447,21 @@ export function createPlanEditorStore(
       if (mode !== state.viewMode) set({ viewMode: mode });
       return true;
     },
+    requestSceneRendererRetry() {
+      const state = get();
+      if (
+        state.rendererStatus !== "failed"
+        && state.rendererStatus !== "disabled"
+      ) return false;
+      set({
+        viewMode: "3d",
+        rendererStatus: "idle",
+        rendererError: null,
+        rendererGeneration: state.rendererGeneration + 1,
+        sceneFrameRequest: null,
+      });
+      return true;
+    },
 
     beginSceneRenderer() {
       const state = get();
@@ -467,10 +483,12 @@ export function createPlanEditorStore(
     retireSceneRenderer(scope) {
       const state = get();
       if (!isCurrentSceneRendererScope(state, scope)) return false;
+      const preserveUnavailable =
+        state.rendererStatus === "failed" || state.rendererStatus === "disabled";
       set({
         rendererGeneration: state.rendererGeneration + 1,
-        rendererStatus: "destroyed",
-        rendererError: null,
+        rendererStatus: preserveUnavailable ? state.rendererStatus : "destroyed",
+        rendererError: preserveUnavailable ? state.rendererError : null,
         sceneFrameRequest: null,
       });
       return true;

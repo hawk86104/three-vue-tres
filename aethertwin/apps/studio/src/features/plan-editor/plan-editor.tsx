@@ -17,6 +17,7 @@ import {
   type RoomRecognitionResult,
 } from "@aethertwin/plan-engine";
 import { resolveGuidedRoute } from "@aethertwin/route-engine";
+import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import type {
   Fixture,
   GuidedRoute,
@@ -65,6 +66,7 @@ import {
 import type { ProductMediaRole } from "./content-inspector";
 import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
+import { SceneCanvas } from "./scene-canvas";
 import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
@@ -84,6 +86,7 @@ export interface PlanEditorDependencies {
   readonly controller?: InteractionController;
   readonly makeId?: () => string;
   readonly workspace?: (context: PlanWorkspaceContext) => ReactNode;
+  readonly sceneRendererFactory?: SceneRendererFactory;
 readonly assetPicker?: PlanAssetPicker | null;
   readonly recognizeRooms?: (
     input: Parameters<typeof recognizeClosedRooms>[0],
@@ -1304,6 +1307,10 @@ export function PlanEditor({
     sessionStore,
     controller,
   };
+  const sceneViewMode = snapshot.project.profile === "showroom"
+    ? sessionState.viewMode
+    : "2d";
+  const sceneAssetSourceEpoch = store.getAssetSourceEpoch();
 
 
   const floorTree = (
@@ -1393,6 +1400,16 @@ export function PlanEditor({
           viewMode={sessionState.viewMode}
           rendererStatus={sessionState.rendererStatus}
           rendererError={sessionState.rendererError}
+          onRendererRetry={() => {
+            if (!sessionStore.getState().requestSceneRendererRetry()) return;
+            queueMicrotask(() => {
+              const target = workspaceRef.current
+                ?.querySelector<HTMLElement>(".studio-scene-canvas")
+                ?? workspaceRef.current
+                  ?.querySelector<HTMLElement>(".studio-plan-canvas");
+              target?.focus();
+            });
+          }}
           onViewModeChange={(mode) => {
             sessionStore.getState().setViewMode(mode);
           }}
@@ -1507,17 +1524,54 @@ export function PlanEditor({
             />
           )}
           {dependencies?.workspace?.(workspaceContext) ?? (
-            <PlanCanvas
-              store={store}
-              assetSourceEpoch={store.getAssetSourceEpoch()}
-              snapshot={snapshot}
-              activeFloorId={sessionState.activeFloorId}
-              sessionStore={sessionStore}
-              controller={controller}
-              guidedRouteDraftActive={routePanelOpen}
-              onError={(error) => setActionError(errorValue(error))}
-              onStartCalibration={startCalibration}
-            />
+            <div
+              className="studio-synchronized-scene-view"
+              data-testid="synchronized-scene-view"
+              data-view-mode={sceneViewMode}
+            >
+              {sceneViewMode === "3d" ? null : (
+                <div
+                  className="studio-synchronized-scene-view__pane"
+                  data-scene-pane="2d"
+                >
+                  <PlanCanvas
+                    store={store}
+                    assetSourceEpoch={sceneAssetSourceEpoch}
+                    snapshot={snapshot}
+                    activeFloorId={sessionState.activeFloorId}
+                    sessionStore={sessionStore}
+                    controller={controller}
+                    guidedRouteDraftActive={routePanelOpen}
+                    onError={(error) => setActionError(errorValue(error))}
+                    onStartCalibration={startCalibration}
+                  />
+                </div>
+              )}
+              {sceneViewMode === "2d" ? null : (
+                <div
+                  className="studio-synchronized-scene-view__pane"
+                  data-scene-pane="3d"
+                >
+                  <SceneCanvas
+                    key={[
+                      snapshot.project.id,
+                      sessionState.activeFloorId,
+                      sceneAssetSourceEpoch,
+                    ].join(":")}
+                    store={store}
+                    assetSourceEpoch={sceneAssetSourceEpoch}
+                    snapshot={snapshot}
+                    assetIssues={state.assetIssues}
+                    activeFloorId={sessionState.activeFloorId}
+                    sessionStore={sessionStore}
+                    onError={(error) => setActionError(errorValue(error))}
+                    {...(dependencies?.sceneRendererFactory === undefined
+                      ? {}
+                      : { rendererFactory: dependencies.sceneRendererFactory })}
+                  />
+                </div>
+              )}
+            </div>
           )}
         </div>
       }

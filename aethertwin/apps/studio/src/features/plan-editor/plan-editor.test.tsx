@@ -27,12 +27,14 @@ import {
   SHOWROOM_FIXTURE_CATALOGUE,
   showroomFixture,
 } from "@aethertwin/mode-showroom";
+import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
 import { createPlanEditorStore, type OpeningPreviewState } from "./editor-session";
 import { PlanEditor } from "./plan-editor";
 import { FakePlanRenderer, renderPlanEditorFixture } from "./plan-editor.test-support";
+import { FakeSceneRenderer } from "./scene-canvas.test-support";
 
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
@@ -818,7 +820,11 @@ describe("PlanEditor Task 10 shell", () => {
   });
   it("wires preview actions, explains renderer failures, and restores 2D focus", async () => {
     const user = userEvent.setup();
-    const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
+    const previewRenderer = new FakeSceneRenderer();
+    const { sessionStore } = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => previewRenderer,
+    });
 
     const twoD = screen.getByRole("button", { name: "2D" });
     const threeD = screen.getByRole("button", { name: "3D" });
@@ -833,15 +839,13 @@ describe("PlanEditor Task 10 shell", () => {
     expect(split).toHaveAttribute("aria-pressed", "true");
 
     await user.click(screen.getByRole("button", { name: "Frame Selection" }));
-    expect(sessionStore.getState().sceneFrameRequest).toMatchObject({
-      id: 1,
-      target: "selection",
-    });
+    await waitFor(() => expect(previewRenderer.frameInputs.at(-1))
+      .toBe("selection"));
+    expect(sessionStore.getState().sceneFrameRequest).toBeNull();
     await user.click(screen.getByRole("button", { name: "Frame Route" }));
-    expect(sessionStore.getState().sceneFrameRequest).toMatchObject({
-      id: 2,
-      target: "route",
-    });
+    await waitFor(() => expect(previewRenderer.frameInputs.at(-1))
+      .toBe("route"));
+    expect(sessionStore.getState().sceneFrameRequest).toBeNull();
 
     split.focus();
     expect(split).toHaveFocus();
@@ -937,6 +941,134 @@ describe("PlanEditor Task 10 shell", () => {
     expect(workspace).toHaveBeenCalledTimes(renderCount);
   });
 
+
+  it("integrates 2D, 3D, and split while sharing floor, selection, failure, and focus", async () => {
+    const user = userEvent.setup();
+    const first = new FakeSceneRenderer();
+    const second = new FakeSceneRenderer();
+    const third = new FakeSceneRenderer();
+    const renderers = [first, second, third];
+    const sceneRendererFactory = vi.fn(() => renderers.shift()!);
+    const {
+      sessionStore,
+      floorB,
+      fixture,
+    } = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory,
+    });
+
+    expect(screen.getByRole("region", { name: "二维平面画布" }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "三维场景" }))
+      .not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(first.initCount).toBe(1));
+    act(() => first.emitStatus("ready"));
+    expect(screen.queryByRole("region", { name: "二维平面画布" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "三维场景" }))
+      .toBeInTheDocument();
+
+    act(() => first.emitSelection(new Set([fixture.id])));
+    expect(rowByData("data-entity-id", fixture.id))
+      .toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: "Split" }));
+    expect(screen.getByRole("region", { name: "二维平面画布" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "三维场景" }))
+      .toBeInTheDocument();
+    expect(screen.getByTestId("synchronized-scene-view"))
+      .toHaveAttribute("data-view-mode", "split");
+    expect(first.initCount).toBe(1);
+
+    act(() => sessionStore.getState().setSelection([]));
+    const entityButton = within(
+      screen.getByRole("tree", { name: "楼层和空间" }),
+    ).getByRole("button", { name: "选择对象：" + fixture.name });
+    entityButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(
+      first.updateInputs.at(-1)?.selectedIds.has(fixture.id),
+    ).toBe(true));
+    expect(entityButton).toHaveFocus();
+
+    await user.click(screen.getByRole("button", {
+      name: "选择楼层：" + floorB.name,
+    }));
+    await waitFor(() => expect(second.initCount).toBe(1));
+    await waitFor(() => expect(second.updateInputs.at(-1)?.activeFloorId)
+      .toBe(floorB.id));
+    expect(first.destroyCount).toBe(1);
+    expect(screen.getByRole("region", { name: "二维平面画布" }))
+      .toBeInTheDocument();
+
+    act(() => second.emitStatus("ready"));
+    const scene = screen.getByRole("region", { name: "三维场景" });
+    scene.focus();
+    expect(scene).toHaveFocus();
+    act(() => second.emitStatus("failed", new Error("WebGL unavailable")));
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "三维场景" }))
+      .not.toBeInTheDocument());
+    const plan = screen.getByRole("region", { name: "二维平面画布" });
+    expect(plan).toBeInTheDocument();
+    await waitFor(() => expect(plan).toHaveFocus());
+    expect(sessionStore.getState()).toMatchObject({
+      viewMode: "2d",
+      rendererStatus: "failed",
+      rendererError: "WebGL unavailable",
+    });
+    expect(second.destroyCount).toBe(1);
+    const retry = screen.getByRole("button", { name: "重试 3D" });
+    await user.click(retry);
+    await waitFor(() => expect(third.initCount).toBe(1));
+    expect(sessionStore.getState()).toMatchObject({
+      viewMode: "3d",
+      rendererStatus: "initializing",
+      rendererError: null,
+    });
+    expect(screen.getByRole("region", { name: "三维场景" }))
+      .toBeInTheDocument();
+    act(() => third.emitStatus("ready"));
+  });
+
+  it("restores 2D focus when retry construction fails synchronously", async () => {
+    const user = userEvent.setup();
+    const first = new FakeSceneRenderer();
+    let attempts = 0;
+    const sceneRendererFactory: SceneRendererFactory = vi.fn(() => {
+      attempts += 1;
+      if (attempts === 1) return first;
+      throw new Error("renderer factory unavailable");
+    });
+    const { sessionStore } = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory,
+    });
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(first.initCount).toBe(1));
+    act(() => first.emitStatus("failed", new Error("WebGL unavailable")));
+    const retry = await screen.findByRole("button", {
+      name: "\u91cd\u8bd5 3D",
+    });
+
+    await user.click(retry);
+
+    const plan = await screen.findByRole("region", {
+      name: "\u4e8c\u7ef4\u5e73\u9762\u753b\u5e03",
+    });
+    await waitFor(() => expect(sessionStore.getState()).toMatchObject({
+      viewMode: "2d",
+      rendererStatus: "failed",
+      rendererError: "renderer factory unavailable",
+    }));
+    await waitFor(() => expect(plan).toHaveFocus());
+    expect(sceneRendererFactory).toHaveBeenCalledTimes(2);
+  });
 
   it("clears the showroom fixture choice on floor switch and unmount", async () => {
     const user = userEvent.setup();

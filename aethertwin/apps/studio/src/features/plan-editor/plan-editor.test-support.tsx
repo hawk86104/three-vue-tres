@@ -16,6 +16,7 @@ import type {
   PlanRendererEventSink,
   PlanRendererInput,
 } from "@aethertwin/render-plan-2d";
+import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
@@ -166,6 +167,7 @@ export interface RenderPlanEditorFixtureOptions {
   readonly primaryEntityType?: "fixture" | "wall" | "poi" | "dimension";
   readonly assetPicker?: PlanEditorDependencies["assetPicker"];
   readonly workspace?: PlanEditorDependencies["workspace"];
+  readonly sceneRendererFactory?: SceneRendererFactory;
   readonly renderer?: FakePlanRenderer;
 }
 
@@ -419,6 +421,9 @@ export function renderPlanEditorFixture(
         controller,
         makeId,
         assetPicker: options.assetPicker ?? null,
+        ...(options.sceneRendererFactory === undefined
+          ? {}
+          : { sceneRendererFactory: options.sceneRendererFactory }),
         ...(workspace === undefined
           ? {}
           : { workspace }),

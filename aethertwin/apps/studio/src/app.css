@@ -469,6 +469,49 @@ input {
   left: 12px;
 }
 
+.studio-synchronized-scene-view {
+  display: grid;
+  place-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.studio-synchronized-scene-view[data-view-mode="split"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.studio-synchronized-scene-view__pane,
+.studio-scene-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.studio-synchronized-scene-view[data-view-mode="split"]
+  .studio-synchronized-scene-view__pane + .studio-synchronized-scene-view__pane {
+  border-left: 1px solid var(--aether-border);
+}
+
+.studio-scene-canvas {
+  outline: none;
+}
+
+.studio-scene-canvas:focus-visible {
+  outline: 2px solid var(--aether-accent);
+  outline-offset: -2px;
+}
+
+.studio-scene-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .studio-plan-workspace__empty {
   max-width: 480px;
   color: var(--aether-text-muted);
@@ -602,10 +645,17 @@ input {
 }
 
 .studio-plan-toolbar__renderer-status {
+  display: grid;
   min-width: 0;
   max-width: 36ch;
+  gap: 4px;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.studio-plan-toolbar__renderer-retry {
+  min-height: 30px;
+  justify-self: start;
 }
 
 .studio-plan-sidebar,

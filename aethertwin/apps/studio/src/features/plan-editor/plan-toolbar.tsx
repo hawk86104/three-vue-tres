@@ -141,6 +141,7 @@ export interface PlanToolbarProps {
   readonly viewMode: SceneViewMode;
   readonly rendererStatus: SceneRendererStatus;
   readonly rendererError: string | null;
+  readonly onRendererRetry: (initiator: HTMLButtonElement) => void;
   readonly onViewModeChange: (mode: SceneViewMode, initiator: HTMLButtonElement) => void;
   readonly onFrameSelection: (initiator: HTMLButtonElement) => void;
   readonly onFrameRoute: (initiator: HTMLButtonElement) => void;
@@ -160,6 +161,7 @@ export function PlanToolbar({
   viewMode,
   rendererStatus,
   rendererError,
+  onRendererRetry,
   onViewModeChange,
   onFrameSelection,
   onFrameRoute,
@@ -336,6 +338,13 @@ export function PlanToolbar({
         >
           <strong>{rendererIssueText}</strong>
           <span>：{rendererError ?? "当前环境无法启动 WebGL。"}</span>
+          <Button
+            variant="secondary"
+            className="studio-plan-toolbar__renderer-retry"
+            onClick={(event) => onRendererRetry(event.currentTarget)}
+          >
+            重试 3D
+          </Button>
         </div>
       )}
     </div>
