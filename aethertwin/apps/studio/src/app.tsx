@@ -7,14 +7,31 @@ import {
   type ProjectBackend,
   type RecentProject,
 } from "@aethertwin/project-store";
+import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { selectBackend, type ForcedBackend } from "./backend/select-backend";
 import { ProjectBackendError } from "./backend/project-backend-error";
 import { UiGallery } from "./dev/ui-gallery";
 import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
 import { PlanEditor } from "./features/plan-editor/plan-editor";
+
+const DevSceneGallery = import.meta.env.DEV
+  ? lazy(async () => {
+    const module = await import("./dev/scene-gallery");
+    return { default: module.SceneGallery };
+  })
+  : null;
+
 
 class SessionStorage implements KeyValueStorage {
   private readonly values = new Map<string, string>();
@@ -120,6 +137,7 @@ async function disposeBackend(backend: ProjectBackend): Promise<void> {
 export interface AppProps {
   backend?: ProjectBackend;
   forceBackend?: ForcedBackend;
+  sceneRendererFactory?: SceneRendererFactory;
 }
 
 function StudioApp({ backend }: { backend: ProjectBackend }) {
@@ -335,9 +353,30 @@ function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
   return <StudioApp backend={backend} />;
 }
 
-export function App({ backend, forceBackend }: AppProps) {
+export function App({ backend, forceBackend, sceneRendererFactory }: AppProps) {
   const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
   if (pathname === "/dev/ui-gallery") return <UiGallery />;
+  if (
+    import.meta.env.DEV
+    && DevSceneGallery !== null
+    && pathname === "/dev/scene-gallery"
+  ) {
+    return (
+      <Suspense
+        fallback={(
+          <main className="studio-bootstrap-state">
+            <StatusNotice>Loading 3D scene gallery...</StatusNotice>
+          </main>
+        )}
+      >
+        <DevSceneGallery
+          {...(sceneRendererFactory === undefined ? {} : {
+            rendererFactory: sceneRendererFactory,
+          })}
+        />
+      </Suspense>
+    );
+  }
   if (backend !== undefined) return <StudioApp backend={backend} />;
   return <StudioBootstrap forceBackend={forceBackend} />;
 }

@@ -205,6 +205,33 @@ input {
   color: var(--aether-text-muted);
 }
 
+.studio-scene-gallery {
+  display: grid;
+  min-height: 100vh;
+  grid-template-rows: auto auto minmax(520px, 1fr);
+  gap: 16px;
+  padding: 32px;
+}
+
+.studio-scene-gallery > header h1 {
+  margin: 4px 0 8px;
+}
+
+.studio-scene-gallery > header p:last-child {
+  margin: 0;
+  color: var(--aether-text-muted);
+}
+
+.studio-scene-gallery__viewport {
+  min-width: 0;
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-md);
+  background: var(--aether-surface-1);
+}
+
+
 .studio-gallery-row {
   display: flex;
   flex-wrap: wrap;
