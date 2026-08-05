@@ -244,4 +244,45 @@ describe("scene.environment.patch", () => {
       await store.dispose();
     }
   });
+  it("rejects a patch captured from a project that is replaced earlier in the queue", async () => {
+    const backend = new SandboxProjectBackend();
+    const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
+    try {
+      await store.create({
+        name: "Environment A",
+        location: "sandbox",
+        profile: "showroom",
+      });
+      const projectAPath = store.getState().projectPath!;
+      const beforeA = store.getState().snapshot!.project.sceneEnvironment;
+
+      await store.create({
+        name: "Environment B",
+        location: "sandbox",
+        profile: "showroom",
+      });
+      const projectBPath = store.getState().projectPath!;
+      const projectB = structuredClone(store.getState().snapshot!);
+      await store.open(projectAPath);
+      const commit = vi.spyOn(backend, "commit");
+
+      const replacing = store.open(projectBPath);
+      const stalePatch = store.applySceneEnvironmentPatch({
+        before: beforeA,
+        after: environmentAfter(),
+      });
+
+      await replacing;
+      await expect(stalePatch).rejects.toThrow(/project changed/i);
+      expect(commit).not.toHaveBeenCalled();
+      expect(store.getState()).toMatchObject({
+        saveState: "saved",
+        snapshot: projectB,
+      });
+      expect((await backend.openProject(projectBPath)).snapshot).toEqual(projectB);
+    } finally {
+      await store.dispose();
+    }
+  });
+
 });

@@ -33,6 +33,7 @@ import type {
   ProjectBackend,
   ProjectAssetSource,
   ProjectStoreState,
+  SceneEnvironmentPatch,
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState, type Ref } from "react";
 import { validateProjectName } from "../project-center/create-project-dialog";
@@ -47,6 +48,7 @@ import {
   MaterialInspector,
   type MaterialTarget,
 } from "./material-inspector";
+import { EnvironmentInspector } from "./environment-inspector";
 
 type AssetIssue = ProjectStoreState["assetIssues"][number];
 
@@ -126,6 +128,10 @@ interface ProjectInspectorProps {
   readonly onHandledStoreError: (error: Error | null) => void;
   readonly onRename: (name: string) => Promise<void>;
   readonly onSetTags: (tags: readonly string[]) => Promise<void>;
+  readonly onApplySceneEnvironmentPatch: (
+    patch: SceneEnvironmentPatch,
+  ) => Promise<void>;
+  readonly onError: (error: unknown) => void;
 }
 
 function ProjectInspector({
@@ -136,6 +142,8 @@ function ProjectInspector({
   onHandledStoreError,
   onRename,
   onSetTags,
+  onApplySceneEnvironmentPatch,
+  onError,
 }: ProjectInspectorProps) {
   const committedName = snapshot.project.name;
   const committedTags = snapshot.project.tags.join(", ");
@@ -216,7 +224,8 @@ function ProjectInspector({
   const tagsLogRef = logReference(tagsHandledError);
 
   return (
-    <div className="studio-inspector-form">
+    <div className="studio-inspector-stack">
+      <div className="studio-inspector-form">
       <h2>项目</h2>
       <dl className="studio-plan-inspector__metadata">
         <div><dt>项目档案</dt><dd>{snapshot.project.profile}</dd></div>
@@ -274,6 +283,12 @@ function ProjectInspector({
       >
         应用标签
       </Button>
+      </div>
+      <EnvironmentInspector
+        environment={snapshot.project.sceneEnvironment}
+        onApplyPatch={onApplySceneEnvironmentPatch}
+        onError={onError}
+      />
     </div>
   );
 }
@@ -1229,6 +1244,9 @@ export interface PlanInspectorProps {
   readonly onHandledStoreError: (error: Error | null) => void;
   readonly onRenameProject: (name: string) => Promise<void>;
   readonly onSetProjectTags: (tags: readonly string[]) => Promise<void>;
+  readonly onApplySceneEnvironmentPatch: (
+    patch: SceneEnvironmentPatch,
+  ) => Promise<void>;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
   readonly onApplyPlanEdit: (intent: PlanEditIntent) => Promise<void>;
   readonly onApplyPlanReferencePatch?: (
@@ -1285,6 +1303,7 @@ export function PlanInspector({
   onHandledStoreError,
   onRenameProject,
   onSetProjectTags,
+  onApplySceneEnvironmentPatch,
   onApplyFloorPatch,
   onApplyPlanEdit,
   onApplyPlanReferencePatch,
@@ -1308,6 +1327,8 @@ export function PlanInspector({
         onHandledStoreError={onHandledStoreError}
         onRename={onRenameProject}
         onSetTags={onSetProjectTags}
+        onApplySceneEnvironmentPatch={onApplySceneEnvironmentPatch}
+        onError={onError}
       />
     );
   }

@@ -831,27 +831,51 @@ input {
   border-top: 1px solid var(--aether-border);
 }
 
-.studio-material-inspector {
+.studio-material-inspector,
+.studio-environment-inspector {
   padding-top: 12px;
   border-top: 1px solid var(--aether-border);
 }
 
-.studio-material-inspector > summary {
+.studio-material-inspector > summary,
+.studio-environment-inspector > summary {
   cursor: pointer;
   color: var(--aether-text);
   font-size: 14px;
   font-weight: 700;
 }
 
-.studio-material-inspector > summary:focus-visible {
+.studio-material-inspector > summary:focus-visible,
+.studio-environment-inspector > summary:focus-visible {
   outline: 2px solid var(--aether-accent);
   outline-offset: 3px;
 }
 
-.studio-material-inspector__body {
+.studio-material-inspector__body,
+.studio-environment-inspector__body {
   display: grid;
   gap: 10px;
   padding-top: 12px;
+}
+
+.studio-environment-inspector__direction {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.studio-environment-inspector__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--aether-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-environment-inspector__errors {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .studio-material-inspector__assignment {

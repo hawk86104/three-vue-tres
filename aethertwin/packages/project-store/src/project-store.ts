@@ -472,10 +472,29 @@ export class ProjectStore {
 
   applySceneEnvironmentPatch(patch: SceneEnvironmentPatch): Promise<void> {
     const ownedPatch = structuredClone(patch);
-    return this.enqueueMutation(() =>
-      this.mutate((bus) =>
-        bus.execute(patchSceneEnvironmentCommand, ownedPatch)),
-    );
+    const expectedBus = this.bus;
+    const expectedProjectId = this.state.snapshot?.project.id;
+    if (expectedBus === null || expectedProjectId === undefined) {
+      return Promise.reject(new Error("No project is open"));
+    }
+    return this.enqueueMutation(() => {
+      if (
+        this.bus !== expectedBus
+        || this.state.snapshot?.project.id !== expectedProjectId
+      ) {
+        throw new Error(
+          "Project changed before the scene environment patch was applied.",
+        );
+      }
+      return this.mutate((bus) => {
+        if (bus !== expectedBus) {
+          throw new Error(
+            "Project changed before the scene environment patch was applied.",
+          );
+        }
+        return bus.execute(patchSceneEnvironmentCommand, ownedPatch);
+      });
+    });
   }
 
   applySnapshotRecordPatches(

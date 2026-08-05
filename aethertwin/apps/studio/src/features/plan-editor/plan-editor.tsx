@@ -1673,6 +1673,9 @@ export function PlanEditor({
           onHandledStoreError={setHandledStoreError}
           onRenameProject={(name) => store.renameProject(name)}
           onSetProjectTags={(tags) => store.setProjectTags(tags)}
+          onApplySceneEnvironmentPatch={(patch) => runAction(
+            () => store.applySceneEnvironmentPatch(patch),
+          )}
           onApplyFloorPatch={(change) => runAction(
             () => store.applyFloorPatch(change),
           )}

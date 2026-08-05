@@ -146,7 +146,7 @@ afterEach(async () => {
 });
 
 describe("PlanEditor M0 behavior contract", () => {
-  it("renders the real project tree and read-only M0 metadata while the Inspector edits only name and tags", async () => {
+  it("renders the real project tree and bounded project metadata controls", async () => {
     const { store } = await sandboxProject("北岸展厅");
     await store.setProjectTags(["featured", "north"]);
     render(<PlanEditor store={store} />);
@@ -169,7 +169,8 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(inspector).toHaveTextContent("未保存");
     expect(inspector).toHaveTextContent(/sandbox/i);
     expect(inspector).toHaveTextContent("项目位置");
-    expect(within(inspector).getAllByRole("textbox")).toHaveLength(2);
+    expect(within(inspector).getByRole("group", { name: "\u73af\u5883" })).toBeInTheDocument();
+    expect(within(inspector).getByLabelText("\u80cc\u666f\u989c\u8272")).toHaveValue("#101820");
     expect(within(inspector).queryByRole("combobox")).not.toBeInTheDocument();
   });
 
