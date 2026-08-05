@@ -831,6 +831,66 @@ input {
   border-top: 1px solid var(--aether-border);
 }
 
+.studio-material-inspector {
+  padding-top: 12px;
+  border-top: 1px solid var(--aether-border);
+}
+
+.studio-material-inspector > summary {
+  cursor: pointer;
+  color: var(--aether-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.studio-material-inspector > summary:focus-visible {
+  outline: 2px solid var(--aether-accent);
+  outline-offset: 3px;
+}
+
+.studio-material-inspector__body {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.studio-material-inspector__assignment {
+  display: grid;
+  gap: 6px;
+  color: var(--aether-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-material-inspector__assignment select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-sm);
+  padding-inline: 8px;
+  background: var(--aether-surface-2);
+  color: var(--aether-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.studio-material-inspector__assignment select:focus-visible {
+  outline: 2px solid var(--aether-accent);
+  outline-offset: 1px;
+}
+
+.studio-material-inspector__impact {
+  margin: 0;
+  color: var(--aether-text-muted);
+  font-size: 12px;
+}
+
+.studio-material-inspector__texture-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .studio-content-inspector h2,
 .studio-content-inspector p {
   margin: 0;

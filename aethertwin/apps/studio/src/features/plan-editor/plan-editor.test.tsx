@@ -1512,7 +1512,7 @@ describe("PlanEditor locked single-entity editing", () => {
       const inspector = screen.getByRole("complementary", { name: "检查器" });
       for (const control of [
         ...within(inspector).getAllByRole("textbox"),
-        within(inspector).getByRole("combobox"),
+        ...within(inspector).getAllByRole("combobox"),
         within(inspector).getByRole("checkbox", { name: "对象锁定" }),
         within(inspector).getByRole("button", { name: "应用对象属性" }),
       ]) {

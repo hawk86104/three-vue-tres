@@ -21,6 +21,7 @@ import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import type {
   Fixture,
   GuidedRoute,
+  MaterialDefinition,
   MediaAsset,
   PlanReference,
   PointOfInterest,
@@ -53,6 +54,7 @@ import {
   createDesktopPlanAssetPicker,
   createSandboxPlanAssetPicker,
   type PlanAssetPicker,
+  type PlanAssetRole,
   type PlanAssetSource,
 } from "./asset-picker";
 import {
@@ -64,6 +66,10 @@ import {
   type InspectorContext,
 } from "./plan-inspector";
 import type { ProductMediaRole } from "./content-inspector";
+import {
+  materialTargetKind,
+  type MaterialTarget,
+} from "./material-inspector";
 import { PlanToolbar } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
 import { SceneCanvas } from "./scene-canvas";
@@ -326,6 +332,30 @@ function editableSelectedRoom(
   if (
     entity?.type !== "space-unit"
     || entity.kind !== "room"
+    || entity.floorId !== activeFloorId
+    || entity.locked
+  ) return null;
+  const floor = snapshot.project.floors.find(({ id }) => id === activeFloorId);
+  const layer = floor?.layers.find(({ id }) => id === entity.layerId);
+  return layer !== undefined && layer.visible && !layer.locked ? entity : null;
+}
+
+function editableMaterialTarget(
+  snapshot: ProjectSnapshot,
+  activeFloorId: string,
+  selectedIds: ReadonlySet<string>,
+  targetId: string,
+): MaterialTarget | null {
+  if (selectedIds.size !== 1 || !selectedIds.has(targetId)) return null;
+  const entity = snapshot.project.entities.find(({ id }) => id === targetId);
+  if (
+    entity === undefined
+    || !(
+      entity.type === "space-unit"
+      || entity.type === "zone"
+      || entity.type === "wall"
+      || entity.type === "fixture"
+    )
     || entity.floorId !== activeFloorId
     || entity.locked
   ) return null;
@@ -903,9 +933,10 @@ export function PlanEditor({
     }
   }
 
-  async function runProductAssetOperation(
-    role: ProductMediaRole,
+  async function runAssetOperation(
+    role: PlanAssetRole,
     initiator: HTMLElement,
+    failureMessage: string,
     action: (
       source: PlanAssetSource,
       operationId: string,
@@ -919,7 +950,6 @@ export function PlanEditor({
     setAssetImportBusy(true);
     setActionError(null);
     let ownedOperationId: string | null = null;
-    const failureMessage = "\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002";
     try {
       const source = await assetPicker.pick(role);
       if (source === null) return;
@@ -966,9 +996,10 @@ export function PlanEditor({
     content: ProductContent | null,
     initiator: HTMLElement,
   ): Promise<void> {
-    await runProductAssetOperation(
+    await runAssetOperation(
       role,
       initiator,
+      "\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
       async (source, operationId, onProgress) => {
         const currentSnapshot = store.getState().snapshot;
         if (currentSnapshot === null) {
@@ -1047,9 +1078,10 @@ export function PlanEditor({
     const role: ProductMediaRole = media.kind === "image"
       ? "content-image"
       : "content-video";
-    await runProductAssetOperation(
+    await runAssetOperation(
       role,
       initiator,
+      "\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
       async (source, operationId, onProgress) => {
         const currentSnapshot = store.getState().snapshot;
         if (currentSnapshot === null) {
@@ -1099,6 +1131,55 @@ export function PlanEditor({
           { operationId, role, source },
           onProgress,
         );
+      },
+    );
+  }
+
+  async function runMaterialTextureImport(
+    material: MaterialDefinition,
+    target: MaterialTarget,
+    initiator: HTMLElement,
+  ): Promise<void> {
+    await runAssetOperation(
+      "material-texture",
+      initiator,
+      "材质纹理导入失败，请重试。",
+      async (source, operationId, onProgress) => {
+        const currentSnapshot = store.getState().snapshot;
+        if (currentSnapshot === null) {
+          throw new Error("Project changed while choosing a material texture.");
+        }
+        const currentTarget = editableMaterialTarget(
+          currentSnapshot,
+          sessionStore.getState().activeFloorId,
+          sessionStore.getState().selectedIds,
+          target.id,
+        );
+        if (currentTarget === null || currentTarget.type !== target.type) {
+          throw new Error("Material target is no longer editable.");
+        }
+        const targetKind = materialTargetKind(currentTarget);
+        const currentAssignment = currentSnapshot.project.materialAssignments.find(
+          (candidate) => (
+            candidate.targetKind === targetKind
+            && candidate.targetId === currentTarget.id
+          ),
+        );
+        const currentMaterial = currentSnapshot.project.materials.find(
+          ({ id }) => id === material.id,
+        );
+        if (
+          currentAssignment?.materialId !== material.id
+          || currentMaterial === undefined
+          || JSON.stringify(currentMaterial) !== JSON.stringify(material)
+        ) {
+          throw new Error("Material changed while choosing a texture.");
+        }
+        await store.importMaterialTexture({
+          operationId,
+          role: "material-texture",
+          source,
+        }, material, onProgress);
       },
     );
   }
@@ -1630,6 +1711,22 @@ export function PlanEditor({
           )}
           onImportProductMedia={runProductMediaImport}
           onRepairProductMedia={runProductMediaRepair}
+          onApplyMaterialPatches={async (target, patches) => {
+            const currentSnapshot = store.getState().snapshot;
+            const currentTarget = currentSnapshot === null
+              ? null
+              : editableMaterialTarget(
+                  currentSnapshot,
+                  sessionStore.getState().activeFloorId,
+                  sessionStore.getState().selectedIds,
+                  target.id,
+                );
+            if (currentTarget === null || currentTarget.type !== target.type) {
+              throw new Error("Material target is no longer editable.");
+            }
+            await store.applySnapshotRecordPatches(patches);
+          }}
+          onImportMaterialTexture={runMaterialTextureImport}
           resolveAsset={resolveProjectAsset}
           onError={(error) => setActionError(errorValue(error))}
           />

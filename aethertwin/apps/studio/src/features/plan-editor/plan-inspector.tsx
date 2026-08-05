@@ -2,6 +2,7 @@ import {
   validateOpeningGeometry,
   type Fixture,
   type Floor,
+  type MaterialDefinition,
   type MediaAsset,
   type Opening,
   type PlanLayer,
@@ -27,6 +28,7 @@ import {
   type PlanResult,
 } from "@aethertwin/plan-engine";
 import type {
+  AnySnapshotRecordsPatch,
   BuildingStructurePatch,
   ProjectBackend,
   ProjectAssetSource,
@@ -41,6 +43,10 @@ import {
   ContentInspector,
   type ProductMediaRole,
 } from "./content-inspector";
+import {
+  MaterialInspector,
+  type MaterialTarget,
+} from "./material-inspector";
 
 type AssetIssue = ProjectStoreState["assetIssues"][number];
 
@@ -1057,6 +1063,15 @@ interface EntityInspectorWithContentProps {
     target: Fixture | PointOfInterest,
     initiator: HTMLElement,
   ) => Promise<void>;
+  readonly onApplyMaterialPatches: (
+    target: MaterialTarget,
+    patches: readonly AnySnapshotRecordsPatch[],
+  ) => Promise<void>;
+  readonly onImportMaterialTexture: (
+    material: MaterialDefinition,
+    target: MaterialTarget,
+    initiator: HTMLElement,
+  ) => Promise<void>;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
   readonly onError: (error: unknown) => void;
 }
@@ -1074,6 +1089,8 @@ function EntityInspectorWithContent({
   onApplyProductContentPatch,
   onImportProductMedia,
   onRepairProductMedia,
+  onApplyMaterialPatches,
+  onImportMaterialTexture,
   resolveAsset,
   onError,
 }: EntityInspectorWithContentProps) {
@@ -1087,11 +1104,47 @@ function EntityInspectorWithContent({
       onError={onError}
     />
   );
+  const materialTarget: MaterialTarget | null = entity.type === "space-unit"
+    || entity.type === "zone"
+    || entity.type === "wall"
+    || entity.type === "fixture"
+    ? entity
+    : null;
+  const materialLayer = materialTarget === null
+    ? undefined
+    : floor.layers.find(({ id }) => id === materialTarget.layerId);
+  const materialInspector = materialTarget === null ? null : (
+    <MaterialInspector
+      snapshot={snapshot}
+      target={materialTarget}
+      disabled={
+        materialTarget.locked
+        || materialLayer === undefined
+        || !materialLayer.visible
+        || materialLayer.locked
+      }
+      assetIssues={assetIssues}
+      assetOperationBusy={assetOperationBusy}
+      makeId={makeId}
+      onApplyPatches={(patches) => (
+        onApplyMaterialPatches(materialTarget, patches)
+      )}
+      onImportTexture={onImportMaterialTexture}
+      onError={onError}
+    />
+  );
   const target = entity.type === "fixture"
     || (entity.type === "poi" && entity.kind === "product-hotspot")
     ? entity
     : null;
-  if (target === null) return entityInspector;
+  if (target === null) {
+    return materialInspector === null ? entityInspector : (
+      <div className="studio-inspector-stack">
+        {entityInspector}
+        {materialInspector}
+      </div>
+    );
+  }
 
   const storedContent = snapshot.project.productContents.find(
     (candidate) => candidate.targetEntityId === target.id,
@@ -1130,6 +1183,7 @@ function EntityInspectorWithContent({
   return (
     <div className="studio-inspector-stack">
       {entityInspector}
+      {materialInspector}
       <ContentInspector
         importImageButtonRef={productMediaImageButtonRef}
         content={content}
@@ -1203,6 +1257,15 @@ export interface PlanInspectorProps {
     target: Fixture | PointOfInterest,
     initiator: HTMLElement,
   ) => Promise<void>;
+  readonly onApplyMaterialPatches: (
+    target: MaterialTarget,
+    patches: readonly AnySnapshotRecordsPatch[],
+  ) => Promise<void>;
+  readonly onImportMaterialTexture: (
+    material: MaterialDefinition,
+    target: MaterialTarget,
+    initiator: HTMLElement,
+  ) => Promise<void>;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
   readonly onError: (error: unknown) => void;
 }
@@ -1227,6 +1290,8 @@ export function PlanInspector({
   onApplyPlanReferencePatch,
   onApplyOpeningPatch,
   onApplyBuildingStructurePatch,
+  onApplyMaterialPatches,
+  onImportMaterialTexture,
   onApplyProductContentPatch,
   onImportProductMedia,
   onRepairProductMedia,
@@ -1366,6 +1431,8 @@ export function PlanInspector({
         makeId={makeId}
         onApplyPlanEdit={onApplyPlanEdit}
         onApplyBuildingStructurePatch={onApplyBuildingStructurePatch}
+        onApplyMaterialPatches={onApplyMaterialPatches}
+        onImportMaterialTexture={onImportMaterialTexture}
         onApplyProductContentPatch={onApplyProductContentPatch}
         onImportProductMedia={onImportProductMedia}
         onRepairProductMedia={onRepairProductMedia}
