@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 3,
+  "sequence": 0,
+  "checkpointSequence": 0,
+  "project": {
+    "id": "17000000-0000-4000-8000-000000000001",
+    "name": "Task 17 M2.4 Showroom",
+    "tags": ["m2.4", "vertical-acceptance"],
+    "profile": "showroom",
+    "floors": [{
+      "id": "17000000-0000-4000-8000-000000000002",
+      "name": "Showroom Floor",
+      "tags": [],
+      "layers": [{
+        "id": "17000000-0000-4000-8000-000000000003",
+        "name": "Showroom Layer",
+        "tags": [],
+        "visible": true,
+        "locked": false
+      }]
+    }],
+    "entities": [
+      {
+        "id": "17000000-0000-4000-8000-000000000010",
+        "name": "Main exhibition room",
+        "tags": ["room"],
+        "type": "space-unit",
+        "kind": "exhibition",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 0, "y": 0 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+        "footprint": [{ "x": 0, "y": 0 }, { "x": 8000, "y": 0 }, { "x": 8000, "y": 6000 }, { "x": 0, "y": 6000 }]
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000011",
+        "name": "Featured zone",
+        "tags": ["zone"],
+        "type": "zone",
+        "purpose": "featured-products",
+        "color": "#315d66",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 0, "y": 0 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+        "polygon": [{ "x": 4500, "y": 3200 }, { "x": 7200, "y": 3200 }, { "x": 7200, "y": 5400 }, { "x": 4500, "y": 5400 }]
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000012",
+        "name": "Entrance wall",
+        "tags": ["structure"],
+        "type": "wall",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 500, "y": 500 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+        "spatial3D": { "elevation": 0, "height": 2800 },
+        "centerLine": [{ "x": 0, "y": 0 }, { "x": 7000, "y": 0 }],
+        "thickness": 160
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000020",
+        "name": "Display case",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "display-case",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 1200, "y": 1700 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1200, "height": 600 },
+        "spatial3D": { "elevation": 0, "height": 1200 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000021",
+        "name": "Display table",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "display-table",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 2800, "y": 1700 }, "rotation": 0.1, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1500, "height": 750 },
+        "spatial3D": { "elevation": 0, "height": 900 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000022",
+        "name": "Shelf",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "shelf",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 4500, "y": 1700 }, "rotation": 0.2, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1000, "height": 400 },
+        "spatial3D": { "elevation": 0, "height": 2000 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000023",
+        "name": "Checkout",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "checkout",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 6200, "y": 1700 }, "rotation": 0.3, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1600, "height": 700 },
+        "spatial3D": { "elevation": 0, "height": 1000 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000024",
+        "name": "Screen",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "screen",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 1200, "y": 3900 }, "rotation": 0.4, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1200, "height": 100 },
+        "spatial3D": { "elevation": 0, "height": 1800 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000025",
+        "name": "Partition",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "partition",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 2800, "y": 3900 }, "rotation": 0.5, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 1200, "height": 100 },
+        "spatial3D": { "elevation": 0, "height": 2400 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000026",
+        "name": "Signage",
+        "tags": ["fixture"],
+        "type": "fixture",
+        "kind": "signage",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 4400, "y": 3900 }, "rotation": 0.6, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 600, "height": 100 },
+        "spatial3D": { "elevation": 0, "height": 1800 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000027",
+        "name": "Generic fixture",
+        "tags": ["fixture", "generic"],
+        "type": "fixture",
+        "kind": "generic",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 5900, "y": 3900 }, "rotation": 0.7, "scale": { "x": 1, "y": 1 } },
+        "size": { "width": 900, "height": 650 },
+        "spatial3D": { "elevation": 0, "height": 1100 }
+      },
+      {
+        "id": "17000000-0000-4000-8000-000000000030",
+        "name": "Featured product hotspot",
+        "tags": ["hotspot"],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "17000000-0000-4000-8000-000000000002",
+        "layerId": "17000000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": { "translation": { "x": 6800, "y": 5000 }, "rotation": 0, "scale": { "x": 1, "y": 1 } },
+        "radius": 180
+      }
+    ],
+    "vendors": [],
+    "productContents": [{
+      "id": "17000000-0000-4000-8000-000000000031",
+      "name": "Featured product content",
+      "tags": ["offline"],
+      "targetEntityId": "17000000-0000-4000-8000-000000000030",
+      "description": "Deterministic offline showroom content.",
+      "mediaAssetIds": []
+    }],
+    "mediaAssets": [],
+    "routeNetworks": [{
+      "id": "17000000-0000-4000-8000-000000000055",
+      "name": "Visitor route network",
+      "tags": ["guided"],
+      "nodes": [
+        { "id": "17000000-0000-4000-8000-000000000050", "name": "Entrance", "tags": [], "position": { "x": 800, "y": 1200 }, "floorId": "17000000-0000-4000-8000-000000000002", "kind": "entrance" },
+        { "id": "17000000-0000-4000-8000-000000000051", "name": "Turn", "tags": [], "position": { "x": 3500, "y": 1200 }, "floorId": "17000000-0000-4000-8000-000000000002", "kind": "junction" },
+        { "id": "17000000-0000-4000-8000-000000000052", "name": "Featured stop", "tags": [], "position": { "x": 6500, "y": 4800 }, "floorId": "17000000-0000-4000-8000-000000000002", "kind": "showroom-stop" }
+      ],
+      "edges": [
+        { "id": "17000000-0000-4000-8000-000000000053", "name": "Entrance leg", "tags": [], "from": "17000000-0000-4000-8000-000000000050", "to": "17000000-0000-4000-8000-000000000051", "distance": 2700, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 },
+        { "id": "17000000-0000-4000-8000-000000000054", "name": "Gallery leg", "tags": [], "from": "17000000-0000-4000-8000-000000000051", "to": "17000000-0000-4000-8000-000000000052", "distance": 4686.149805543993, "bidirectional": true, "accessible": true, "enabled": true, "width": 1200, "weight": 1 }
+      ]
+    }],
+    "themes": [],
+    "cameraShots": [],
+    "storySequences": [],
+    "planReferences": [],
+    "openings": [
+      { "id": "17000000-0000-4000-8000-000000000040", "name": "Entrance door", "tags": [], "wallId": "17000000-0000-4000-8000-000000000012", "kind": "door", "distanceAlongWall": 1400, "width": 1000, "height": 2100, "sillHeight": 0 },
+      { "id": "17000000-0000-4000-8000-000000000041", "name": "Display window", "tags": [], "wallId": "17000000-0000-4000-8000-000000000012", "kind": "window", "distanceAlongWall": 4700, "width": 1400, "height": 1200, "sillHeight": 900 }
+    ],
+    "guidedRoutes": [{
+      "id": "17000000-0000-4000-8000-000000000056",
+      "name": "Visitor guided route",
+      "tags": ["guided"],
+      "routeNetworkId": "17000000-0000-4000-8000-000000000055",
+      "stopNodeIds": ["17000000-0000-4000-8000-000000000050", "17000000-0000-4000-8000-000000000052"]
+    }],
+    "materials": [
+      { "id": "17000000-0000-4000-8000-000000000060", "name": "Textured floor", "tags": ["floor", "texture"], "baseColor": "#6f8792", "roughness": 0.7, "metalness": 0.05, "opacity": 1, "assetId": "17000000-0000-4000-8000-000000000064" },
+      { "id": "17000000-0000-4000-8000-000000000061", "name": "Entrance wall paint", "tags": ["wall"], "baseColor": "#d9cec2", "roughness": 0.85, "metalness": 0, "opacity": 1, "assetId": null },
+      { "id": "17000000-0000-4000-8000-000000000062", "name": "Display metal", "tags": ["fixture"], "baseColor": "#41566a", "roughness": 0.35, "metalness": 0.8, "opacity": 0.92, "assetId": null }
+    ],
+    "materialAssignments": [
+      { "id": "17000000-0000-4000-8000-000000000065", "name": "Floor material", "tags": [], "materialId": "17000000-0000-4000-8000-000000000060", "targetKind": "space-floor", "targetId": "17000000-0000-4000-8000-000000000010" },
+      { "id": "17000000-0000-4000-8000-000000000066", "name": "Wall material", "tags": [], "materialId": "17000000-0000-4000-8000-000000000061", "targetKind": "wall", "targetId": "17000000-0000-4000-8000-000000000012" },
+      { "id": "17000000-0000-4000-8000-000000000067", "name": "Fixture material", "tags": [], "materialId": "17000000-0000-4000-8000-000000000062", "targetKind": "fixture", "targetId": "17000000-0000-4000-8000-000000000020" }
+    ],
+    "sceneEnvironment": {
+      "backgroundColor": "#18242d",
+      "ambient": { "color": "#c9dde6", "intensity": 0.8 },
+      "key": { "color": "#ffe4c7", "intensity": 1.6, "direction": [5, 9, 4] },
+      "shadowsEnabled": true,
+      "shadowSoftness": 0.7
+    }
+  },
+  "assets": [{
+    "id": "17000000-0000-4000-8000-000000000064",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "relativePath": "assets/sha256/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png",
+    "mediaType": "image/png",
+    "size": 128
+  }]
+}
