@@ -194,6 +194,28 @@ test("offline scanning includes every M2.3 content and guided-route workflow own
   }
 });
 
+const exporterForbiddenRuntimePattern =
+  /@tauri-apps|from\s+["']react["']|from\s+["']react-dom["']|\bReact\b|\bhttps?:|\bURL\b|\bfetch\b|\bcdn\b|node:(?:fs|path)|from\s+["'](?:fs|path)["']|\bHTMLElement\b|\bHTMLCanvasElement\b|\bCanvasRenderingContext2D\b|\bOffscreenCanvas\b|\bWebGL(?:2)?RenderingContext\b|\bdocument\b|\bwindow\b|\bcreateElement\b/iu;
+
+test("M2.5 exporter policy pattern covers raw URLs and DOM renderer paths", () => {
+  for (const forbidden of [
+    "http://example.invalid/export",
+    "https://example.invalid/export",
+    "URL",
+    "fetch",
+    "HTMLCanvasElement",
+    "CanvasRenderingContext2D",
+    "OffscreenCanvas",
+    "WebGLRenderingContext",
+    "WebGL2RenderingContext",
+    "document",
+    "window",
+    "createElement",
+  ]) {
+    assert.match(forbidden, exporterForbiddenRuntimePattern, forbidden);
+  }
+});
+
 test("M2.5 exporter source does not take renderer, desktop, or filesystem ownership", () => {
   const exporterSource = globSync("packages/exporter/src/**/*.ts", {
     exclude: ["**/*.test.*"],
@@ -203,6 +225,6 @@ test("M2.5 exporter source does not take renderer, desktop, or filesystem owners
 
   assert.doesNotMatch(
     exporterSource,
-    /@tauri-apps|from\s+["']react["']|from\s+["']react-dom["']|\bReact\b|\bURL\b|\bcdn\b|node:(?:fs|path)|from\s+["'](?:fs|path)["']|\bHTMLElement\b|\bdocument\b|\bwindow\b/iu,
+    exporterForbiddenRuntimePattern,
   );
 });
