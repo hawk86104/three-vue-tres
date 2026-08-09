@@ -36,8 +36,7 @@ function validateBeginResult(
     || begun.height !== height
     || begun.expectedByteLength !== expectedByteLength
     || !Number.isSafeInteger(begun.maxChunkBytes)
-    || begun.maxChunkBytes <= 0
-    || begun.maxChunkBytes > PROJECT_EXPORT_MAX_CHUNK_BYTES
+    || begun.maxChunkBytes !== PROJECT_EXPORT_MAX_CHUNK_BYTES
   ) {
     throw new ProjectExportError("EXPORT_FRAME_INVALID");
   }
@@ -118,6 +117,7 @@ class ActiveProjectExport {
       );
 
       this.progress({ phase: "rendering", sentBytes: null, totalBytes: null });
+      this.assertLive();
       const rendered = await this.request.port.render(
         prepared.capture,
         prepared.dimensions,
@@ -154,6 +154,7 @@ class ActiveProjectExport {
         sentBytes: null,
         totalBytes: null,
       });
+      this.assertLive();
       const result = await this.backend.finish(
         this.request.context.projectPath,
         begun.exportId,

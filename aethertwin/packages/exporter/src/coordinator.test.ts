@@ -276,6 +276,54 @@ describe("ProjectExportCoordinator", () => {
     expect(events).toHaveLength(eventCountAfterCancel);
   });
 
+  it.each([
+    ["cancellation", "rendering"],
+    ["cancellation", "encoding-publishing"],
+    ["staleness", "rendering"],
+    ["staleness", "encoding-publishing"],
+  ] as const)("does not start downstream work after %s in %s progress", async (mode, phase) => {
+    const events: string[] = [];
+    let current = true;
+    let operation: { readonly result: Promise<ProjectExportResult>; cancel(): Promise<void> } | null = null;
+    const coordinator = createProjectExportCoordinator(fakeBackend(events));
+    operation = coordinator.start({
+      port: fakePort(events),
+      preset: "full-hd",
+      context: exportContext({ isCurrent: () => current }),
+      onProgress: (value) => {
+        if (value.phase !== phase) return;
+        if (mode === "cancellation") void operation?.cancel();
+        else current = false;
+      },
+    });
+
+    await expect(operation.result).rejects.toMatchObject({
+      code: mode === "cancellation" ? "EXPORT_CANCELLED" : "EXPORT_CAPTURE_EXPIRED",
+    });
+    expect(events).not.toContain(phase === "rendering" ? "render" : "finish");
+  });
+
+  it("rejects a smaller runtime chunk ceiling before rendering", async () => {
+    const events: string[] = [];
+    const operation = createProjectExportCoordinator(fakeBackend(events, {
+      begin: async () => ({
+        ...fullHd,
+        exportId: "export-1",
+        expectedByteLength: byteLength,
+        maxChunkBytes: 524_288,
+      } as unknown as ProjectExportBeginResult),
+    })).start({
+      port: fakePort(events),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: progress(events),
+    });
+
+    await expect(operation.result).rejects.toMatchObject({ code: "EXPORT_FRAME_INVALID" });
+    expect(events).toContain("cancel");
+    expect(events).not.toContain("render");
+  });
+
   it.each(["session", "project", "floor", "renderer"] as const)(
     "rejects when the %s generation changes after native begin",
     async () => {
