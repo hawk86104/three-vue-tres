@@ -45,6 +45,8 @@ function validateBeginResult(
 class ActiveProjectExport {
   readonly publicOperation: ProjectExportOperation;
   private readonly resultPromise: Promise<ProjectExportResult>;
+  private resolveResult!: (result: ProjectExportResult) => void;
+  private rejectResult!: (reason: unknown) => void;
   private exportId: string | null = null;
   private cancelled = false;
   private settled = false;
@@ -55,11 +57,21 @@ class ActiveProjectExport {
     private readonly request: StartProjectExportRequest,
     private readonly onSettled: () => void,
   ) {
-    this.resultPromise = this.run();
+    this.resultPromise = new Promise<ProjectExportResult>((resolve, reject) => {
+      this.resolveResult = resolve;
+      this.rejectResult = reject;
+    });
     this.publicOperation = Object.freeze({
       result: this.resultPromise,
       cancel: () => this.cancel(),
     });
+  }
+
+  start(): void {
+    void this.run().then(
+      (result) => this.resolveResult(result),
+      (error: unknown) => this.rejectResult(error),
+    );
   }
 
   private assertLive(): void {
@@ -189,6 +201,7 @@ class DefaultProjectExportCoordinator implements ProjectExportCoordinator {
       if (this.active === active) this.active = null;
     });
     this.active = active;
+    active.start();
     return active.publicOperation;
   }
 }

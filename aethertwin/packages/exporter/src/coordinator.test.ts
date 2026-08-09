@@ -198,6 +198,27 @@ describe("ProjectExportCoordinator", () => {
     await expect(first.result).rejects.toMatchObject({ code: "EXPORT_CANCELLED" });
   });
 
+  it("rejects a reentrant start from preparing-textures progress", async () => {
+    const events: string[] = [];
+    const coordinator = createProjectExportCoordinator(fakeBackend(events));
+    const first = coordinator.start({
+      port: fakePort(events),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: (value) => {
+        if (value.phase !== "preparing-textures") return;
+        expect(() => coordinator.start({
+          port: fakePort(events),
+          preset: "full-hd",
+          context: exportContext(),
+          onProgress: progress(events),
+        })).toThrowError(expect.objectContaining({ code: "EXPORT_RENDERER_NOT_READY" }));
+      },
+    });
+
+    await expect(first.result).resolves.toMatchObject({ preset: "full-hd" });
+  });
+
   it("cancels before native begin and discards the late texture result", async () => {
     const events: string[] = [];
     const textures = deferred<void>();
