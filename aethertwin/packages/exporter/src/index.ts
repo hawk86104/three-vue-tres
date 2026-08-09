@@ -10,6 +10,7 @@ export {
   prepareProjectExport,
   validateProjectExportFrame,
 } from "./preflight";
+export { createProjectExportCoordinator } from "./coordinator";
 export type { ProjectExportErrorCode } from "./errors";
 export type {
   ProjectExportBackend,
@@ -18,11 +19,14 @@ export type {
   ProjectExportDimensions,
   ProjectExportPhase,
   ProjectExportContext,
+  ProjectExportCoordinator,
   PreparedProjectExport,
   ProjectExportPreset,
   ProjectExportProgress,
   ProjectExportResult,
+  ProjectExportOperation,
   SceneAssetIssue,
+  StartProjectExportRequest,
   SceneExportFrame,
   SceneExportPort,
   SceneExportProvenance,

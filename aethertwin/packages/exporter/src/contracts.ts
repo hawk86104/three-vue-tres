@@ -27,6 +27,22 @@ export interface ProjectExportProgress {
   readonly totalBytes: number | null;
 }
 
+export interface StartProjectExportRequest {
+  readonly port: SceneExportPort;
+  readonly preset: ProjectExportPreset;
+  readonly context: ProjectExportContext;
+  readonly onProgress: (progress: ProjectExportProgress) => void;
+}
+
+export interface ProjectExportOperation {
+  readonly result: Promise<ProjectExportResult>;
+  cancel(): Promise<void>;
+}
+
+export interface ProjectExportCoordinator {
+  start(request: StartProjectExportRequest): ProjectExportOperation;
+}
+
 export type ProjectExportDimensions =
   | {
       readonly preset: "full-hd";
