@@ -4,6 +4,7 @@ export {
   projectExportDimensions,
 } from "./presets";
 export { ProjectExportError } from "./errors";
+export { streamTopLeftRgbaChunks } from "./row-chunks";
 export type { ProjectExportErrorCode } from "./errors";
 export type {
   ProjectExportBackend,
