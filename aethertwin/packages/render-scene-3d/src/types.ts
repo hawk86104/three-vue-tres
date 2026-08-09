@@ -183,6 +183,12 @@ export interface SceneGpuLimits {
   readonly maxSamples: number;
 }
 
+export interface SceneExportProvenance {
+  readonly projectId: string;
+  readonly snapshotSequence: number;
+  readonly activeFloorId: string;
+}
+
 export interface SceneExportCapture {
   readonly scene: SceneProjection;
   readonly camera: SceneCameraState;

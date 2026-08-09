@@ -193,3 +193,16 @@ test("offline scanning includes every M2.3 content and guided-route workflow own
     assert.ok(normalized.includes(relative), `offline scan misses ${relative}`);
   }
 });
+
+test("M2.5 exporter source does not take renderer, desktop, or filesystem ownership", () => {
+  const exporterSource = globSync("packages/exporter/src/**/*.ts", {
+    exclude: ["**/*.test.*"],
+  })
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
+
+  assert.doesNotMatch(
+    exporterSource,
+    /@tauri-apps|from\s+["']react["']|from\s+["']react-dom["']|\bReact\b|\bURL\b|\bcdn\b|node:(?:fs|path)|from\s+["'](?:fs|path)["']|\bHTMLElement\b|\bdocument\b|\bwindow\b/iu,
+  );
+});

@@ -28,6 +28,7 @@ export type {
   SceneExportCapture,
   SceneExportFrame,
   SceneExportPort,
+  SceneExportProvenance,
   SceneExportRenderRequest,
   SceneFrameTarget,
   SceneGeometry,

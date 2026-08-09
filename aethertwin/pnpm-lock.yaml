@@ -84,6 +84,9 @@ importers:
       '@aethertwin/editor-shell':
         specifier: workspace:*
         version: link:../../packages/editor-shell
+      '@aethertwin/exporter':
+        specifier: workspace:*
+        version: link:../../packages/exporter
       '@aethertwin/mode-showroom':
         specifier: workspace:*
         version: link:../../packages/mode-showroom
@@ -208,6 +211,12 @@ importers:
       jsdom:
         specifier: 29.1.1
         version: 29.1.1
+
+  packages/exporter:
+    dependencies:
+      '@aethertwin/render-scene-3d':
+        specifier: workspace:*
+        version: link:../render-scene-3d
 
   packages/mode-showroom:
     dependencies:

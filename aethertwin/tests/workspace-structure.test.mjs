@@ -354,3 +354,21 @@ test("M2.4 render-scene-3d boundary pins its runtime and workspace dependencies"
   assert.equal(existsSync(join(packageRoot, "src/.gitkeep")), false);
   assert.doesNotMatch(JSON.stringify(manifest), /(?:https?:|\bcdn\b)/iu);
 });
+
+test("M2.5 exporter boundary keeps its pure workspace contract", () => {
+  const packageRoot = join(root, "packages/exporter");
+  const manifest = JSON.parse(
+    readFileSync(join(packageRoot, "package.json"), "utf8"),
+  );
+  const studio = JSON.parse(
+    readFileSync(join(root, "apps/studio/package.json"), "utf8"),
+  );
+
+  assert.equal(manifest.name, "@aethertwin/exporter");
+  assert.equal(manifest.exports["."], "./src/index.ts");
+  assert.deepEqual(manifest.dependencies, {
+    "@aethertwin/render-scene-3d": "workspace:*",
+  });
+  assert.equal(studio.dependencies["@aethertwin/exporter"], "workspace:*");
+  assert.equal(existsSync(join(packageRoot, ".gitkeep")), false);
+});
