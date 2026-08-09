@@ -146,11 +146,22 @@ describe("project export preflight", () => {
       ],
     });
 
-    expect(() => prepareProjectExport(port(["texture-b", "texture-a"]), "full-hd", context))
-      .toThrowError(expect.objectContaining({
-        code: "EXPORT_TEXTURE_UNAVAILABLE",
-        details: { assetIds: ["texture-a", "texture-b"] },
-      }));
+    let error: unknown;
+    try {
+      prepareProjectExport(port(["texture-b", "texture-a"]), "full-hd", context);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ProjectExportError);
+    const exportError = error as ProjectExportError;
+    const assetIds = exportError.details.assetIds as readonly string[];
+    expect(exportError.code).toBe("EXPORT_TEXTURE_UNAVAILABLE");
+    expect(assetIds).toEqual(["texture-a", "texture-b"]);
+    expect(Object.isFrozen(exportError.details)).toBe(true);
+    expect(Object.isFrozen(assetIds)).toBe(true);
+    expect(() => (assetIds as string[]).push("texture-c")).toThrow();
+    expect(assetIds).toEqual(["texture-a", "texture-b"]);
   });
 
   it("rejects unsupported preset input", () => {
