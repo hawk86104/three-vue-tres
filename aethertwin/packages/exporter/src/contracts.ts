@@ -1,5 +1,6 @@
 import type {
   SceneAssetIssue,
+  SceneExportCapture,
   SceneExportFrame,
   SceneExportPort,
   SceneExportProvenance,
@@ -43,6 +44,22 @@ export type ProjectExportResult = ProjectExportDimensions & {
   readonly byteSize: number;
   readonly sha256: string;
 };
+
+export interface ProjectExportContext {
+  readonly projectPath: string;
+  readonly projectId: string;
+  readonly snapshotSequence: number;
+  readonly activeFloorId: string;
+  readonly sessionGeneration: number;
+  readonly assetIssues: readonly SceneAssetIssue[];
+  readonly isCurrent: () => boolean;
+}
+
+export interface PreparedProjectExport {
+  readonly capture: SceneExportCapture;
+  readonly dimensions: ProjectExportDimensions;
+  readonly expectedByteLength: number;
+}
 
 export interface ProjectExportBeginRequest {
   readonly provenance: SceneExportProvenance;

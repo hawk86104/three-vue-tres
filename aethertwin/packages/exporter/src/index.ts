@@ -5,6 +5,11 @@ export {
 } from "./presets";
 export { ProjectExportError } from "./errors";
 export { streamTopLeftRgbaChunks } from "./row-chunks";
+export {
+  assertProjectExportCurrent,
+  prepareProjectExport,
+  validateProjectExportFrame,
+} from "./preflight";
 export type { ProjectExportErrorCode } from "./errors";
 export type {
   ProjectExportBackend,
@@ -12,6 +17,8 @@ export type {
   ProjectExportBeginResult,
   ProjectExportDimensions,
   ProjectExportPhase,
+  ProjectExportContext,
+  PreparedProjectExport,
   ProjectExportPreset,
   ProjectExportProgress,
   ProjectExportResult,
