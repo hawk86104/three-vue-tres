@@ -5,6 +5,7 @@ import type {
 } from "@aethertwin/render-scene-3d";
 import { describe, expect, it } from "vitest";
 import {
+  ProjectExportError,
   prepareProjectExport,
   validateProjectExportFrame,
   type ProjectExportContext,
@@ -82,6 +83,15 @@ describe("project export preflight", () => {
 
     expect(() => prepareProjectExport(unavailablePort, "full-hd", exportContext()))
       .toThrowError(expect.objectContaining({ code: "EXPORT_RENDERER_NOT_READY" }));
+  });
+
+  it("copies and freezes public export error details", () => {
+    const details = { reason: "before" };
+    const error = new ProjectExportError("EXPORT_FRAME_INVALID", details);
+    details.reason = "after";
+
+    expect(error.details).toEqual({ reason: "before" });
+    expect(Object.isFrozen(error.details)).toBe(true);
   });
 
   it.each([
@@ -183,6 +193,23 @@ describe("project export frame validation", () => {
     } as unknown as SceneExportFrame;
 
     expect(() => validateProjectExportFrame(unsafeFrame, unsafeDimensions))
+      .toThrowError(expect.objectContaining({ code: "EXPORT_FRAME_INVALID" }));
+  });
+
+  it("rejects zero runtime dimensions", () => {
+    const zeroDimensions = {
+      preset: "full-hd",
+      width: 0,
+      height: 1080,
+    } as unknown as ProjectExportDimensions;
+    const zeroFrame = {
+      width: 0,
+      height: 1080,
+      origin: "bottom-left",
+      rgba: new Uint8Array(0),
+    } as unknown as SceneExportFrame;
+
+    expect(() => validateProjectExportFrame(zeroFrame, zeroDimensions))
       .toThrowError(expect.objectContaining({ code: "EXPORT_FRAME_INVALID" }));
   });
 });

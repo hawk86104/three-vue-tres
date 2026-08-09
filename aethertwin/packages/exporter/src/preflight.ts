@@ -16,7 +16,7 @@ export function assertProjectExportCurrent(capture: SceneExportCapture, context:
 function expectedByteLength(dimensions: ProjectExportDimensions): number {
   const { width, height } = dimensions;
   const length = width * height * 4;
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || !Number.isSafeInteger(length)) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || !Number.isSafeInteger(length)) {
     throw new ProjectExportError("EXPORT_FRAME_INVALID");
   }
   return length;

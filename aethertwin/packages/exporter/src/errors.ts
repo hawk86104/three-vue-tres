@@ -8,11 +8,13 @@ export type ProjectExportErrorCode =
 
 export class ProjectExportError extends Error {
   readonly name = "ProjectExportError";
+  readonly details: Readonly<Record<string, unknown>>;
 
   constructor(
     readonly code: ProjectExportErrorCode,
-    readonly details: Readonly<Record<string, unknown>> = Object.freeze({}),
+    details: Readonly<Record<string, unknown>> = Object.freeze({}),
   ) {
     super(code);
+    this.details = Object.freeze({ ...details });
   }
 }
