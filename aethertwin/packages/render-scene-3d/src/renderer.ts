@@ -4,6 +4,7 @@ import type {
   SceneCameraState,
   SceneExportCapture,
   SceneExportFrame,
+  SceneExportProvenance,
   SceneExportRenderRequest,
   SceneFrameTarget,
   SceneGpuLimits,
@@ -56,6 +57,14 @@ function freezeCamera(camera: SceneCameraState): SceneCameraState {
 
 function freezeLimits(limits: SceneGpuLimits): SceneGpuLimits {
   return Object.freeze({ ...limits });
+}
+
+function freezeProvenance(input: SceneRendererInput): SceneExportProvenance {
+  return Object.freeze({
+    projectId: input.snapshot.project.id,
+    snapshotSequence: input.snapshot.sequence,
+    activeFloorId: input.activeFloorId,
+  });
 }
 
 function rendererUnavailable(): Error {
@@ -270,12 +279,13 @@ class DefaultSceneRenderer implements SceneRenderer {
 
   private capture(): SceneExportCapture {
     const backend = this.requireReadyBackend();
-    if (this.currentProjection === null || this.currentCamera === null) {
+    if (this.currentProjection === null || this.currentCamera === null || this.currentInput === null) {
       throw new Error("Scene renderer has no scene to capture");
     }
     const capture = Object.freeze({
       scene: this.currentProjection,
       camera: freezeCamera(this.currentCamera),
+      provenance: freezeProvenance(this.currentInput),
       requiredTextureAssetIds: Object.freeze([
         ...this.currentProjection.requiredTextureAssetIds,
       ]),

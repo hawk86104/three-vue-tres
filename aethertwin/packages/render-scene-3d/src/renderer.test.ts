@@ -432,6 +432,41 @@ describe("scene renderer lifecycle", () => {
 });
 
 describe("scene renderer export port", () => {
+  it("freezes provenance from the input that produced the scene", async () => {
+    const backend = new FakeBackend();
+    const renderer = createSceneRenderer(dependencies(), backendQueue([backend]));
+    const { sink } = sinkHarness();
+    const projectId = uuid(20);
+    await renderer.init({} as HTMLElement, sink);
+
+    renderer.update(inputFor({
+      ...baseSnapshot,
+      sequence: 17,
+      project: { ...baseSnapshot.project, id: projectId },
+    }));
+    const capture = renderer.exportPort.capture();
+
+    expect(capture.provenance).toEqual({
+      projectId,
+      snapshotSequence: 17,
+      activeFloorId: floor.id,
+    });
+    expect(Object.isFrozen(capture.provenance)).toBe(true);
+
+    renderer.update(inputFor({
+      ...baseSnapshot,
+      sequence: 18,
+      project: { ...baseSnapshot.project, id: projectId },
+    }));
+    expect(capture.provenance.snapshotSequence).toBe(17);
+  });
+
+  it("rejects capture before the renderer is ready", () => {
+    const renderer = createSceneRenderer(dependencies(), backendQueue([new FakeBackend()]));
+
+    expect(() => renderer.exportPort.capture()).toThrow("Scene renderer is not ready");
+  });
+
   it("captures immutable scene/camera/limits, waits exact textures, and returns bottom-left RGBA", async () => {
     const backend = new FakeBackend();
     const renderer = createSceneRenderer(dependencies(), backendQueue([backend]));
@@ -446,8 +481,13 @@ describe("scene renderer export port", () => {
     expect(Object.isFrozen(capture.camera)).toBe(true);
     expect(Object.isFrozen(capture.camera.position)).toBe(true);
     expect(Object.isFrozen(capture.scene)).toBe(true);
+    expect(Object.isFrozen(capture.requiredTextureAssetIds)).toBe(true);
+    expect(Object.isFrozen(capture.limits)).toBe(true);
     expect(capture.requiredTextureAssetIds).toEqual([textured.assetId]);
     expect(capture.limits).toEqual(backend.limits);
+
+    (backend.limits as { maxTextureSize: number }).maxTextureSize = 4_096;
+    expect(capture.limits.maxTextureSize).toBe(8_192);
 
     (sourceCamera.position as { x: number }).x = 99;
     expect(capture.camera.position.x).toBe(8);
@@ -498,5 +538,40 @@ describe("scene renderer export port", () => {
     )).rejects.toThrow("capture expired");
     expect(replacement.waitCalls).toEqual([]);
     expect(replacement.renderCalls).toEqual([]);
+  });
+
+  it("rejects old captures after context loss, retry, backend replacement, and destroy", async () => {
+    const first = new FakeBackend();
+    const replacement = new FakeBackend();
+    const retry = new FakeBackend();
+    const renderer = createSceneRenderer(
+      dependencies(),
+      backendQueue([first, replacement, retry]),
+    );
+    const { sink } = sinkHarness();
+    await renderer.init({} as HTMLElement, sink);
+    renderer.update(inputFor());
+
+    const beforeContextLoss = renderer.exportPort.capture();
+    first.events?.onContextLost();
+    await flushMicrotasks();
+    await expect(renderer.exportPort.render(
+      beforeContextLoss,
+      { width: 16, height: 16 },
+    )).rejects.toThrow("capture expired");
+
+    const beforeRetry = renderer.exportPort.capture();
+    await renderer.retry();
+    await expect(renderer.exportPort.render(
+      beforeRetry,
+      { width: 16, height: 16 },
+    )).rejects.toThrow("capture expired");
+
+    const beforeDestroy = renderer.exportPort.capture();
+    renderer.destroy();
+    await expect(renderer.exportPort.render(
+      beforeDestroy,
+      { width: 16, height: 16 },
+    )).rejects.toThrow("capture expired");
   });
 });

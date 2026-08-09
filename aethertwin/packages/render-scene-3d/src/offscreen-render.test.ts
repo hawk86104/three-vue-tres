@@ -171,6 +171,7 @@ describe("offscreen scene rendering", () => {
     expect(events).toContain("restore-state");
     expect(events).not.toContain("dispose-target");
     expect(events).not.toContain("dispose-renderable");
+    expect(events.filter((event) => event === "restore-state")).toHaveLength(1);
 
     readGate.resolve(undefined);
     await pending;
@@ -178,6 +179,9 @@ describe("offscreen scene rendering", () => {
       "dispose-target",
       "dispose-renderable",
     ]);
+    expect(events.filter((event) => event === "restore-state")).toHaveLength(1);
+    expect(events.filter((event) => event === "dispose-target")).toHaveLength(1);
+    expect(events.filter((event) => event === "dispose-renderable")).toHaveLength(1);
   });
 
   it("serializes concurrent offscreen jobs even when the first readback is pending", async () => {

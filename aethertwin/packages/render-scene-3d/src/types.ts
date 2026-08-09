@@ -192,6 +192,7 @@ export interface SceneExportProvenance {
 export interface SceneExportCapture {
   readonly scene: SceneProjection;
   readonly camera: SceneCameraState;
+  readonly provenance: SceneExportProvenance;
   readonly requiredTextureAssetIds: readonly string[];
   readonly limits: SceneGpuLimits;
 }
