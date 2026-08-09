@@ -2,59 +2,66 @@
 
 AetherTwin supports exactly two immutable project profiles: `showroom` and `market`. Profile cannot change after creation; any future conversion requires an explicit migration workflow.
 
-M0, M1, M2.1, M2.2, and the implemented M2.3 content/routes workflow are present on the M2 branch. M2.1 closes the vertical path from safe asset import through durable asset/reference records, 2D rendering, calibration, save/reopen, and recovery; M2.2 adds durable openings, explicit room confirmation, and catalogue fixture placement; M2.3 adds product hotspots, ordered local image/video media, route-network authoring, and one curated guided route. All retain schema v3 and exactly eight native invokes: `create_project`, `open_project`, `commit_project`, `checkpoint_project`, `close_project`, `recover_project`, `import_project_asset`, and `cancel_project_asset_import`.
+M0 through M2.4 are accepted and closed. M2.4 retains schema v3, introduces no SQLite storage migration, and keeps exactly eight native invokes: `create_project`, `open_project`, `commit_project`, `checkpoint_project`, `close_project`, `recover_project`, `import_project_asset`, and `cancel_project_asset_import`.
 
-M2.3 is closed with complete non-build evidence. Lint passed. The first typecheck attempt did not start because of a Windows sandbox helper error; the same command passed outside the sandbox, reporting 12/13 workspace projects. Tests passed with 31/31 Node tests and 49 Vitest files/1,229 tests; the only output caveat was nonfatal jsdom canvas `getContext` warnings. The first rustfmt check exited 1 only for mechanical formatting in three M2.3 Rust tests; after formatting-only corrections it passed. Project-io passed 105/105 tests, desktop-host passed 52/52 tests, and both Cargo checks passed.
+## Implemented editor profiles and views
 
-## Implemented 2D-first editor
+Studio opens directly in the 2D-first editor, which shows one active floor at a time and retains six editable business entity kinds. Showroom defaults to `2d` and can switch to synchronized `3d` or a fixed 50/50 `split`. The two panes share the active floor, durable selection IDs, and active guided route. Market remains 2D-only and exposes no 3D or split action.
 
-Studio opens a project directly in a 2D-first editor. The editor shows one active floor at a time and keeps the floor tree, Pixi canvas, accessible DOM mirror, Asset Library, and Inspector on the same durable snapshot and transient selection.
+The M1 plan tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture, POI, and Dimension. Showroom additionally exposes Door, Window, Product hotspot, Route node, and Route edge, plus real 2D/3D/split preview and framing actions. Export, Player, and Market 3D actions are absent.
 
-The nine M1 tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture, POI, and Dimension. Showroom projects add Door, Window, Product hotspot, Route node, and Route edge, for fourteen implemented plan tools; Market retains the M1 surface. Contextual showroom actions attach product media, edit guided-route stops, and preview the current route. M1 has six editable business entity kinds: boundary, wall, zone, space unit, fixture, and POI. Dimension is a separate annotation entity. Property edits, transforms, arrays, delete, undo, redo, save, reopen, lock, and recovery are durable.
+## Implemented M2.4 synchronized 3D
 
-## Implemented M2.3 product content and guided routes
+- 3D projection covers space-unit/zone floors, walls, door/window openings, all seven showroom catalogue fixture kinds, compatible generic fixtures, product hotspots, and a valid active guided route.
+- Plan references, boundaries, dimensions, ordinary POIs, invalid routes, and stale sources are deliberately ignored or fail closed; a projection error never publishes a partial scene.
+- Coordinates convert from stored millimetres to Three metres, including floor/entity elevation. Wall compatibility height is 3,000 mm, generic fixture compatibility height is 1,000 mm, and route geometry is raised 30 mm.
+- Space-floor, wall, and fixture material assignments resolve deterministically. Missing definitions use stable defaults. Selection is a separate overlay, not a mutation of the durable material.
+- Material definitions, assignments, and the singleton scene environment are durable ProjectStore data. Material/environment changes are reversible, replayable, reopen-safe, and recovery-safe.
+- Material textures use only project-bound PNG, JPEG, or sanitized SVG imports. Missing or undecodable texture bytes report a safe renderer issue and keep `baseColor`; no remote runtime URL is used.
+- Renderer geometry, material, texture, and render-target resources are generation-safe and released exactly once through the renderer registry. ProjectStore remains the only Blob URL owner.
+- WebGL failure never disables 2D. One context-loss reconstruction is automatic; a second failure moves 3D to `disabled`, and explicit retry begins a new recovery round.
+- Camera, view mode, renderer status/error, selection, and preview state live only in scoped Zustand session state and are never persisted.
+- The public `SceneExportPort` exposes immutable camera/scene capture and offscreen RGBA readback for future M2.5 work. M2.4 has no Export UI and produces no export artifact.
 
-- Product content targets an existing fixture or product hotspot. Fixtures have zero or one `ProductContent`; every product hotspot has exactly one, created atomically with the hotspot.
-- Ordered media IDs are durable and unique. Each `MediaAsset` is exactly `image` or `video`, references a durable local `AssetRecord`, and resolves only through verified project-owned/custom or development Blob sources. Durable paths are canonical `assets/sha256/...` project-relative paths, never absolute paths or remote runtime URLs.
-- New attachment publishes asset, media, and new-or-updated content records in one transaction. Missing-media repair reuses the existing asset import boundary and preserves the stable media ID and product order while retargeting to a new immutable asset.
-- `RouteNetwork` owns floor-bound `junction`, `entrance`, and `showroom-stop` nodes plus authored edges. Edge endpoints are distinct and on one floor; stored distance is Euclidean millimetres, and duplicate directed arcs are rejected.
-- Pure `route-engine` owns deterministic segment insertion and route resolution. `GuidedRoute` persists only ordered stop node IDs; resolved node/edge paths, total distance, turn points, previews, and drafts are transient and recomputed from the current snapshot.
-- Content/media/network/stop changes use the existing reversible `snapshot.records.patch` path. Exact history, save/reopen, and dirty recovery are validated through the same schema-v3 parsers and replay rules.
-- Tree, 2D canvas, accessible mirror, Inspector, Asset Library, and route panel use durable IDs and one Studio selection/editor-session boundary.
+## Implemented durable showroom workflow
 
-## Implemented M2.2 building and fixture workflow
+M2.1 provides project-bound local assets and calibrated plan references. Native import publishes immutable content-addressed bytes; ProjectStore owns durable records, import transactions, repair, and source leases.
 
-- Doors and windows are normalized `Opening` records bound to transformed wall centre-lines and validated identically in TypeScript and Rust.
-- Wall and attached-opening changes commit as one reversible `building.structure.patch` journal operation without adding a native invoke.
-- Closed-room recognition is deterministic and transient. Only explicit confirmation creates or replaces durable `SpaceUnit` records, and stale fingerprints are rejected.
-- Showroom exposes seven immutable parametric fixture descriptors. New catalogue placements persist normal schema-v3 fixture fields and positive vertical height.
-- Legacy fixtures without `spatial3D` remain readable and are not materialized by unrelated selection, save, reopen, or recovery operations.
-- The active-floor 2D canvas, accessible mirror, Inspector, tree, undo/redo, save/reopen, and dirty recovery share the same durable snapshot.
+M2.2 provides durable door/window openings, deterministic transient room recognition with explicit confirmation, and seven immutable parametric showroom fixture descriptors. Placements persist normal schema-v3 fixture fields.
 
-All stored plan distances are millimetres and rotations are radians. One `PlanReference.transform` maps source-image coordinates into world millimetres.
+M2.3 provides product hotspots/content, ordered local image/video media, route-network authoring, and a curated guided route. Resolved route paths and drafts remain transient; durable changes flow through exact reversible ProjectStore commands.
 
-## Implemented M2.1 asset and plan-reference workflow
+All stored plan distances are millimetres and rotations are radians. Absolute native paths, drive/UNC paths, `file://`, source filenames, and remote runtime URLs are not durable project data.
 
-- Import accepts PNG, JPEG, sanitized SVG, MP4, and WebM under the documented byte/media limits.
-- Floor-plan references accept only PNG, JPEG, and sanitized SVG.
-- Native import publishes immutable content-addressed bytes and returns an `AssetRecord`; ProjectStore commits the record and its initial plan reference atomically.
-- Asset Library exposes real import progress, cancellation, selection, typed failures, and reimport repair.
-- Plan references can be selected, placed, renamed, tagged, transformed, faded, locked, deleted, undone, and redone through the durable record-patch path.
-- Two-point calibration is keyboard operable. The user selects two source-image points, enters a measured millimetre distance, confirms once, and receives an exact uniform scale update plus calibration record in the same reversible patch.
-- Missing or corrupt bytes are never rendered as trusted content. The editor shows a placeholder, keeps the durable reference, and permits reimport without mutating the old immutable asset record.
-- Save, close/reopen, and confirmed recovery preserve canonical relative identity, reference transform, calibration, and lock state.
+## Ownership rules
+
+ProjectStore and CommandBus are the only durable publication path. Three.js, R3F, PixiJS, React, and Zustand do not own business data. ProjectStore is the only Blob URL owner. Renderer resources are transient projections keyed to durable source IDs; the 3D layer may release its own GPU/Three resources but may not revoke ProjectStore URLs.
+
+## M2.4 evidence state
+
+Task 17 actually passed:
+
+- Studio: 4/4;
+- ProjectStore: 1/1;
+- render-scene-3d: 2/2;
+- project-io M2.4: 1/1;
+- schema-v3 recovery: 8/8;
+- scene-environment replay: 6/6;
+- desktop-host command contract: 21/21;
+- three TypeScript checks, rustfmt, and Cargo check.
+
+The independent Task 17 final re-review reported no Critical, Important, or Minor findings. Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
 
 ## Current deliberate exclusions
 
-Schema v3 activates product content, media assets, route networks, and guided routes for M2.3. Materials, assignments, and scene environment remain durable future-facing contracts without an M2.3 authoring surface.
+M2.5 is the next milestone. M2.4 deliberately excludes:
 
-The current product deliberately excludes:
+- Export/publish controls, PNG/MP4 output, `.twinpack`, demo/evidence generation, and any claim that the offscreen port is a completed export product;
+- Player, visitor themes, kiosk mode, and expanded Market workflows;
+- Market 3D or split mode;
+- GLTF import/export, arbitrary lights, arbitrary shaders, and 3D geometry editing;
+- accessible-route toggles, temporary-closure editing, vendor destinations, and live indoor position;
+- remote services, remote media, CDN/remote fallback, telemetry, and business APIs;
+- build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual-correctness, or performance evidence.
 
-- M2.4 synchronized 3D, materials/lights authoring, and any 3D preview;
-- M2.5 export/demo/evidence, publish, screenshots, PNG/MP4 output, or `.twinpack` sharing;
-- Player, visitor themes, kiosk mode, or expanded Market workflow;
-- accessible-route toggles, temporary-closure editing, vendor destinations, or live indoor position;
-- remote services, remote media, CDN/remote fallback, telemetry, or business APIs;
-- build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, GPU, or performance evidence.
-
-Only end-to-end implemented M2.1, M2.2, and M2.3 actions are visible. Deferred controls remain absent.
+Only controls backed by the implemented durable/recoverable paths are visible.

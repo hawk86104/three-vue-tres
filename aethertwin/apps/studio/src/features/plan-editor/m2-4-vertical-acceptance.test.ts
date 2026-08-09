@@ -25,7 +25,9 @@ const resolvedRoute = routeResult.value;
 class FakeResizeObserver {
   readonly observe = vi.fn();
   readonly disconnect = vi.fn();
-  constructor(_callback: ResizeObserverCallback) {}
+  constructor(callback: ResizeObserverCallback) {
+    void callback;
+  }
 }
 
 beforeEach(() => {

@@ -4,26 +4,35 @@
 
 - M0 foundation: complete.
 - M1 unified 2D authoring core: complete; evidence is in `M1_REPORT.md`.
-- M2 showroom workflow: in progress.
-  - M2.1 safe assets and calibrated plan references: accepted with the environment-limited Windows reparse test explicitly waived and documented in `M2_1_REPORT.md`.
-  - M2.2 openings, room recognition, and parametric showroom fixtures: implemented and closed on `codex/aethertwin-m2` with full approved non-build verification.
-  - M2.3 content and routes: closed on `codex/aethertwin-m2`. Complete non-build closure evidence is lint PASS; typecheck PASS outside the sandbox with 12/13 workspace projects reported after the first Windows sandbox-helper attempt did not start; Node 31/31 plus Vitest 49 files/1,229 tests PASS with only nonfatal jsdom canvas warnings; rustfmt PASS after a first formatting-only exit 1 and mechanical corrections in three M2.3 Rust tests; project-io 105/105 and desktop-host 52/52 tests PASS; and both Cargo checks PASS.
-  - M2.4 synchronized 3D and M2.5 export/demo/evidence: approved child designs exist but implementation has not started.
+- M2 showroom workflow: in progress only because M2.5 remains.
+  - M2.1 safe assets and calibrated plan references: accepted.
+  - M2.2 openings, room recognition, and parametric showroom fixtures: accepted.
+  - M2.3 content and guided routes: accepted.
+  - M2.4 synchronized 3D, durable materials/environment, and renderer lifecycle: complete and accepted. Tasks 0-18, the full non-build gate, and final independent review are closed with no findings.
+  - M2.5 export/demo/evidence: next milestone; not implemented.
 - M3 market workflow: deferred until after M2.
 - M4 Player and media: deferred.
 - M5 hardening and performance profiling: deferred; no performance claim is made.
 
-M2.3 is closed. Any M2.4 work requires its own explicit approval and implementation planning. Build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, and performance evidence remain outside the M2.3 evidence boundary and are not claimed.
+Task 17 evidence is Studio 4/4, ProjectStore 1/1, render-scene-3d 2/2, project-io M2.4 1/1, schema-v3 recovery 8/8, scene-environment replay 6/6, desktop-host command contract 21/21, three TypeScript checks, rustfmt, and Cargo check.
 
-M2.4/M2.5 work must not start from a false M2.3 capability claim. Synchronized 3D, materials/lights UI, export/publish, Player, expanded Market workflow, accessible-route toggles, temporary-closure editing, vendor destinations, live indoor position, and remote fallback remain deferred and absent.
+Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
+
+M2.4 keeps schema v3, one SQLite storage migration, exactly eight native invokes, and the existing two desktop capabilities. Showroom defaults to 2D and supports 3D and fixed 50/50 split; Market remains 2D-only. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.
+
+## Next milestone: M2.5
+
+M2.5 must start from a separately approved implementation plan. Its available boundary is the immutable camera/offscreen `SceneExportPort` delivered by M2.4. The presence of that port is not an export product claim.
+
+Until M2.5 is implemented, there is no Export/publish action, PNG/MP4 output, `.twinpack`, demo evidence generator, Player, Market 3D, GLTF workflow, arbitrary lights/shaders, or 3D geometry editing.
 
 ## Milestone definitions
 
 - M0 - Foundation: workspace, product shells, Project Center, persistence, CommandBus, save, close, and recovery.
 - M1 - Unified authoring core: schema, plan engine, 2D rendering, transforms, snapping, dimensions, arrays, indexing, and undo/redo.
-- M2 - Showroom workflow: calibrated plans, openings/rooms, fixtures/content, routes, synchronized 3D, materials/lights, and screenshots, delivered as separately planned child milestones.
+- M2 - Showroom workflow: calibrated plans, openings/rooms, fixtures/content, routes, synchronized 3D, materials/environment, then separately planned export/demo evidence.
 - M3 - Market workflow: regions, booths, vendor CSV, POIs, routes, search, accessible routing, and guide-map export.
-- M4 - Player and media: offline Player, visitor themes, kiosk behavior, deterministic PNG frames, and optional FFmpeg MP4 encoding.
-- M5 - Hardening: validation, label avoidance, large-project profiling, templates, shortcuts, accessibility, and interaction polish.
+- M4 - Player and media: offline Player, visitor themes, kiosk behavior, deterministic frames, and optional media encoding.
+- M5 - Hardening: validation, large-project profiling, accessibility, and interaction polish.
 
-Every child milestone must distinguish implemented code evidence from runtime/browser/GPU evidence and must not expose controls before their durable path exists.
+Every child milestone must distinguish implemented source/test evidence from runtime/browser/GPU evidence and must not expose controls before their durable path exists.

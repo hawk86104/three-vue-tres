@@ -5,64 +5,73 @@
 ```text
 apps/studio (React)
   -> core-model + design-system + editor-shell
-  -> asset-pipeline + plan-engine + route-engine + render-plan-2d + project-store
-  -> PlanEditor -> editor session/controller -> plan-engine operations
-  -> PlanCanvas -> render-plan-2d -> PixiJS + verified asset source port
-  -> Asset Library -> ProjectStore import/reimport coordinator
-  -> Content Inspector -> ProjectStore product-media import/repair coordinator
-  -> Tour tools/route panel -> route-engine -> ProjectStore record patches
+  -> asset-pipeline + plan-engine + route-engine + mode-showroom
+  -> render-plan-2d + render-scene-3d + project-store
+  -> PlanCanvas -> render-plan-2d -> PixiJS
+  -> SceneCanvas -> render-scene-3d -> Three.js / R3F
   -> project-store -> command-bus + core-model
   -> desktop: TauriProjectBackend -> desktop-host -> project-io + asset-io
-  -> development web: SandboxProjectBackend + Blob asset leases
+  -> development web: SandboxProjectBackend + ProjectStore-owned Blob leases
 
 apps/player -> design-system (deferred noninteractive boundary)
 ```
 
-`core-model` owns schema-v3 parsing, deterministic v1 -> v2 -> v3 migration, immutable profile contracts, floors/layers, M1 entities, asset records, plan references, openings, product/media content, route networks, guided routes, and the remaining deferred record contracts. Stored plan coordinates are millimetres and rotations are radians.
+`core-model` owns schema-v3 parsing, deterministic v1 -> v2 -> v3 migration, immutable profile contracts, durable building/content/route/material/environment records, and their cross-record invariants. Stored plan coordinates are millimetres and rotations are radians. M2.4 adds no schema version and no SQLite storage migration.
 
-`command-bus` is the serialized mutation path. Each command's durable rows, exact journal payload/inverse, and metadata commit in the same SQLite transaction. The next immutable snapshot is published only after persistence commits. `project-store` coordinates save, autosave, undo/redo, close, recovery, asset import, asset/reference transactions, reimport, and application-local recents. Zustand stores transient UI state only; it is not the project database.
+`command-bus` is the serialized mutation path. Exact before/after values, inverse payloads, normalized rows, journal entries, metadata, and the next immutable snapshot publish in the same SQLite transaction. ProjectStore coordinates save, autosave, undo/redo, close, recovery, asset import and asset-source lifetime.
 
-## Unified 2D authoring and plan-reference path
+## Durable and transient ownership
 
-`PlanEditor` publishes one active floor to the tree, Inspector, Asset Library, and `PlanCanvas`. The controller normalizes M1 tools, transforms, arrays, deletes, plan-reference placement, lock edits, and calibration before they reach ProjectStore. Selection, active tool, placement preview, calibration points, focus return target, import progress, and renderer handles are transient.
+| State or resource | Sole owner | Persistence |
+| --- | --- | --- |
+| floors, layers, entities, openings, content, routes, assets | ProjectStore snapshot | schema v3 / SQLite |
+| material definitions and assignments | ProjectStore snapshot | schema v3 / SQLite |
+| singleton scene environment | ProjectStore snapshot via `scene.environment.patch` | schema v3 / SQLite |
+| view mode, per-floor camera, renderer status/error | Studio Zustand session | transient only |
+| selection, tools, drafts, previews, focused route | Studio Zustand session | transient only |
+| Blob URL leases | ProjectStore | transient source lease |
+| Three/R3F geometry, materials, textures, render targets | render-scene-3d resource registry | transient renderer resource |
 
-`render-plan-2d` projects visible M1 entities and plan references owned by the active floor/layer. `PixiPlanRenderer` owns the ordered `grid`, `content`, `annotation`, `overlay`, and `interaction` containers. Asset-backed sprites resolve by asset ID through a source port; project paths, native file handles, Blob leases, textures, and Pixi objects never become project records. The accessible DOM mirror shares selection with the canvas but is not a second model.
+Zustand stores transient UI state only. React, PixiJS, Three.js, R3F, and Zustand never own or directly mutate business data. Three/R3F records are projections keyed back to durable source IDs. The 3D layer consumes ProjectStore asset-source and issue ports; it never persists URLs and never revokes a ProjectStore-owned Blob URL.
 
-A plan reference stores intrinsic source size, source-to-world transform, opacity, lock state, and optional two-point calibration. Calibration retains source points and measured millimetres; the committed transform uses one exact uniform scale. Preview and overlay state remain transient until a single confirmation publishes one reversible `snapshot.records.patch`.
+## 2D building, content, and route boundary
 
-## M2.2 building and showroom ownership
+M2.1 project-bound import publishes immutable content-addressed bytes and durable metadata separately, then ProjectStore commits allowlisted asset/reference records. Plan-reference previews and calibration drafts remain transient until one exact reversible command is confirmed.
 
-`core-model` owns durable Opening shape and transformed wall/opening validation. `plan-engine` consumes that contract for placement and owns deterministic wall-topology normalization, closed-face recognition, canonical room rings, explicit room creation/replacement intents, and room input fingerprints. `mode-showroom` is a pure catalogue/tool-policy package that depends only on `core-model`; it owns immutable fixture descriptors and normalized primitive parts. `render-plan-2d` consumes core geometry plus plan-engine projections. `project-store` owns the serialized compound journal command but never depends on showroom or rendering packages. Studio is the only layer that composes all of these packages.
+M2.2 wall/opening edits use one `building.structure.patch`. Deterministic room recognition is transient; explicit confirmation alone publishes a normal `SpaceUnit`. Catalogue descriptors remain runtime metadata; placements persist only ordinary schema-v3 fixture fields.
 
-Room candidates, canonical candidate keys, input fingerprints, diagnostics, selection, and overlays are transient Studio/engine state. Recognition never creates or rewrites rooms automatically. Confirmation rereads the current snapshot, rejects stale fingerprints, and commits only normal schema-v3 `SpaceUnit` records. Catalogue descriptors and primitive parts likewise remain runtime data; only normal `Fixture` fields cross the persistence boundary.
+M2.3 content/media/network/route changes use `snapshot.records.patch`. Product hotspots and required content publish atomically. A `GuidedRoute` stores stop node IDs only; resolved paths and previews are recomputed. PixiJS projects records but does not own them.
 
-Wall and attached-opening edits use one `building.structure.patch`. ProjectStore applies exact before-state checks to walls and openings, constructs one candidate final snapshot, and invokes schema parsing once after both collections have changed. The native replay/recovery path enforces the same final-state-only rule. This avoids rejecting valid compound wall deletion or reshape because of an invalid intermediate snapshot, while exact reversed lists and normalized indexes preserve deterministic undo/redo and recovery.
+## M2.4 synchronized 3D boundary
 
-## M2.3 content and route ownership
+Showroom defaults to `2d` and exposes `2d`, `3d`, and a fixed 50/50 `split`. Market stays 2D-only. SceneCanvas and PlanCanvas share the active floor, selection, and guided-route scope through the Studio session while consuming the same immutable ProjectStore snapshot.
 
-`core-model` owns the durable schema-v3 `ProductContent`, `MediaAsset`, `RouteNetwork`, and `GuidedRoute` contracts and final-snapshot invariants; Rust `project-io` mirrors those activated collections before session publication and during replay/recovery. A product content record targets only a `Fixture` or `PointOfInterest(kind="product-hotspot")`. A fixture has zero or one content record, while every product hotspot has exactly one. Ordered media IDs are unique. Each `MediaAsset` is exactly `image` or `video` and points to one durable `AssetRecord`; only the asset record carries the canonical `assets/sha256/...` project-relative identity. Native absolute paths, `file://`, and remote runtime URLs never become product records.
+`render-scene-3d` exposes these public boundaries:
 
-`plan-engine` owns pure product-hotspot/content creation and media-order intents. `route-engine` depends only on `core-model`; it owns immutable segment insertion, snapping/intersection splitting, and deterministic guided-route resolution. The durable `RouteNetwork` owns authored nodes and edges. Nodes are floor-bound `junction`, `entrance`, or `showroom-stop` records. Edges connect distinct nodes on one floor, store Euclidean distance in millimetres, and expand logically into directed arcs for duplicate-topology checks and traversal. A bidirectional edge owns both arcs; opposing unidirectional edges remain distinct valid arcs.
+- `SceneRendererInput`: snapshot, active floor, selected IDs, active guided-route projection, camera, and asset issues;
+- `SceneRecord`: stable `floor`, `wall-piece`, `opening`, `fixture-part`, `hotspot`, and `route` records;
+- `SceneProjectionIssue`: stable codes with sorted source IDs; any projection error fails closed to an empty scene rather than publishing a partial result;
+- `SceneRenderer` / `SceneRendererFactory`: init, update, resize, frame, retry, and destroy;
+- `SceneCameraState`: position, target, and field of view;
+- `SceneExportPort`: an immutable scene/camera capture and dedicated offscreen readback contract reserved for M2.5.
 
-`GuidedRoute` persists only an ordered list of at least two adjacent-distinct stop node IDs in one network and on one floor. The resolved node path, edge path, total distance, turn points, validation preview, route segment draft, and stop draft are transient and recomputed from the current snapshot by pure `route-engine`; none is cached in schema v3.
+Projection covers space-unit/zone floors, walls and door/window openings, all seven showroom catalogue fixture kinds, a compatible generic fixture box, product hotspots, and validated guided routes. Plan references, boundaries, dimensions, and ordinary POIs are deliberately ignored by 3D projection. Coordinates map as `(x / 1000, elevation / 1000, -y / 1000)`; routes sit 30 mm above their floor reference.
 
-ProjectStore is the only durable publication path. Hotspot entity plus content creation is one heterogeneous record transaction. A new media import publishes `AssetRecord`, `MediaAsset`, and new-or-updated `ProductContent` together; failed metadata publication exposes none of those records. Repair reuses the existing asset-import boundary, creates a new immutable asset record, and retargets the existing stable media ID without changing product media order or deleting prior bytes. Exact before/after values, inverse payloads, journal rows, metadata, and snapshot publication use the existing `snapshot.records.patch`/CommandBus history path. Undo, redo, reopen, and dirty recovery pass through the same schema-v3 parsers and replay rules.
+Material assignment is deterministic for space floors, walls, and fixtures. A missing material uses the documented defaults. A missing or undecodable texture reports a safe issue and retains `baseColor`. Material textures resolve only from project-bound PNG, JPEG, or sanitized SVG assets. Selection uses a separate overlay and never mutates the durable material.
 
-`render-plan-2d` only projects hotspot markers, authored nodes/edges, and a supplied transient resolved-route overlay; Pixi objects never own route business state. Studio owns tool orchestration, active-floor/network state, drafts, preview/error state, the Inspector, Asset Library, and route panel. Tree, canvas, accessible DOM mirror, Inspector, Asset Library, and route panel consume durable IDs from the same snapshot and one `selectedIds`/editor-session boundary rather than maintaining parallel models.
+The environment maps the one durable ambient light and one durable directional key light. R3F uses demand rendering, sRGB output, ACES tone mapping, normalized key direction, bounded softness-derived shadow radius, and padded shadow bounds. M2.4 has no arbitrary lights or shaders.
 
-## Asset import and resolution boundaries
+## Renderer and source lifecycle
 
-TypeScript `asset-pipeline` owns cross-runtime media classification, role checks, initial plan-reference composition, and shared limits. Native `asset-io` owns source identity capture, streaming validation/hash, unique staging, flush/fsync, no-replace publication, collision verification, cancellation, canonical path derivation, and verified resolution. Supported media are PNG, JPEG, sanitized SVG, MP4, and WebM; plan references accept only the three image formats.
+Geometry is owned per stable scene record. Materials and decoded textures are fingerprint-shared through reference counts. A replacement attaches new records before retiring old records. Async completions carry a generation; late results are discarded and any newly allocated renderer resources are released. R3F automatic disposal is disabled for registry-owned resources so each resource is released exactly once.
 
-Native import publishes bytes inside the project and returns only asset metadata/media facts over invoke; it does not mutate project records. ProjectStore commits the `AssetRecord` and optional initial `PlanReference` atomically through the typed `snapshot.records.patch` allowlist. If metadata commit fails, immutable published bytes may remain as unreferenced residue and a retry is safe. Undo removes records, not content-addressed bytes; orphan pruning is later work.
+ProjectStore remains the sole Blob URL owner. Renderer destroy, scene replacement, failed decode, and late completion release only renderer-owned resources and source leases through the supplied port.
 
-The resolver re-derives the canonical path from digest and media type instead of trusting persisted `relativePath`, verifies regular-file identity, size, and digest before serving, and caches only session/owner-bound handles. Commit, close, replacement, and recovery reconcile or invalidate those handles. The `aethertwin-asset` custom protocol supports GET/HEAD and one bounded byte range with canonical MIME and security headers. Missing, non-regular, size-mismatched, or digest-mismatched assets are never served as trusted bytes.
-
-The development sandbox implements the same project-level contracts with in-memory snapshots and Blob-backed sources. Blob URLs are leased and revoked through explicit renderer/source lifecycle rules. It is a development aid, not a browser-persistence claim.
+A WebGL creation failure or renderer failure preserves the complete 2D workflow. Context loss gets one automatic reconstruction attempt. A further failure moves the 3D renderer to `disabled`; an explicit retry creates a fresh recovery round. Texture decode failure preserves base-color rendering. No browser, GPU, or visual correctness is inferred from the injected/fake-renderer tests.
 
 ## Native command and permission boundary
 
-`desktop-host` exposes exactly eight typed commands:
+`desktop-host` exposes exactly eight typed invokes:
 
 1. `create_project`
 2. `open_project`
@@ -73,18 +82,14 @@ The development sandbox implements the same project-level contracts with in-memo
 7. `import_project_asset`
 8. `cancel_project_asset_import`
 
-Asset reads use the custom protocol, not another invoke. Every failure uses the safe `{ code, message, details, logRef }` envelope. The `main` window has exactly `core:window:default` and `dialog:allow-open`; no broad filesystem, shell, HTTP, or SQL permission is enabled. CSP permits only local application sources plus the custom asset scheme for images/media and retains `object-src 'none'`.
+Asset reads use the session-bound custom protocol, not another invoke. Failures use `{ code, message, details, logRef }`. The `main` window retains exactly `core:window:default` and `dialog:allow-open`; no broad filesystem, shell, HTTP, SQL, or new M2.4 capability is enabled.
 
-## Persistence, migration, and shutdown
+## Persistence, migration, and current boundary
 
-Creation publishes a bound staging directory without replacing an existing destination. Opening validates manifest/database/snapshot identity and SQLite runtime settings. Opening a session acquires `.aethertwin.lock`, records `cleanShutdown=false`, and returns saved, dirty, or recovered state. Stale/crash residue requires explicit confirmed recovery from a verified copy.
+`project.db` remains the mutable source of truth and `manifest.json` the identity/compatibility cache. New projects use schema v3. A coherent v1/v2 project migrates deterministically before editor publication; M2.4 introduces no migration. Materials and assignments use allowlisted `snapshot.records.patch`; environment edits use strict `scene.environment.patch` with exact before-state validation through apply, undo, redo, reopen, and recovery.
 
-New projects use schema v3. A coherent v1 project migrates deterministically through v2 to v3; a coherent v2 project migrates to v3. The v2 -> v3 step preserves IDs, values, collection order, `sequence`, and `checkpointSequence`, adding only v3 collections and deterministic scene environment. Native migration checkpoints durably before the editor session is published. Checkpoint failure restores the previous coherent manifest/database pair.
+M2.4 Tasks 0-17 are implemented and independently reviewed at the current baseline. Task 17 passed Studio 4/4, ProjectStore 1/1, render-scene-3d 2/2, project-io M2.4 1/1, schema-v3 recovery 8/8, scene-environment replay 6/6, desktop-host command contract 21/21, three TypeScript checks, rustfmt, and Cargo check.
 
-A clean close checkpoints, writes `cleanShutdown=true`, truncates WAL, closes SQLite, invalidates session asset handles, and removes the held lock. `close_all` takes the exclusive lifecycle lease, waits for in-flight session publication/import work, drains the registry without holding it across individual closes, and leaves failed sessions retryable.
+Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
 
-## Current boundary
-
-M1, M2.1, M2.2, and the M2.3 2D content/guided-route workflow are implemented and M2.3 is closed on the M2 branch without changing schema v3 or the exact eight-command native invoke boundary. The complete Task 15 non-build closure set passed: lint; the sandbox-external typecheck retry reporting 12/13 workspace projects; 31/31 Node tests and 49 Vitest files/1,229 tests; rustfmt after three mechanical M2.3 test-format corrections; 105/105 project-io tests; 52/52 desktop-host tests; and both Cargo checks. The first typecheck attempt did not start because of a Windows sandbox helper error, and the first rustfmt check exited 1 only for those three mechanical diffs before the formatting-only repair and passing rerun. Vitest emitted only nonfatal jsdom canvas `getContext` warnings.
-
-M2.4 synchronized 3D and M2.5 export/demo work remain deferred and require separate approval/planning. Materials/lights authoring, 3D preview, export/publish, Player, Market, accessible-route toggles, temporary-closure editing, vendor destinations, live indoor position, and remote fallback media are absent. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, or visual-performance evidence is claimed for M2.3.
+M2.5 is next and may use the camera/offscreen export port. M2.4 does not implement Export/publish, Player, Market 3D, GLTF, arbitrary lighting/shaders, 3D geometry editing, or remote runtime assets. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.

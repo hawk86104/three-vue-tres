@@ -308,7 +308,7 @@ test("M2.4 render-scene-3d boundary pins its runtime and workspace dependencies"
   assert.equal(manifest.scripts.typecheck, "tsc -p tsconfig.json --noEmit");
   assert.match(
     workspaceConfig,
-    /(?:^|\r?\n)overrides:\r?\n  use-sync-external-store: 1\.6\.0(?:\r?\n|$)/u,
+    /(?:^|\r?\n)overrides:\r?\n {2}use-sync-external-store: 1\.6\.0(?:\r?\n|$)/u,
   );
   assert.deepEqual(
     manifest.dependencies,

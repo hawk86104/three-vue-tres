@@ -1,27 +1,26 @@
 # AetherTwin Studio
 
-AetherTwin is a local-first, desktop-first digital-twin authoring product with exactly two immutable project profiles: `showroom` and `market`. M0, M1, and M2.1 are accepted. The environment-limited Windows reparse test was explicitly waived without being claimed as passing. Studio opens a project directly in the 2D plan editor; Player remains a deferred, intentionally noninteractive boundary.
+AetherTwin is a local-first, desktop-first digital-twin authoring product with exactly two immutable project profiles: `showroom` and `market`. M0 through M2.4 are accepted and closed. Studio opens directly in the 2D editor. Showroom can switch to synchronized 3D or a fixed 50/50 split, while Market remains 2D-only. Player is still a deferred, intentionally noninteractive boundary.
 
 ## Implemented capabilities
 
-- schema-v3 projects with deterministic v1 -> v2 -> v3 migration before an editor session is published;
-- floors and explicit layers, with one active floor rendered at a time;
-- six editable business entities plus dimension annotations and nine M1 authoring tools;
-- millimetre plan coordinates, radian rotations, snapping, transforms, arrays, indexing, undo/redo, checkpoint, close/reopen, and recovery;
-- project-bound import of PNG, JPEG, sanitized SVG, MP4, and WebM into immutable content-addressed files;
-- canonical asset identity at `assets/sha256/<first-two-hex>/<sha256>.<canonical-extension>` with no persisted source path or remote URL;
-- verified custom-protocol asset reads, missing/corrupt placeholders, selective cache invalidation, and reimport repair;
-- plan-reference placement, selection, properties, lock state, atomic undo/redo, and keyboard-operable two-point calibration;
-- PixiJS 8.19.0 under the MIT notice in `THIRD_PARTY_NOTICES.md`.
+- schema-v3 projects with deterministic v1 -> v2 -> v3 migration before editor-session publication and no M2.4 SQLite migration;
+- floors/layers, 2D authoring, calibrated project-bound plan references, openings, deterministic room confirmation, seven showroom fixture kinds, product content/hotspots, and guided routes;
+- showroom view modes `2d`, `3d`, and fixed `split`, defaulting to `2d`; Market exposes no 3D mode;
+- deterministic 3D projection for space-unit/zone floors, walls and door/window openings, seven showroom catalogue fixture kinds, compatible generic fixtures, product hotspots, and the active guided route;
+- reversible material definitions/assignments and the singleton scene environment through ProjectStore and CommandBus;
+- project-bound PNG, JPEG, and sanitized SVG material textures; no remote runtime assets or persisted absolute paths;
+- incremental Three/R3F resource ownership, generation-safe async texture resolution, and exact cleanup;
+- WebGL or texture-decode failure that preserves 2D and base-color rendering; one automatic context-loss recovery attempt, then `disabled` until an explicit retry starts a fresh round;
+- a camera/offscreen `SceneExportPort` for the future M2.5 implementation, without an Export control or M2.4 output workflow.
 
-Only PNG, JPEG, and sanitized SVG are accepted as floor-plan references. MP4 and WebM are accepted content assets but M2.1 does not expose later content authoring UI.
-
-## Dependency direction
+## Ownership and dependency direction
 
 ```text
 Studio React application
   -> core-model + design-system + editor-shell
-  -> asset-pipeline + plan-engine + render-plan-2d + project-store
+  -> asset-pipeline + plan-engine + route-engine + mode-showroom
+  -> render-plan-2d + render-scene-3d
   -> project-store -> command-bus + core-model
 
 Desktop backend
@@ -34,14 +33,18 @@ Development sandbox
   -> SandboxProjectBackend (in-memory project metadata and Blob-backed assets)
 ```
 
-`project-store` remains the UI persistence coordinator. CommandBus serializes mutations and publishes only after persistence commits. `desktop-host` owns exactly eight typed Tauri commands: the original six project commands plus `import_project_asset` and `cancel_project_asset_import`. Asset bytes are read through the `aethertwin-asset` custom protocol, not a ninth invoke. Desktop capabilities remain exactly `core:window:default` and `dialog:allow-open` for the `main` window.
+ProjectStore is the durable UI coordinator and the only owner of Blob URL leases. Materials, assignments, the scene environment, assets, building/content/route records, and all other business data exist only in the ProjectStore snapshot. Camera, view mode, renderer status/errors, selection, previews, and other session state exist only in Zustand. React, PixiJS, Three.js, R3F, decoded textures, and renderer resource tables do not own or mutate business data and never revoke ProjectStore-owned Blob URLs.
+
+The native boundary remains exactly eight typed Tauri invokes: the six project commands plus `import_project_asset` and `cancel_project_asset_import`. Asset bytes use the session-bound `aethertwin-asset` protocol, not a ninth invoke. Desktop capabilities remain exactly `core:window:default` and `dialog:allow-open` for the `main` window.
 
 ## Deliberate boundary
 
-M2.1 is accepted; openings/room recognition, fixture catalogues, content placement UI, routes, synchronized 3D, export, Player/media, and market workflows are not implemented. M2.2 must begin with a separate higher-reasoning design and atomic implementation plan.
+M2.4 does not add export, publish, Player, Market 3D, GLTF import/export, arbitrary lights or shaders, 3D geometry editing, remote services, CDN assets, or remote runtime fallbacks. M2.5 is the next milestone and may consume only the already exposed immutable camera/offscreen export port until a separately approved plan expands the product surface.
 
 ## Verification boundary
 
-The executed M2.1 evidence is recorded in [docs/M2_1_REPORT.md](docs/M2_1_REPORT.md). Build, dev, debug, browser, Playwright, packaging, packaged-runtime, screenshot, real-GPU, and visual-performance commands were not run for Task 14. Historical evidence remains in [docs/M1_REPORT.md](docs/M1_REPORT.md) and [docs/M0_REPORT.md](docs/M0_REPORT.md).
+Task 17 passed its focused acceptance evidence: Studio 4/4, ProjectStore 1/1, render-scene-3d 2/2, project-io M2.4 1/1, schema-v3 recovery 8/8, scene-environment replay 6/6, desktop-host command contract 21/21, three TypeScript checks, rustfmt, and Cargo check. Independent final re-review reported no Critical, Important, or Minor findings.
 
-In a non-Tauri production web context, Studio fails closed. The sandbox is selected only in Vite development mode and is not a browser-persistence claim.
+Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
+
+Build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-browser, real-GPU, visual-correctness, and performance evidence is not claimed. In a non-Tauri production web context Studio fails closed; the Vite-only sandbox is not a browser-persistence claim.

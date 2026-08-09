@@ -77,7 +77,8 @@ class Factory implements SceneResourceFactory {
     return resource;
   }
 
-  async decodeTexture(_source: SceneAssetSource): Promise<SceneDisposableResource> {
+  async decodeTexture(source: SceneAssetSource): Promise<SceneDisposableResource> {
+    void source;
     if (this.decodeMode === "fail") throw new Error("decoder unavailable");
     const texture = new Resource();
     this.textures.push(texture);

@@ -28,8 +28,14 @@ const galleryStore: Pick<
       { code: "ASSET_MISSING" },
     );
   },
-  reportRendererAssetIssue(_issue: RendererAssetIssue, _expectedEpoch: number) {},
-  clearRendererAssetIssue(_assetId: string, _expectedEpoch: number) {},
+  reportRendererAssetIssue(issue: RendererAssetIssue, expectedEpoch: number) {
+    void issue;
+    void expectedEpoch;
+  },
+  clearRendererAssetIssue(assetId: string, expectedEpoch: number) {
+    void assetId;
+    void expectedEpoch;
+  },
 };
 
 export interface SceneGalleryProps {

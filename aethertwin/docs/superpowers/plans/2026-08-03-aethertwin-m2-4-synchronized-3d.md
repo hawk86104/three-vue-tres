@@ -85,7 +85,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 0 — 保存计划基线
 
-- [ ] 完成
+- [x] 完成
 - 目标：保存本计划，锁定 HEAD、受保护文件、接口、任务顺序和验证边界。
 - 前置条件：codex/aethertwin-m2@a58e01e5；M2.3 已验收。
 - 涉及文件：docs/superpowers/plans/2026-08-03-aethertwin-m2-4-synchronized-3d.md。
@@ -104,7 +104,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 1 — TypeScript 环境命令
 
-- [ ] 完成
+- [x] 完成
 - 目标：在 project-store 增加可撤销的 scene.environment.patch。
 - 前置条件：Task 0。
 - 涉及文件：packages/project-store/src/scene-environment-command.ts、入口导出、project-store.ts、对应测试。
@@ -125,7 +125,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 2 — Rust 环境重放
 
-- [ ] 完成
+- [x] 完成
 - 目标：在 project-io/desktop-host 对 scene.environment.patch 实现同构重放与 allowlist。
 - 前置条件：Task 1 接口已锁定。
 - 涉及文件：project-io replay/model/tests、desktop-host payload validation/tests。
@@ -148,7 +148,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 3 — 材质纹理导入角色
 
-- [ ] 完成
+- [x] 完成
 - 目标：端到端增加 material-texture 导入角色。
 - 前置条件：既有 asset-pipeline/import/cancel 边界可复用。
 - 涉及文件：asset-pipeline、asset-io、Tauri DTO/适配器、Studio 选择器及测试。
@@ -165,7 +165,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 4 — ProjectStore 材质纹理事务与问题状态
 
-- [ ] 完成
+- [x] 完成
 - 目标：原子导入纹理并安全连接 MaterialDefinition。
 - 前置条件：Task 3。
 - 涉及文件：ProjectStore、资产引用/问题协调逻辑、测试。
@@ -184,7 +184,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 5 — 激活 render-scene-3d package
 
-- [ ] 完成
+- [x] 完成
 - 目标：创建真实 3D 包公共边界，不接入 UI。
 - 前置条件：Task 0；网络可用于精确依赖。
 - 涉及文件：packages/render-scene-3d/package.json、tsconfig.json、src/index.ts/公共类型、Studio package dependency、pnpm-lock.yaml、策略测试；删除 .gitkeep。
@@ -207,7 +207,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 6 — 坐标、楼面与投影失败原子性
 
-- [ ] 完成
+- [x] 完成
 - 目标：实现纯函数活动楼层楼面投影和原子错误。
 - 前置条件：Task 5。
 - 涉及文件：render-scene-3d projection/types/tests。
@@ -225,7 +225,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 7 — 墙与门窗分段
 
-- [ ] 完成
+- [x] 完成
 - 目标：无 CSG 地生成稳定墙片和开口代理。
 - 前置条件：Task 6。
 - 涉及文件：render-scene-3d wall/opening projection/tests。
@@ -243,7 +243,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 8 — 展具、热点和路线
 
-- [ ] 完成
+- [x] 完成
 - 目标：投影七类展具、generic、产品热点和 guided route。
 - 前置条件：Tasks 6–7。
 - 涉及文件：render-scene-3d fixture/content/route projection/tests。
@@ -261,7 +261,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 9 — 材质、UV 与环境映射
 
-- [ ] 完成
+- [x] 完成
 - 目标：确定性解析材质分配、纹理需求、UV、环境和选择 overlay。
 - 前置条件：Tasks 4、6–8。
 - 涉及文件：render-scene-3d material/environment projection/tests。
@@ -279,7 +279,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 10 — 增量 reconciler 与资源表
 
-- [ ] 完成
+- [x] 完成
 - 目标：稳定 key 增量更新并精确一次释放资源。
 - 前置条件：Tasks 6–9。
 - 涉及文件：render-scene-3d reconciler/resource registry/tests。
@@ -298,7 +298,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 11 — R3F、相机、上下文恢复和 M2.5 端口
 
-- [ ] 完成
+- [x] 完成
 - 目标：实现可注入的渲染器生命周期及真实离屏导出端口，不增加 UI。
 - 前置条件：Task 10。
 - 涉及文件：render-scene-3d renderer/R3F/camera/export port/tests。
@@ -317,7 +317,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 12 — Zustand 会话状态与 Preview 工具策略
 
-- [ ] 完成
+- [x] 完成
 - 目标：增加瞬态 view/camera/status 和 Showroom Preview 工具组。
 - 前置条件：Task 11 公共接口稳定。
 - 涉及文件：editor-session、mode-showroom tool policy、visible actions、toolbar/Studio tests。
@@ -335,7 +335,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 13 — SceneCanvas 与 2D/3D/split 集成
 
-- [ ] 完成
+- [x] 完成
 - 目标：把可注入 SceneRendererFactory 与现有编辑器完整同步。
 - 前置条件：Tasks 11–12。
 - 涉及文件：SceneCanvas、PlanEditor/布局、会话同步、CSS、测试。
@@ -355,7 +355,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 14 — 材质 Inspector
 
-- [ ] 完成
+- [x] 完成
 - 目标：为 space-unit、zone、wall、fixture 提供 durable 材质编辑。
 - 前置条件：Tasks 4、13。
 - 涉及文件：material inspector、plan inspector/editor、asset picker/operation owner、CSS、测试。
@@ -374,7 +374,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 15 — 环境 Inspector
 
-- [ ] 完成
+- [x] 完成
 - 目标：在 Project context 编辑已批准 singleton SceneEnvironment。
 - 前置条件：Tasks 1–2、13。
 - 涉及文件：environment inspector、plan inspector/editor、ProjectStore integration、Rust replay/recovery tests。
@@ -392,7 +392,7 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 16 — 开发场景画廊
 
-- [ ] 完成
+- [x] 完成
 - 目标：提供确定性、本地、仅 DEV 的 3D 场景输入画廊。
 - 前置条件：Task 13。
 - 涉及文件：dev scene gallery、app route、deterministic fixture、tests。
@@ -409,7 +409,8 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 17 — 完整 M2.4 垂直验收
 
-- [ ] 完成
+- [x] 完成
+- 实际证据：Studio 4/4、ProjectStore 1/1、render-scene-3d 2/2、project-io M2.4 1/1、schema_v3_recovery 8/8、scene_environment_replay 6/6、desktop-host command_contract 21/21、三组 TypeScript 检查、rustfmt 与 cargo check 通过；独立最终复审无 Critical/Important/Minor。
 - 目标：用一个完整 schema-v3 showroom 验证 M2.4 全链路。
 - 前置条件：Tasks 1–16。
 - 涉及文件：聚焦集成/验收测试；仅修复验收暴露的 M2.4 缺口。
@@ -428,7 +429,10 @@ M2.4 为 Showroom 增加与既有 2D 编辑器同步的 3D 预览，同时保持
 
 ## Task 18 — 文档、策略与全量非 build 门禁
 
-- [ ] 完成
+- [x] 完成
+- 当前状态：文档实现、完整非 build 门禁与最终独立 closure 复审均已完成；Task 18 与 M2.4 已验收关闭。
+- 全量门禁实际证据：frozen install exit 0（14 个 workspace projects，Already up to date）；lint 首次 exit 1（M2.4 Task 5/16/17 引入的 8 个问题），五文件最小修正后 exit 0；typecheck exit 0（13/14）；Node 32/32；Vitest 68 files / 1355 tests；rustfmt exit 0；Rust tests 208 passed / 1 approved ignored；cargo check exit 0。schema v3、8 commands 与受保护 hashes 未变。
+- 最终独立复审：Spec Compliance Pass；Code/Doc Quality Approved；Critical/Important/Minor None；Ready Yes。
 - 目标：关闭 M2.4 文档与真实验证证据。
 - 前置条件：Task 17。
 - 涉及文件：README、ARCHITECTURE、PRODUCT_SPEC、PROJECT_FORMAT、ROADMAP、DECISIONS、HANDOFF、PLANS、本计划、恢复账本。
