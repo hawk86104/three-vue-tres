@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/project-io", "crates/desktop-host", "crates/asset-io"]
+members = ["crates/project-io", "crates/desktop-host", "crates/asset-io", "crates/media-export"]
 
 [workspace.package]
 edition = "2024"
@@ -17,6 +17,7 @@ rustix = { version = "=1.1.4", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 quick-xml = "=0.41.0"
+png = "=0.18.1"
 sha2 = "0.10"
 tauri = { version = "2", default-features = false, features = [
     "compression",

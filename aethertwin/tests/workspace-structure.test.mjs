@@ -97,7 +97,7 @@ test("active Rust workspace members include the M2.1 asset boundary", () => {
 
   assert.match(
     workspace,
-    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host",\s*"crates\/asset-io"\]/,
+    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host",\s*"crates\/asset-io",\s*"crates\/media-export"\]/,
   );
   assert.match(projectIo, /name\s*=\s*"project-io"/);
   assert.match(desktopHost, /name\s*=\s*"desktop-host"/);
@@ -371,4 +371,25 @@ test("M2.5 exporter boundary keeps its pure workspace contract", () => {
   });
   assert.equal(studio.dependencies["@aethertwin/exporter"], "workspace:*");
   assert.equal(existsSync(join(packageRoot, ".gitkeep")), false);
+});
+
+test("M2.5 media-export is an exact bounded workspace crate", () => {
+  const workspace = readFileSync(join(root, "Cargo.toml"), "utf8");
+  const crateRoot = join(root, "crates/media-export");
+  const manifest = readFileSync(join(crateRoot, "Cargo.toml"), "utf8");
+  const library = readFileSync(join(crateRoot, "src/lib.rs"), "utf8");
+
+  assert.match(workspace, /members\s*=\s*\[[^\]]*"crates\/media-export"[^\]]*\]/u);
+  assert.match(workspace, /png\s*=\s*"=0\.18\.1"/u);
+  assert.match(manifest, /name\s*=\s*"media-export"/u);
+  assert.match(manifest, /edition\.workspace\s*=\s*true/u);
+  for (const dependency of ["png", "sha2", "thiserror", "tempfile"]) {
+    assert.match(manifest, new RegExp(`^${dependency}\\.workspace\\s*=\\s*true$`, "mu"));
+  }
+  for (const owner of ["error", "png_stream", "validation"]) {
+    assert.ok(existsSync(join(crateRoot, `src/${owner}.rs`)), `missing ${owner}`);
+  }
+  assert.match(library, /pub use png_stream::/u);
+  assert.match(library, /pub use validation::/u);
+  assert.equal(existsSync(join(crateRoot, ".gitkeep")), false);
 });

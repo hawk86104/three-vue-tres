@@ -228,3 +228,19 @@ test("M2.5 exporter source does not take renderer, desktop, or filesystem owners
     exporterForbiddenRuntimePattern,
   );
 });
+
+test("M2.5 media export stays offline and does not own project paths", () => {
+  const normalized = runtimeFiles.map((file) => file.replaceAll("\\", "/"));
+  const owners = [
+    "crates/media-export/src/error.rs",
+    "crates/media-export/src/lib.rs",
+    "crates/media-export/src/png_stream.rs",
+    "crates/media-export/src/validation.rs",
+  ];
+  for (const owner of owners) {
+    assert.ok(normalized.includes(owner), `offline scan misses ${owner}`);
+  }
+
+  const source = owners.map((owner) => readFileSync(owner, "utf8")).join("\n");
+  assert.doesNotMatch(source, /(?:std::path|\bPathBuf\b|\bPath\b|https?:|\bURL\b)/u);
+});
