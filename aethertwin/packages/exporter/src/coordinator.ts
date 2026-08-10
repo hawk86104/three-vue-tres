@@ -196,8 +196,7 @@ class DefaultProjectExportCoordinator implements ProjectExportCoordinator {
     if (this.active !== null) {
       throw new ProjectExportError("EXPORT_RENDERER_NOT_READY");
     }
-    let active: ActiveProjectExport;
-    active = new ActiveProjectExport(this.backend, request, () => {
+    const active = new ActiveProjectExport(this.backend, request, () => {
       if (this.active === active) this.active = null;
     });
     this.active = active;
