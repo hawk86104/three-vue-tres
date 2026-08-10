@@ -9,6 +9,7 @@ license.workspace = true
 chrono.workspace = true
 fs2.workspace = true
 fs_at.workspace = true
+media-export = { path = "../media-export" }
 rusqlite.workspace = true
 remove_dir_all.workspace = true
 rustix.workspace = true

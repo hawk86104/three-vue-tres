@@ -2669,6 +2669,7 @@ dependencies = [
  "chrono",
  "fs2",
  "fs_at",
+ "media-export",
  "remove_dir_all",
  "rusqlite",
  "rustix",

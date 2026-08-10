@@ -25,6 +25,12 @@ thread_local! {
         std::cell::RefCell::new(None);
     static FAIL_EXPORT_STAGE_UNLINK_TEST_HOOK: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
+    static FAIL_EXPORT_PUBLICATION_TEST_HOOK: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+    static FAIL_EXPORT_DIRECTORY_SYNC_TEST_HOOK: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+    static FAIL_EXPORT_POST_PUBLISH_REOPEN_TEST_HOOK: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 #[cfg(test)]
@@ -63,8 +69,23 @@ fn run_before_export_stage_verification_test_hook(path: &Path) {
 fn run_before_export_stage_verification_test_hook(_path: &Path) {}
 
 #[cfg(test)]
-fn fail_next_export_stage_unlink() {
+pub(crate) fn fail_next_export_stage_unlink() {
     FAIL_EXPORT_STAGE_UNLINK_TEST_HOOK.with(|fail| fail.set(true));
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_export_publication() {
+    FAIL_EXPORT_PUBLICATION_TEST_HOOK.with(|fail| fail.set(true));
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_export_directory_sync() {
+    FAIL_EXPORT_DIRECTORY_SYNC_TEST_HOOK.with(|fail| fail.set(true));
+}
+
+#[cfg(test)]
+pub(crate) fn fail_next_export_post_publish_reopen() {
+    FAIL_EXPORT_POST_PUBLISH_REOPEN_TEST_HOOK.with(|fail| fail.set(true));
 }
 
 #[cfg(test)]
@@ -578,7 +599,11 @@ impl BoundExportsDirectory {
         })
     }
 
-    fn revalidate(&self) -> Result<(), ProjectIoError> {
+    pub(crate) fn bound_project_path(&self) -> &Path {
+        self.project.bound_path()
+    }
+
+    pub(crate) fn revalidate(&self) -> Result<(), ProjectIoError> {
         self.project.revalidate_stabilized()?;
         if file_identity(&self.file)? != self.identity {
             return Err(ProjectIoError::InvalidProjectStructure);
@@ -588,6 +613,31 @@ impl BoundExportsDirectory {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
         Ok(())
+    }
+
+    pub(crate) fn create_export_stage(
+        self,
+        export_id: Uuid,
+    ) -> Result<(BoundExportStage, File), ProjectIoError> {
+        self.revalidate()?;
+        let leaf = OsString::from(format!("{EXPORT_STAGE_PREFIX}{}", export_id.hyphenated()));
+        let leaf_text = leaf
+            .to_str()
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let file = create_bound_export_file(&self.file, &self.visible_path, leaf_text)?;
+        let identity = regular_file_identity(&file)?;
+        let stage = BoundExportStage {
+            exports: Some(self),
+            stage_leaf: leaf,
+            file: Some(file),
+            identity,
+            location: ExportStageLocation::Staged,
+        };
+        #[cfg(unix)]
+        fs2::FileExt::lock_exclusive(stage.file_ref()?)?;
+        sync_directory_metadata(&stage.exports_ref()?.file)?;
+        let writer = stage.file_ref()?.try_clone()?;
+        Ok((stage, writer))
     }
 
     pub(crate) fn cleanup_staging(mut self) -> Result<(), ProjectIoError> {
@@ -617,6 +667,21 @@ impl BoundExportsDirectory {
             .ok_or(ProjectIoError::InvalidProjectStructure)?;
         let expected = regular_file_identity(&candidate)?;
         drop(candidate);
+        self.remove_verified_regular_file_with_identity(leaf, &expected)
+    }
+
+    fn remove_verified_regular_file_with_identity(
+        &self,
+        leaf: &OsStr,
+        expected: &FileIdentity,
+    ) -> Result<(), ProjectIoError> {
+        self.revalidate()?;
+        let candidate = open_bound_regular_entry(&self.file, &self.visible_path, leaf, false)?
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        if regular_file_identity(&candidate)? != *expected {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        drop(candidate);
         run_before_export_stage_quarantine_test_hook(&self.visible_path.join(leaf));
 
         let quarantine = OsString::from(format!(".aethertwin-cleanup-{}", Uuid::new_v4()));
@@ -632,7 +697,7 @@ impl BoundExportsDirectory {
                     return Err(ProjectIoError::InvalidProjectStructure);
                 }
             };
-        if regular_file_identity(&verification)? != expected {
+        if regular_file_identity(&verification)? != *expected {
             drop(verification);
             let _ = rename_child_no_replace(&self.file, &self.visible_path, &quarantine, leaf);
             return Err(ProjectIoError::InvalidProjectStructure);
@@ -644,6 +709,171 @@ impl BoundExportsDirectory {
             return Err(ProjectIoError::FilesystemError);
         }
         sync_directory_metadata(&self.file)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ExportStageLocation {
+    Staged,
+    PublishedPending(OsString),
+    Committed,
+    Cleaned,
+}
+
+pub(crate) struct BoundExportStage {
+    exports: Option<BoundExportsDirectory>,
+    stage_leaf: OsString,
+    file: Option<File>,
+    identity: FileIdentity,
+    location: ExportStageLocation,
+}
+
+impl BoundExportStage {
+    fn exports_ref(&self) -> Result<&BoundExportsDirectory, ProjectIoError> {
+        self.exports
+            .as_ref()
+            .ok_or(ProjectIoError::ExportPublishFailed)
+    }
+
+    fn file_ref(&self) -> Result<&File, ProjectIoError> {
+        self.file
+            .as_ref()
+            .ok_or(ProjectIoError::ExportPublishFailed)
+    }
+
+    fn current_leaf(&self) -> Result<&OsStr, ProjectIoError> {
+        match &self.location {
+            ExportStageLocation::Staged => Ok(self.stage_leaf.as_os_str()),
+            ExportStageLocation::PublishedPending(leaf) => Ok(leaf.as_os_str()),
+            ExportStageLocation::Committed | ExportStageLocation::Cleaned => {
+                Err(ProjectIoError::ExportPublishFailed)
+            }
+        }
+    }
+
+    pub(crate) fn sync_and_clone(&self) -> Result<File, ProjectIoError> {
+        let exports = self.exports_ref()?;
+        exports.revalidate()?;
+        let file = self.file_ref()?;
+        #[cfg(test)]
+        if matches!(self.location, ExportStageLocation::PublishedPending(_))
+            && FAIL_EXPORT_POST_PUBLISH_REOPEN_TEST_HOOK.with(|fail| fail.replace(false))
+        {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        if regular_file_identity(file)? != self.identity {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        #[cfg(unix)]
+        {
+            let current = open_bound_regular_entry(
+                &exports.file,
+                &exports.visible_path,
+                self.current_leaf()?,
+                false,
+            )?
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+            if regular_file_identity(&current)? != self.identity {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+        }
+        file.sync_all()?;
+        file.try_clone().map_err(ProjectIoError::from)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn corrupt_after_validation_for_test(&self) -> Result<(), ProjectIoError> {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let mut file = self.file_ref()?.try_clone()?;
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(b"not-a-valid-png")?;
+        file.set_len(15)?;
+        file.sync_all().map_err(ProjectIoError::from)
+    }
+    pub(crate) fn publish_first_absent(
+        &mut self,
+        base_leaf: &str,
+    ) -> Result<String, ProjectIoError> {
+        if self.location != ExportStageLocation::Staged {
+            return Err(ProjectIoError::ExportPublishFailed);
+        }
+        self.exports_ref()?.revalidate()?;
+        #[cfg(test)]
+        if FAIL_EXPORT_PUBLICATION_TEST_HOOK.with(|fail| fail.replace(false)) {
+            return Err(ProjectIoError::FilesystemError);
+        }
+
+        for suffix in 0..=u32::MAX {
+            let leaf = if suffix == 0 {
+                format!("{base_leaf}.png")
+            } else {
+                format!("{base_leaf}-{suffix}.png")
+            };
+            let result = {
+                let exports = self.exports_ref()?;
+                let file = self.file_ref()?;
+                publish_bound_export_file(
+                    &exports.file,
+                    &exports.visible_path,
+                    &self.stage_leaf,
+                    file,
+                    OsStr::new(&leaf),
+                    &self.identity,
+                )
+            };
+            match result {
+                Ok(()) => {
+                    self.location = ExportStageLocation::PublishedPending(OsString::from(&leaf));
+                    if sync_export_directory_metadata(&self.exports_ref()?.file).is_err() {
+                        return Err(ProjectIoError::FilesystemError);
+                    }
+                    return Ok(format!("exports/{leaf}"));
+                }
+                Err(ProjectIoError::ProjectAlreadyExists) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ProjectIoError::FilesystemError)
+    }
+
+    pub(crate) fn cancel(mut self) -> Result<(), ProjectIoError> {
+        self.cleanup()
+    }
+
+    pub(crate) fn accept_publication(mut self) -> Result<(), ProjectIoError> {
+        if !matches!(self.location, ExportStageLocation::PublishedPending(_)) {
+            return Err(ProjectIoError::ExportPublishFailed);
+        }
+        self.location = ExportStageLocation::Committed;
+        self.file.take();
+        self.exports.take();
+        Ok(())
+    }
+
+    fn cleanup(&mut self) -> Result<(), ProjectIoError> {
+        if matches!(
+            self.location,
+            ExportStageLocation::Committed | ExportStageLocation::Cleaned
+        ) {
+            return Ok(());
+        }
+        let leaf = self.current_leaf()?.to_owned();
+        drop(self.file.take());
+        let Some(exports) = self.exports.as_ref() else {
+            self.location = ExportStageLocation::Cleaned;
+            return Ok(());
+        };
+        exports.remove_verified_regular_file_with_identity(&leaf, &self.identity)?;
+        self.exports.take();
+        self.location = ExportStageLocation::Cleaned;
+        Ok(())
+    }
+}
+
+impl Drop for BoundExportStage {
+    fn drop(&mut self) {
+        let _ = self.cleanup();
     }
 }
 
@@ -865,6 +1095,14 @@ fn sync_directory_metadata(_directory: &File) -> Result<(), ProjectIoError> {
     Err(ProjectIoError::FilesystemError)
 }
 
+fn sync_export_directory_metadata(directory: &File) -> Result<(), ProjectIoError> {
+    #[cfg(test)]
+    if FAIL_EXPORT_DIRECTORY_SYNC_TEST_HOOK.with(|fail| fail.replace(false)) {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    sync_directory_metadata(directory)
+}
+
 fn bind_existing_child_directory(
     parent: &File,
     visible: &Path,
@@ -981,6 +1219,31 @@ fn create_bound_regular_file(
     }
 }
 
+#[cfg(not(windows))]
+fn create_bound_export_file(
+    parent: &File,
+    parent_visible: &Path,
+    leaf: &str,
+) -> Result<File, ProjectIoError> {
+    create_bound_regular_file(parent, parent_visible, leaf)
+}
+
+#[cfg(windows)]
+fn create_bound_export_file(
+    parent: &File,
+    parent_visible: &Path,
+    leaf: &str,
+) -> Result<File, ProjectIoError> {
+    let created = create_bound_regular_file(parent, parent_visible, leaf)?;
+    let expected = regular_file_identity(&created)?;
+    drop(created);
+    let locked = open_renameable_regular_file(&parent_visible.join(leaf))?;
+    if regular_file_identity(&locked)? != expected {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    Ok(locked)
+}
+
 #[cfg(windows)]
 fn open_locked_regular_file(path: &Path, writable: bool) -> Result<File, ProjectIoError> {
     use std::os::windows::fs::OpenOptionsExt;
@@ -996,6 +1259,55 @@ fn open_locked_regular_file(path: &Path, writable: bool) -> Result<File, Project
     options
         .open(path)
         .map_err(|_| ProjectIoError::InvalidProjectStructure)
+}
+
+#[cfg(windows)]
+fn open_renameable_regular_file(path: &Path) -> Result<File, ProjectIoError> {
+    use std::ffi::c_void;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::FromRawHandle;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn CreateFileW(
+            file_name: *const u16,
+            desired_access: u32,
+            share_mode: u32,
+            security_attributes: *mut c_void,
+            creation_disposition: u32,
+            flags_and_attributes: u32,
+            template_file: *mut c_void,
+        ) -> *mut c_void;
+    }
+
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const DELETE_ACCESS: u32 = 0x0001_0000;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const FILE_SHARE_READ: u32 = 0x1;
+    const OPEN_EXISTING: u32 = 3;
+    const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    let path: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: the path is NUL-terminated and optional pointers may be null.
+    let handle = unsafe {
+        CreateFileW(
+            path.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE | DELETE_ACCESS | SYNCHRONIZE,
+            FILE_SHARE_READ,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle as isize == -1 {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    // SAFETY: CreateFileW returned an owned handle transferred to File.
+    let file = unsafe { File::from_raw_handle(handle) };
+    validate_windows_regular_file(&file)?;
+    Ok(file)
 }
 
 #[cfg(windows)]
@@ -1656,6 +1968,68 @@ fn rename_no_replace_platform(source: &Path, destination: &Path) -> Result<(), P
     target_os = "redox"
 )))]
 fn rename_no_replace_platform(_source: &Path, _destination: &Path) -> Result<(), ProjectIoError> {
+    Err(ProjectIoError::FilesystemError)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn publish_bound_export_file(
+    parent: &File,
+    parent_visible: &Path,
+    stage_leaf: &OsStr,
+    stage_file: &File,
+    destination_leaf: &OsStr,
+    expected: &FileIdentity,
+) -> Result<(), ProjectIoError> {
+    use rustix::fs::{RenameFlags, renameat_with};
+
+    if regular_file_identity(stage_file)? != *expected {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    let current = open_bound_regular_entry(parent, parent_visible, stage_leaf, false)?
+        .ok_or(ProjectIoError::InvalidProjectStructure)?;
+    if regular_file_identity(&current)? != *expected {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    match renameat_with(
+        parent,
+        stage_leaf,
+        parent,
+        destination_leaf,
+        RenameFlags::NOREPLACE,
+    ) {
+        Ok(()) => {}
+        Err(rustix::io::Errno::EXIST) => return Err(ProjectIoError::ProjectAlreadyExists),
+        Err(_) => return Err(ProjectIoError::FilesystemError),
+    }
+    // The caller records PublishedPending immediately after this atomic move,
+    // before any fallible directory sync or destination identity revalidation.
+    Ok(())
+}
+
+#[cfg(windows)]
+fn publish_bound_export_file(
+    parent: &File,
+    _parent_visible: &Path,
+    _stage_leaf: &OsStr,
+    stage_file: &File,
+    destination_leaf: &OsStr,
+    expected: &FileIdentity,
+) -> Result<(), ProjectIoError> {
+    if regular_file_identity(stage_file)? != *expected {
+        return Err(ProjectIoError::InvalidProjectStructure);
+    }
+    rename_open_directory_no_replace(stage_file, parent, destination_leaf)
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "android")))]
+fn publish_bound_export_file(
+    _parent: &File,
+    _parent_visible: &Path,
+    _stage_leaf: &OsStr,
+    _stage_file: &File,
+    _destination_leaf: &OsStr,
+    _expected: &FileIdentity,
+) -> Result<(), ProjectIoError> {
     Err(ProjectIoError::FilesystemError)
 }
 

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum ProjectIoError {
     #[error("invalid project name")]
     InvalidProjectName,
@@ -26,6 +26,18 @@ pub enum ProjectIoError {
     RecoveryFailed,
     #[error("filesystem operation failed")]
     FilesystemError,
+    #[error("export chunk index is out of order")]
+    ExportChunkOutOfOrder,
+    #[error("export chunk exceeds the byte limit")]
+    ExportChunkTooLarge,
+    #[error("export byte count does not match the preset")]
+    ExportByteCountMismatch,
+    #[error("export PNG encoding failed")]
+    ExportEncodeFailed,
+    #[error("export PNG validation failed")]
+    ExportValidationFailed,
+    #[error("export publication failed")]
+    ExportPublishFailed,
 }
 
 impl ProjectIoError {
@@ -43,6 +55,12 @@ impl ProjectIoError {
             Self::InvalidResourcePath => "INVALID_RESOURCE_PATH",
             Self::RecoveryFailed => "RECOVERY_FAILED",
             Self::FilesystemError => "FILESYSTEM_ERROR",
+            Self::ExportChunkOutOfOrder => "EXPORT_CHUNK_OUT_OF_ORDER",
+            Self::ExportChunkTooLarge => "EXPORT_CHUNK_TOO_LARGE",
+            Self::ExportByteCountMismatch => "EXPORT_BYTE_COUNT_MISMATCH",
+            Self::ExportEncodeFailed => "EXPORT_ENCODE_FAILED",
+            Self::ExportValidationFailed => "EXPORT_VALIDATION_FAILED",
+            Self::ExportPublishFailed => "EXPORT_PUBLISH_FAILED",
         }
     }
 }

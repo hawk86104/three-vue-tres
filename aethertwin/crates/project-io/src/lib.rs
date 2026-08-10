@@ -7,6 +7,7 @@ mod model;
 mod opening_geometry;
 mod paths;
 mod project;
+mod project_export;
 mod scene_environment_command;
 mod schema;
 
@@ -24,5 +25,9 @@ pub use paths::validate_relative_resource_path;
 pub use project::{
     ProjectSession, create_project, open_project, open_session, recover_project,
     validate_commit_batch,
+};
+pub use project_export::{
+    PROJECT_EXPORT_MAX_CHUNK_BYTES, ProjectExportOperation, ProjectExportPreset,
+    ProjectExportResult, begin_project_export, begin_project_export_with_seed,
 };
 pub use schema::snapshot_checksum;
