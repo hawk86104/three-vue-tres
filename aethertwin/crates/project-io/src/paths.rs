@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 pub(crate) const PROJECT_SUFFIX: &str = ".twinproj";
+pub(crate) const EXPORT_STAGE_PREFIX: &str = ".aethertwin-export-";
 
 #[cfg(test)]
 thread_local! {
@@ -18,6 +19,52 @@ thread_local! {
         std::cell::RefCell::new(None);
     static FAIL_RECOVERY_DESTINATION_IDENTITY_TEST_HOOK: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
+    static BEFORE_EXPORT_STAGE_QUARANTINE_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
+        std::cell::RefCell::new(None);
+    static BEFORE_EXPORT_STAGE_VERIFICATION_TEST_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce(&Path)>>> =
+        std::cell::RefCell::new(None);
+    static FAIL_EXPORT_STAGE_UNLINK_TEST_HOOK: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn set_before_export_stage_quarantine_test_hook(hook: impl FnOnce(&Path) + 'static) {
+    BEFORE_EXPORT_STAGE_QUARANTINE_TEST_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn run_before_export_stage_quarantine_test_hook(path: &Path) {
+    BEFORE_EXPORT_STAGE_QUARANTINE_TEST_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook(path);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn run_before_export_stage_quarantine_test_hook(_path: &Path) {}
+
+#[cfg(test)]
+fn set_before_export_stage_verification_test_hook(hook: impl FnOnce(&Path) + 'static) {
+    BEFORE_EXPORT_STAGE_VERIFICATION_TEST_HOOK
+        .with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn run_before_export_stage_verification_test_hook(path: &Path) {
+    BEFORE_EXPORT_STAGE_VERIFICATION_TEST_HOOK.with(|slot| {
+        if let Some(hook) = slot.borrow_mut().take() {
+            hook(path);
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn run_before_export_stage_verification_test_hook(_path: &Path) {}
+
+#[cfg(test)]
+fn fail_next_export_stage_unlink() {
+    FAIL_EXPORT_STAGE_UNLINK_TEST_HOOK.with(|fail| fail.set(true));
 }
 
 #[cfg(test)]
@@ -159,6 +206,17 @@ pub(crate) fn canonical_parent(parent: &Path) -> Result<PathBuf, ProjectIoError>
 }
 
 pub(crate) fn validate_project_structure(path: &Path) -> Result<PathBuf, ProjectIoError> {
+    validate_project_structure_entries(path, true)
+}
+
+fn validate_project_structure_for_exports(path: &Path) -> Result<PathBuf, ProjectIoError> {
+    validate_project_structure_entries(path, false)
+}
+
+fn validate_project_structure_entries(
+    path: &Path,
+    require_exports: bool,
+) -> Result<PathBuf, ProjectIoError> {
     let canonical = match path.canonicalize() {
         Ok(canonical) => canonical,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -179,9 +237,17 @@ pub(crate) fn validate_project_structure(path: &Path) -> Result<PathBuf, Project
         ("exports", true),
     ] {
         let candidate = canonical.join(entry);
-        let metadata = candidate
-            .symlink_metadata()
-            .map_err(|_| ProjectIoError::InvalidProjectStructure)?;
+        let metadata = match candidate.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(error)
+                if entry == "exports"
+                    && !require_exports
+                    && error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                continue;
+            }
+            Err(_) => return Err(ProjectIoError::InvalidProjectStructure),
+        };
         if metadata.file_type().is_symlink()
             || (directory && !metadata.is_dir())
             || (!directory && !metadata.is_file())
@@ -207,10 +273,26 @@ pub(crate) struct BoundProjectDirectory {
 
 impl BoundProjectDirectory {
     pub(crate) fn open(canonical_path: PathBuf) -> Result<Self, ProjectIoError> {
+        Self::open_validated(canonical_path, true)
+    }
+
+    fn open_for_exports(path: &Path) -> Result<Self, ProjectIoError> {
+        let canonical_path = validate_project_structure_for_exports(path)?;
+        Self::open_validated(canonical_path, false)
+    }
+
+    fn open_validated(
+        canonical_path: PathBuf,
+        require_exports: bool,
+    ) -> Result<Self, ProjectIoError> {
         let file = bind_existing_directory(&canonical_path)?;
         let expected = file_identity(&file)?;
         let bound_path = bound_directory_path(&file, &canonical_path)?;
-        let validated = validate_project_structure(&bound_path)?;
+        let validated = if require_exports {
+            validate_project_structure(&bound_path)?
+        } else {
+            validate_project_structure_for_exports(&bound_path)?
+        };
         if validated != canonical_path || file_identity(&file)? != expected {
             return Err(ProjectIoError::InvalidProjectStructure);
         }
@@ -459,6 +541,141 @@ impl BoundProjectDirectory {
     }
 }
 
+pub(crate) struct BoundExportsDirectory {
+    project: BoundProjectDirectory,
+    visible_path: PathBuf,
+    file: File,
+    identity: FileIdentity,
+}
+
+impl BoundExportsDirectory {
+    pub(crate) fn bind(project_path: &Path) -> Result<Self, ProjectIoError> {
+        let project = BoundProjectDirectory::open_for_exports(project_path)?;
+        let visible_path = project.canonical_path().join("exports");
+        let initial = match private_directory_options().mkdir_at(project.file(), "exports") {
+            Ok(created) => {
+                sync_directory_metadata(project.file())?;
+                bind_created_directory(&visible_path, created)?
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                bind_existing_child_directory(project.file(), &visible_path, "exports")?
+            }
+            Err(_) => return Err(ProjectIoError::FilesystemError),
+        };
+        let expected = file_identity(&initial)?;
+        drop(initial);
+        let reopened = bind_existing_child_directory(project.file(), &visible_path, "exports")?;
+        if file_identity(&reopened)? != expected {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        project.revalidate_stabilized()?;
+
+        Ok(Self {
+            project,
+            visible_path,
+            file: reopened,
+            identity: expected,
+        })
+    }
+
+    fn revalidate(&self) -> Result<(), ProjectIoError> {
+        self.project.revalidate_stabilized()?;
+        if file_identity(&self.file)? != self.identity {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        let reopened = open_child_directory(self.project.file(), OsStr::new("exports"))?;
+        if file_identity(&reopened)? != self.identity {
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn cleanup_staging(mut self) -> Result<(), ProjectIoError> {
+        self.revalidate()?;
+        let leaves = fs_at::read_dir(&mut self.file)
+            .map_err(|_| ProjectIoError::FilesystemError)?
+            .map(|entry| {
+                entry
+                    .map(|entry| entry.name().to_owned())
+                    .map_err(|_| ProjectIoError::FilesystemError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        for leaf in leaves {
+            if export_stage_leaf(&leaf) {
+                self.remove_verified_regular_file(&leaf)?;
+            }
+        }
+
+        self.revalidate()?;
+        sync_directory_metadata(&self.file)
+    }
+
+    fn remove_verified_regular_file(&self, leaf: &OsStr) -> Result<(), ProjectIoError> {
+        self.revalidate()?;
+        let candidate = open_bound_regular_entry(&self.file, &self.visible_path, leaf, false)?
+            .ok_or(ProjectIoError::InvalidProjectStructure)?;
+        let expected = regular_file_identity(&candidate)?;
+        drop(candidate);
+        run_before_export_stage_quarantine_test_hook(&self.visible_path.join(leaf));
+
+        let quarantine = OsString::from(format!(".aethertwin-cleanup-{}", Uuid::new_v4()));
+        rename_child_no_replace(&self.file, &self.visible_path, leaf, &quarantine)?;
+        run_before_export_stage_verification_test_hook(&self.visible_path.join(&quarantine));
+
+        let verification =
+            match open_bound_regular_entry(&self.file, &self.visible_path, &quarantine, false) {
+                Ok(Some(file)) => file,
+                _ => {
+                    let _ =
+                        rename_child_no_replace(&self.file, &self.visible_path, &quarantine, leaf);
+                    return Err(ProjectIoError::InvalidProjectStructure);
+                }
+            };
+        if regular_file_identity(&verification)? != expected {
+            drop(verification);
+            let _ = rename_child_no_replace(&self.file, &self.visible_path, &quarantine, leaf);
+            return Err(ProjectIoError::InvalidProjectStructure);
+        }
+        drop(verification);
+
+        if unlink_export_stage(&self.file, &quarantine).is_err() {
+            let _ = rename_child_no_replace(&self.file, &self.visible_path, &quarantine, leaf);
+            return Err(ProjectIoError::FilesystemError);
+        }
+        sync_directory_metadata(&self.file)
+    }
+}
+
+fn unlink_export_stage(parent: &File, leaf: &OsStr) -> Result<(), ProjectIoError> {
+    #[cfg(test)]
+    if FAIL_EXPORT_STAGE_UNLINK_TEST_HOOK.with(|fail| fail.replace(false)) {
+        return Err(ProjectIoError::FilesystemError);
+    }
+    fs_at::OpenOptions::default()
+        .unlink_at(parent, leaf)
+        .map_err(|_| ProjectIoError::FilesystemError)
+}
+#[cfg(unix)]
+fn export_stage_leaf(leaf: &OsStr) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    leaf.as_bytes().starts_with(EXPORT_STAGE_PREFIX.as_bytes())
+}
+
+#[cfg(windows)]
+fn export_stage_leaf(leaf: &OsStr) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    let mut value = leaf.encode_wide();
+    EXPORT_STAGE_PREFIX
+        .encode_utf16()
+        .all(|expected| value.next() == Some(expected))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn export_stage_leaf(_leaf: &OsStr) -> bool {
+    false
+}
+
 pub(crate) struct RecoveryCopy {
     bound_path: PathBuf,
     _derived: File,
@@ -676,15 +893,47 @@ fn open_bound_regular_file(
     leaf: &str,
     optional: bool,
 ) -> Result<Option<File>, ProjectIoError> {
-    let mut options = fs_at::OpenOptions::default();
-    options.read(true).follow(false);
-    let bridge = match options.open_at(parent, leaf) {
-        Ok(file) => file,
-        Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(ProjectIoError::InvalidProjectStructure);
+    open_bound_regular_entry(parent, parent_visible, OsStr::new(leaf), optional)
+}
+
+fn open_bound_regular_entry(
+    parent: &File,
+    parent_visible: &Path,
+    leaf: &OsStr,
+    optional: bool,
+) -> Result<Option<File>, ProjectIoError> {
+    #[cfg(unix)]
+    let bridge = {
+        use rustix::fs::{Mode, OFlags, openat};
+
+        match openat(
+            parent,
+            Path::new(leaf),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(file) => File::from(file),
+            Err(rustix::io::Errno::NOENT) if optional => return Ok(None),
+            Err(rustix::io::Errno::NOENT) => {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            Err(_) => return Err(ProjectIoError::FilesystemError),
         }
-        Err(_) => return Err(ProjectIoError::FilesystemError),
+    };
+    #[cfg(not(unix))]
+    let bridge = {
+        let mut options = fs_at::OpenOptions::default();
+        options.read(true).follow(false);
+        match options.open_at(parent, Path::new(leaf)) {
+            Ok(file) => file,
+            Err(error) if optional && error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ProjectIoError::InvalidProjectStructure);
+            }
+            Err(_) => return Err(ProjectIoError::FilesystemError),
+        }
     };
     let expected = regular_file_identity(&bridge)?;
     #[cfg(windows)]
@@ -1193,6 +1442,7 @@ fn open_windows_directory(path: &Path, lock_delete: bool) -> Result<File, Projec
     }
 
     const DELETE_ACCESS: u32 = 0x0001_0000;
+    const FILE_LIST_DIRECTORY: u32 = 0x1;
     const FILE_READ_ATTRIBUTES: u32 = 0x80;
     const SYNCHRONIZE: u32 = 0x0010_0000;
     const FILE_SHARE_READ: u32 = 0x1;
@@ -1206,7 +1456,10 @@ fn open_windows_directory(path: &Path, lock_delete: bool) -> Result<File, Projec
     let handle = unsafe {
         CreateFileW(
             path.as_ptr(),
-            FILE_READ_ATTRIBUTES | SYNCHRONIZE | if lock_delete { DELETE_ACCESS } else { 0 },
+            FILE_LIST_DIRECTORY
+                | FILE_READ_ATTRIBUTES
+                | SYNCHRONIZE
+                | if lock_delete { DELETE_ACCESS } else { 0 },
             FILE_SHARE_READ | FILE_SHARE_WRITE | if lock_delete { 0 } else { FILE_SHARE_DELETE },
             std::ptr::null_mut(),
             OPEN_EXISTING,
@@ -1625,9 +1878,11 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     use super::set_after_recovery_publish_test_hook;
     use super::{
-        BoundProjectDirectory, FileIdentity, StagingWorkspace, cleanup_verified_staging,
+        BoundExportsDirectory, BoundProjectDirectory, EXPORT_STAGE_PREFIX, FileIdentity,
+        StagingWorkspace, cleanup_verified_staging, fail_next_export_stage_unlink,
         fail_next_recovery_destination_identity, file_identity, open_directory, rename_no_replace,
-        set_before_bind_test_hook, set_before_recovery_files_test_hook,
+        set_before_bind_test_hook, set_before_export_stage_quarantine_test_hook,
+        set_before_export_stage_verification_test_hook, set_before_recovery_files_test_hook,
         set_before_recovery_publish_test_hook, staging_identity, validate_project_structure,
     };
     use crate::{CreateProjectRequest, ProjectProfile, create_project};
@@ -1647,6 +1902,98 @@ mod tests {
         assert_eq!(error.code(), "PROJECT_ALREADY_EXISTS");
         assert_eq!(fs::read(source.join("marker")).unwrap(), b"source");
         assert_eq!(fs::read_dir(destination).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn cleanup_refuses_a_replacement_before_quarantine_without_deleting_either_identity() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Export Identity Before Quarantine".into(),
+            profile: ProjectProfile::Showroom,
+        })
+        .unwrap();
+        let exports = opened.project_path.join("exports");
+        let stage = exports.join(format!("{EXPORT_STAGE_PREFIX}before-quarantine"));
+        let preserved = exports.join("preserved-before-quarantine");
+        fs::write(&stage, b"original").unwrap();
+        set_before_export_stage_quarantine_test_hook({
+            let preserved = preserved.clone();
+            move |candidate| {
+                fs::rename(candidate, &preserved).unwrap();
+                fs::write(candidate, b"replacement").unwrap();
+            }
+        });
+
+        let error = BoundExportsDirectory::bind(&opened.project_path)
+            .unwrap()
+            .cleanup_staging()
+            .unwrap_err();
+
+        assert_eq!(error.code(), "INVALID_PROJECT_STRUCTURE");
+        assert_eq!(fs::read(stage).unwrap(), b"replacement");
+        assert_eq!(fs::read(preserved).unwrap(), b"original");
+    }
+
+    #[test]
+    fn cleanup_refuses_a_replacement_before_verification_without_deleting_either_identity() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Export Identity Before Verification".into(),
+            profile: ProjectProfile::Showroom,
+        })
+        .unwrap();
+        let exports = opened.project_path.join("exports");
+        let stage = exports.join(format!("{EXPORT_STAGE_PREFIX}before-verification"));
+        let preserved = exports.join("preserved-before-verification");
+        fs::write(&stage, b"original").unwrap();
+        set_before_export_stage_verification_test_hook({
+            let preserved = preserved.clone();
+            move |quarantine| {
+                fs::rename(quarantine, &preserved).unwrap();
+                fs::write(quarantine, b"replacement").unwrap();
+            }
+        });
+
+        let error = BoundExportsDirectory::bind(&opened.project_path)
+            .unwrap()
+            .cleanup_staging()
+            .unwrap_err();
+
+        assert_eq!(error.code(), "INVALID_PROJECT_STRUCTURE");
+        assert_eq!(fs::read(stage).unwrap(), b"replacement");
+        assert_eq!(fs::read(preserved).unwrap(), b"original");
+    }
+
+    #[test]
+    fn cleanup_restores_the_stage_leaf_when_unlink_fails() {
+        let root = tempdir().unwrap();
+        let opened = create_project(CreateProjectRequest {
+            parent: root.path().to_owned(),
+            name: "Export Unlink Failure".into(),
+            profile: ProjectProfile::Showroom,
+        })
+        .unwrap();
+        let exports = opened.project_path.join("exports");
+        let stage = exports.join(format!("{EXPORT_STAGE_PREFIX}unlink-failure"));
+        fs::write(&stage, b"original").unwrap();
+        fail_next_export_stage_unlink();
+
+        let error = BoundExportsDirectory::bind(&opened.project_path)
+            .unwrap()
+            .cleanup_staging()
+            .unwrap_err();
+
+        assert_eq!(error.code(), "FILESYSTEM_ERROR");
+        assert_eq!(fs::read(stage).unwrap(), b"original");
+        assert!(fs::read_dir(exports).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".aethertwin-cleanup-")
+        }));
     }
 
     #[test]

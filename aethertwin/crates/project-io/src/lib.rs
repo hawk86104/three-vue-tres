@@ -1,6 +1,7 @@
 //! Project I/O boundary for the AetherTwin desktop workspace.
 
 mod error;
+mod export_path;
 mod lock;
 mod model;
 mod opening_geometry;
@@ -10,6 +11,9 @@ mod scene_environment_command;
 mod schema;
 
 pub use error::ProjectIoError;
+pub use export_path::{
+    ProjectExportSeed, cleanup_project_export_staging, sanitize_project_export_stem,
+};
 pub use model::{
     AssetRecord, CheckpointResult, CommitBatch, CreateProjectRequest, Floor, GuidedRoute,
     JournalAction, JournalOperation, MediaAsset, MediaAssetKind, OpenedProject, PlanLayer,
