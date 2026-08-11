@@ -93,25 +93,20 @@ pub(crate) fn present(error: HostError) -> ErrorPresentation {
             "The request payload is invalid",
             json!({ "retryable": false }),
         ),
-        HostError::ExportChunkTooLarge => safe(
+        HostError::ExportChunkTooLarge => export_error(
             "EXPORT_CHUNK_TOO_LARGE",
             "Export chunk exceeds the allowed size",
-            json!({ "retryable": false }),
         ),
-        HostError::ExportAlreadyActive => safe(
+        HostError::ExportAlreadyActive => export_error(
             "EXPORT_ALREADY_ACTIVE",
             "An export is already active for this project session",
-            json!({ "retryable": false }),
         ),
-        HostError::ExportNotFound => safe(
-            "EXPORT_NOT_FOUND",
-            "The export operation is not active",
-            json!({ "retryable": false }),
-        ),
-        HostError::ExportSessionMismatch => safe(
+        HostError::ExportNotFound => {
+            export_error("EXPORT_NOT_FOUND", "The export operation is not active")
+        }
+        HostError::ExportSessionMismatch => export_error(
             "EXPORT_SESSION_MISMATCH",
             "The export operation belongs to another project session",
-            json!({ "retryable": false }),
         ),
         HostError::SessionNotFound => safe(
             "SESSION_NOT_FOUND",
@@ -303,42 +298,27 @@ fn present_project_io(source: ProjectIoError) -> ErrorPresentation {
         ProjectIoError::FilesystemError => {
             project_io("FILESYSTEM_ERROR", "项目文件操作失败", true, false)
         }
-        ProjectIoError::ExportChunkOutOfOrder => project_io(
+        ProjectIoError::ExportChunkOutOfOrder => export_error(
             "EXPORT_CHUNK_OUT_OF_ORDER",
             "Export chunks must be written in order",
-            false,
-            false,
         ),
-        ProjectIoError::ExportChunkTooLarge => project_io(
+        ProjectIoError::ExportChunkTooLarge => export_error(
             "EXPORT_CHUNK_TOO_LARGE",
             "Export chunk exceeds the allowed size",
-            false,
-            false,
         ),
-        ProjectIoError::ExportByteCountMismatch => project_io(
+        ProjectIoError::ExportByteCountMismatch => export_error(
             "EXPORT_BYTE_COUNT_MISMATCH",
             "Export byte count does not match the preset",
-            false,
-            false,
         ),
-        ProjectIoError::ExportEncodeFailed => project_io(
-            "EXPORT_ENCODE_FAILED",
-            "Export image encoding failed",
-            true,
-            false,
-        ),
-        ProjectIoError::ExportValidationFailed => project_io(
-            "EXPORT_VALIDATION_FAILED",
-            "Export image validation failed",
-            false,
-            false,
-        ),
-        ProjectIoError::ExportPublishFailed => project_io(
-            "EXPORT_PUBLISH_FAILED",
-            "Export image publication failed",
-            true,
-            false,
-        ),
+        ProjectIoError::ExportEncodeFailed => {
+            export_error("EXPORT_ENCODE_FAILED", "Export image encoding failed")
+        }
+        ProjectIoError::ExportValidationFailed => {
+            export_error("EXPORT_VALIDATION_FAILED", "Export image validation failed")
+        }
+        ProjectIoError::ExportPublishFailed => {
+            export_error("EXPORT_PUBLISH_FAILED", "Export image publication failed")
+        }
     }
 }
 
@@ -364,6 +344,10 @@ fn safe(code: &'static str, message: &'static str, details: Value) -> ErrorPrese
         message,
         details,
     }
+}
+
+fn export_error(code: &'static str, message: &'static str) -> ErrorPresentation {
+    safe(code, message, json!({}))
 }
 
 #[cfg(test)]
@@ -420,6 +404,35 @@ mod tests {
             assert!(!presentation.message.is_empty());
             assert!(!presentation.message.contains(':'));
             assert!(!presentation.details.to_string().contains("path"));
+        }
+    }
+
+    #[test]
+    fn export_error_details_are_limited_to_the_export_whitelist() {
+        let errors = [
+            HostError::ExportChunkTooLarge,
+            HostError::ExportAlreadyActive,
+            HostError::ExportNotFound,
+            HostError::ExportSessionMismatch,
+            HostError::ProjectIo(ProjectIoError::ExportChunkOutOfOrder),
+            HostError::ProjectIo(ProjectIoError::ExportChunkTooLarge),
+            HostError::ProjectIo(ProjectIoError::ExportByteCountMismatch),
+            HostError::ProjectIo(ProjectIoError::ExportEncodeFailed),
+            HostError::ProjectIo(ProjectIoError::ExportValidationFailed),
+            HostError::ProjectIo(ProjectIoError::ExportPublishFailed),
+        ];
+
+        for error in errors {
+            let presentation = present(error);
+            assert!(
+                presentation
+                    .details
+                    .as_object()
+                    .is_some_and(serde_json::Map::is_empty),
+                "unsafe details for {}: {:?}",
+                presentation.code,
+                presentation.details
+            );
         }
     }
 }

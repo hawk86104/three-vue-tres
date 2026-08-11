@@ -738,6 +738,7 @@ impl AppService {
         let result = (|| {
             let _shutdown_lease = self.session_shutdown_lease()?;
             let _asset_imports = self.wait_for_all_asset_imports()?;
+            self.cancel_and_wait_for_all_project_exports()?;
             if self.session_shutdown_complete.load(Ordering::Acquire) {
                 return if self.registry_len()? == 0 {
                     Ok(())
@@ -791,7 +792,9 @@ impl AppService {
     ) -> Result<(), crate::NativeErrorDto> {
         let result = (|| {
             let session_id = validate_session_id(session_id)?;
+            let _shutdown_lease = self.session_shutdown_lease()?;
             let _asset_imports = self.wait_for_session_asset_imports(session_id)?;
+            self.cancel_and_wait_for_session_project_export(session_id)?;
             let session = self.lookup_session(session_id)?;
             {
                 session

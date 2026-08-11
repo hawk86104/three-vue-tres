@@ -466,3 +466,35 @@ fn export_leaves_snapshot_checkpoint_recovery_and_clean_shutdown_state_unchanged
     assert_eq!(session.save_state(), SaveState::Saved);
     session.close().unwrap();
 }
+
+#[test]
+fn cleanup_open_session_removes_crash_staging_before_returning() {
+    let fixture = showroom_project();
+    let stale = fixture
+        .path
+        .join("exports")
+        .join(format!("{EXPORT_STAGE_PREFIX}crash"));
+    fs::write(&stale, b"incomplete export").unwrap();
+
+    let mut session = open_session(&fixture.path, false).unwrap();
+
+    assert!(!stale.exists());
+    session.close().unwrap();
+}
+
+#[test]
+fn cleanup_recovered_session_removes_crash_staging_before_returning() {
+    let fixture = showroom_project();
+    let session = open_session(&fixture.path, false).unwrap();
+    let stale = fixture
+        .path
+        .join("exports")
+        .join(format!("{EXPORT_STAGE_PREFIX}recovery-crash"));
+    fs::write(&stale, b"incomplete recovered export").unwrap();
+    drop(session);
+
+    let mut recovered = open_session(&fixture.path, true).unwrap();
+
+    assert!(!stale.exists());
+    recovered.close().unwrap();
+}

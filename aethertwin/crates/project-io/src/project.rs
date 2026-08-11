@@ -1,3 +1,4 @@
+use crate::export_path::cleanup_project_export_staging;
 use crate::lock::ProjectLock;
 use crate::model::{
     AssetRecord, CURRENT_SCHEMA_VERSION, CommitBatch, Floor, GuidedRoute, JournalAction,
@@ -360,6 +361,13 @@ pub fn open_session(
                 return Err(error);
             }
         }
+    }
+    if let Err(error) = cleanup_project_export_staging(lock.bound_path()) {
+        drop(connection);
+        if !lock.stale_recovered() {
+            let _ = lock.clean_close();
+        }
+        return Err(error);
     }
     if let Err(error) = upsert_meta(&connection, "cleanShutdown", &false) {
         drop(connection);
