@@ -1,8 +1,8 @@
 use crate::error::HostError;
 use asset_io::{AssetImportRole, AssetMediaFacts, ImportResult};
 use project_io::{
-    CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer, ProjectProfile,
-    ProjectSnapshot, validate_commit_batch,
+    CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer, ProjectExportPreset,
+    ProjectProfile, ProjectSnapshot, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -50,6 +50,64 @@ pub struct CheckpointProjectDto {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CloseProjectDto {
     session_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectExportPresetDto {
+    FullHd,
+    UltraHd,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BeginProjectExportRequestDto {
+    pub session_id: String,
+    pub project_id: String,
+    pub snapshot_sequence: u64,
+    pub active_floor_id: String,
+    pub preset: ProjectExportPresetDto,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FinishProjectExportRequestDto {
+    pub session_id: String,
+    pub export_id: String,
+}
+
+impl BeginProjectExportRequestDto {
+    pub fn into_native(self) -> Result<(Uuid, Uuid, u64, Uuid, ProjectExportPreset), HostError> {
+        const MAX_JS_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+        if self.snapshot_sequence > MAX_JS_SAFE_INTEGER {
+            return Err(HostError::IpcInvalidRequest);
+        }
+        Ok((
+            canonical_uuid(&self.session_id)?,
+            canonical_uuid(&self.project_id)?,
+            self.snapshot_sequence,
+            canonical_uuid(&self.active_floor_id)?,
+            self.preset.into(),
+        ))
+    }
+}
+
+impl FinishProjectExportRequestDto {
+    pub fn into_native(self) -> Result<(Uuid, Uuid), HostError> {
+        Ok((
+            canonical_uuid(&self.session_id)?,
+            canonical_uuid(&self.export_id)?,
+        ))
+    }
+}
+
+impl From<ProjectExportPresetDto> for ProjectExportPreset {
+    fn from(value: ProjectExportPresetDto) -> Self {
+        match value {
+            ProjectExportPresetDto::FullHd => Self::FullHd,
+            ProjectExportPresetDto::UltraHd => Self::UltraHd,
+        }
+    }
 }
 
 impl CommitProjectDto {

@@ -33,6 +33,14 @@ pub(crate) fn validate_absolute_path(value: &str) -> Result<PathBuf, HostError> 
 }
 
 pub(crate) fn validate_session_id(value: &str) -> Result<Uuid, HostError> {
+    validate_canonical_uuid(value)
+}
+
+pub(crate) fn validate_export_id(value: &str) -> Result<Uuid, HostError> {
+    validate_canonical_uuid(value)
+}
+
+fn validate_canonical_uuid(value: &str) -> Result<Uuid, HostError> {
     let parsed = Uuid::parse_str(value).map_err(|_| HostError::IpcInvalidRequest)?;
     if parsed.hyphenated().to_string() != value
         || !matches!(parsed.get_version_num(), 1..=5)

@@ -5,8 +5,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 #[derive(Debug)]
-pub(crate) enum HostError {
+pub enum HostError {
     IpcInvalidRequest,
+    InvalidIpcPayload,
+    ExportChunkTooLarge,
     SessionNotFound,
     HostStateUnavailable,
     SessionStateUnavailable,
@@ -81,6 +83,16 @@ pub(crate) fn present(error: HostError) -> ErrorPresentation {
         HostError::IpcInvalidRequest => safe(
             "IPC_INVALID_REQUEST",
             "请求格式无效",
+            json!({ "retryable": false }),
+        ),
+        HostError::InvalidIpcPayload => safe(
+            "IPC_INVALID_REQUEST",
+            "The request payload is invalid",
+            json!({ "retryable": false }),
+        ),
+        HostError::ExportChunkTooLarge => safe(
+            "EXPORT_CHUNK_TOO_LARGE",
+            "Export chunk exceeds the allowed size",
             json!({ "retryable": false }),
         ),
         HostError::SessionNotFound => safe(
@@ -169,12 +181,20 @@ pub(crate) const fn project_io_code(source: &ProjectIoError) -> &'static str {
         ProjectIoError::InvalidResourcePath => "INVALID_RESOURCE_PATH",
         ProjectIoError::RecoveryFailed => "RECOVERY_FAILED",
         ProjectIoError::FilesystemError => "FILESYSTEM_ERROR",
+        ProjectIoError::ExportChunkOutOfOrder => "EXPORT_CHUNK_OUT_OF_ORDER",
+        ProjectIoError::ExportChunkTooLarge => "EXPORT_CHUNK_TOO_LARGE",
+        ProjectIoError::ExportByteCountMismatch => "EXPORT_BYTE_COUNT_MISMATCH",
+        ProjectIoError::ExportEncodeFailed => "EXPORT_ENCODE_FAILED",
+        ProjectIoError::ExportValidationFailed => "EXPORT_VALIDATION_FAILED",
+        ProjectIoError::ExportPublishFailed => "EXPORT_PUBLISH_FAILED",
     }
 }
 
 pub(crate) const fn host_error_code(source: &HostError) -> &'static str {
     match source {
         HostError::IpcInvalidRequest => "IPC_INVALID_REQUEST",
+        HostError::InvalidIpcPayload => "IPC_INVALID_REQUEST",
+        HostError::ExportChunkTooLarge => "EXPORT_CHUNK_TOO_LARGE",
         HostError::SessionNotFound => "SESSION_NOT_FOUND",
         HostError::HostStateUnavailable => "HOST_STATE_UNAVAILABLE",
         HostError::SessionStateUnavailable => "SESSION_STATE_UNAVAILABLE",
@@ -262,6 +282,42 @@ fn present_project_io(source: ProjectIoError) -> ErrorPresentation {
         ProjectIoError::FilesystemError => {
             project_io("FILESYSTEM_ERROR", "项目文件操作失败", true, false)
         }
+        ProjectIoError::ExportChunkOutOfOrder => project_io(
+            "EXPORT_CHUNK_OUT_OF_ORDER",
+            "Export chunks must be written in order",
+            false,
+            false,
+        ),
+        ProjectIoError::ExportChunkTooLarge => project_io(
+            "EXPORT_CHUNK_TOO_LARGE",
+            "Export chunk exceeds the allowed size",
+            false,
+            false,
+        ),
+        ProjectIoError::ExportByteCountMismatch => project_io(
+            "EXPORT_BYTE_COUNT_MISMATCH",
+            "Export byte count does not match the preset",
+            false,
+            false,
+        ),
+        ProjectIoError::ExportEncodeFailed => project_io(
+            "EXPORT_ENCODE_FAILED",
+            "Export image encoding failed",
+            true,
+            false,
+        ),
+        ProjectIoError::ExportValidationFailed => project_io(
+            "EXPORT_VALIDATION_FAILED",
+            "Export image validation failed",
+            false,
+            false,
+        ),
+        ProjectIoError::ExportPublishFailed => project_io(
+            "EXPORT_PUBLISH_FAILED",
+            "Export image publication failed",
+            true,
+            false,
+        ),
     }
 }
 
