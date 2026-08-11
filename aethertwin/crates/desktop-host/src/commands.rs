@@ -1,7 +1,9 @@
 use crate::{
-    AppService, CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto,
-    CommitProjectDto, CreateProjectDto, ImportProgressDto, ImportProjectAssetDto, ImportResultDto,
-    NativeErrorDto, OpenProjectDto, OpenedProjectDto, RecoverProjectDto, state::ProgressSink,
+    AppService, BeginProjectExportRequestDto, BeginProjectExportResultDto,
+    CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto, CommitProjectDto,
+    CreateProjectDto, FinishProjectExportRequestDto, ImportProgressDto, ImportProjectAssetDto,
+    ImportResultDto, NativeErrorDto, OpenProjectDto, OpenedProjectDto, ProjectExportResultDto,
+    RecoverProjectDto, parse_project_export_chunk, state::ProgressSink,
 };
 use project_io::CheckpointResult;
 use serde_json::Value;
@@ -134,4 +136,57 @@ pub fn cancel_project_asset_import(
     state
         .cancel_asset_import(request)
         .map_err(|error| state.render_error(CANCEL_PROJECT_ASSET_IMPORT, error))
+}
+
+const BEGIN_PROJECT_EXPORT: &str = "begin_project_export";
+const WRITE_PROJECT_EXPORT_CHUNK: &str = "write_project_export_chunk";
+const FINISH_PROJECT_EXPORT: &str = "finish_project_export";
+const CANCEL_PROJECT_EXPORT: &str = "cancel_project_export";
+
+#[tauri::command]
+pub fn begin_project_export(
+    state: tauri::State<'_, AppService>,
+    payload: Option<Value>,
+) -> Result<BeginProjectExportResultDto, NativeErrorDto> {
+    let request: BeginProjectExportRequestDto =
+        state.decode_payload(BEGIN_PROJECT_EXPORT, payload)?;
+    state
+        .begin_project_export(request)
+        .map_err(|error| state.render_error(BEGIN_PROJECT_EXPORT, error))
+}
+
+#[tauri::command]
+pub fn write_project_export_chunk(
+    request: tauri::ipc::Request<'_>,
+    state: tauri::State<'_, AppService>,
+) -> Result<(), NativeErrorDto> {
+    let request = parse_project_export_chunk(&request)
+        .map_err(|error| state.render_error(WRITE_PROJECT_EXPORT_CHUNK, error))?;
+    state
+        .write_project_export_chunk(request)
+        .map_err(|error| state.render_error(WRITE_PROJECT_EXPORT_CHUNK, error))
+}
+
+#[tauri::command]
+pub fn finish_project_export(
+    state: tauri::State<'_, AppService>,
+    payload: Option<Value>,
+) -> Result<ProjectExportResultDto, NativeErrorDto> {
+    let request: FinishProjectExportRequestDto =
+        state.decode_payload(FINISH_PROJECT_EXPORT, payload)?;
+    state
+        .finish_project_export(request)
+        .map_err(|error| state.render_error(FINISH_PROJECT_EXPORT, error))
+}
+
+#[tauri::command]
+pub fn cancel_project_export(
+    state: tauri::State<'_, AppService>,
+    payload: Option<Value>,
+) -> Result<(), NativeErrorDto> {
+    let request: FinishProjectExportRequestDto =
+        state.decode_payload(CANCEL_PROJECT_EXPORT, payload)?;
+    state
+        .cancel_project_export(request)
+        .map_err(|error| state.render_error(CANCEL_PROJECT_EXPORT, error))
 }

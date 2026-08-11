@@ -9,6 +9,9 @@ pub enum HostError {
     IpcInvalidRequest,
     InvalidIpcPayload,
     ExportChunkTooLarge,
+    ExportAlreadyActive,
+    ExportNotFound,
+    ExportSessionMismatch,
     SessionNotFound,
     HostStateUnavailable,
     SessionStateUnavailable,
@@ -93,6 +96,21 @@ pub(crate) fn present(error: HostError) -> ErrorPresentation {
         HostError::ExportChunkTooLarge => safe(
             "EXPORT_CHUNK_TOO_LARGE",
             "Export chunk exceeds the allowed size",
+            json!({ "retryable": false }),
+        ),
+        HostError::ExportAlreadyActive => safe(
+            "EXPORT_ALREADY_ACTIVE",
+            "An export is already active for this project session",
+            json!({ "retryable": false }),
+        ),
+        HostError::ExportNotFound => safe(
+            "EXPORT_NOT_FOUND",
+            "The export operation is not active",
+            json!({ "retryable": false }),
+        ),
+        HostError::ExportSessionMismatch => safe(
+            "EXPORT_SESSION_MISMATCH",
+            "The export operation belongs to another project session",
             json!({ "retryable": false }),
         ),
         HostError::SessionNotFound => safe(
@@ -195,6 +213,9 @@ pub(crate) const fn host_error_code(source: &HostError) -> &'static str {
         HostError::IpcInvalidRequest => "IPC_INVALID_REQUEST",
         HostError::InvalidIpcPayload => "IPC_INVALID_REQUEST",
         HostError::ExportChunkTooLarge => "EXPORT_CHUNK_TOO_LARGE",
+        HostError::ExportAlreadyActive => "EXPORT_ALREADY_ACTIVE",
+        HostError::ExportNotFound => "EXPORT_NOT_FOUND",
+        HostError::ExportSessionMismatch => "EXPORT_SESSION_MISMATCH",
         HostError::SessionNotFound => "SESSION_NOT_FOUND",
         HostError::HostStateUnavailable => "HOST_STATE_UNAVAILABLE",
         HostError::SessionStateUnavailable => "SESSION_STATE_UNAVAILABLE",

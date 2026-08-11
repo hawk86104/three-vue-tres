@@ -381,9 +381,27 @@ fn tauri_configuration_and_capability_are_exact_and_least_privilege() {
 }
 
 #[test]
-fn command_surface_is_exact_and_single_instance_ignores_arguments() {
+fn command_surface_is_exactly_twelve_with_one_raw_command() {
     let commands = include_str!("../src/commands.rs");
-    assert_eq!(commands.matches("#[tauri::command]").count(), 8);
+    assert_eq!(commands.matches("#[tauri::command]").count(), 12);
+    for name in [
+        "begin_project_export",
+        "write_project_export_chunk",
+        "finish_project_export",
+        "cancel_project_export",
+    ] {
+        assert_eq!(commands.matches(&format!("fn {name}(")).count(), 1);
+    }
+    assert_eq!(commands.matches("payload: Option<Value>").count(), 11);
+    assert_eq!(
+        commands.matches("request: tauri::ipc::Request<'_>").count(),
+        1
+    );
+}
+
+#[test]
+fn existing_command_surface_is_single_instance_and_ignores_arguments() {
+    let commands = include_str!("../src/commands.rs");
     for command in [
         "create_project",
         "open_project",
@@ -407,7 +425,6 @@ fn command_surface_is_exact_and_single_instance_ignores_arguments() {
     for forbidden in ["rusqlite", "std::fs", "Command::new", "std::process"] {
         assert!(!commands.contains(forbidden));
     }
-    assert_eq!(commands.matches("payload: Option<Value>").count(), 8);
     assert!(!commands.contains("batch: CommitBatch"));
     assert!(!commands.contains("building_structure_patch"));
     assert!(!include_str!("../src/lib.rs").contains("commands::building_structure_patch"));

@@ -7,6 +7,7 @@ use crate::{
         NativeImportProjectAsset, OpenProjectDto, RecoverProjectDto,
     },
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
+    export_registry::ActiveProjectExportHandle,
 };
 use asset_io::{
     AssetIssue, AssetIssueRecord, AssetResolver, AssetSessionOwner, ImportObserver, ImportProgress,
@@ -248,6 +249,9 @@ pub struct AppService {
     session_lifecycle_gate: RwLock<()>,
     asset_imports: Mutex<HashMap<Uuid, ActiveAssetImport>>,
     asset_imports_changed: Condvar,
+    pub(crate) project_exports: Mutex<HashMap<Uuid, ActiveProjectExportHandle>>,
+    pub(crate) project_exports_changed: Condvar,
+    pub(crate) last_cancelled_exports: Mutex<HashMap<Uuid, Uuid>>,
     pub(crate) asset_resolver: AssetResolver,
     session_shutdown_complete: AtomicBool,
     log_sink: Arc<dyn NativeLogSink>,
@@ -267,6 +271,9 @@ impl AppService {
             session_shutdown_complete: AtomicBool::new(false),
             asset_imports: Mutex::new(HashMap::new()),
             asset_imports_changed: Condvar::new(),
+            project_exports: Mutex::new(HashMap::new()),
+            project_exports_changed: Condvar::new(),
+            last_cancelled_exports: Mutex::new(HashMap::new()),
             asset_resolver: AssetResolver::default(),
             log_sink,
         }

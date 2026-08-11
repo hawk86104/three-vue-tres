@@ -80,6 +80,7 @@ impl AppService {
             .get(&session_id)
             .is_some_and(|actual| Arc::ptr_eq(actual, expected));
         if matches {
+            self.clear_last_cancelled_export(session_id)?;
             sessions.remove(&session_id);
         }
         Ok(matches)

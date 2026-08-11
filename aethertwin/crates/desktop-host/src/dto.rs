@@ -1,8 +1,9 @@
 use crate::error::HostError;
 use asset_io::{AssetImportRole, AssetMediaFacts, ImportResult};
 use project_io::{
-    CommitBatch, Floor, JournalAction, JournalOperation, PlanLayer, ProjectExportPreset,
-    ProjectProfile, ProjectSnapshot, validate_commit_batch,
+    CommitBatch, Floor, JournalAction, JournalOperation, PROJECT_EXPORT_MAX_CHUNK_BYTES, PlanLayer,
+    ProjectExportOperation, ProjectExportPreset, ProjectExportResult, ProjectProfile,
+    ProjectSnapshot, validate_commit_batch,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -76,6 +77,26 @@ pub struct FinishProjectExportRequestDto {
     pub export_id: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BeginProjectExportResultDto {
+    pub export_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub expected_byte_length: u64,
+    pub max_chunk_bytes: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectExportResultDto {
+    pub width: u32,
+    pub height: u32,
+    pub relative_path: String,
+    pub byte_size: u64,
+    pub sha256: String,
+}
+
 impl BeginProjectExportRequestDto {
     pub fn into_native(self) -> Result<(Uuid, Uuid, u64, Uuid, ProjectExportPreset), HostError> {
         const MAX_JS_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -98,6 +119,30 @@ impl FinishProjectExportRequestDto {
             canonical_uuid(&self.session_id)?,
             canonical_uuid(&self.export_id)?,
         ))
+    }
+}
+
+impl From<&ProjectExportOperation> for BeginProjectExportResultDto {
+    fn from(operation: &ProjectExportOperation) -> Self {
+        Self {
+            export_id: operation.export_id().to_string(),
+            width: operation.width(),
+            height: operation.height(),
+            expected_byte_length: operation.expected_byte_length(),
+            max_chunk_bytes: PROJECT_EXPORT_MAX_CHUNK_BYTES,
+        }
+    }
+}
+
+impl From<ProjectExportResult> for ProjectExportResultDto {
+    fn from(result: ProjectExportResult) -> Self {
+        Self {
+            width: result.width,
+            height: result.height,
+            relative_path: result.relative_path,
+            byte_size: result.byte_size,
+            sha256: result.sha256,
+        }
     }
 }
 
