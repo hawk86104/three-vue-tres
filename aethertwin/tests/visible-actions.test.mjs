@@ -143,7 +143,6 @@ test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls"
     "onAddContent",
     "onAddRoute",
     "onOpen3D",
-    "onExport",
     "onPublish",
   ]) {
     assert.doesNotMatch(
@@ -154,7 +153,7 @@ test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls"
   }
 });
 
-test("M2.4 exposes exact showroom authoring and Preview actions", () => {
+test("M2.5 exposes exact showroom authoring and Preview actions", () => {
   const actionIds = showroomToolPolicy
     .split('action("')
     .slice(1)
@@ -183,6 +182,7 @@ test("M2.4 exposes exact showroom authoring and Preview actions", () => {
     "view-split",
     "frame-selection",
     "frame-route",
+    "export",
   ]);
   assert.equal(planToolbar.includes('id === "door" || id === "window"'), true);
   assert.equal(
@@ -207,7 +207,6 @@ test("M2.4 exposes exact showroom authoring and Preview actions", () => {
     "onOpen3D",
     "onEditMaterials",
     "onEditLighting",
-    "onExport",
     "onPublish",
   ]) {
     assert.equal(
@@ -218,7 +217,7 @@ test("M2.4 exposes exact showroom authoring and Preview actions", () => {
   }
 });
 
-test("M2.4 toolbar wires Preview only for showroom and keeps Export absent", () => {
+test("M2.5 toolbar wires Export last in Showroom Preview only", () => {
   const contextualDefinitions = planToolbar
     .split('{ id: "')
     .slice(1)
@@ -237,6 +236,7 @@ test("M2.4 toolbar wires Preview only for showroom and keeps Export absent", () 
     "view-split",
     "frame-selection",
     "frame-route",
+    "export",
   ]) {
     assert.equal(
       planToolbar.includes('case "' + actionId + '"'),
@@ -260,6 +260,7 @@ test("M2.4 toolbar wires Preview only for showroom and keeps Export absent", () 
   assert.equal(planEditor.includes("onViewModeChange="), true);
   assert.equal(planEditor.includes('requestSceneFrame("selection")'), true);
   assert.equal(planEditor.includes('requestSceneFrame("route")'), true);
+  assert.equal(planEditor.includes("onExport="), true);
   assert.equal(
     planEditor.includes("rendererError={sessionState.rendererError}"),
     true,
@@ -268,7 +269,6 @@ test("M2.4 toolbar wires Preview only for showroom and keeps Export absent", () 
     "open-3d",
     "edit-materials",
     "edit-lighting",
-    "export",
     "publish",
   ]) {
     assert.equal(

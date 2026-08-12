@@ -27,6 +27,7 @@ import {
   SHOWROOM_FIXTURE_CATALOGUE,
   showroomFixture,
 } from "@aethertwin/mode-showroom";
+import type { ProjectExportBackend } from "@aethertwin/exporter";
 import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -125,6 +126,15 @@ function saveStatus(state: "dirty" | "saving" | "saved" | "error" | "recovered")
   const status = document.querySelector<HTMLElement>(`[data-save-state="${state}"]`);
   if (status === null) throw new Error(`Missing ${state} save status`);
   return status;
+}
+
+function exportBackendStub(): ProjectExportBackend {
+  return {
+    begin: vi.fn(),
+    writeChunk: vi.fn(),
+    finish: vi.fn(),
+    cancel: vi.fn(),
+  };
 }
 
 async function sandboxProject(
@@ -686,6 +696,7 @@ const showroomToolLabels = [
   "Split",
   "Frame Selection",
   "Frame Route",
+  "Export",
 ] as const;
 
 function rowByData(attribute: string, id: string): HTMLElement {
@@ -819,6 +830,38 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     }
   });
+  it("derives Export disabled reasons in capability, view, renderer, then current-handle priority", async () => {
+    const { store } = await sandboxProject("Export policy");
+    const floor = store.getState().snapshot!.project.floors[0]!;
+    const sessionStore = createPlanEditorStore({ activeFloorId: floor.id });
+    const workspace = () => <div>Renderer boundary</div>;
+    const rendered = render(
+      <PlanEditor store={store} exportBackend={null} dependencies={{ sessionStore, workspace }} />,
+    );
+
+    expect(screen.getByRole("button", { name: "Export" }))
+      .toHaveAccessibleDescription("PNG export requires the desktop app.");
+
+    rendered.rerender(
+      <PlanEditor
+        store={store}
+        exportBackend={exportBackendStub()}
+        dependencies={{ sessionStore, workspace }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Export" }))
+      .toHaveAccessibleDescription("Switch to 3D or Split to export.");
+
+    const scope = sessionStore.getState().beginSceneRenderer();
+    act(() => sessionStore.getState().setViewMode("3d"));
+    expect(screen.getByRole("button", { name: "Export" }))
+      .toHaveAccessibleDescription("3D preview is not ready.");
+
+    act(() => sessionStore.getState().setSceneRendererStatus(scope, "ready", null));
+    expect(screen.getByRole("button", { name: "Export" }))
+      .toHaveAccessibleDescription("3D export capture is not current.");
+  });
+
   it("wires preview actions, explains renderer failures, and restores 2D focus", async () => {
     const user = userEvent.setup();
     const previewRenderer = new FakeSceneRenderer();
@@ -885,11 +928,11 @@ describe("PlanEditor Task 10 shell", () => {
     expect(threeD).toBeDisabled();
     expect(split).toBeDisabled();
     await waitFor(() => expect(twoD).toHaveFocus());
-    expect(screen.queryByRole("button", { name: /export/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
 
     cleanup();
     renderPlanEditorFixture({ profile: "market" });
-    for (const label of ["2D", "3D", "Split", "Frame Selection", "Frame Route"]) {
+    for (const label of ["2D", "3D", "Split", "Frame Selection", "Frame Route", "Export"]) {
       expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     }
   });

@@ -18,7 +18,10 @@ import {
   type RoomRecognitionResult,
 } from "@aethertwin/plan-engine";
 import { resolveGuidedRoute } from "@aethertwin/route-engine";
-import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
+import type {
+  SceneRendererFactory,
+  SceneRendererStatus,
+} from "@aethertwin/render-scene-3d";
 import type {
   Fixture,
   GuidedRoute,
@@ -27,6 +30,7 @@ import type {
   PlanReference,
   PointOfInterest,
   ProductContent,
+  ProjectProfile,
   ProjectSnapshot,
   SpaceUnit,
   Wall,
@@ -71,7 +75,10 @@ import {
   materialTargetKind,
   type MaterialTarget,
 } from "./material-inspector";
-import { PlanToolbar } from "./plan-toolbar";
+import {
+  PlanToolbar,
+  type ExportActionState,
+} from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
 import { SceneCanvas } from "./scene-canvas";
 import { CalibrationPanel } from "./calibration-panel";
@@ -370,11 +377,31 @@ function planIssueMessage(issue: { readonly code: string; readonly message: stri
   return `${issue.code}: ${issue.message}`;
 }
 
+function exportDisabledReason(input: {
+  readonly profile: ProjectProfile;
+  readonly backendAvailable: boolean;
+  readonly viewMode: PlanEditorState["viewMode"];
+  readonly rendererStatus: SceneRendererStatus;
+  readonly handleCurrent: boolean;
+  readonly active: boolean;
+}): string | null {
+  if (input.profile !== "showroom") {
+    return "Export is available only for Showroom projects.";
+  }
+  if (!input.backendAvailable) return "PNG export requires the desktop app.";
+  if (input.viewMode === "2d") return "Switch to 3D or Split to export.";
+  if (input.rendererStatus !== "ready") return "3D preview is not ready.";
+  if (!input.handleCurrent) return "3D export capture is not current.";
+  if (input.active) return "Another export is already running.";
+  return null;
+}
+
 export function PlanEditor({
   store,
   backendMode,
   onBack = () => undefined,
   onBeforeClose = () => undefined,
+  exportBackend = null,
   dependencies,
 }: PlanEditorProps) {
   const state = useProjectState(store);
@@ -1396,6 +1423,17 @@ export function PlanEditor({
   const sceneAssetSourceEpoch = store.getAssetSourceEpoch();
 
 
+  const exportReason = exportDisabledReason({
+    profile: snapshot.project.profile,
+    backendAvailable: exportBackend !== null,
+    viewMode: sessionState.viewMode,
+    rendererStatus: sessionState.rendererStatus,
+    handleCurrent: false,
+    active: false,
+  });
+  const exportAction: ExportActionState = {
+    disabled: exportReason !== null, reason: exportReason, active: false,
+  };
   const floorTree = (
     <FloorTree
       snapshot={snapshot}
@@ -1504,6 +1542,11 @@ export function PlanEditor({
           }}
           onToolChange={selectTool}
           onRecognizeRooms={() => void runRoomRecognition()}
+          exportAction={exportAction}
+          onExport={() => {
+            // Task 14 publishes the scope-safe renderer port that can make
+            // this action current. Until then the closed policy keeps it disabled.
+          }}
           {...(selectedCalibrationReference === null ? {} : {
             onCalibrate: (initiator: HTMLButtonElement) => {
               startCalibration(selectedCalibrationReference.id, initiator);

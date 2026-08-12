@@ -21,7 +21,8 @@ export type ShowroomToolActionId =
   | "view-3d"
   | "view-split"
   | "frame-selection"
-  | "frame-route";
+  | "frame-route"
+  | "export";
 
 export type ShowroomToolGroupId =
   | "select"
@@ -97,5 +98,6 @@ export const SHOWROOM_TOOL_GROUPS: readonly ToolGroupDescriptor[] =
       action("view-split", "Split"),
       action("frame-selection", "Frame Selection"),
       action("frame-route", "Frame Route"),
+      action("export", "Export"),
     ]),
   ]);

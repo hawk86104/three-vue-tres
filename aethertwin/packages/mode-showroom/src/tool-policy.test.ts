@@ -58,6 +58,7 @@ const expectedGroups = [
       { id: "view-split", label: "Split" },
       { id: "frame-selection", label: "Frame Selection" },
       { id: "frame-route", label: "Frame Route" },
+      { id: "export", label: "Export" },
     ],
   },
 ] as const;

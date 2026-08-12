@@ -24,6 +24,12 @@ interface ToolGroup {
   readonly actions?: readonly ToolActionDefinition[];
 }
 
+export interface ExportActionState {
+  readonly disabled: boolean;
+  readonly reason: string | null;
+  readonly active: boolean;
+}
+
 const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
   select: { tool: "select", label: "选择" },
   pan: { tool: "pan", label: "平移" },
@@ -145,6 +151,8 @@ export interface PlanToolbarProps {
   readonly onViewModeChange: (mode: SceneViewMode, initiator: HTMLButtonElement) => void;
   readonly onFrameSelection: (initiator: HTMLButtonElement) => void;
   readonly onFrameRoute: (initiator: HTMLButtonElement) => void;
+  readonly exportAction: ExportActionState;
+  readonly onExport: (initiator: HTMLButtonElement) => void;
   readonly onToolChange: (tool: PlanTool, initiator: HTMLButtonElement) => void;
   readonly onImportFloorPlan?: (initiator: HTMLButtonElement) => void;
   readonly importFloorPlanDisabled?: boolean;
@@ -165,6 +173,8 @@ export function PlanToolbar({
   onViewModeChange,
   onFrameSelection,
   onFrameRoute,
+  exportAction,
+  onExport,
   onToolChange,
   onImportFloorPlan,
   importFloorPlanDisabled = false,
@@ -178,6 +188,7 @@ export function PlanToolbar({
     rendererStatus === "failed" || rendererStatus === "disabled";
   const showRendererIssue = profile === "showroom" && rendererUnavailable;
   const rendererStatusId = useId();
+  const exportReasonId = useId();
   const twoDButtonRef = useRef<HTMLButtonElement>(null);
   const previousRendererUnavailable = useRef(false);
 
@@ -236,6 +247,8 @@ export function PlanToolbar({
             {group.actions?.map(({ id, label }) => {
               let mode: SceneViewMode | null = null;
               let onClick: ((initiator: HTMLButtonElement) => void) | undefined;
+              let actionDisabled = false;
+              let describedBy: string | undefined;
               switch (id) {
                 case "attach-product-media":
                   onClick = onAttachProductMedia;
@@ -264,11 +277,18 @@ export function PlanToolbar({
                 case "frame-route":
                   onClick = onFrameRoute;
                   break;
+                case "export":
+                  onClick = onExport;
+                  actionDisabled = exportAction.disabled;
+                  describedBy = exportAction.reason === null
+                    ? undefined
+                    : exportReasonId;
+                  break;
               }
               const active = mode !== null && mode === viewMode;
               const unavailableViewAction =
                 id === "view-3d" || id === "view-split";
-              const disabled = onClick === undefined
+              const disabled = actionDisabled || onClick === undefined
                 || (rendererUnavailable && unavailableViewAction);
               return (
                 <Button
@@ -277,12 +297,13 @@ export function PlanToolbar({
                   variant={active ? "primary" : "secondary"}
                   className="studio-plan-toolbar__action"
                   aria-pressed={mode === null ? undefined : active}
-                  aria-describedby={
+                  aria-describedby={describedBy ?? (
                     rendererUnavailable && unavailableViewAction
                       ? rendererStatusId
                       : undefined
-                  }
-                  data-active={active ? "true" : undefined}
+                  )}
+                  aria-busy={id === "export" && exportAction.active ? true : undefined}
+                  data-active={active || (id === "export" && exportAction.active) ? "true" : undefined}
                   data-action={id}
                   disabled={disabled}
                   onClick={onClick === undefined
@@ -328,6 +349,11 @@ export function PlanToolbar({
           </div>
         </div>
       ))}
+      {profile !== "showroom" || exportAction.reason === null ? null : (
+        <span id={exportReasonId} className="studio-plan-toolbar__action-reason">
+          {exportAction.reason}
+        </span>
+      )}
       {!showRendererIssue ? null : (
         <div
           id={rendererStatusId}
