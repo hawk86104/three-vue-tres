@@ -496,6 +496,39 @@ input {
   left: 12px;
 }
 
+.studio-export-panel {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: min(340px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  gap: 12px;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-md);
+  background: var(--aether-surface-2);
+  color: var(--aether-text);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 32%);
+}
+
+.studio-export-panel label {
+  display: grid;
+  gap: 6px;
+  color: var(--aether-text-muted);
+  font-size: 12px;
+}
+
+.studio-export-panel select {
+  min-height: 36px;
+  border: 1px solid var(--aether-border);
+  border-radius: var(--aether-radius-sm);
+  background: var(--aether-surface-1);
+  color: var(--aether-text);
+}
+
 .studio-synchronized-scene-view {
   display: grid;
   place-self: stretch;

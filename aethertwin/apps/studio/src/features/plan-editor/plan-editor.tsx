@@ -1,6 +1,12 @@
 import { Button, StatusNotice } from "@aethertwin/design-system";
 import { EditorShell } from "@aethertwin/editor-shell";
-import type { ProjectExportBackend } from "@aethertwin/exporter";
+import {
+  createProjectExportCoordinator,
+  ProjectExportError,
+  type ProjectExportBackend,
+  type ProjectExportOperation,
+  type ProjectExportPreset,
+} from "@aethertwin/exporter";
 import type {
   AssetImportProgress,
   ProjectBackend,
@@ -19,6 +25,7 @@ import {
 } from "@aethertwin/plan-engine";
 import { resolveGuidedRoute } from "@aethertwin/route-engine";
 import type {
+  SceneExportCapture,
   SceneRendererFactory,
   SceneRendererStatus,
 } from "@aethertwin/render-scene-3d";
@@ -84,6 +91,11 @@ import {
   SceneCanvas,
   type SceneCanvasExportHandle,
 } from "./scene-canvas";
+import {
+  ExportPanel,
+  type StudioExportScope,
+  type StudioExportState,
+} from "./export-panel";
 import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
@@ -170,6 +182,8 @@ function useProjectState(store: ProjectStore): ProjectStoreState {
 
 type PlanEditorSessionView = Pick<
   PlanEditorState,
+  | "sessionId"
+  | "sessionGeneration"
   | "activeFloorId"
   | "activeTool"
   | "sidePanel"
@@ -183,12 +197,15 @@ type PlanEditorSessionView = Pick<
   | "viewMode"
   | "rendererStatus"
   | "rendererError"
+  | "rendererGeneration"
 >;
 
 function selectPlanEditorSessionView(
   state: PlanEditorState,
 ): PlanEditorSessionView {
   return {
+    sessionId: state.sessionId,
+    sessionGeneration: state.sessionGeneration,
     activeFloorId: state.activeFloorId,
     activeTool: state.activeTool,
     sidePanel: state.sidePanel,
@@ -202,6 +219,7 @@ function selectPlanEditorSessionView(
     viewMode: state.viewMode,
     rendererStatus: state.rendererStatus,
     rendererError: state.rendererError,
+    rendererGeneration: state.rendererGeneration,
   };
 }
 
@@ -210,6 +228,8 @@ function samePlanEditorSessionView(
   right: PlanEditorSessionView,
 ): boolean {
   return left.activeFloorId === right.activeFloorId
+    && left.sessionId === right.sessionId
+    && left.sessionGeneration === right.sessionGeneration
     && left.activeTool === right.activeTool
     && left.sidePanel === right.sidePanel
     && left.selectedIds === right.selectedIds
@@ -221,7 +241,8 @@ function samePlanEditorSessionView(
     && left.selectedFixtureKind === right.selectedFixtureKind
     && left.viewMode === right.viewMode
     && left.rendererStatus === right.rendererStatus
-    && left.rendererError === right.rendererError;
+    && left.rendererError === right.rendererError
+    && left.rendererGeneration === right.rendererGeneration;
 }
 
 function useSessionState(
@@ -399,6 +420,19 @@ function exportDisabledReason(input: {
   return null;
 }
 
+function safeProjectExportFailure(error: unknown): {
+  readonly code: string;
+  readonly message: string;
+} {
+  if (error instanceof ProjectExportError) {
+    return { code: error.code, message: error.message };
+  }
+  return {
+    code: "EXPORT_FRAME_INVALID",
+    message: "The export could not be completed.",
+  };
+}
+
 export function PlanEditor({
   store,
   backendMode,
@@ -431,6 +465,16 @@ export function PlanEditor({
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const sceneExportHandleRef = useRef<SceneCanvasExportHandle | null>(null);
+  const activeExportRef = useRef<ProjectExportOperation | null>(null);
+  const exportPanelGenerationRef = useRef(0);
+  const exportInitiatorRef = useRef<HTMLButtonElement | null>(null);
+  const exportScopeRef = useRef<StudioExportScope | null>(null);
+  const [sceneExportHandle, setSceneExportHandle] = useState<SceneCanvasExportHandle | null>(null);
+  const [exportState, setExportState] = useState<StudioExportState | null>(null);
+  const [exportPreview, setExportPreview] = useState<{
+    readonly ultraHdDisabledReason: string | null;
+    readonly textureIssueAssetIds: readonly string[];
+  } | null>(null);
   const projectSessionGeneration = useRef(0);
   const mountedRef = useRef(true);
   const roomRecognitionGeneration = useRef(0);
@@ -446,6 +490,9 @@ export function PlanEditor({
     })
   ));
   const [makeId] = useState(() => dependencies?.makeId ?? productionId);
+  const exportCoordinator = useMemo(() => (
+    exportBackend === null ? null : createProjectExportCoordinator(exportBackend)
+  ), [exportBackend]);
   const resolveProjectAsset = useCallback(
     (assetId: string) => store.resolveAsset(assetId),
     [store],
@@ -489,6 +536,8 @@ export function PlanEditor({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      exportPanelGenerationRef.current += 1;
+      void cancelActiveExport();
       sessionStore.getState().clearRoomRecognition();
       sessionStore.getState().clearSelectedFixtureKind();
     };
@@ -517,18 +566,44 @@ export function PlanEditor({
   useEffect(() => {
     const nextProjectId = state.snapshot?.project.id ?? null;
     if (calibrationProjectId.current !== nextProjectId) {
+      calibrationProjectId.current = nextProjectId;
       openingToolInitiator.current = null;
       setRoomPanelOpen(false);
       setRoomRecognitionBusy(false);
       roomRecognitionGeneration.current += 1;
-      projectSessionGeneration.current += 1;
-      sessionStore.getState().replaceSession(
-        `plan-editor-project-session-${projectSessionGeneration.current}`,
-        state.snapshot?.project.floors[0]?.id ?? "",
-      );
-      calibrationProjectId.current = nextProjectId;
+      const replacementGeneration = projectSessionGeneration.current + 1;
+      projectSessionGeneration.current = replacementGeneration;
+      exportPanelGenerationRef.current += 1;
+      const nextFloorId = state.snapshot?.project.floors[0]?.id ?? "";
+      const operation = activeExportRef.current;
+      void (async () => {
+        try {
+          if (operation !== null) {
+            await operation.cancel();
+            if (activeExportRef.current === operation) activeExportRef.current = null;
+          }
+        } catch (error) {
+          if (
+            mountedRef.current
+            && projectSessionGeneration.current === replacementGeneration
+          ) setActionError(errorValue(error));
+        }
+        if (
+          !mountedRef.current
+          || projectSessionGeneration.current !== replacementGeneration
+          || (store.getState().snapshot?.project.id ?? null) !== nextProjectId
+        ) return;
+        setExportState(null);
+        setExportPreview(null);
+        exportScopeRef.current = null;
+        exportInitiatorRef.current = null;
+        sessionStore.getState().replaceSession(
+          `plan-editor-project-session-${replacementGeneration}`,
+          nextFloorId,
+        );
+      })();
     }
-  }, [sessionStore, state.snapshot]);
+  }, [sessionStore, state.snapshot, store]);
 
   useEffect(() => {
     if (activeCalibrationReferenceId === null) return;
@@ -634,9 +709,23 @@ export function PlanEditor({
     productMediaImageButtonRef.current?.focus();
   }
 
+  async function cancelActiveExport(): Promise<void> {
+    const operation = activeExportRef.current;
+    if (operation === null) return;
+    await operation.cancel();
+    if (activeExportRef.current === operation) {
+      activeExportRef.current = null;
+    }
+  }
+
   async function closeAndReturn() {
     setActionError(null);
     try {
+      if (exportState === null) {
+        await cancelActiveExport();
+      } else {
+        await closeExportPanel();
+      }
       await store.flush();
       await store.save();
       onBeforeClose();
@@ -654,6 +743,11 @@ export function PlanEditor({
     }
     setActionError(null);
     try {
+      if (exportState === null) {
+        await cancelActiveExport();
+      } else {
+        await closeExportPanel();
+      }
       onBeforeClose();
       await store.close();
       onBack();
@@ -1426,23 +1520,198 @@ export function PlanEditor({
     : "2d";
   const sceneAssetSourceEpoch = store.getAssetSourceEpoch();
 
+  const sceneExportHandleCurrent = sceneExportHandle !== null
+    && sceneExportHandle === sceneExportHandleRef.current
+    && sceneExportHandle.scope.sessionId === sessionState.sessionId
+    && sceneExportHandle.scope.floorId === sessionState.activeFloorId
+    && sceneExportHandle.scope.generation === sessionState.rendererGeneration;
+  const exportActive = exportState?.kind === "running";
 
   const exportReason = exportDisabledReason({
     profile: snapshot.project.profile,
     backendAvailable: exportBackend !== null,
     viewMode: sessionState.viewMode,
     rendererStatus: sessionState.rendererStatus,
-    handleCurrent: false,
-    active: false,
+    handleCurrent: sceneExportHandleCurrent,
+    active: exportActive,
   });
   const exportAction: ExportActionState = {
-    disabled: exportReason !== null, reason: exportReason, active: false,
+    disabled: exportReason !== null,
+    reason: exportReason,
+    active: exportActive,
   };
+
+  function exportScopeStillCurrent(
+    scope: StudioExportScope,
+    handle: SceneCanvasExportHandle,
+  ): boolean {
+    const currentProject = store.getState();
+    const currentSession = sessionStore.getState();
+    const currentHandle = sceneExportHandleRef.current;
+    return currentSession.sessionId === scope.sessionId
+      && currentSession.sessionGeneration === scope.sessionGeneration
+      && currentSession.activeFloorId === scope.floorId
+      && currentSession.rendererGeneration === scope.rendererGeneration
+      && currentProject.projectPath === scope.projectPath
+      && currentProject.snapshot?.project.id === scope.projectId
+      && currentHandle === handle
+      && currentHandle.scope.sessionId === scope.sessionId
+      && currentHandle.scope.floorId === scope.floorId
+      && currentHandle.scope.generation === scope.rendererGeneration;
+  }
+
+  function openExportPanel(initiator: HTMLButtonElement): void {
+    const currentProject = store.getState();
+    const currentSession = sessionStore.getState();
+    const handle = sceneExportHandleRef.current;
+    if (
+      exportBackend === null
+      || exportCoordinator === null
+      || currentProject.snapshot === null
+      || currentProject.projectPath === null
+      || currentProject.snapshot.project.profile !== "showroom"
+      || currentSession.viewMode === "2d"
+      || currentSession.rendererStatus !== "ready"
+      || handle === null
+      || handle.scope.sessionId !== currentSession.sessionId
+      || handle.scope.floorId !== currentSession.activeFloorId
+      || handle.scope.generation !== currentSession.rendererGeneration
+      || activeExportRef.current !== null
+    ) return;
+
+    let capture: SceneExportCapture;
+    try {
+      capture = handle.port.capture();
+    } catch (error) {
+      setActionError(new Error(safeProjectExportFailure(error).message));
+      return;
+    }
+    const scope: StudioExportScope = Object.freeze({
+      sessionId: currentSession.sessionId,
+      sessionGeneration: currentSession.sessionGeneration,
+      projectPath: currentProject.projectPath,
+      projectId: currentProject.snapshot.project.id,
+      floorId: currentSession.activeFloorId,
+      rendererGeneration: handle.scope.generation,
+    });
+    if (!exportScopeStillCurrent(scope, handle)) return;
+
+    const textureIssueIds = [...new Set(
+      capture.requiredTextureAssetIds.filter((assetId) => (
+        currentProject.assetIssues.some((issue) => issue.assetId === assetId)
+      )),
+    )].sort();
+    const limits = capture.limits;
+    const ultraHdDisabledReason =
+      limits.maxTextureSize >= 3840 && limits.maxRenderbufferSize >= 3840
+        ? null
+        : `Ultra HD requires 3840px GPU limits; current texture limit is ${limits.maxTextureSize}px and renderbuffer limit is ${limits.maxRenderbufferSize}px.`;
+
+    exportPanelGenerationRef.current += 1;
+    exportInitiatorRef.current = initiator;
+    exportScopeRef.current = scope;
+    setExportPreview({ ultraHdDisabledReason, textureIssueAssetIds: textureIssueIds });
+    setExportState({ kind: "idle", preset: "full-hd" });
+  }
+
+  function startExport(): void {
+    const currentExportState = exportState;
+    const scope = exportScopeRef.current;
+    const handle = sceneExportHandleRef.current;
+    const currentProject = store.getState();
+    if (
+      currentExportState === null
+      || currentExportState.kind === "running"
+      || scope === null
+      || handle === null
+      || exportCoordinator === null
+      || currentProject.snapshot === null
+      || !exportScopeStillCurrent(scope, handle)
+    ) return;
+    const preset = currentExportState.preset;
+    const panelGeneration = exportPanelGenerationRef.current;
+    let operation: ProjectExportOperation;
+    try {
+      operation = exportCoordinator.start({
+        port: handle.port,
+        preset,
+        context: {
+          projectPath: scope.projectPath,
+          projectId: scope.projectId,
+          snapshotSequence: currentProject.snapshot.sequence,
+          activeFloorId: scope.floorId,
+          sessionGeneration: scope.sessionGeneration,
+          assetIssues: currentProject.assetIssues,
+          isCurrent: () => exportScopeStillCurrent(scope, handle),
+        },
+        onProgress: (progress) => {
+          if (
+            mountedRef.current
+            && exportPanelGenerationRef.current === panelGeneration
+            && exportScopeStillCurrent(scope, handle)
+          ) {
+            setExportState({ kind: "running", preset, progress });
+          }
+        },
+      });
+    } catch (error) {
+      const failure = safeProjectExportFailure(error);
+      setExportState({ kind: "failed", preset, ...failure });
+      return;
+    }
+    activeExportRef.current = operation;
+    void operation.result.then(
+      (result) => {
+        if (
+          mountedRef.current
+          && exportPanelGenerationRef.current === panelGeneration
+          && exportScopeStillCurrent(scope, handle)
+        ) {
+          setExportState({ kind: "succeeded", preset, result });
+        }
+      },
+      (error: unknown) => {
+        if (
+          mountedRef.current
+          && exportPanelGenerationRef.current === panelGeneration
+          && exportScopeStillCurrent(scope, handle)
+        ) {
+          const failure = safeProjectExportFailure(error);
+          setExportState({ kind: "failed", preset, ...failure });
+        }
+      },
+    ).finally(() => {
+      if (activeExportRef.current === operation) activeExportRef.current = null;
+    });
+  }
+
+  async function closeExportPanel(): Promise<void> {
+    const panelGeneration = exportPanelGenerationRef.current + 1;
+    exportPanelGenerationRef.current = panelGeneration;
+    const sessionGeneration = sessionStore.getState().sessionGeneration;
+    await cancelActiveExport();
+    if (!mountedRef.current || exportPanelGenerationRef.current !== panelGeneration) return;
+    setExportState(null);
+    setExportPreview(null);
+    exportScopeRef.current = null;
+    const initiator = exportInitiatorRef.current;
+    exportInitiatorRef.current = null;
+    setTimeout(() => {
+      if (
+        mountedRef.current
+        && exportPanelGenerationRef.current === panelGeneration
+        && sessionStore.getState().sessionGeneration === sessionGeneration
+        && initiator?.isConnected
+      ) initiator.focus();
+    }, 0);
+  }
+
   const floorTree = (
     <FloorTree
       snapshot={snapshot}
       activeFloorId={sessionState.activeFloorId}
       selectedIds={selectedIds}
+      floorSelectionDisabled={exportActive}
       onFloorSelect={selectFloor}
       onLayerSelect={selectLayer}
       onEntitySelect={selectEntity}
@@ -1536,6 +1805,7 @@ export function PlanEditor({
             });
           }}
           onViewModeChange={(mode) => {
+            if (exportActive) return;
             sessionStore.getState().setViewMode(mode);
           }}
           onFrameSelection={() => {
@@ -1546,11 +1816,9 @@ export function PlanEditor({
           }}
           onToolChange={selectTool}
           onRecognizeRooms={() => void runRoomRecognition()}
+          previewLocked={exportActive}
           exportAction={exportAction}
-          onExport={() => {
-            // Task 14 publishes the scope-safe renderer port that can make
-            // this action current. Until then the closed policy keeps it disabled.
-          }}
+          onExport={openExportPanel}
           {...(selectedCalibrationReference === null ? {} : {
             onCalibrate: (initiator: HTMLButtonElement) => {
               startCalibration(selectedCalibrationReference.id, initiator);
@@ -1580,6 +1848,22 @@ export function PlanEditor({
           data-selected-count={selectedIds.size}
         >
           {visibleError === null ? null : <ErrorNotice error={visibleError} />}
+          {exportState === null || exportPreview === null ? null : (
+            <ExportPanel
+              state={exportState}
+              ultraHdDisabledReason={exportPreview.ultraHdDisabledReason}
+              textureIssueAssetIds={exportPreview.textureIssueAssetIds}
+              onPresetChange={(preset: ProjectExportPreset) => {
+                if (exportState.kind !== "running") setExportState({ kind: "idle", preset });
+              }}
+              onStart={startExport}
+              onCancel={() => void closeExportPanel()}
+              onClose={() => void closeExportPanel()}
+              onExportAgain={() => {
+                setExportState({ kind: "idle", preset: exportState.preset });
+              }}
+            />
+          )}
           {snapshot.project.profile === "showroom"
             && sessionState.activeTool === "fixture" ? (
               <FixtureCatalogue
@@ -1696,9 +1980,13 @@ export function PlanEditor({
                     sessionStore={sessionStore}
                     onExportHandleChange={(handle) => {
                       sceneExportHandleRef.current = handle;
+                      setSceneExportHandle(handle);
+                      if (handle === null && exportState !== null) {
+                        void closeExportPanel();
+                      }
                     }}
-                    exportPanelOpen={false}
-                    interactionLocked={false}
+                    exportPanelOpen={exportState !== null}
+                    interactionLocked={exportActive}
                     onError={(error) => setActionError(errorValue(error))}
                     {...(dependencies?.sceneRendererFactory === undefined
                       ? {}

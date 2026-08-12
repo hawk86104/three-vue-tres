@@ -239,6 +239,7 @@ export interface FloorTreeProps {
   readonly snapshot: ProjectSnapshot;
   readonly activeFloorId: string;
   readonly selectedIds: ReadonlySet<string>;
+  readonly floorSelectionDisabled?: boolean;
   readonly onFloorSelect: (floorId: string) => void;
   readonly onLayerSelect: (floorId: string, layerId: string) => void;
   readonly onEntitySelect: (entityId: string, additive: boolean) => void;
@@ -251,6 +252,7 @@ export function FloorTree({
   snapshot,
   activeFloorId,
   selectedIds,
+  floorSelectionDisabled = false,
   onFloorSelect,
   onLayerSelect,
   onEntitySelect,
@@ -290,10 +292,13 @@ export function FloorTree({
                   ? "studio-floor-tree__floor studio-floor-tree__floor--active"
                   : "studio-floor-tree__floor"
               }
-              onClick={() => onFloorSelect(floor.id)}
+              onClick={() => {
+                if (!floorSelectionDisabled) onFloorSelect(floor.id);
+              }}
             >
               <button
                 type="button"
+                disabled={floorSelectionDisabled}
                 className="studio-floor-tree__row studio-floor-tree__selection"
                 aria-label={`选择楼层：${floor.name}`}
                 onClick={(event) => {

@@ -28,14 +28,17 @@ import {
   showroomFixture,
 } from "@aethertwin/mode-showroom";
 import type { ProjectExportBackend } from "@aethertwin/exporter";
-import type { SceneRendererFactory } from "@aethertwin/render-scene-3d";
+import type {
+  SceneExportCapture,
+  SceneRendererFactory,
+} from "@aethertwin/render-scene-3d";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
 import { createPlanEditorStore, type OpeningPreviewState } from "./editor-session";
 import { PlanEditor } from "./plan-editor";
 import { FakePlanRenderer, renderPlanEditorFixture } from "./plan-editor.test-support";
-import { FakeSceneRenderer } from "./scene-canvas.test-support";
+import { deferred, FakeSceneRenderer } from "./scene-canvas.test-support";
 
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
@@ -860,6 +863,319 @@ describe("PlanEditor Task 10 shell", () => {
     act(() => sessionStore.getState().setSceneRendererStatus(scope, "ready", null));
     expect(screen.getByRole("button", { name: "Export" }))
       .toHaveAccessibleDescription("3D export capture is not current.");
+  });
+
+  it("opens Export only after a current ready 3D capture is published", async () => {
+    const user = userEvent.setup();
+    const textureWait = deferred();
+    const renderer = new FakeSceneRenderer();
+    let capture: SceneExportCapture;
+    const captureSpy = vi.spyOn(renderer.exportPort, "capture")
+      .mockImplementation(() => capture);
+    const waitForTextures = vi.spyOn(renderer.exportPort, "waitForTextures")
+      .mockReturnValue(textureWait.promise);
+    const exportBackend = exportBackendStub();
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+    });
+    capture = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => expect(exportButton).toBeEnabled());
+
+    await user.click(exportButton);
+
+    expect(captureSpy).toHaveBeenCalledOnce();
+    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    act(() => renderer.emitStatus("recovering"));
+    await waitFor(() => {
+      expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+        .not.toBeInTheDocument();
+    });
+    act(() => renderer.emitStatus("ready"));
+    await user.click(exportButton);
+    expect(document.querySelector(".studio-scene-viewport"))
+      .toHaveClass("studio-scene-viewport--export");
+
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+
+    expect(within(screen.getByRole("complementary", { name: "Export PNG" }))
+      .getByRole("status")).toHaveTextContent("Preparing textures");
+    expect(waitForTextures).toHaveBeenCalledOnce();
+    expect(exportBackend.begin).not.toHaveBeenCalled();
+  });
+
+  it("awaits Escape cancellation before closing Export and restoring focus", async () => {
+    const user = userEvent.setup();
+    const renderGate = deferred();
+    const cancelGate = deferred();
+    const renderer = new FakeSceneRenderer();
+    let capture: SceneExportCapture;
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
+    const render = vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
+      await renderGate.promise;
+      throw new Error("render stopped");
+    });
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockResolvedValue({
+      exportId: "00000000-0000-4000-8000-000000000099",
+      preset: "full-hd",
+      width: 1920,
+      height: 1080,
+      expectedByteLength: 8_294_400,
+      maxChunkBytes: 1_048_576,
+    });
+    vi.mocked(exportBackend.cancel).mockReturnValue(cancelGate.promise);
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+    });
+    capture = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await user.click(exportButton);
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await waitFor(() => expect(render).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "2D" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "3D" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Split" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Floor B/ })).toBeDisabled();
+
+    await user.keyboard("{Escape}");
+    expect(exportBackend.cancel).toHaveBeenCalledOnce();
+    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    expect(exportButton).not.toHaveFocus();
+
+    cancelGate.resolve();
+    await waitFor(() => {
+      expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+        .not.toBeInTheDocument();
+    });
+    expect(exportButton).toHaveFocus();
+    renderGate.resolve();
+  });
+
+  it("awaits export cancellation before installing a replacement project session", async () => {
+    const user = userEvent.setup();
+    const renderGate = deferred();
+    const cancelGate = deferred();
+    const renderer = new FakeSceneRenderer();
+    let capture: SceneExportCapture;
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
+    vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
+      await renderGate.promise;
+      throw new Error("render stopped");
+    });
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockResolvedValue({
+      exportId: "00000000-0000-4000-8000-000000000099",
+      preset: "full-hd",
+      width: 1920,
+      height: 1080,
+      expectedByteLength: 8_294_400,
+      maxChunkBytes: 1_048_576,
+    });
+    vi.mocked(exportBackend.cancel).mockReturnValue(cancelGate.promise);
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+    });
+    capture = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    });
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
+    const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
+
+    act(() => { fixture.replaceProject(); });
+
+    await waitFor(() => expect(exportBackend.cancel).toHaveBeenCalledOnce());
+    expect(fixture.sessionStore.getState().sessionGeneration).toBe(initialGeneration);
+    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+
+    await act(async () => { cancelGate.resolve(); });
+
+    await waitFor(() => {
+      expect(fixture.sessionStore.getState().sessionGeneration).toBe(initialGeneration + 1);
+    });
+    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      .not.toBeInTheDocument();
+    await act(async () => { renderGate.resolve(); });
+    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      .not.toBeInTheDocument();
+    expect(document.activeElement).not.toHaveAccessibleName("Export");
+  });
+
+  it("cancels an active export when the editor unmounts", async () => {
+    const user = userEvent.setup();
+    const renderGate = deferred();
+    const renderer = new FakeSceneRenderer();
+    let capture: SceneExportCapture;
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
+    vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
+      await renderGate.promise;
+      throw new Error("render stopped");
+    });
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockResolvedValue({
+      exportId: "00000000-0000-4000-8000-000000000097",
+      preset: "full-hd",
+      width: 1920,
+      height: 1080,
+      expectedByteLength: 8_294_400,
+      maxChunkBytes: 1_048_576,
+    });
+    vi.mocked(exportBackend.cancel).mockResolvedValue(undefined);
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+    });
+    capture = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    });
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
+
+    fixture.unmount();
+
+    expect(exportBackend.cancel).toHaveBeenCalledOnce();
+    renderGate.resolve();
+  });
+
+  it("awaits export cancellation before closing the project", async () => {
+    const user = userEvent.setup();
+    const renderGate = deferred();
+    const cancelGate = deferred();
+    const renderer = new FakeSceneRenderer();
+    let capture: SceneExportCapture;
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
+    const render = vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
+      await renderGate.promise;
+      throw new Error("render stopped");
+    });
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockResolvedValue({
+      exportId: "00000000-0000-4000-8000-000000000098",
+      preset: "full-hd",
+      width: 1920,
+      height: 1080,
+      expectedByteLength: 8_294_400,
+      maxChunkBytes: 1_048_576,
+    });
+    vi.mocked(exportBackend.cancel).mockReturnValue(cancelGate.promise);
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+    });
+    capture = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    });
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await waitFor(() => expect(render).toHaveBeenCalledOnce());
+
+    await user.click(screen.getByRole("button", { name: /\u5173\u95ed/ }));
+
+    expect(exportBackend.cancel).toHaveBeenCalledOnce();
+    expect(fixture.projectStore.close).not.toHaveBeenCalled();
+    cancelGate.resolve();
+    await waitFor(() => expect(fixture.projectStore.close).toHaveBeenCalledOnce());
+    renderGate.resolve();
   });
 
   it("wires preview actions, explains renderer failures, and restores 2D focus", async () => {

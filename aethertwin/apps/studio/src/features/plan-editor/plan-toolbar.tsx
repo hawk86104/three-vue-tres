@@ -151,6 +151,7 @@ export interface PlanToolbarProps {
   readonly onViewModeChange: (mode: SceneViewMode, initiator: HTMLButtonElement) => void;
   readonly onFrameSelection: (initiator: HTMLButtonElement) => void;
   readonly onFrameRoute: (initiator: HTMLButtonElement) => void;
+  readonly previewLocked?: boolean;
   readonly exportAction: ExportActionState;
   readonly onExport: (initiator: HTMLButtonElement) => void;
   readonly onToolChange: (tool: PlanTool, initiator: HTMLButtonElement) => void;
@@ -173,6 +174,7 @@ export function PlanToolbar({
   onViewModeChange,
   onFrameSelection,
   onFrameRoute,
+  previewLocked = false,
   exportAction,
   onExport,
   onToolChange,
@@ -286,9 +288,15 @@ export function PlanToolbar({
                   break;
               }
               const active = mode !== null && mode === viewMode;
+              const previewAction = id === "view-2d"
+                || id === "view-3d"
+                || id === "view-split"
+                || id === "frame-selection"
+                || id === "frame-route";
               const unavailableViewAction =
                 id === "view-3d" || id === "view-split";
               const disabled = actionDisabled || onClick === undefined
+                || (previewLocked && previewAction)
                 || (rendererUnavailable && unavailableViewAction);
               return (
                 <Button

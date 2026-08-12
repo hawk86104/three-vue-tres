@@ -769,4 +769,20 @@ describe("plan editor session", () => {
     });
     expect(store.getState().setSceneRendererStatus(replacedScope, "ready", null)).toBe(false);
   });
+
+  it("increments the session generation exactly once for every replacement", () => {
+    const { store, floorA, fixture } = createPlanEditorTestHarness();
+    const sessionId = store.getState().sessionId;
+
+    expect(store.getState().sessionGeneration).toBe(0);
+    store.getState().setSelection([fixture.id]);
+    store.getState().setViewMode("3d");
+    expect(store.getState().setActiveFloor(floorA.id)).toBe(true);
+    expect(store.getState().sessionGeneration).toBe(0);
+
+    store.getState().replaceSession(sessionId, floorA.id);
+    expect(store.getState().sessionGeneration).toBe(1);
+    store.getState().replaceSession(sessionId, floorA.id);
+    expect(store.getState().sessionGeneration).toBe(2);
+  });
 });

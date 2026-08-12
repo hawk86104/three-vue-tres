@@ -9,6 +9,7 @@ import {
   type SpatialEntity,
 } from "@aethertwin/core-model";
 import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
+import type { ProjectExportBackend } from "@aethertwin/exporter";
 import type { ProjectStore, ProjectStoreState } from "@aethertwin/project-store";
 import type {
   PlanPointerEvent,
@@ -168,6 +169,7 @@ export interface RenderPlanEditorFixtureOptions {
   readonly assetPicker?: PlanEditorDependencies["assetPicker"];
   readonly workspace?: PlanEditorDependencies["workspace"];
   readonly sceneRendererFactory?: SceneRendererFactory;
+  readonly exportBackend?: ProjectExportBackend | null;
   readonly renderer?: FakePlanRenderer;
 }
 
@@ -309,6 +311,29 @@ export function renderPlanEditorFixture(
     });
   }
 
+  const replaceProject = vi.fn(() => {
+    const current = projectState.snapshot!;
+    const replacement = parseSnapshotV3({
+      ...current,
+      sequence: current.sequence + 1,
+      project: {
+        ...current.project,
+        id: "00000000-0000-4000-8000-000000000098",
+        name: "Replacement project",
+      },
+    });
+    publishState({
+      ...projectState,
+      projectPath: "sandbox://replacement",
+      snapshot: replacement,
+      saveState: "saved",
+      error: null,
+      canUndo: false,
+      canRedo: false,
+    });
+    return replacement;
+  });
+
   const applyPlanEdit = vi.fn(async (intent: PlanEditIntent) => {
     const current = projectState.snapshot!;
     const byId = new Map(
@@ -416,6 +441,7 @@ export function renderPlanEditorFixture(
     <PlanEditor
       store={projectStore}
       backendMode="sandbox"
+      exportBackend={options.exportBackend ?? null}
       dependencies={{
         sessionStore,
         controller,
@@ -445,6 +471,7 @@ export function renderPlanEditorFixture(
     projectStore,
     applyPlanEdit,
     applyFloorPatch,
+    replaceProject,
     errors,
     makeId,
     workspaceOverride,

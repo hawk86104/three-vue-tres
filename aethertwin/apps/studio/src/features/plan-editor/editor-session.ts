@@ -125,6 +125,7 @@ export type PlanDraft =
 
 export interface PlanEditorState {
   readonly sessionId: string;
+  readonly sessionGeneration: number;
   readonly activeFloorId: string;
   readonly activeTool: PlanTool;
   readonly sidePanel: PlanSidePanel;
@@ -350,6 +351,7 @@ export function createPlanEditorStore(
 
   return createStore<PlanEditorState>((set, get) => ({
     sessionId: initialSessionId,
+    sessionGeneration: 0,
     activeFloorId: options.activeFloorId,
     activeTool: "select",
     sidePanel: "tree",
@@ -415,6 +417,7 @@ export function createPlanEditorStore(
       floorViewports.set(activeFloorId, viewport);
       set({
         sessionId,
+        sessionGeneration: state.sessionGeneration + 1,
         activeFloorId,
         activeTool: "select",
         sidePanel: "tree",
