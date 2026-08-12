@@ -72,6 +72,9 @@ export function SceneGallery({ rendererFactory }: SceneGalleryProps) {
           assetIssues={galleryAssetIssues}
           activeFloorId={activeFloorId}
           sessionStore={sessionStore}
+          onExportHandleChange={() => undefined}
+          exportPanelOpen={false}
+          interactionLocked={false}
           {...(rendererFactory === undefined ? {} : { rendererFactory })}
           onError={(error) => {
             setRendererError(error instanceof Error ? error.message : String(error));

@@ -15,6 +15,7 @@ import {
   type SceneRendererDependencies,
   type SceneRendererFactory,
   type SceneRendererInput,
+  type SceneExportPort,
 } from "@aethertwin/render-scene-3d";
 import {
   useCallback,
@@ -52,6 +53,16 @@ export interface SceneCanvasProps {
   readonly sessionStore: StoreApi<PlanEditorState>;
   readonly rendererFactory?: SceneRendererFactory;
   readonly onError: (error: unknown) => void;
+  readonly onExportHandleChange: (
+    handle: SceneCanvasExportHandle | null,
+  ) => void;
+  readonly exportPanelOpen: boolean;
+  readonly interactionLocked: boolean;
+}
+
+export interface SceneCanvasExportHandle {
+  readonly scope: SceneRendererScope;
+  readonly port: SceneExportPort;
 }
 
 interface ActiveSceneRenderer {
@@ -139,6 +150,9 @@ export function SceneCanvas({
   sessionStore,
   rendererFactory,
   onError,
+  onExportHandleChange,
+  exportPanelOpen,
+  interactionLocked,
 }: SceneCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const activeRendererRef = useRef<ActiveSceneRenderer | null>(null);
@@ -146,6 +160,8 @@ export function SceneCanvas({
   const rendererCameraEchoRef = useRef<SceneCameraState | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const onExportHandleChangeRef = useRef(onExportHandleChange);
+  onExportHandleChangeRef.current = onExportHandleChange;
 
   const selectedIds = useStore(sessionStore, (state) => state.selectedIds);
   const sceneCamera = useStore(sessionStore, (state) => state.sceneCamera);
@@ -215,6 +231,7 @@ export function SceneCanvas({
     const normalized = normalizedError(error);
     const state = sessionStore.getState();
     if (!scopeCurrent(state, active.scope)) return;
+    onExportHandleChangeRef.current(null);
     state.setSceneRendererStatus(active.scope, "failed", normalized);
     onErrorRef.current(normalized);
   }, [sessionStore]);
@@ -270,6 +287,7 @@ export function SceneCanvas({
       renderer = activeRendererFactory(dependencies);
     } catch (error) {
       const normalized = normalizedError(error);
+      onExportHandleChangeRef.current(null);
       sessionStore.getState().setSceneRendererStatus(scope, "failed", normalized);
       onErrorRef.current(normalized);
       return () => {
@@ -289,6 +307,20 @@ export function SceneCanvas({
     let disposed = false;
     let pendingResize: readonly [number, number, number] | null = null;
     const workspace = host.closest<HTMLElement>(".studio-plan-workspace");
+    const publishExportHandle = (): void => {
+      const state = sessionStore.getState();
+      if (
+        disposed
+        || activeRendererRef.current !== active
+        || !active.initialized
+        || state.rendererStatus !== "ready"
+        || !scopeCurrent(state, scope)
+      ) return;
+      onExportHandleChangeRef.current(Object.freeze({
+        scope,
+        port: renderer.exportPort,
+      }));
+    };
 
     const ResizeObserverClass = globalThis.ResizeObserver;
     let observer: ResizeObserver | null = null;
@@ -336,9 +368,14 @@ export function SceneCanvas({
         if (status === "failed" || status === "disabled") {
           active.restoreFocusOnDispose = host.contains(document.activeElement);
         }
-        if (!disposed) {
-          sessionStore.getState().setSceneRendererStatus(scope, status, error);
+        if (disposed || activeRendererRef.current !== active) return;
+        if (status !== "ready") {
+          onExportHandleChangeRef.current(null);
         }
+        const accepted = sessionStore.getState()
+          .setSceneRendererStatus(scope, status, error);
+        if (!accepted) return;
+        if (status === "ready") publishExportHandle();
       },
     };
 
@@ -364,6 +401,7 @@ export function SceneCanvas({
         } catch (error) {
           failActive(active, error);
         }
+        publishExportHandle();
       })
       .catch((error: unknown) => {
         if (!disposed) failActive(active, error);
@@ -375,6 +413,7 @@ export function SceneCanvas({
       disposed = true;
       observer?.disconnect();
       if (activeRendererRef.current === active) activeRendererRef.current = null;
+      onExportHandleChangeRef.current(null);
       sessionStore.getState().retireSceneRenderer(scope);
       try {
         renderer.destroy();
@@ -401,11 +440,23 @@ export function SceneCanvas({
 
   return (
     <div
+      className={`studio-scene-viewport${
+        exportPanelOpen ? " studio-scene-viewport--export" : ""
+      }`}
+    >
+    <div
       ref={hostRef}
       className="studio-scene-canvas"
       role="region"
       aria-label="三维场景"
       tabIndex={0}
     />
+      {interactionLocked ? (
+        <div
+          className="studio-scene-input-lock"
+          aria-hidden="true"
+        />
+      ) : null}
+    </div>
   );
 }

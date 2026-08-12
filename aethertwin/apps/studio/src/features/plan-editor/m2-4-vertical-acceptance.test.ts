@@ -193,6 +193,9 @@ describe("Task 17 complete M2.4 showroom acceptance", () => {
         activeFloorId: floor.id,
         sessionStore,
         rendererFactory: () => renderer,
+        onExportHandleChange: () => undefined,
+        exportPanelOpen: false,
+        interactionLocked: false,
         onError: () => undefined,
       }));
 

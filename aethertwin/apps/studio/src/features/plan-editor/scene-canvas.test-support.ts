@@ -24,6 +24,7 @@ export class FakeSceneRenderer implements SceneRenderer {
   initCount = 0;
   retryCount = 0;
   destroyCount = 0;
+  onDestroy: (() => void) | null = null;
   initResult: Promise<void> = Promise.resolve();
   host: HTMLElement | null = null;
   sink: SceneRendererEventSink | null = null;
@@ -52,6 +53,7 @@ export class FakeSceneRenderer implements SceneRenderer {
   }
 
   destroy(): void {
+    this.onDestroy?.();
     this.destroyCount += 1;
   }
 

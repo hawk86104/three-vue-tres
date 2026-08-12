@@ -80,7 +80,10 @@ import {
   type ExportActionState,
 } from "./plan-toolbar";
 import { PlanCanvas } from "./plan-canvas";
-import { SceneCanvas } from "./scene-canvas";
+import {
+  SceneCanvas,
+  type SceneCanvasExportHandle,
+} from "./scene-canvas";
 import { CalibrationPanel } from "./calibration-panel";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
@@ -427,6 +430,7 @@ export function PlanEditor({
   const treeTabRef = useRef<HTMLButtonElement>(null);
   const assetLibraryTabRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const sceneExportHandleRef = useRef<SceneCanvasExportHandle | null>(null);
   const projectSessionGeneration = useRef(0);
   const mountedRef = useRef(true);
   const roomRecognitionGeneration = useRef(0);
@@ -1690,6 +1694,11 @@ export function PlanEditor({
                     assetIssues={state.assetIssues}
                     activeFloorId={sessionState.activeFloorId}
                     sessionStore={sessionStore}
+                    onExportHandleChange={(handle) => {
+                      sceneExportHandleRef.current = handle;
+                    }}
+                    exportPanelOpen={false}
+                    interactionLocked={false}
                     onError={(error) => setActionError(errorValue(error))}
                     {...(dependencies?.sceneRendererFactory === undefined
                       ? {}

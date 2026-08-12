@@ -16,7 +16,11 @@ import type {
 } from "@aethertwin/render-scene-3d";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SceneCanvas, type SceneCanvasProps } from "./scene-canvas";
+import {
+  SceneCanvas,
+  type SceneCanvasExportHandle,
+  type SceneCanvasProps,
+} from "./scene-canvas";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
 import { deferred, FakeSceneRenderer } from "./scene-canvas.test-support";
 
@@ -67,6 +71,10 @@ function createFixture(renderer: FakeSceneRenderer) {
     return renderer;
   };
   const onError = vi.fn();
+  const exportHandleChanges: Array<SceneCanvasExportHandle | null> = [];
+  const onExportHandleChange = vi.fn((handle: SceneCanvasExportHandle | null) => {
+    exportHandleChanges.push(handle);
+  });
   const props: SceneCanvasProps = {
     store,
     assetSourceEpoch: 7,
@@ -79,6 +87,9 @@ function createFixture(renderer: FakeSceneRenderer) {
     sessionStore: harness.store,
     rendererFactory,
     onError,
+    onExportHandleChange,
+    exportPanelOpen: false,
+    interactionLocked: false,
   };
   return {
     harness,
@@ -89,6 +100,8 @@ function createFixture(renderer: FakeSceneRenderer) {
     reportRendererAssetIssue,
     clearRendererAssetIssue,
     rendererDependencies: () => rendererDependencies,
+    exportHandleChanges,
+    onExportHandleChange,
   };
 }
 
@@ -104,6 +117,90 @@ afterEach(() => {
 });
 
 describe("SceneCanvas synchronized lifecycle", () => {
+  it("publishes only the ready current export port and clears it before destroy", async () => {
+    const renderer = new FakeSceneRenderer();
+    const fixture = createFixture(renderer);
+    renderer.onDestroy = () => {
+      expect(fixture.exportHandleChanges.at(-1)).toBeNull();
+    };
+    const view = render(<SceneCanvas {...fixture.props} />);
+
+    await waitFor(() => expect(renderer.updateInputs).toHaveLength(1));
+    expect(fixture.exportHandleChanges).toEqual([]);
+
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => expect(fixture.exportHandleChanges.at(-1)).toEqual({
+      scope: {
+        sessionId: fixture.harness.store.getState().sessionId,
+        floorId: fixture.harness.store.getState().activeFloorId,
+        generation: fixture.harness.store.getState().rendererGeneration,
+      },
+      port: renderer.exportPort,
+    }));
+    expect(fixture.exportHandleChanges.at(-1)?.port).toBe(renderer.exportPort);
+
+    view.unmount();
+    expect(fixture.exportHandleChanges.at(-1)).toBeNull();
+    expect(renderer.destroyCount).toBe(1);
+  });
+
+  it("clears the export handle while recovering and republishes only when ready", async () => {
+    const renderer = new FakeSceneRenderer();
+    const fixture = createFixture(renderer);
+    render(<SceneCanvas {...fixture.props} />);
+    await waitFor(() => expect(renderer.updateInputs).toHaveLength(1));
+
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => expect(fixture.exportHandleChanges.at(-1)?.port)
+      .toBe(renderer.exportPort));
+
+    act(() => renderer.emitStatus("recovering"));
+    expect(fixture.exportHandleChanges.at(-1)).toBeNull();
+
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => expect(fixture.exportHandleChanges.at(-1)?.port)
+      .toBe(renderer.exportPort));
+  });
+
+  it("applies and removes export framing while forwarding exact observed dimensions", async () => {
+    const renderer = new FakeSceneRenderer();
+    const fixture = createFixture(renderer);
+    const view = render(<SceneCanvas {...fixture.props} exportPanelOpen />);
+    await waitFor(() => expect(renderer.updateInputs).toHaveLength(1));
+
+    const host = view.container.querySelector<HTMLElement>(".studio-scene-canvas");
+    expect(host).not.toBeNull();
+    if (host === null) throw new Error("Scene canvas host was not mounted.");
+    expect(host.parentElement).toHaveClass(
+      "studio-scene-viewport",
+      "studio-scene-viewport--export",
+    );
+    const observer = FakeResizeObserver.instances[0]!;
+    act(() => observer.publish(1_600, 900));
+    expect(renderer.resizeInputs.at(-1)).toEqual([1_600, 900, 2]);
+    act(() => observer.publish(800, 450));
+    expect(renderer.resizeInputs.at(-1)).toEqual([800, 450, 2]);
+
+    view.rerender(<SceneCanvas {...fixture.props} exportPanelOpen={false} />);
+    expect(host.parentElement).toHaveClass("studio-scene-viewport");
+    expect(host.parentElement).not.toHaveClass("studio-scene-viewport--export");
+  });
+
+  it("mounts the input lock only while interaction is locked", () => {
+    const renderer = new FakeSceneRenderer();
+    const fixture = createFixture(renderer);
+    const view = render(<SceneCanvas {...fixture.props} interactionLocked={false} />);
+    expect(view.container.querySelector(".studio-scene-input-lock")).toBeNull();
+
+    view.rerender(<SceneCanvas {...fixture.props} interactionLocked />);
+    const lock = view.container.querySelector(".studio-scene-input-lock");
+    expect(lock).not.toBeNull();
+    expect(lock).toHaveAttribute("aria-hidden", "true");
+
+    view.rerender(<SceneCanvas {...fixture.props} interactionLocked={false} />);
+    expect(view.container.querySelector(".studio-scene-input-lock")).toBeNull();
+  });
+
   it("publishes scene input, shares selection and camera, consumes frames, and adapts assets", async () => {
     const renderer = new FakeSceneRenderer();
     const fixture = createFixture(renderer);
