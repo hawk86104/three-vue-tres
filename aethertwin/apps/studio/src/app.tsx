@@ -1,5 +1,6 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { StatusNotice } from "@aethertwin/design-system";
+import type { ProjectExportBackend } from "@aethertwin/exporter";
 import {
   ProjectStore,
   RecentProjects,
@@ -24,7 +25,6 @@ import { UiGallery } from "./dev/ui-gallery";
 import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
 import { PlanEditor } from "./features/plan-editor/plan-editor";
-
 const DevSceneGallery = import.meta.env.DEV
   ? lazy(async () => {
     const module = await import("./dev/scene-gallery");
@@ -136,11 +136,18 @@ async function disposeBackend(backend: ProjectBackend): Promise<void> {
 
 export interface AppProps {
   backend?: ProjectBackend;
+  exportBackend?: ProjectExportBackend | null;
   forceBackend?: ForcedBackend;
   sceneRendererFactory?: SceneRendererFactory;
 }
 
-function StudioApp({ backend }: { backend: ProjectBackend }) {
+function StudioApp({
+  backend,
+  exportBackend,
+}: {
+  backend: ProjectBackend;
+  exportBackend: ProjectExportBackend | null;
+}) {
   const [store] = useState(() => new ProjectStore(backend));
   const storeLifecycleGeneration = useRef(0);
   const [recentRepository] = useState(
@@ -276,6 +283,7 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
       <PlanEditor
         store={store}
         backendMode={backend.mode}
+        exportBackend={exportBackend}
         onBeforeClose={recordCurrentProject}
         onBack={() => {
           setView("center");
@@ -316,16 +324,16 @@ function StudioApp({ backend }: { backend: ProjectBackend }) {
 }
 
 function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
-  const [backend, setBackend] = useState<ProjectBackend | null>(null);
+  const [selection, setSelection] = useState<Awaited<ReturnType<typeof selectBackend>> | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
     let active = true;
-    setBackend(null);
+    setSelection(null);
     setError(null);
     void selectBackend(forceBackend).then(
       (selected) => {
-        if (active) setBackend(selected);
+        if (active) setSelection(selected);
       },
       (reason) => {
         if (active) setError(reason instanceof Error ? reason : new Error(String(reason)));
@@ -343,17 +351,27 @@ function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
       </main>
     );
   }
-  if (backend === null) {
+  if (selection === null) {
     return (
       <main className="studio-bootstrap-state">
         <StatusNotice>正在连接项目后端…</StatusNotice>
       </main>
     );
   }
-  return <StudioApp backend={backend} />;
+  return (
+    <StudioApp
+      backend={selection.projectBackend}
+      exportBackend={selection.exportBackend}
+    />
+  );
 }
 
-export function App({ backend, forceBackend, sceneRendererFactory }: AppProps) {
+export function App({
+  backend,
+  exportBackend = null,
+  forceBackend,
+  sceneRendererFactory,
+}: AppProps) {
   const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
   if (pathname === "/dev/ui-gallery") return <UiGallery />;
   if (
@@ -377,6 +395,8 @@ export function App({ backend, forceBackend, sceneRendererFactory }: AppProps) {
       </Suspense>
     );
   }
-  if (backend !== undefined) return <StudioApp backend={backend} />;
+  if (backend !== undefined) {
+    return <StudioApp backend={backend} exportBackend={exportBackend} />;
+  }
   return <StudioBootstrap forceBackend={forceBackend} />;
 }

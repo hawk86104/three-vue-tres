@@ -1512,15 +1512,202 @@ describe("TauriProjectBackend", () => {
   });
 });
 
+describe("TauriProjectBackend project export adapter", () => {
+  const EXPORT_ID = "50000000-0000-4000-8000-000000000001";
+  const beginResult = {
+    exportId: EXPORT_ID,
+    preset: "full-hd" as const,
+    width: 1920 as const,
+    height: 1080 as const,
+    expectedByteLength: 8_294_400,
+    maxChunkBytes: 1_048_576 as const,
+  };
+  const finishResult = {
+    preset: "full-hd" as const,
+    width: 1920 as const,
+    height: 1080 as const,
+    relativePath: "exports/demo.mp4",
+    byteSize: 123_456,
+    sha256: "a".repeat(64),
+  };
+
+  async function openedExportBackend() {
+    const opened = fixture();
+    invoke.mockResolvedValueOnce(opened);
+    const { TauriProjectBackend } = await import("./tauri-backend");
+    const backend = new TauriProjectBackend();
+    await backend.openProject(PROJECT_A);
+    invoke.mockClear();
+    return { backend, opened };
+  }
+
+  it("uses exact begin, finish, cancel payloads and raw chunk headers", async () => {
+    const { backend, opened } = await openedExportBackend();
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    const bytes = Uint8Array.from([1, 2, 3, 255]);
+    invoke
+      .mockResolvedValueOnce(beginResult)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(finishResult)
+      .mockResolvedValueOnce(undefined);
+
+    await expect(backend.begin(PROJECT_A, { provenance, preset: "full-hd" }))
+      .resolves.toEqual(beginResult);
+    await backend.writeChunk(PROJECT_A, EXPORT_ID, 7, bytes);
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).resolves.toEqual(finishResult);
+    await backend.cancel(PROJECT_A, EXPORT_ID);
+
+    expect(invoke.mock.calls).toEqual([
+      ["begin_project_export", { payload: {
+        sessionId: SESSION_A,
+        projectId: provenance.projectId,
+        snapshotSequence: provenance.snapshotSequence,
+        activeFloorId: provenance.activeFloorId,
+        preset: "full-hd",
+      } }],
+      ["write_project_export_chunk", bytes, { headers: {
+        "X-Aether-Session-Id": SESSION_A,
+        "X-Aether-Export-Id": EXPORT_ID,
+        "X-Aether-Chunk-Index": "7",
+      } }],
+      ["finish_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
+      ["cancel_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
+    ]);
+  });
+
+  it.each([
+    ["missing begin key", { ...beginResult, exportId: undefined }],
+    ["wrong begin preset", { ...beginResult, preset: "ultra-hd" }],
+    ["wrong begin dimensions", { ...beginResult, width: 3840 }],
+    ["unsafe expected byte count", { ...beginResult, expectedByteLength: Number.MAX_SAFE_INTEGER + 1 }],
+    ["oversized chunk ceiling", { ...beginResult, maxChunkBytes: 1_048_577 }],
+  ] as const)("strictly rejects native begin response: %s", async (_label, response) => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockResolvedValueOnce(response);
+    await expect(backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    })).rejects.toThrow(/invalid|response|export/i);
+  });
+
+  it.each([
+    ["absolute path", { ...finishResult, relativePath: "E:\\private\\demo.mp4" }],
+    ["outside exports", { ...finishResult, relativePath: "assets/demo.mp4" }],
+    ["wrong preset", { ...finishResult, preset: "ultra-hd" }],
+    ["wrong dimensions", { ...finishResult, height: 2160 }],
+    ["unsafe byte size", { ...finishResult, byteSize: Number.MAX_SAFE_INTEGER + 1 }],
+    ["invalid digest", { ...finishResult, sha256: "A".repeat(64) }],
+  ] as const)("strictly rejects native finish response: %s", async (_label, response) => {
+    const { backend } = await openedExportBackend();
+    invoke.mockResolvedValueOnce(response);
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toThrow(/invalid|response|export/i);
+  });
+
+  it("rejects missing and stale project paths before invoking native export commands", async () => {
+    const { backend } = await openedExportBackend();
+    invoke.mockResolvedValueOnce(undefined);
+    await backend.closeProject(PROJECT_A);
+    invoke.mockClear();
+    await expect(backend.cancel(PROJECT_B, EXPORT_ID)).rejects.toThrow(/session/i);
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toThrow(/session/i);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("safely maps native export errors", async () => {
+    const { backend } = await openedExportBackend();
+    const nativeError = {
+      code: "EXPORT_IO_FAILED",
+      message: "Export could not be written",
+      details: { retryable: true },
+      logRef: "export-safe-ref",
+      secretPath: "E:\\sensitive\\private.mp4",
+    };
+    invoke.mockRejectedValueOnce(nativeError);
+    let caught: unknown;
+    try {
+      await backend.cancel(PROJECT_A, EXPORT_ID);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      name: "ProjectBackendError",
+      code: nativeError.code,
+      message: nativeError.message,
+      details: nativeError.details,
+      logRef: nativeError.logRef,
+    });
+    expect(caught).not.toHaveProperty("secretPath");
+    expect(String((caught as Error).stack)).not.toContain(nativeError.secretPath);
+  });
+
+  it("cancels an active export before closing its project during disposal", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockResolvedValueOnce(beginResult).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    await backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    });
+    await backend.dispose();
+    expect(invoke.mock.calls.slice(1)).toEqual([
+      ["cancel_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
+      ["close_project", { payload: { sessionId: SESSION_A } }],
+    ]);
+  });
+
+  it("cancels an active export before explicit close and does not retain it after reopening", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "open_project") return opened;
+      return undefined;
+    });
+    await backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    });
+
+    await backend.closeProject(PROJECT_A);
+    await backend.openProject(PROJECT_A);
+    await backend.dispose();
+
+    expect(invoke.mock.calls.slice(1)).toEqual([
+      ["cancel_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
+      ["close_project", { payload: { sessionId: SESSION_A } }],
+      ["open_project", { payload: { path: PROJECT_A, recoverStaleLock: false } }],
+      ["close_project", { payload: { sessionId: SESSION_A } }],
+    ]);
+  });
+});
+
 describe("selectBackend", () => {
   it("selects desktop for an explicit force or a detected Tauri runtime", async () => {
     vi.stubEnv("DEV", false);
     vi.stubGlobal("window", {});
     const { selectBackend } = await import("./select-backend");
-    await expect(selectBackend("desktop")).resolves.toMatchObject({ mode: "desktop" });
+    const forced = await selectBackend("desktop");
+    expect(forced.projectBackend).toBe(forced.exportBackend);
+    expect(forced.projectBackend).toMatchObject({ mode: "desktop" });
 
     vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
-    await expect(selectBackend()).resolves.toMatchObject({ mode: "desktop" });
+    const detected = await selectBackend();
+    expect(detected.projectBackend).toBe(detected.exportBackend);
+    expect(detected.projectBackend).toMatchObject({ mode: "desktop" });
   });
 
   it("allows the web sandbox only in development", async () => {
@@ -1528,8 +1715,14 @@ describe("selectBackend", () => {
     vi.stubGlobal("window", {});
     const { selectBackend } = await import("./select-backend");
 
-    await expect(selectBackend()).resolves.toMatchObject({ mode: "sandbox" });
-    await expect(selectBackend("sandbox")).resolves.toMatchObject({ mode: "sandbox" });
+    await expect(selectBackend()).resolves.toMatchObject({
+      projectBackend: { mode: "sandbox" },
+      exportBackend: null,
+    });
+    await expect(selectBackend("sandbox")).resolves.toMatchObject({
+      projectBackend: { mode: "sandbox" },
+      exportBackend: null,
+    });
   });
 
   it("fails closed outside Tauri in production, including an explicitly forced sandbox", async () => {

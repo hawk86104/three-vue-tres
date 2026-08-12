@@ -12,6 +12,14 @@ import type {
   ProjectBackend,
   RecoveryConfirmation,
 } from "@aethertwin/project-store";
+import {
+  PROJECT_EXPORT_MAX_CHUNK_BYTES,
+  type ProjectExportBackend,
+  type ProjectExportBeginRequest,
+  type ProjectExportBeginResult,
+  type ProjectExportDimensions,
+  type ProjectExportResult,
+} from "@aethertwin/exporter";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { ProjectBackendError } from "./project-backend-error";
 
@@ -521,12 +529,92 @@ function parseCheckpointResult(
   }
   return Object.freeze({ manifest, snapshot });
 }
+function parseProjectExportDimensions(
+  record: UnknownRecord,
+  label: string,
+): ProjectExportDimensions {
+  const preset = record.preset;
+  const width = record.width;
+  const height = record.height;
+  if (preset === "full-hd" && width === 1920 && height === 1080) {
+    return Object.freeze({ preset, width, height });
+  }
+  if (preset === "ultra-hd" && width === 3840 && height === 2160) {
+    return Object.freeze({ preset, width, height });
+  }
+  throw new Error(`Invalid ${label}: preset and dimensions do not match`);
+}
 
-export class TauriProjectBackend implements ProjectBackend {
+function parseProjectExportBeginResult(value: unknown): ProjectExportBeginResult {
+  const label = "native project export begin response";
+  const record = exactRecord(value, label, [
+    "exportId",
+    "preset",
+    "width",
+    "height",
+    "expectedByteLength",
+    "maxChunkBytes",
+  ]);
+  const exportId = requiredString(record, "exportId", label);
+  if (!SESSION_ID_PATTERN.test(exportId)) {
+    throw new Error(`Invalid ${label}.exportId: expected a canonical UUID`);
+  }
+  const dimensions = parseProjectExportDimensions(record, label);
+  const expectedByteLength = requiredSafeInteger(record, "expectedByteLength", label);
+  if (expectedByteLength < 1) {
+    throw new Error(`Invalid ${label}.expectedByteLength`);
+  }
+  if (record.maxChunkBytes !== PROJECT_EXPORT_MAX_CHUNK_BYTES) {
+    throw new Error(`Invalid ${label}.maxChunkBytes`);
+  }
+  return Object.freeze({
+    exportId,
+    ...dimensions,
+    expectedByteLength,
+    maxChunkBytes: PROJECT_EXPORT_MAX_CHUNK_BYTES,
+  });
+}
+
+function parseProjectExportResult(value: unknown): ProjectExportResult {
+  const label = "native project export finish response";
+  const record = exactRecord(value, label, [
+    "preset",
+    "width",
+    "height",
+    "relativePath",
+    "byteSize",
+    "sha256",
+  ]);
+  const dimensions = parseProjectExportDimensions(record, label);
+  const relativePath = requiredString(record, "relativePath", label);
+  const pathSegments = relativePath.split("/");
+  if (
+    pathSegments[0] !== "exports" ||
+    pathSegments.length < 2 ||
+    pathSegments.some((segment) =>
+      segment.length === 0 || segment === "." || segment === ".." || segment.includes("\\")
+    )
+  ) {
+    throw new Error(`Invalid ${label}.relativePath`);
+  }
+  const byteSize = requiredSafeInteger(record, "byteSize", label);
+  if (byteSize < 1) {
+    throw new Error(`Invalid ${label}.byteSize`);
+  }
+  const sha256 = requiredString(record, "sha256", label);
+  if (!SHA256_PATTERN.test(sha256)) {
+    throw new Error(`Invalid ${label}.sha256`);
+  }
+  return Object.freeze({ ...dimensions, relativePath, byteSize, sha256 });
+}
+
+
+export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend {
   readonly mode = "desktop" as const;
 
   private readonly sessions = new Map<string, string>();
   private readonly pendingCleanup = new Map<string, string | null>();
+  private readonly activeExports = new Map<string, ReadonlySet<string>>();
   private operationTail: Promise<void> = Promise.resolve();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
@@ -715,6 +803,70 @@ export class TauriProjectBackend implements ProjectBackend {
     }
   }
 
+  begin(
+    projectPath: string,
+    request: ProjectExportBeginRequest,
+  ): Promise<ProjectExportBeginResult> {
+    const ownedRequest = Object.freeze({
+      provenance: Object.freeze({ ...request.provenance }),
+      preset: request.preset,
+    });
+    return this.enqueue(async () => {
+      const sessionId = this.requireSession(projectPath);
+      const response = await invokeNative<unknown>("begin_project_export", {
+        sessionId,
+        projectId: ownedRequest.provenance.projectId,
+        snapshotSequence: ownedRequest.provenance.snapshotSequence,
+        activeFloorId: ownedRequest.provenance.activeFloorId,
+        preset: ownedRequest.preset,
+      });
+      const result = parseProjectExportBeginResult(response);
+      this.activeExports.set(
+        projectPath,
+        new Set([...(this.activeExports.get(projectPath) ?? []), result.exportId]),
+      );
+      return result;
+    });
+  }
+
+  writeChunk(
+    projectPath: string,
+    exportId: string,
+    chunkIndex: number,
+    bytes: Uint8Array,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      const sessionId = this.requireSession(projectPath);
+      try {
+        await invoke("write_project_export_chunk", bytes, { headers: {
+          "X-Aether-Session-Id": sessionId,
+          "X-Aether-Export-Id": exportId,
+          "X-Aether-Chunk-Index": String(chunkIndex),
+        } });
+      } catch (error) {
+        throw sanitizeInvocationError(error);
+      }
+    });
+  }
+
+  finish(projectPath: string, exportId: string): Promise<ProjectExportResult> {
+    return this.enqueue(async () => {
+      const sessionId = this.requireSession(projectPath);
+      const response = await invokeNative<unknown>("finish_project_export", { sessionId, exportId });
+      const result = parseProjectExportResult(response);
+      this.forgetActiveExport(projectPath, exportId);
+      return result;
+    });
+  }
+
+  cancel(projectPath: string, exportId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const sessionId = this.requireSession(projectPath);
+      await invokeNative<void>("cancel_project_export", { sessionId, exportId });
+      this.forgetActiveExport(projectPath, exportId);
+    });
+  }
+
   closeProject(projectPath: string): Promise<void> {
     return this.enqueue(() => this.closeProjectNow(projectPath));
   }
@@ -780,8 +932,11 @@ export class TauriProjectBackend implements ProjectBackend {
     }
 
     if (activeSessionId !== undefined) {
+      const cancelFailure = await this.cancelSessionExports(activeSessionId);
+      if (cancelFailure !== null) throw cancelFailure;
       await invokeNative<void>("close_project", { sessionId: activeSessionId });
       this.sessions.delete(projectPath);
+      this.activeExports.delete(projectPath);
     }
     for (const sessionId of pendingSessionIds) {
       await invokeNative<void>("close_project", { sessionId });
@@ -798,13 +953,18 @@ export class TauriProjectBackend implements ProjectBackend {
 
     for (const sessionId of sessionIds) {
       try {
+        const cancelFailure = await this.cancelSessionExports(sessionId);
         await invokeNative<void>("close_project", { sessionId });
         for (const [projectPath, activeSessionId] of this.sessions) {
           if (activeSessionId === sessionId) {
+            this.activeExports.delete(projectPath);
             this.sessions.delete(projectPath);
           }
         }
         this.pendingCleanup.delete(sessionId);
+        if (cancelFailure !== null && firstFailure === null) {
+          firstFailure = cancelFailure;
+        }
       } catch (error) {
         if (firstFailure === null) {
           firstFailure = error instanceof Error ? error : new Error(String(error));
@@ -822,6 +982,38 @@ export class TauriProjectBackend implements ProjectBackend {
       await invokeNative<void>("close_project", { sessionId });
       this.pendingCleanup.delete(sessionId);
     }
+  }
+  private forgetActiveExport(projectPath: string, exportId: string): void {
+
+    const exportIds = this.activeExports.get(projectPath);
+    if (exportIds === undefined || !exportIds.has(exportId)) return;
+    const remaining = new Set(exportIds);
+    remaining.delete(exportId);
+    if (remaining.size === 0) {
+      this.activeExports.delete(projectPath);
+    } else {
+      this.activeExports.set(projectPath, remaining);
+    }
+  }
+
+  private async cancelSessionExports(sessionId: string): Promise<Error | null> {
+    const projectPaths = [...this.sessions]
+      .filter(([, activeSessionId]) => activeSessionId === sessionId)
+      .map(([projectPath]) => projectPath);
+    let firstFailure: Error | null = null;
+    for (const projectPath of projectPaths) {
+      for (const exportId of this.activeExports.get(projectPath) ?? []) {
+        try {
+          await invokeNative<void>("cancel_project_export", { sessionId, exportId });
+          this.forgetActiveExport(projectPath, exportId);
+        } catch (error) {
+          if (firstFailure === null) {
+            firstFailure = error instanceof Error ? error : new Error(String(error));
+          }
+        }
+      }
+    }
+    return firstFailure;
   }
 
   private enqueueImportStart<T>(

@@ -1,5 +1,6 @@
 import { Button, StatusNotice } from "@aethertwin/design-system";
 import { EditorShell } from "@aethertwin/editor-shell";
+import type { ProjectExportBackend } from "@aethertwin/exporter";
 import type {
   AssetImportProgress,
   ProjectBackend,
@@ -102,6 +103,7 @@ readonly assetPicker?: PlanAssetPicker | null;
 export interface PlanEditorProps {
   readonly store: ProjectStore;
   readonly backendMode?: ProjectBackend["mode"];
+  readonly exportBackend?: ProjectExportBackend | null;
   readonly onBack?: () => void;
   readonly onBeforeClose?: () => void;
   readonly dependencies?: PlanEditorDependencies;

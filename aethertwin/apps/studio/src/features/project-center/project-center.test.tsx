@@ -1161,8 +1161,8 @@ describe("Studio entry boundaries", () => {
 
   it("selects a sandbox backend asynchronously for the development web entry", async () => {
     const backend = await selectBackend("sandbox");
-    expect(backend).toBeInstanceOf(SandboxProjectBackend);
-    expect(backend.mode).toBe("sandbox");
+    expect(backend.projectBackend).toBeInstanceOf(SandboxProjectBackend);
+    expect(backend.projectBackend.mode).toBe("sandbox");
   });
 
   it("renders a fail-closed bootstrap error instead of project actions when production sandbox is forced", async () => {
