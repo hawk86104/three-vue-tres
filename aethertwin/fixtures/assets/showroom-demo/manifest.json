@@ -1,0 +1,26 @@
+[
+  {
+    "file": "plan-reference.svg",
+    "sha256": "685f2ce74e2b3b6090ee4daa562e9c33fa77f7993ca7e5c7139f20a0d42ed370",
+    "mediaType": "image/svg+xml",
+    "purpose": "calibrated plan reference"
+  },
+  {
+    "file": "floor.png",
+    "sha256": "5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5",
+    "mediaType": "image/png",
+    "purpose": "space-floor texture and shared content image"
+  },
+  {
+    "file": "wall.jpg",
+    "sha256": "63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a",
+    "mediaType": "image/jpeg",
+    "purpose": "wall texture and shared content image"
+  },
+  {
+    "file": "fixture.svg",
+    "sha256": "db9ea65a489fc2044165a71d61ba86b442b2d1ae5cbabe1c6cf8d6a6a8862892",
+    "mediaType": "image/svg+xml",
+    "purpose": "fixture texture and shared content image"
+  }
+]

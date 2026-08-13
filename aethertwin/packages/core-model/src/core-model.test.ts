@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import snapshotV1Fixture from "../../../fixtures/contracts/snapshot.v1.json";
 import snapshotV2Fixture from "../../../fixtures/contracts/snapshot.v2.json";
 import snapshotV3Fixture from "../../../fixtures/contracts/snapshot.v3.json";
+import showroomDemoFixture from "../../../fixtures/contracts/showroom-demo.v3.json";
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_SCENE_ENVIRONMENT,
@@ -944,5 +945,16 @@ describe("schema v3 validation and migration", () => {
     input.project.materialAssignments = [{ id: contractId(33), name: "Case material", tags: [], materialId: contractId(32), targetKind: "fixture", targetId: contractId(4) }];
     mutate(input);
     expectModelIssue(() => parseSnapshotV3(input), "INVALID_REFERENCE", path);
+  });
+});
+
+describe("Showroom Demo schema-v3 contract", () => {
+  it("parses the deterministic canonical fixture without normalization drift", () => {
+    const parsed = parseSnapshotV3(showroomDemoFixture);
+
+    expect(parsed).toEqual(showroomDemoFixture);
+    expect(parsed.sequence).toBe(11);
+    expect(parsed.checkpointSequence).toBe(11);
+    expect(parsed.project.profile).toBe("showroom");
   });
 });

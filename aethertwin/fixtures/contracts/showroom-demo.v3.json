@@ -1,0 +1,2292 @@
+{
+  "schemaVersion": 3,
+  "sequence": 11,
+  "checkpointSequence": 11,
+  "project": {
+    "id": "e2500000-0000-4000-8000-000000000001",
+    "name": "AetherTwin Showroom Demo",
+    "tags": [
+      "demo",
+      "offline",
+      "deterministic"
+    ],
+    "profile": "showroom",
+    "floors": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000002",
+        "name": "Showroom Floor",
+        "tags": [],
+        "layers": [
+          {
+            "id": "e2500000-0000-4000-8000-000000000003",
+            "name": "Showroom Layer",
+            "tags": [],
+            "visible": true,
+            "locked": false
+          }
+        ]
+      }
+    ],
+    "entities": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000101",
+        "name": "Northwest Gallery",
+        "tags": [
+          "room"
+        ],
+        "type": "space-unit",
+        "kind": "exhibition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "footprint": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 6000
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000102",
+        "name": "Northeast Gallery",
+        "tags": [
+          "room"
+        ],
+        "type": "space-unit",
+        "kind": "exhibition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "footprint": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 6000
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000103",
+        "name": "Southwest Gallery",
+        "tags": [
+          "room"
+        ],
+        "type": "space-unit",
+        "kind": "exhibition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "footprint": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 6000
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000104",
+        "name": "Southeast Gallery",
+        "tags": [
+          "room"
+        ],
+        "type": "space-unit",
+        "kind": "exhibition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "footprint": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 6000
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000110",
+        "name": "Featured Collection Zone",
+        "tags": [
+          "zone"
+        ],
+        "type": "zone",
+        "purpose": "featured-products",
+        "color": "#315d66",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "polygon": [
+          {
+            "x": 1200,
+            "y": 1200
+          },
+          {
+            "x": 7800,
+            "y": 1200
+          },
+          {
+            "x": 7800,
+            "y": 4800
+          },
+          {
+            "x": 1200,
+            "y": 4800
+          }
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000201",
+        "name": "Northwest north wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000202",
+        "name": "Northeast north wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000203",
+        "name": "Southwest north wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000204",
+        "name": "Southeast north wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 9000,
+            "y": 0
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000205",
+        "name": "Northwest west wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000206",
+        "name": "Northeast west wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000207",
+        "name": "Southwest west wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000208",
+        "name": "Southeast west wall",
+        "tags": [
+          "structure"
+        ],
+        "type": "wall",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 10000,
+            "y": 7000
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 3000
+        },
+        "centerLine": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 0,
+            "y": 6000
+          }
+        ],
+        "thickness": 160
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000401",
+        "name": "display-case 1",
+        "tags": [
+          "fixture",
+          "display-case"
+        ],
+        "type": "fixture",
+        "kind": "display-case",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 600
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1200
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000402",
+        "name": "display-case 2",
+        "tags": [
+          "fixture",
+          "display-case"
+        ],
+        "type": "fixture",
+        "kind": "display-case",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 11500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 600
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1200
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000403",
+        "name": "display-case 3",
+        "tags": [
+          "fixture",
+          "display-case"
+        ],
+        "type": "fixture",
+        "kind": "display-case",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1500,
+            "y": 8500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 600
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1200
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000404",
+        "name": "display-table 1",
+        "tags": [
+          "fixture",
+          "display-table"
+        ],
+        "type": "fixture",
+        "kind": "display-table",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1500,
+          "height": 750
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 900
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000405",
+        "name": "display-table 2",
+        "tags": [
+          "fixture",
+          "display-table"
+        ],
+        "type": "fixture",
+        "kind": "display-table",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 13500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1500,
+          "height": 750
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 900
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000406",
+        "name": "display-table 3",
+        "tags": [
+          "fixture",
+          "display-table"
+        ],
+        "type": "fixture",
+        "kind": "display-table",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3500,
+            "y": 8500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1500,
+          "height": 750
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 900
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000407",
+        "name": "shelf 1",
+        "tags": [
+          "fixture",
+          "shelf"
+        ],
+        "type": "fixture",
+        "kind": "shelf",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1000,
+          "height": 400
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000408",
+        "name": "shelf 2",
+        "tags": [
+          "fixture",
+          "shelf"
+        ],
+        "type": "fixture",
+        "kind": "shelf",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 15500,
+            "y": 1500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1000,
+          "height": 400
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000409",
+        "name": "shelf 3",
+        "tags": [
+          "fixture",
+          "shelf"
+        ],
+        "type": "fixture",
+        "kind": "shelf",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5500,
+            "y": 8500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1000,
+          "height": 400
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000410",
+        "name": "checkout 1",
+        "tags": [
+          "fixture",
+          "checkout"
+        ],
+        "type": "fixture",
+        "kind": "checkout",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1600,
+          "height": 700
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000411",
+        "name": "checkout 2",
+        "tags": [
+          "fixture",
+          "checkout"
+        ],
+        "type": "fixture",
+        "kind": "checkout",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 11500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1600,
+          "height": 700
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000412",
+        "name": "checkout 3",
+        "tags": [
+          "fixture",
+          "checkout"
+        ],
+        "type": "fixture",
+        "kind": "checkout",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1500,
+            "y": 10500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1600,
+          "height": 700
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000413",
+        "name": "screen 1",
+        "tags": [
+          "fixture",
+          "screen"
+        ],
+        "type": "fixture",
+        "kind": "screen",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000414",
+        "name": "screen 2",
+        "tags": [
+          "fixture",
+          "screen"
+        ],
+        "type": "fixture",
+        "kind": "screen",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 13500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000415",
+        "name": "screen 3",
+        "tags": [
+          "fixture",
+          "screen"
+        ],
+        "type": "fixture",
+        "kind": "screen",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3500,
+            "y": 10500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000416",
+        "name": "partition 1",
+        "tags": [
+          "fixture",
+          "partition"
+        ],
+        "type": "fixture",
+        "kind": "partition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2400
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000417",
+        "name": "partition 2",
+        "tags": [
+          "fixture",
+          "partition"
+        ],
+        "type": "fixture",
+        "kind": "partition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 15500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2400
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000418",
+        "name": "partition 3",
+        "tags": [
+          "fixture",
+          "partition"
+        ],
+        "type": "fixture",
+        "kind": "partition",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5500,
+            "y": 10500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1200,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 2400
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000419",
+        "name": "signage 1",
+        "tags": [
+          "fixture",
+          "signage"
+        ],
+        "type": "fixture",
+        "kind": "signage",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 7500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 600,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000420",
+        "name": "signage 2",
+        "tags": [
+          "fixture",
+          "signage"
+        ],
+        "type": "fixture",
+        "kind": "signage",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 17500,
+            "y": 3500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 600,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000421",
+        "name": "signage 3",
+        "tags": [
+          "fixture",
+          "signage"
+        ],
+        "type": "fixture",
+        "kind": "signage",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 7500,
+            "y": 10500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 600,
+          "height": 100
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1800
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000422",
+        "name": "Legacy generic fixture",
+        "tags": [
+          "fixture",
+          "compatibility"
+        ],
+        "type": "fixture",
+        "kind": "generic",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 17500,
+            "y": 10500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "size": {
+          "width": 1000,
+          "height": 600
+        },
+        "spatial3D": {
+          "elevation": 0,
+          "height": 1000
+        }
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000701",
+        "name": "Product hotspot 1",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000702",
+        "name": "Product hotspot 2",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 11800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000703",
+        "name": "Product hotspot 3",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1800,
+            "y": 8800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000704",
+        "name": "Product hotspot 4",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000705",
+        "name": "Product hotspot 5",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 13800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000706",
+        "name": "Product hotspot 6",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 3800,
+            "y": 8800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000707",
+        "name": "Product hotspot 7",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000708",
+        "name": "Product hotspot 8",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 15800,
+            "y": 1800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000709",
+        "name": "Product hotspot 9",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 5800,
+            "y": 8800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000710",
+        "name": "Product hotspot 10",
+        "tags": [
+          "hotspot"
+        ],
+        "type": "poi",
+        "kind": "product-hotspot",
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "locked": false,
+        "transform": {
+          "translation": {
+            "x": 1800,
+            "y": 3800
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "radius": 180
+      }
+    ],
+    "vendors": [],
+    "productContents": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000711",
+        "name": "Product content 1",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000701",
+        "description": "Deterministic offline product description 1.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000721"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000712",
+        "name": "Product content 2",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000702",
+        "description": "Deterministic offline product description 2.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000722"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000713",
+        "name": "Product content 3",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000703",
+        "description": "Deterministic offline product description 3.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000723"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000714",
+        "name": "Product content 4",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000704",
+        "description": "Deterministic offline product description 4.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000724"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000715",
+        "name": "Product content 5",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000705",
+        "description": "Deterministic offline product description 5.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000725"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000716",
+        "name": "Product content 6",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000706",
+        "description": "Deterministic offline product description 6.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000726"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000717",
+        "name": "Product content 7",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000707",
+        "description": "Deterministic offline product description 7.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000727"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000718",
+        "name": "Product content 8",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000708",
+        "description": "Deterministic offline product description 8.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000728"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000719",
+        "name": "Product content 9",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000709",
+        "description": "Deterministic offline product description 9.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000729"
+        ]
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000720",
+        "name": "Product content 10",
+        "tags": [
+          "offline"
+        ],
+        "targetEntityId": "e2500000-0000-4000-8000-000000000710",
+        "description": "Deterministic offline product description 10.",
+        "mediaAssetIds": [
+          "e2500000-0000-4000-8000-000000000730"
+        ]
+      }
+    ],
+    "mediaAssets": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000721",
+        "name": "Product image 1",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000502",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000722",
+        "name": "Product image 2",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000503",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000723",
+        "name": "Product image 3",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000504",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000724",
+        "name": "Product image 4",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000502",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000725",
+        "name": "Product image 5",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000503",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000726",
+        "name": "Product image 6",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000504",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000727",
+        "name": "Product image 7",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000502",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000728",
+        "name": "Product image 8",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000503",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000729",
+        "name": "Product image 9",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000504",
+        "kind": "image"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000730",
+        "name": "Product image 10",
+        "tags": [
+          "offline",
+          "shared"
+        ],
+        "assetId": "e2500000-0000-4000-8000-000000000502",
+        "kind": "image"
+      }
+    ],
+    "routeNetworks": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000990",
+        "name": "Showroom visitor network",
+        "tags": [
+          "guided"
+        ],
+        "nodes": [
+          {
+            "id": "e2500000-0000-4000-8000-000000000901",
+            "name": "Entrance",
+            "tags": [
+              "guided"
+            ],
+            "position": {
+              "x": 1000,
+              "y": 1000
+            },
+            "floorId": "e2500000-0000-4000-8000-000000000002",
+            "kind": "entrance"
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000902",
+            "name": "Northwest stop",
+            "tags": [
+              "guided"
+            ],
+            "position": {
+              "x": 5000,
+              "y": 1000
+            },
+            "floorId": "e2500000-0000-4000-8000-000000000002",
+            "kind": "showroom-stop"
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000903",
+            "name": "Central junction",
+            "tags": [
+              "guided"
+            ],
+            "position": {
+              "x": 9000,
+              "y": 1000
+            },
+            "floorId": "e2500000-0000-4000-8000-000000000002",
+            "kind": "junction"
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000904",
+            "name": "Northeast stop",
+            "tags": [
+              "guided"
+            ],
+            "position": {
+              "x": 13000,
+              "y": 1000
+            },
+            "floorId": "e2500000-0000-4000-8000-000000000002",
+            "kind": "showroom-stop"
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000905",
+            "name": "Final stop",
+            "tags": [
+              "guided"
+            ],
+            "position": {
+              "x": 18000,
+              "y": 1000
+            },
+            "floorId": "e2500000-0000-4000-8000-000000000002",
+            "kind": "showroom-stop"
+          }
+        ],
+        "edges": [
+          {
+            "id": "e2500000-0000-4000-8000-000000000911",
+            "name": "Route leg 1",
+            "tags": [
+              "guided"
+            ],
+            "from": "e2500000-0000-4000-8000-000000000901",
+            "to": "e2500000-0000-4000-8000-000000000902",
+            "distance": 4000,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000912",
+            "name": "Route leg 2",
+            "tags": [
+              "guided"
+            ],
+            "from": "e2500000-0000-4000-8000-000000000902",
+            "to": "e2500000-0000-4000-8000-000000000903",
+            "distance": 4000,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000913",
+            "name": "Route leg 3",
+            "tags": [
+              "guided"
+            ],
+            "from": "e2500000-0000-4000-8000-000000000903",
+            "to": "e2500000-0000-4000-8000-000000000904",
+            "distance": 4000,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          },
+          {
+            "id": "e2500000-0000-4000-8000-000000000914",
+            "name": "Route leg 4",
+            "tags": [
+              "guided"
+            ],
+            "from": "e2500000-0000-4000-8000-000000000904",
+            "to": "e2500000-0000-4000-8000-000000000905",
+            "distance": 5000,
+            "bidirectional": true,
+            "accessible": true,
+            "enabled": true,
+            "width": 1200,
+            "weight": 1
+          }
+        ]
+      }
+    ],
+    "themes": [],
+    "cameraShots": [],
+    "storySequences": [],
+    "planReferences": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000109",
+        "name": "Calibrated showroom plan",
+        "tags": [
+          "plan",
+          "calibrated"
+        ],
+        "floorId": "e2500000-0000-4000-8000-000000000002",
+        "layerId": "e2500000-0000-4000-8000-000000000003",
+        "assetId": "e2500000-0000-4000-8000-000000000501",
+        "intrinsicSize": {
+          "width": 1200,
+          "height": 800
+        },
+        "transform": {
+          "translation": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 10,
+            "y": 10
+          }
+        },
+        "opacity": 0.65,
+        "locked": true,
+        "calibration": {
+          "sourcePointA": {
+            "x": 100,
+            "y": 100
+          },
+          "sourcePointB": {
+            "x": 1100,
+            "y": 100
+          },
+          "measuredDistanceMm": 10000
+        }
+      }
+    ],
+    "openings": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000301",
+        "name": "Gallery door 1",
+        "tags": [
+          "door"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000201",
+        "kind": "door",
+        "distanceAlongWall": 1500,
+        "width": 1000,
+        "height": 2100,
+        "sillHeight": 0
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000302",
+        "name": "Gallery door 2",
+        "tags": [
+          "door"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000202",
+        "kind": "door",
+        "distanceAlongWall": 1500,
+        "width": 1000,
+        "height": 2100,
+        "sillHeight": 0
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000303",
+        "name": "Gallery door 3",
+        "tags": [
+          "door"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000203",
+        "kind": "door",
+        "distanceAlongWall": 1500,
+        "width": 1000,
+        "height": 2100,
+        "sillHeight": 0
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000304",
+        "name": "Gallery door 4",
+        "tags": [
+          "door"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000204",
+        "kind": "door",
+        "distanceAlongWall": 1500,
+        "width": 1000,
+        "height": 2100,
+        "sillHeight": 0
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000305",
+        "name": "Gallery window 1",
+        "tags": [
+          "window"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000205",
+        "kind": "window",
+        "distanceAlongWall": 2500,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000306",
+        "name": "Gallery window 2",
+        "tags": [
+          "window"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000206",
+        "kind": "window",
+        "distanceAlongWall": 2500,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000307",
+        "name": "Gallery window 3",
+        "tags": [
+          "window"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000207",
+        "kind": "window",
+        "distanceAlongWall": 2500,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000308",
+        "name": "Gallery window 4",
+        "tags": [
+          "window"
+        ],
+        "wallId": "e2500000-0000-4000-8000-000000000208",
+        "kind": "window",
+        "distanceAlongWall": 2500,
+        "width": 1200,
+        "height": 1200,
+        "sillHeight": 900
+      }
+    ],
+    "guidedRoutes": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000991",
+        "name": "Showroom guided tour",
+        "tags": [
+          "guided"
+        ],
+        "routeNetworkId": "e2500000-0000-4000-8000-000000000990",
+        "stopNodeIds": [
+          "e2500000-0000-4000-8000-000000000901",
+          "e2500000-0000-4000-8000-000000000902",
+          "e2500000-0000-4000-8000-000000000903",
+          "e2500000-0000-4000-8000-000000000904",
+          "e2500000-0000-4000-8000-000000000905"
+        ]
+      }
+    ],
+    "materials": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000601",
+        "name": "Floor textile",
+        "tags": [
+          "floor",
+          "texture"
+        ],
+        "baseColor": "#445760",
+        "roughness": 0.9,
+        "metalness": 0,
+        "opacity": 1,
+        "assetId": "e2500000-0000-4000-8000-000000000502"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000602",
+        "name": "Wall finish",
+        "tags": [
+          "wall",
+          "texture"
+        ],
+        "baseColor": "#c8d2d8",
+        "roughness": 0.82,
+        "metalness": 0,
+        "opacity": 1,
+        "assetId": "e2500000-0000-4000-8000-000000000503"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000603",
+        "name": "Fixture finish",
+        "tags": [
+          "fixture",
+          "texture"
+        ],
+        "baseColor": "#78909c",
+        "roughness": 0.6,
+        "metalness": 0.08,
+        "opacity": 1,
+        "assetId": "e2500000-0000-4000-8000-000000000504"
+      }
+    ],
+    "materialAssignments": [
+      {
+        "id": "e2500000-0000-4000-8000-000000000604",
+        "name": "Northwest floor material",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000601",
+        "targetKind": "space-floor",
+        "targetId": "e2500000-0000-4000-8000-000000000101"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000605",
+        "name": "Northwest north wall material",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000602",
+        "targetKind": "wall",
+        "targetId": "e2500000-0000-4000-8000-000000000201"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000606",
+        "name": "Fixture material 1",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000401"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000607",
+        "name": "Fixture material 2",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000402"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000608",
+        "name": "Fixture material 3",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000403"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000609",
+        "name": "Fixture material 4",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000404"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000610",
+        "name": "Fixture material 5",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000405"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000611",
+        "name": "Fixture material 6",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000406"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000612",
+        "name": "Fixture material 7",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000407"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000613",
+        "name": "Fixture material 8",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000408"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000614",
+        "name": "Fixture material 9",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000409"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000615",
+        "name": "Fixture material 10",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000410"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000616",
+        "name": "Fixture material 11",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000411"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000617",
+        "name": "Fixture material 12",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000412"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000618",
+        "name": "Fixture material 13",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000413"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000619",
+        "name": "Fixture material 14",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000414"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000620",
+        "name": "Fixture material 15",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000415"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000621",
+        "name": "Fixture material 16",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000416"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000622",
+        "name": "Fixture material 17",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000417"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000623",
+        "name": "Fixture material 18",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000418"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000624",
+        "name": "Fixture material 19",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000419"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000625",
+        "name": "Fixture material 20",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000420"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000626",
+        "name": "Fixture material 21",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000421"
+      },
+      {
+        "id": "e2500000-0000-4000-8000-000000000627",
+        "name": "Fixture material 22",
+        "tags": [],
+        "materialId": "e2500000-0000-4000-8000-000000000603",
+        "targetKind": "fixture",
+        "targetId": "e2500000-0000-4000-8000-000000000422"
+      }
+    ],
+    "sceneEnvironment": {
+      "backgroundColor": "#18242d",
+      "ambient": {
+        "color": "#c9dde6",
+        "intensity": 0.8
+      },
+      "key": {
+        "color": "#ffe4c7",
+        "intensity": 1.6,
+        "direction": [
+          5,
+          9,
+          4
+        ]
+      },
+      "shadowsEnabled": true,
+      "shadowSoftness": 0.7
+    }
+  },
+  "assets": [
+    {
+      "id": "e2500000-0000-4000-8000-000000000501",
+      "sha256": "685f2ce74e2b3b6090ee4daa562e9c33fa77f7993ca7e5c7139f20a0d42ed370",
+      "relativePath": "assets/sha256/68/685f2ce74e2b3b6090ee4daa562e9c33fa77f7993ca7e5c7139f20a0d42ed370.svg",
+      "mediaType": "image/svg+xml",
+      "size": 246
+    },
+    {
+      "id": "e2500000-0000-4000-8000-000000000502",
+      "sha256": "5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5",
+      "relativePath": "assets/sha256/5a/5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5.png",
+      "mediaType": "image/png",
+      "size": 68
+    },
+    {
+      "id": "e2500000-0000-4000-8000-000000000503",
+      "sha256": "63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a",
+      "relativePath": "assets/sha256/63/63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a.jpg",
+      "mediaType": "image/jpeg",
+      "size": 517
+    },
+    {
+      "id": "e2500000-0000-4000-8000-000000000504",
+      "sha256": "db9ea65a489fc2044165a71d61ba86b442b2d1ae5cbabe1c6cf8d6a6a8862892",
+      "relativePath": "assets/sha256/db/db9ea65a489fc2044165a71d61ba86b442b2d1ae5cbabe1c6cf8d6a6a8862892.svg",
+      "mediaType": "image/svg+xml",
+      "size": 196
+    }
+  ]
+}
