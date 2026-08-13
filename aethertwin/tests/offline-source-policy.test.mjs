@@ -2,6 +2,30 @@ import { globSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("M2.5 closure evidence stays fixture-backed, offline, and free of generated outputs", () => {
+  const report = readFileSync("docs/M2_REPORT.md", "utf8");
+  const committedProjectPackages = globSync("**/*.twinproj", {
+    exclude: ["**/node_modules/**", "**/target/**"],
+  });
+  const committedExportPngs = globSync("**/exports/**/*.png", {
+    exclude: ["**/node_modules/**", "**/target/**"],
+  });
+
+  assert.match(report, /fixtures\/contracts\/showroom-demo\.v3\.json/u);
+  assert.match(report, /crates\/asset-io\/examples\/generate_showroom_demo\.rs/u);
+  assert.match(report, /offline sources/iu);
+  assert.equal(
+    readFileSync("fixtures/contracts/showroom-demo.v3.json", "utf8").length > 0,
+    true,
+  );
+  assert.equal(
+    readFileSync("crates/asset-io/examples/generate_showroom_demo.rs", "utf8").length > 0,
+    true,
+  );
+  assert.deepEqual(committedProjectPackages, []);
+  assert.deepEqual(committedExportPngs, []);
+});
+
 const runtimePatterns = [
   "apps/**/*.{ts,tsx,css,html}",
   "packages/**/*.{ts,tsx,css,html}",

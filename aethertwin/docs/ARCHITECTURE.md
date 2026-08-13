@@ -9,6 +9,7 @@ apps/studio (React)
   -> render-plan-2d + render-scene-3d + project-store
   -> PlanCanvas -> render-plan-2d -> PixiJS
   -> SceneCanvas -> render-scene-3d -> Three.js / R3F
+  -> render-scene-3d -> exporter -> desktop-host -> project-io -> media-export
   -> project-store -> command-bus + core-model
   -> desktop: TauriProjectBackend -> desktop-host -> project-io + asset-io
   -> development web: SandboxProjectBackend + ProjectStore-owned Blob leases
@@ -31,6 +32,9 @@ apps/player -> design-system (deferred noninteractive boundary)
 | selection, tools, drafts, previews, focused route | Studio Zustand session | transient only |
 | Blob URL leases | ProjectStore | transient source lease |
 | Three/R3F geometry, materials, textures, render targets | render-scene-3d resource registry | transient renderer resource |
+| export request, progress, result, cancellation | Studio/exporter coordinator | transient only |
+| PNG codec and validation | media-export | transient stream/file evidence |
+| export staging, name, and publication | project-io | generated `exports/` output |
 
 Zustand stores transient UI state only. React, PixiJS, Three.js, R3F, and Zustand never own or directly mutate business data. Three/R3F records are projections keyed back to durable source IDs. The 3D layer consumes ProjectStore asset-source and issue ports; it never persists URLs and never revokes a ProjectStore-owned Blob URL.
 
@@ -69,9 +73,16 @@ ProjectStore remains the sole Blob URL owner. Renderer destroy, scene replacemen
 
 A WebGL creation failure or renderer failure preserves the complete 2D workflow. Context loss gets one automatic reconstruction attempt. A further failure moves the 3D renderer to `disabled`; an explicit retry creates a fresh recovery round. Texture decode failure preserves base-color rendering. No browser, GPU, or visual correctness is inferred from the injected/fake-renderer tests.
 
+## M2.5 export ownership chain
+
+`render-scene-3d` captures one immutable current scene/camera/provenance and performs dedicated offscreen readback. The pure `exporter` package validates preset, scope, textures, GPU limits, frame dimensions, and top-left bounded row streaming. It never owns React, DOM, Tauri, paths, files, or PNG encoding.
+
+`desktop-host` owns the strict JSON/raw-byte IPC boundary and the per-session active-export lifecycle. `project-io` owns the verified project `exports/` directory, private staging, no-overwrite naming, crash cleanup, and project-relative result. `media-export` alone owns opaque RGBA8 sRGB PNG encoding and validation. This dependency direction is `render-scene-3d -> exporter -> desktop-host -> project-io -> media-export`; no layer writes business state.
+
+
 ## Native command and permission boundary
 
-`desktop-host` exposes exactly eight typed invokes:
+`desktop-host` exposes exactly twelve typed invokes:
 
 1. `create_project`
 2. `open_project`
@@ -81,8 +92,12 @@ A WebGL creation failure or renderer failure preserves the complete 2D workflow.
 6. `recover_project`
 7. `import_project_asset`
 8. `cancel_project_asset_import`
+9. `begin_project_export`
+10. `write_project_export_chunk`
+11. `finish_project_export`
+12. `cancel_project_export`
 
-Asset reads use the session-bound custom protocol, not another invoke. Failures use `{ code, message, details, logRef }`. The `main` window retains exactly `core:window:default` and `dialog:allow-open`; no broad filesystem, shell, HTTP, SQL, or new M2.4 capability is enabled.
+Asset reads use the session-bound custom protocol, not another invoke. Export bytes use one strict raw chunk command. Failures use `{ code, message, details, logRef }`. The `main` window retains exactly `core:window:default` and `dialog:allow-open`; no broad filesystem, shell, HTTP, SQL, Sandbox export, or new M2.5 capability is enabled.
 
 ## Persistence, migration, and current boundary
 
@@ -92,4 +107,4 @@ M2.4 Tasks 0-17 are implemented and independently reviewed at the current baseli
 
 Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
 
-M2.5 is next and may use the camera/offscreen export port. M2.4 does not implement Export/publish, Player, Market 3D, GLTF, arbitrary lighting/shaders, 3D geometry editing, or remote runtime assets. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.
+M2.5 Tasks 1-19 implement and document Showroom PNG export and deterministic Demo evidence without changing schema v3 or storage migration 1. Task 19 is independently reviewed; Task 20 is the only remaining final non-build gate. Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lighting/shaders, 3D geometry editing, and remote runtime assets remain absent. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.

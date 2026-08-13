@@ -2,6 +2,25 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("M2.5 exports are generated evidence outside schema v3 project state", () => {
+  const report = readFileSync("docs/M2_REPORT.md", "utf8");
+  const projectFormat = readFileSync("docs/PROJECT_FORMAT.md", "utf8");
+
+  assert.match(projectFormat, /current schema version is 3/iu);
+  assert.match(projectFormat, /exports\/[\s\S]*generated output/iu);
+  assert.match(
+    projectFormat,
+    /exports\/[\s\S]*(?:outside|not part of)[\s\S]*(?:schema|journal|checkpoint|AssetRecord)/iu,
+  );
+  assert.match(projectFormat, /\.aethertwin-export-[\s\S]*no overwrite[\s\S]*crash cleanup/iu);
+  assert.match(report, /full-hd[\s\S]*1920\s*x\s*1080/iu);
+  assert.match(report, /ultra-hd[\s\S]*3840\s*x\s*2160/iu);
+  assert.match(
+    report,
+    /project-relative[\s\S]*exports\/[\s\S]*dimensions[\s\S]*byteSize[\s\S]*sha256/iu,
+  );
+});
+
 const projectIo = readFileSync("crates/project-io/src/project.rs", "utf8");
 const schema = readFileSync("crates/project-io/src/schema.rs", "utf8");
 const rustModel = readFileSync("crates/project-io/src/model.rs", "utf8");

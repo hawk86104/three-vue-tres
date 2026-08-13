@@ -1,19 +1,20 @@
 # AetherTwin engineering handoff
 
-Updated: 2026-08-09
+Updated: 2026-08-13
 Product workspace: `aethertwin/`
 Active branch: `codex/aethertwin-m2`
-Current implementation baseline: `56583fe4`
+Current implementation baseline: `813bcebd`
 
 ## 1. Current outcome
 
-M0 through M2.4 are accepted and closed. Task 18's full non-build gate passed, and final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes.
+M0 through M2.4 are accepted and closed. M2.5 Tasks 1-19 are implemented and independently reviewed; Task 20 is the only remaining final non-build closure gate.
 
-Showroom defaults to 2D and supports synchronized 3D plus fixed 50/50 split. Market remains 2D-only. The next product milestone is M2.5 export/demo/evidence, which requires a separately approved implementation plan.
+Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
-Normative M2.4 plan:
+Normative plans:
 
-- `docs/superpowers/plans/2026-08-03-aethertwin-m2-4-synchronized-3d.md`
+- M2.4: `docs/superpowers/plans/2026-08-03-aethertwin-m2-4-synchronized-3d.md`
+- M2.5: `docs/superpowers/plans/2026-08-09-aethertwin-m2-5-export-demo-evidence.md`
 
 The ignored execution ledger `.superpowers/sdd/progress.md` is the authoritative task-by-task implementation/review record.
 
@@ -26,7 +27,7 @@ Do not rebase, merge, reset, or change the baseline during this handoff. Final i
 ## 3. Locked contracts
 
 - Project schema remains v3; M2.4 adds no SQLite storage migration.
-- Native invoke count remains exactly eight.
+- Native invoke count is exactly twelve; desktop capabilities remain exactly two.
 - Desktop capability list is unchanged.
 - Showroom view modes are `2d`, `3d`, and fixed `split`, default `2d`.
 - Market remains 2D-only.
@@ -96,8 +97,18 @@ The ignored Rust case is the approved Windows privileged reparse/symlink test; t
 The earlier focused workspace-structure retry exposed documentation compatibility regressions and ultimately passed 12/12; the full Node policy gate then passed 32/32. Schema v3, exactly eight commands, and both protected hashes remain unchanged.
 
 Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. Task 18 and M2.4 are accepted and closed.
+## 7. Implemented M2.5 surface and evidence
 
-## 7. Protected files
+The Showroom-only Export panel offers `full-hd` 1920 x 1080 and capability-gated `ultra-hd` 3840 x 2160. It captures only a ready/current immutable scene/camera/provenance, waits for sorted textures, streams top-left rows in bounded chunks, encodes opaque sRGB PNG, and publishes without overwrite under the verified project `exports/` directory. The result is project-relative `exports/<name>.png` plus dimensions, `byteSize`, and `sha256`.
+
+ProjectStore remains the business-state owner. Transient Studio/R3F owns renderer and progress state; `media-export` owns PNG codec/validation; `project-io` owns paths/staging/publication. Schema remains v3 and storage migration 1 remains the only migration. Sandbox export, Player, Market 3D/export, publish, MP4, and `.twinpack` are absent.
+
+Task 18's final gate passed 13/13 focused Vitest, three TypeScript checks, media-export 12/12, project-io 2/2, desktop-host 1/1, four-crate all-targets Cargo check, rustfmt, and diff check. Independent re-review returned Spec Compliance Pass; Code Quality Approved; Critical/Important/Minor 0; Ready Yes. Details and explicit runtime exclusions are in `docs/M2_REPORT.md`.
+
+Task 19's policy gate passed 45/45 and `git diff --check` exited 0. Its independent documentation re-review returned Pass / Approved / Ready Yes with no Critical, Important, or Minor finding. Task 20 is the final whole-M2 non-build closure gate.
+
+
+## 8. Protected files
 
 Do not modify, format, restore, stage, or commit these user-protected manifests:
 
@@ -106,11 +117,11 @@ Do not modify, format, restore, stage, or commit these user-protected manifests:
 
 Task 18 implementation did not stage or commit files. The controller or human integrator owns any eventual closure commit and branch integration.
 
-## 8. Explicit exclusions
+## 9. Explicit exclusions
 
-M2.4 does not include:
+M2.5 does not include:
 
-- Export/publish UI, PNG/MP4 output, `.twinpack`, or completed demo/evidence generation;
+- publish UI, MP4 output, `.twinpack`, or export formats beyond the two fixed PNG presets;
 - Player, kiosk mode, visitor themes, or Market 3D;
 - GLTF import/export, arbitrary lights/shaders, or 3D geometry editing;
 - remote runtime media/services, telemetry, CDN fallback, or business APIs;
@@ -118,6 +129,6 @@ M2.4 does not include:
 
 Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remain excluded by project rule and are not part of Task 18's authorized non-build gate.
 
-## 9. Next operation
+## 10. Next operation
 
-M2.4 is closed. The next operation is a separate higher-reasoning M2.5 specification and atomic implementation plan. M2.5 implementation has not started; do not add M2.5 UI from this handoff.
+Run M2.5 Task 20 exactly as approved: record invariants, obtain explicit command approval, run the complete non-build gate, classify any failure before repair, complete final independent review, convert documents to final closure state, and commit only the closure scope. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.

@@ -2,6 +2,21 @@ import { globSync, readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("M2.5 closure does not invent Player or Market 3D and export entry points", () => {
+  const playerBoundary = readFileSync("apps/player/src/player-boundary.tsx", "utf8");
+  const report = readFileSync("docs/M2_REPORT.md", "utf8");
+  const marketStart = planToolbar.indexOf("  market: [");
+  const showroomStart = planToolbar.indexOf("  showroom: [");
+  const marketGroups = planToolbar.slice(marketStart, showroomStart);
+
+  assert.equal(marketGroups.includes('"view-3d"'), false);
+  assert.equal(marketGroups.includes('"view-split"'), false);
+  assert.equal(marketGroups.includes('"export"'), false);
+  assert.doesNotMatch(playerBoundary, /(?:3D|Export)/u);
+  assert.match(report, /Player[\s\S]*not added/iu);
+  assert.match(report, /Market[\s\S]*(?:3D|export)[\s\S]*not added/iu);
+});
+
 const projectCenter = readFileSync(
   "apps/studio/src/features/project-center/project-center.tsx",
   "utf8",

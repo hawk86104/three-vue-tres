@@ -2,13 +2,13 @@
 
 AetherTwin supports exactly two immutable project profiles: `showroom` and `market`. Profile cannot change after creation; any future conversion requires an explicit migration workflow.
 
-M0 through M2.4 are accepted and closed. M2.4 retains schema v3, introduces no SQLite storage migration, and keeps exactly eight native invokes: `create_project`, `open_project`, `commit_project`, `checkpoint_project`, `close_project`, `recover_project`, `import_project_asset`, and `cancel_project_asset_import`.
+M0 through M2.4 are accepted and closed. M2.5 Tasks 1-19 are implemented and independently reviewed; Task 20 is the only remaining final closure gate. Schema remains v3, no SQLite storage migration is added, and the native surface is exactly twelve invokes: the prior eight plus `begin_project_export`, `write_project_export_chunk`, `finish_project_export`, and `cancel_project_export`.
 
 ## Implemented editor profiles and views
 
 Studio opens directly in the 2D-first editor, which shows one active floor at a time and retains six editable business entity kinds. Showroom defaults to `2d` and can switch to synchronized `3d` or a fixed 50/50 `split`. The two panes share the active floor, durable selection IDs, and active guided route. Market remains 2D-only and exposes no 3D or split action.
 
-The M1 plan tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture, POI, and Dimension. Showroom additionally exposes Door, Window, Product hotspot, Route node, and Route edge, plus real 2D/3D/split preview and framing actions. Export, Player, and Market 3D actions are absent.
+The M1 plan tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture, POI, and Dimension. Showroom additionally exposes Door, Window, Product hotspot, Route node, and Route edge, plus real 2D/3D/split preview, framing, and Export. Player, Market 3D/split, and Market Export actions are absent.
 
 ## Implemented M2.4 synchronized 3D
 
@@ -32,6 +32,14 @@ M2.2 provides durable door/window openings, deterministic transient room recogni
 M2.3 provides product hotspots/content, ordered local image/video media, route-network authoring, and a curated guided route. Resolved route paths and drafts remain transient; durable changes flow through exact reversible ProjectStore commands.
 
 All stored plan distances are millimetres and rotations are radians. Absolute native paths, drive/UNC paths, `file://`, source filenames, and remote runtime URLs are not durable project data.
+## Implemented M2.5 Showroom PNG export
+
+- Export is available only for the current ready Showroom 3D scope. The panel offers `full-hd` 1920 x 1080 and capability-gated `ultra-hd` 3840 x 2160.
+- Progress phases are truthful and percentage-free. While running, only the export frame is interaction-locked; cancellation, project replacement, close, and renderer replacement reject late results.
+- The result is project-relative `exports/<name>.png` plus dimensions, `byteSize`, and `sha256`. Existing files are never overwritten.
+- Capture, preflight, row ordering, PNG encoding, native IPC, project publication, and cleanup have separate owners. None mutates ProjectStore business state.
+- The canonical offline Showroom Demo is source data and local assets, not a committed `.twinproj` or exported PNG.
+
 
 ## Ownership rules
 
@@ -54,9 +62,9 @@ The independent Task 17 final re-review reported no Critical, Important, or Mino
 
 ## Current deliberate exclusions
 
-M2.5 is the next milestone. M2.4 deliberately excludes:
+M2.5 deliberately excludes:
 
-- Export/publish controls, PNG/MP4 output, `.twinpack`, demo/evidence generation, and any claim that the offscreen port is a completed export product;
+- publish controls, MP4 output, `.twinpack`, and any export format other than the two fixed PNG presets;
 - Player, visitor themes, kiosk mode, and expanded Market workflows;
 - Market 3D or split mode;
 - GLTF import/export, arbitrary lights, arbitrary shaders, and 3D geometry editing;

@@ -4,12 +4,12 @@
 
 - M0 foundation: complete.
 - M1 unified 2D authoring core: complete; evidence is in `M1_REPORT.md`.
-- M2 showroom workflow: in progress only because M2.5 remains.
+- M2 showroom workflow: functionally complete and documented through M2.5 Task 19; only Task 20 final non-build closure remains.
   - M2.1 safe assets and calibrated plan references: accepted.
   - M2.2 openings, room recognition, and parametric showroom fixtures: accepted.
   - M2.3 content and guided routes: accepted.
   - M2.4 synchronized 3D, durable materials/environment, and renderer lifecycle: complete and accepted. Tasks 0-18, the full non-build gate, and final independent review are closed with no findings.
-  - M2.5 export/demo/evidence: next milestone; not implemented.
+  - M2.5 export/demo/evidence: Tasks 1-19 implemented; Task 19 evidence is policy-verified 45/45 and independently reviewed with no findings; Task 20 is the only remaining gate.
 - M3 market workflow: deferred until after M2.
 - M4 Player and media: deferred.
 - M5 hardening and performance profiling: deferred; no performance claim is made.
@@ -20,11 +20,11 @@ Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace p
 
 M2.4 keeps schema v3, one SQLite storage migration, exactly eight native invokes, and the existing two desktop capabilities. Showroom defaults to 2D and supports 3D and fixed 50/50 split; Market remains 2D-only. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.
 
-## Next milestone: M2.5
+## Remaining M2 work: Tasks 19-20
 
-M2.5 must start from a separately approved implementation plan. Its available boundary is the immutable camera/offscreen `SceneExportPort` delivered by M2.4. The presence of that port is not an export product claim.
+The approved M2.5 plan is implemented through its functional and vertical-acceptance tasks. Showroom now has two fixed project-bound PNG presets, deterministic Demo sources, strict native publication, and cancellation/cleanup. Schema remains v3, the native surface is exactly twelve, and desktop capabilities remain exactly two.
 
-Until M2.5 is implemented, there is no Export/publish action, PNG/MP4 output, `.twinpack`, demo evidence generator, Player, Market 3D, GLTF workflow, arbitrary lights/shaders, or 3D geometry editing.
+Task 20 must run the complete approved non-build gate and final independent review before M2 is called closed. Publish, MP4, `.twinpack`, Player, Market 3D/export, GLTF, arbitrary lights/shaders, and 3D geometry editing remain deferred.
 
 ## Milestone definitions
 

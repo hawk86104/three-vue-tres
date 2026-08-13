@@ -16,19 +16,19 @@ ProjectStore is the sole Blob URL owner. Renderer resource tables own only decod
 
 M2.4 activates existing schema-v3 material/assignment/environment contracts. It does not add a schema version or SQLite storage migration. Deterministic v1 -> v2 -> v3 and v2 -> v3 migration remains the only project-schema upgrade path.
 
-The native invoke allowlist stays at exactly eight, and the desktop capability list is unchanged. Material textures reuse `import_project_asset`, `cancel_project_asset_import`, and the session-bound custom protocol. The new journal command `scene.environment.patch` is not a native invoke.
+The M2.5 native invoke allowlist is exactly twelve after adding begin/write/finish/cancel export. Desktop capabilities remain exactly two. Material textures reuse `import_project_asset`, `cancel_project_asset_import`, and the session-bound custom protocol. The journal command `scene.environment.patch` is not a native invoke.
 
 ## Immutable content-addressed assets
 
 Persisted asset paths are derived only from SHA-256 and canonical media extension. Native import uses unique staging, streaming validation/hash, flush/fsync, and no-replace publication. Existing destinations are reused only after regular-file identity, length, and full digest match. A collision never overwrites existing bytes.
 
-Byte publication and metadata commit remain deliberately separate. If metadata commit fails, immutable unreferenced bytes can remain and the same import/commit can safely retry. Undo removes records, not bytes. This avoids destructive rollback races; orphan pruning remains a later explicit operation.
+Byte publication and metadata commit remain deliberately separate. If metadata commit fails, immutable unreferenced bytes can remain and the same import/commit can safely retry. Undo removes records and does not delete bytes. This avoids destructive rollback races; orphan pruning remains a later explicit operation.
 
 ## Verified custom-protocol reads
 
 Asset bytes are resolved by `(sessionId, assetId)`, never by a renderer-supplied path. The resolver re-derives the canonical project-relative path, verifies regular-file identity, size, and digest, and returns an owner-bound handle. The custom protocol provides GET, HEAD, and one bounded Range; corrupt or replaced bytes are never served. Session close, commit reconciliation, record replacement, and recovery invalidate affected handles.
 
-This preserves exactly eight native invokes. The `main` window retains only `core:window:default` and `dialog:allow-open`; broad filesystem permission remains rejected.
+At the M2.1 boundary, this preserved exactly eight native invokes. M2.5 later adds the four export invokes, bringing the current surface to exactly twelve. The `main` window retains only `core:window:default` and `dialog:allow-open`; broad filesystem permission remains rejected.
 
 ## Atomic plan references and calibration
 
@@ -71,6 +71,16 @@ This recovery policy is transient. It does not change or delete durable project 
 M2.4 exposes immutable camera/scene capture and offscreen readback through `SceneExportPort`. The port waits for required textures, uses a dedicated render target, restores visible renderer state, and returns unflipped RGBA.
 
 The port is only a technical boundary for M2.5. M2.4 deliberately exposes no Export/publish control and creates no PNG, MP4, package, demo, or evidence artifact.
+## M2.5 bounded export without a second business model
+
+Showroom Export consumes the existing immutable `SceneExportPort`; it never copies scene/camera state into schema v3. ProjectStore remains the business-state owner, while Studio/Zustand and R3F own only transient export-panel, progress, input-lock, camera, and renderer state.
+
+Ownership is one-way: `render-scene-3d` captures/readbacks, pure `exporter` validates and streams rows, `desktop-host` owns strict IPC and active native lifecycle, `project-io` owns project binding/staging/no-overwrite publication, and `media-export` owns PNG encoding/validation. The Sandbox backend has no export capability.
+
+Only `full-hd` 1920 x 1080 and `ultra-hd` 3840 x 2160 are supported. The native result is project-relative `exports/<name>.png` plus dimensions, `byteSize`, and `sha256`. Export files are generated evidence outside schema, journal, checkpoint, and `AssetRecord` semantics.
+
+Cancellation and close are explicit lifecycle transitions. Late capture/texture/frame/chunk/finish results are rejected; stale private stages are cleaned on failure, cancellation, open, and recovery. No overwrite is permitted.
+
 
 ## Local-first assets and security
 
@@ -82,4 +92,4 @@ Native errors remain safe structured envelopes. Broad filesystem, shell, HTTP, a
 
 M2.4 Tasks 0-17 are implemented and independently reviewed. Task 17 passed the recorded focused TypeScript/Vitest/Rust evidence. Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
 
-M2.5 is next. Export, Player, Market 3D, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime assets, and real-browser/GPU/visual claims remain absent.
+M2.5 Tasks 1-19 are implemented and independently reviewed. Task 19 records the accepted policy/evidence baseline; Task 20 remains the only final non-build closure gate. Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime assets, and real-browser/GPU/visual claims remain absent.

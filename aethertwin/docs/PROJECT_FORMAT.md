@@ -66,6 +66,12 @@ Openings are wall-bound durable records. Wall plus attached-opening mutation is 
 A product content record targets a fixture or product hotspot and owns ordered media IDs. Each media record points to one local durable asset. A route network owns authored nodes/edges. A guided route persists only ordered stop node IDs; resolved paths, turn points, distance, drafts, and diagnostics are transient.
 
 Seven showroom catalogue descriptors and primitive parts are runtime metadata. A placement persists only ordinary fixture fields. Compatible generic fixtures may omit `spatial3D`; 3D projection uses a 1,000 mm fallback without materializing it into the snapshot.
+## Generated export output
+
+`exports/` is generated output outside schema v3, the command journal, checkpoints, and `AssetRecord` semantics. Export files are optional derived evidence; they are never required project content and are not replayed, migrated, undone, or restored into ProjectStore.
+
+An active export uses a private `.aethertwin-export-<uuid>` stage inside the verified project `exports/` directory. Publication selects the first absent sanitized name and uses a no overwrite rule. Failure, cancellation, close, normal open, and recovery perform bounded cleanup; crash cleanup removes stale matching stages before the session is returned. The returned path is always project-relative `exports/<name>.png` with dimensions, `byteSize`, and `sha256`.
+
 
 ## Atomic history and recovery
 
@@ -91,4 +97,4 @@ SQLite uses WAL, foreign keys, and a 5,000 ms busy timeout. Storage migration 1 
 | `snapshots` | checksummed immutable snapshot publications |
 | `asset_records` | asset identity and metadata, never media BLOBs |
 
-The native invoke allowlist remains exactly eight. Asset reads remain on the session-bound custom protocol rather than a new invoke. M2.4 adds no capability.
+The native invoke allowlist is exactly twelve after adding begin/write/finish/cancel export. Asset reads remain on the session-bound custom protocol. Export adds no desktop capability; the `main` window still has exactly `core:window:default` and `dialog:allow-open`.

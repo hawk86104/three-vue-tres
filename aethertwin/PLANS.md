@@ -63,11 +63,32 @@ The earlier focused workspace-structure policy retry repaired documentation comp
 
 Task 18 and M2.4 are accepted and closed. Task 17 evidence remains separately recorded: Studio 4/4, ProjectStore 1/1, render-scene-3d 2/2, project-io M2.4 1/1, schema-v3 recovery 8/8, scene-environment replay 6/6, desktop-host command contract 21/21, three TypeScript checks, rustfmt, and Cargo check.
 
-## Next phase: M2.5
+## M2.5 export, Demo, and evidence
 
-- [ ] Create and approve a higher-reasoning M2.5 specification and atomic export/demo/evidence implementation plan.
-- [ ] Begin M2.5 implementation only after that separate specification and atomic plan are approved; implementation has not started.
+- [x] Task 0 - approved plan baseline
+- [x] Task 1 - pure exporter contracts and exact presets
+- [x] Task 2 - bounded top-left RGBA row streaming
+- [x] Task 3 - immutable renderer capture provenance
+- [x] Task 4 - export preflight and frame validation
+- [x] Task 5 - cancellable single-active coordinator
+- [x] Task 6 - opaque sRGB PNG codec
+- [x] Task 7 - verified export names, staging, and cleanup
+- [x] Task 8 - project-bound streaming export operation
+- [x] Task 9 - strict JSON and raw Tauri boundaries
+- [x] Task 10 - exact twelve-command native success path
+- [x] Task 11 - native cancellation, close, cleanup, and terminal races
+- [x] Task 12 - desktop raw-byte adapter and explicit backend composition
+- [x] Task 13 - Showroom Export action and capability policy
+- [x] Task 14 - scope-safe current export port and real 16:9 host
+- [x] Task 15 - controlled Export panel and cancellable workflow
+- [x] Task 16 - deterministic Showroom Demo fixture and local assets
+- [x] Task 17 - real create/import/commit/checkpoint/recovery Demo materialization
+- [x] Task 18 - complete injected-renderer M2.5 vertical acceptance
+- [x] Task 19 - truthful documentation/policy evidence assembly (45/45 GREEN; independent review Pass / Approved / Ready Yes)
+- [ ] Task 20 - full non-build gate, final review, closure documents, and closure commit
 
-M2.5 may consume the existing immutable camera/offscreen `SceneExportPort`. The port is not itself an export workflow. No Export/publish/Player/Market-3D entry point may be exposed by planning alone.
+Task 19 is complete. Task 20 is the only remaining M2 item and must preserve schema v3, exactly twelve native commands, exactly two desktop capabilities, both protected manifest hashes, offline sources, Showroom-only export, Market 2D-only, and the unresolved `57 2` branch-integration guard.
+
+M2.5 adds no Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime asset, or Sandbox export surface.
 
 Build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual-correctness, and performance evidence are not authorized by this plan and are not claimed.

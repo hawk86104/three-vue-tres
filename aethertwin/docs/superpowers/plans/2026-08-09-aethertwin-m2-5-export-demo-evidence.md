@@ -169,7 +169,7 @@ git commit -m "docs: plan AetherTwin M2.5 export evidence"
 - Consumes: `SceneExportProvenance`, `SceneExportPort`, `SceneExportFrame`, `SceneAssetIssue` from `@aethertwin/render-scene-3d`.
 - Produces: all locked TypeScript interfaces above; `PROJECT_EXPORT_MAX_CHUNK_BYTES = 1048576`; `projectExportDimensions(preset)`; `parseProjectExportPreset(value)`; `ProjectExportError` with the six stable frontend codes.
 
-- [ ] **Step 1: Write RED policy and preset tests**
+- [x] **Step 1: Write RED policy and preset tests**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -208,7 +208,7 @@ describe("project export presets", () => {
 
 Add policy assertions that `packages/exporter/package.json` has only `@aethertwin/render-scene-3d: workspace:*`, Studio has `@aethertwin/exporter: workspace:*`, and exporter source contains no `@tauri-apps`, React import, URL, CDN, filesystem or DOM renderer dependency.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -219,7 +219,7 @@ pnpm.cmd vitest run packages/exporter/src/presets.test.ts
 
 Expected: FAIL because `packages/exporter/package.json` and exports do not exist.
 
-- [ ] **Step 3: Add the package, closed types, errors and presets**
+- [x] **Step 3: Add the package, closed types, errors and presets**
 
 ```json
 {
@@ -283,7 +283,7 @@ export class ProjectExportError extends Error {
 
 Put the exact locked contracts in `contracts.ts`, re-export them and all renderer types used by callers through `index.ts`, add the workspace dependency to Studio, then update `pnpm-lock.yaml` with the local workspace importer only.
 
-- [ ] **Step 4: Update and verify the lockfile after explicit approval**
+- [x] **Step 4: Update and verify the lockfile after explicit approval**
 
 Run:
 
@@ -294,7 +294,7 @@ pnpm.cmd install --frozen-lockfile
 
 Expected: both commands exit 0; no external exporter dependency is downloaded or introduced.
 
-- [ ] **Step 5: Run GREEN and package typecheck after explicit approval**
+- [x] **Step 5: Run GREEN and package typecheck after explicit approval**
 
 Run:
 
@@ -308,7 +308,7 @@ git diff --check
 
 Expected: all tests pass; both typechecks and diff check exit 0.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 Review must confirm no React/Tauri/filesystem ownership, exact presets, no range versions, no remote source, and protected manifests absent from staged files.
 
@@ -343,7 +343,7 @@ export async function streamTopLeftRgbaChunks(
 ): Promise<number>;
 ```
 
-- [ ] **Step 1: Write RED row-order, boundary and memory tests**
+- [x] **Step 1: Write RED row-order, boundary and memory tests**
 
 ```ts
 it("reverses rows while a row crosses chunk boundaries", async () => {
@@ -373,13 +373,13 @@ it("reverses rows while a row crosses chunk boundaries", async () => {
 
 Add named cases for wrong origin, non-safe dimensions, byte-length mismatch, zero/oversized chunk limit, empty write, sequential awaiting, and 4K instrumentation proving the largest temporary allocation is at most 1,048,576 bytes and never `width * height * 4`.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `pnpm.cmd vitest run packages/exporter/src/row-chunks.test.ts`
 
 Expected: FAIL with missing `streamTopLeftRgbaChunks` export.
 
-- [ ] **Step 3: Implement one reusable bounded buffer**
+- [x] **Step 3: Implement one reusable bounded buffer**
 
 ```ts
 export async function streamTopLeftRgbaChunks(
@@ -425,7 +425,7 @@ export async function streamTopLeftRgbaChunks(
 
 `assertFrameShape` must require `origin === "bottom-left"`, positive safe dimensions and exact safe `width * height * 4 === rgba.byteLength` before allocating the chunk buffer.
 
-- [ ] **Step 4: Run GREEN and typecheck after explicit approval**
+- [x] **Step 4: Run GREEN and typecheck after explicit approval**
 
 Run:
 
@@ -437,7 +437,7 @@ git diff --check
 
 Expected: all cases pass; typecheck and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must prove row reversal is global top-to-bottom, row boundaries may cross chunks, indices are zero-based/contiguous, writes are awaited serially, and no second full frame is allocated.
 
@@ -467,7 +467,7 @@ git commit -m "feat: stream export frames in top-left row order"
 - Consumes: current `SceneRendererInput.snapshot`, `activeFloorId`, renderer generation and existing immutable capture registry.
 - Produces: `SceneExportProvenance`; required `SceneExportCapture.provenance`; capture validity still tied to the exact renderer generation.
 
-- [ ] **Step 1: Write RED provenance and expiry tests**
+- [x] **Step 1: Write RED provenance and expiry tests**
 
 ```ts
 it("freezes provenance from the input that produced the scene", async () => {
@@ -486,7 +486,7 @@ it("freezes provenance from the input that produced the scene", async () => {
 
 Add exact cases proving capture fails before ready, old capture is rejected after context loss/retry/backend replacement/destroy, required texture IDs and limits are frozen, and offscreen cleanup still restores visible state exactly once.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -496,7 +496,7 @@ pnpm.cmd vitest run packages/render-scene-3d/src/renderer.test.ts packages/rende
 
 Expected: FAIL because `SceneExportCapture.provenance` does not exist.
 
-- [ ] **Step 3: Capture and freeze the exact provenance**
+- [x] **Step 3: Capture and freeze the exact provenance**
 
 ```ts
 export interface SceneExportProvenance {
@@ -530,7 +530,7 @@ return capture;
 
 Do not derive provenance from later Studio state and do not relax the existing generation comparison in `waitForTextures` or `render`.
 
-- [ ] **Step 4: Run GREEN and focused typechecks after explicit approval**
+- [x] **Step 4: Run GREEN and focused typechecks after explicit approval**
 
 Run:
 
@@ -543,7 +543,7 @@ git diff --check
 
 Expected: tests pass; typechecks and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm immutable provenance is from the same projection input, renderer generation expiry remains exact, and no camera/project state is persisted.
 
@@ -589,7 +589,7 @@ export interface PreparedProjectExport {
 }
 ```
 
-- [ ] **Step 1: Write RED table-driven preflight tests**
+- [x] **Step 1: Write RED table-driven preflight tests**
 
 ```ts
 it("rejects required texture issues with sorted IDs", () => {
@@ -609,13 +609,13 @@ it("rejects required texture issues with sorted IDs", () => {
 
 Add exact cases for renderer capture failure, project/sequence/floor mismatch, false `isCurrent`, maxTextureSize and maxRenderbufferSize independently below width or height, exact-limit acceptance, unsupported preset input, wrong origin/dimensions/byte length, and safe-integer overflow.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `pnpm.cmd vitest run packages/exporter/src/preflight.test.ts`
 
 Expected: FAIL with missing preflight exports.
 
-- [ ] **Step 3: Implement closed preflight checks**
+- [x] **Step 3: Implement closed preflight checks**
 
 ```ts
 export function assertProjectExportCurrent(
@@ -673,7 +673,7 @@ export function prepareProjectExport(
 
 `validateProjectExportFrame` must require the exact preset dimensions, `origin === "bottom-left"`, exact safe RGBA length, and return the same frame without copying it.
 
-- [ ] **Step 4: Run GREEN and typecheck after explicit approval**
+- [x] **Step 4: Run GREEN and typecheck after explicit approval**
 
 Run:
 
@@ -685,7 +685,7 @@ git diff --check
 
 Expected: all cases pass; typecheck and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm all required texture failures block export, IDs are stable/sorted, both GPU limits are enforced without fallback, and validation allocates no frame copy.
 
@@ -735,7 +735,7 @@ export function createProjectExportCoordinator(
 ): ProjectExportCoordinator;
 ```
 
-- [ ] **Step 1: Write RED ordering, progress and cancellation tests**
+- [x] **Step 1: Write RED ordering, progress and cancellation tests**
 
 ```ts
 it("runs the approved source-to-publication order", async () => {
@@ -768,13 +768,13 @@ it("runs the approved source-to-publication order", async () => {
 
 Add cases for one active operation, cancellation before begin, during texture wait, during render, during upload and during finish; native cancel awaited once after begin; late texture/frame/progress/finish discarded; session/project/floor/renderer generation change; begin/render/write/finish failures; no chunk after cancellation; exact sent/total bytes only during upload; no invented percentage in other phases.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `pnpm.cmd vitest run packages/exporter/src/coordinator.test.ts`
 
 Expected: FAIL with missing `createProjectExportCoordinator`.
 
-- [ ] **Step 3: Implement a single-active coordinator**
+- [x] **Step 3: Implement a single-active coordinator**
 
 ```ts
 class DefaultProjectExportCoordinator implements ProjectExportCoordinator {
@@ -827,7 +827,7 @@ resolve(await backend.finish(request.context.projectPath, begun.exportId));
 
 `cancel()` sets the terminal cancelled flag immediately; if `exportId` exists it awaits one idempotent `backend.cancel`; every awaited boundary calls `assertLive`; non-cancellation failure also cancels a begun native session before rejecting; completion clears the coordinator slot exactly once.
 
-- [ ] **Step 4: Run GREEN and typecheck after explicit approval**
+- [x] **Step 4: Run GREEN and typecheck after explicit approval**
 
 Run:
 
@@ -839,7 +839,7 @@ git diff --check
 
 Expected: all tests pass; typecheck and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must trace every await, prove native cancel is idempotent/awaited, prove late values cannot publish or emit progress, and prove ordinary project edits after native begin do not rewrite the immutable capture.
 
@@ -904,7 +904,7 @@ pub fn validate_png_and_hash<R: std::io::Read + std::io::Seek>(
 ) -> Result<PngSummary, MediaExportError>;
 ```
 
-- [ ] **Step 1: Write RED codec tests**
+- [x] **Step 1: Write RED codec tests**
 
 ```rust
 #[test]
@@ -929,7 +929,7 @@ fn streams_opaque_rgba_as_eight_bit_srgb_png() {
 
 Add named tests for zero/overflow dimensions, empty chunks, alpha not equal to 255 at every global RGBA offset including a chunk boundary, overrun, underrun, write failure, encoder finish failure, PNG signature, IHDR dimensions, color type RGBA, bit depth 8, sRGB chunk, deterministic hash and tampered structure.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -940,7 +940,7 @@ cargo test -p media-export --test png_stream
 
 Expected: FAIL because `media-export` is not a workspace crate.
 
-- [ ] **Step 3: Add the exact crate and stream encoder**
+- [x] **Step 3: Add the exact crate and stream encoder**
 
 ```toml
 [package]
@@ -983,7 +983,7 @@ Before every `write_all`, calculate the cumulative end with `checked_add`, rejec
 
 `validate_png_and_hash` seeks to zero, hashes the complete encoded stream, seeks again, validates PNG signature/IHDR/RGBA/8-bit/sRGB and rejects trailing structural corruption; it returns no filename or path.
 
-- [ ] **Step 4: Update the lock and run GREEN after explicit approval**
+- [x] **Step 4: Update the lock and run GREEN after explicit approval**
 
 Run:
 
@@ -997,7 +997,7 @@ git diff --check
 
 Expected: codec tests decode exact pixels; policy tests, Cargo check, rustfmt check and diff check pass; `Cargo.lock` resolves `png 0.18.1` exactly.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm streaming encode, global alpha offsets, exact raw accounting, no path ownership, no full-frame buffer, and no dependency change to the protected manifests.
 
@@ -1037,7 +1037,7 @@ pub fn cleanup_project_export_staging(project_path: &std::path::Path)
     -> Result<(), ProjectIoError>;
 ```
 
-- [ ] **Step 1: Write RED naming and path-safety tests**
+- [x] **Step 1: Write RED naming and path-safety tests**
 
 ```rust
 #[test]
@@ -1059,13 +1059,13 @@ fn sanitizes_and_suffixes_without_overwrite() {
 
 Add cases for control characters, replacement-run collapse, trailing dots/spaces, empty fallback `aethertwin-<first-eight-project-id-hex>`, UTF-8 boundary truncation to 80 bytes, collision first-absent selection, pre-existing destination preservation, staging prefix isolation, non-regular entries, symlink/reparse refusal, identity mismatch, cleanup limited to verified matching staging files, and project-relative forward-slash result.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `cargo test -p project-io --test export_path`
 
 Expected: FAIL with missing export path API.
 
-- [ ] **Step 3: Implement exact sanitization and bound directory operations**
+- [x] **Step 3: Implement exact sanitization and bound directory operations**
 
 ```rust
 const EXPORT_STAGE_PREFIX: &str = ".aethertwin-export-";
@@ -1096,7 +1096,7 @@ pub fn sanitize_project_export_stem(project_name: &str, project_id: Uuid) -> Str
 
 `BoundExportsDirectory::bind` must derive only `<verified project>/exports`, create it if absent, reopen/verify directory identity, and never accept a caller-provided output leaf. Stage creation uses `create_new`; publication uses a no-replace primitive and retries suffixes beginning at `-1`. Cleanup enumerates only the bound directory and removes only verified regular files whose complete leaf starts with `EXPORT_STAGE_PREFIX`; unexpected types return a safe error without following them.
 
-- [ ] **Step 4: Run GREEN and platform-focused checks after explicit approval**
+- [x] **Step 4: Run GREEN and platform-focused checks after explicit approval**
 
 Run:
 
@@ -1109,7 +1109,7 @@ git diff --check
 
 Expected: all portable tests pass. If the existing Windows environment cannot create privileged reparse fixtures, only that named test is recorded ignored with the same documented privilege reason; ordinary symlink/regular-file defenses still pass.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm no arbitrary path input, no overwrite open mode, safe UTF-8 truncation, suffix begins at `-1`, cleanup cannot escape/follow links, and all errors redact paths.
 
@@ -1183,7 +1183,7 @@ impl ProjectExportOperation {
 }
 ```
 
-- [ ] **Step 1: Write RED operation tests**
+- [x] **Step 1: Write RED operation tests**
 
 ```rust
 #[test]
@@ -1211,13 +1211,13 @@ fn streams_finishes_and_returns_only_project_relative_evidence() {
 
 Add cases for Market rejection, project ID/floor membership integrity, both exact preset byte counts, zero/gap/repeat/out-of-order/oversized/overrun chunks, underrun finish, non-opaque alpha, encoder failure, validation failure, publication failure, cancellation, idempotent cleanup, collision suffix and unchanged sequence/checkpoint/recovery/clean-shutdown state.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `cargo test -p project-io --test project_export`
 
 Expected: FAIL with missing `project_export` module and dependency.
 
-- [ ] **Step 3: Implement the operation and dependency edge**
+- [x] **Step 3: Implement the operation and dependency edge**
 
 Add only this dependency to `crates/project-io/Cargo.toml`:
 
@@ -1242,7 +1242,7 @@ impl ProjectExportPreset {
 
 `finish` requires exact raw total, finalizes codec, reopens/fsyncs the stage, calls `validate_png_and_hash`, fsyncs the exports directory, publishes no-replace and returns a forward-slash relative path. `cancel` removes only the verified matching stage and never a published file.
 
-- [ ] **Step 4: Run GREEN and Rust checks after explicit approval**
+- [x] **Step 4: Run GREEN and Rust checks after explicit approval**
 
 Run:
 
@@ -1256,7 +1256,7 @@ git diff --check
 
 Expected: all tests and checks pass; protected manifests retain their hashes.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must prove every terminal path releases one stage exactly once, metadata-free export cannot mutate snapshot state, and project-io, not desktop-host, owns every path decision.
 
@@ -1318,7 +1318,7 @@ pub struct ParsedProjectExportChunk<'a> {
 }
 ```
 
-- [ ] **Step 1: Write RED strict-boundary tests**
+- [x] **Step 1: Write RED strict-boundary tests**
 
 ```rust
 #[test]
@@ -1342,13 +1342,13 @@ fn parses_only_raw_body_and_three_canonical_headers() {
 
 Add exact rejection cases for JSON body, missing/duplicate application headers, unknown `X-Aether-*`, uppercase/noncanonical UUID, `+1`, `01`, whitespace, negative, overflow, empty body and body above 1,048,576 bytes. Add acceptance cases showing unrelated Tauri/internal transport headers are ignored. JSON tests reject missing wrapper, unknown top-level/nested keys, invalid preset and sequence above `9_007_199_254_740_991`.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run: `cargo test -p desktop-host --test export_boundary`
 
 Expected: FAIL because export DTOs and raw parser do not exist.
 
-- [ ] **Step 3: Implement strict parsers without logging request data**
+- [x] **Step 3: Implement strict parsers without logging request data**
 
 ```rust
 pub fn parse_project_export_chunk(
@@ -1373,7 +1373,7 @@ pub fn parse_project_export_chunk(
 
 `parse_exact_aether_export_headers` lowercases header names through `HeaderMap`, permits exactly the three named application headers once each, rejects every other `x-aether-*`, and does not copy/log the body or headers. The JSON DTO `into_native` methods use the existing canonical UUID policy and explicit JS-safe integer bound.
 
-- [ ] **Step 4: Run GREEN and Rust checks after explicit approval**
+- [x] **Step 4: Run GREEN and Rust checks after explicit approval**
 
 Run:
 
@@ -1386,7 +1386,7 @@ git diff --check
 
 Expected: all strict cases pass; checks exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm JSON/raw separation, exactly three application headers, canonical integers, safe bounds and zero sensitive-data logging.
 
@@ -1426,7 +1426,7 @@ pub(crate) type ActiveProjectExportHandle =
     std::sync::Arc<std::sync::Mutex<ActiveProjectExport>>;
 ```
 
-- [ ] **Step 1: Write RED native success and command-surface tests**
+- [x] **Step 1: Write RED native success and command-surface tests**
 
 ```rust
 #[test]
@@ -1448,7 +1448,7 @@ fn command_surface_is_exactly_twelve_with_one_raw_command() {
 
 Add a native success test that opens a Showroom project, begins with exact project/sequence/floor, writes contiguous opaque bytes through raw invoke headers, finishes, validates the returned relative result and PNG, and confirms project sequence/checkpoint remain unchanged. Add begin rejection for Market, mismatched project, sequence, floor, session and second active export.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -1459,7 +1459,7 @@ cargo test -p desktop-host --test project_export native_export_success
 
 Expected: FAIL because only eight commands exist.
 
-- [ ] **Step 3: Add registry and four handlers**
+- [x] **Step 3: Add registry and four handlers**
 
 Add AppService fields initialized in `with_log_sink`:
 
@@ -1485,7 +1485,7 @@ The other handlers pass `payload: Option<Value>` through the existing strict DTO
 
 `begin_project_export` acquires the lifecycle read lease, looks up the tracked session, locks the session snapshot, validates Showroom/project/sequence/floor, rejects an existing session registry entry, calls `project_io::begin_project_export`, inserts one `Arc<Mutex<_>>`, then returns exact dimensions/expected bytes/max chunk. `write` and `finish` resolve by session plus export ID; finish takes the operation from `Option`, publishes once, removes the same handle from the registry and maps the result without a path prefix.
 
-- [ ] **Step 4: Run GREEN and focused native checks after explicit approval**
+- [x] **Step 4: Run GREEN and focused native checks after explicit approval**
 
 Run:
 
@@ -1500,7 +1500,7 @@ git diff --check
 
 Expected: success path passes; commands are exactly 12; capabilities remain exactly 2; checks exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must trace the session lease, one-active insertion race, exact handle identity removal, raw body command signature, result redaction and unchanged capabilities.
 
@@ -1529,7 +1529,7 @@ git commit -m "feat: expose project-bound native PNG export"
 - Consumes: Task 10 registry and existing `close_project`/`close_all` lifecycle write gate.
 - Produces idempotent cancel marker per live session; exact terminal winner; close waits for cleanup; stable native codes.
 
-- [ ] **Step 1: Write RED failure and race tests**
+- [x] **Step 1: Write RED failure and race tests**
 
 ```rust
 #[test]
@@ -1549,7 +1549,7 @@ fn finish_cancel_and_close_publish_at_most_once() {
 
 Add named tests for gap/repeat/out-of-order/empty/oversized/overrun/underrun, cross-session IDs, unknown/completed IDs, duplicate cancel for last-cancelled same session, second cancel after close, finish/finish, finish/cancel, cancel/close, finish/close, close_all with multiple sessions, context failure, encode/publish failure, crash staging cleanup on open/recovery, symlink/reparse/identity mismatch and exactly-once stage removal.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -1561,7 +1561,7 @@ cargo test -p project-io --test project_export cleanup
 
 Expected: at least one race/cleanup case fails because terminal coordination is incomplete.
 
-- [ ] **Step 3: Serialize terminal transitions and close cleanup**
+- [x] **Step 3: Serialize terminal transitions and close cleanup**
 
 Use the per-operation mutex as the sole terminal linearization point:
 
@@ -1589,7 +1589,7 @@ Before closing a session, take/cancel its active operation, wait on `project_exp
 
 Map stable codes exactly: `EXPORT_ALREADY_ACTIVE`, `EXPORT_NOT_FOUND`, `EXPORT_SESSION_MISMATCH`, `EXPORT_CHUNK_OUT_OF_ORDER`, `EXPORT_CHUNK_TOO_LARGE`, `EXPORT_BYTE_COUNT_MISMATCH`, `EXPORT_ENCODE_FAILED`, `EXPORT_VALIDATION_FAILED`, `EXPORT_PUBLISH_FAILED`. Safe details contain only preset/dimensions/counts/logRef.
 
-- [ ] **Step 4: Run GREEN and native regression checks after explicit approval**
+- [x] **Step 4: Run GREEN and native regression checks after explicit approval**
 
 Run:
 
@@ -1606,7 +1606,7 @@ git diff --check
 
 Expected: all tests pass except the already documented Windows privileged reparse test if that privilege remains unavailable; no staging residue, duplicate publication or path leakage.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must establish one linearization point, close waits, bounded terminal markers, no deadlock order inversion with session lifecycle/asset imports, safe cleanup and redacted errors.
 
@@ -1641,7 +1641,7 @@ export interface StudioBackendSelection {
 }
 ```
 
-- [ ] **Step 1: Write RED adapter and composition tests**
+- [x] **Step 1: Write RED adapter and composition tests**
 
 ```ts
 it("sends chunk bytes as raw invoke data with exact headers", async () => {
@@ -1662,7 +1662,7 @@ it("sends chunk bytes as raw invoke data with exact headers", async () => {
 
 Add exact begin/finish/cancel payload tests, strict response validation, missing/stale projectPath session rejection, safe native error mapping, disposal cancellation behavior, desktop selection returning the same instance as both capabilities, Sandbox selection returning `exportBackend: null`, and App injection that never casts ProjectBackend into export support.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -1672,7 +1672,7 @@ pnpm.cmd vitest run apps/studio/src/backend/tauri-backend.test.ts apps/studio/sr
 
 Expected: FAIL because `ProjectExportBackend` methods and `StudioBackendSelection` are absent.
 
-- [ ] **Step 3: Implement exact invoke calls and explicit composition**
+- [x] **Step 3: Implement exact invoke calls and explicit composition**
 
 ```ts
 export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend {
@@ -1696,7 +1696,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
 
 `selectBackend` returns `{ projectBackend: tauri, exportBackend: tauri }` in desktop mode and `{ projectBackend: sandbox, exportBackend: null }` in Sandbox mode. `StudioApp` passes `projectBackend` only to `ProjectStore` and passes the optional export capability separately to PlanEditor; dispose the shared desktop instance once.
 
-- [ ] **Step 4: Run GREEN and Studio typecheck after explicit approval**
+- [x] **Step 4: Run GREEN and Studio typecheck after explicit approval**
 
 Run:
 
@@ -1709,7 +1709,7 @@ git diff --check
 
 Expected: all tests pass; typechecks and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm raw `Uint8Array` is the invoke body, headers are exact, absolute paths never return, Sandbox cannot simulate success, ProjectStore sees only ProjectBackend and shared disposal occurs once.
 
@@ -1748,7 +1748,7 @@ export interface ExportActionState {
 }
 ```
 
-- [ ] **Step 1: Write RED policy and toolbar tests**
+- [x] **Step 1: Write RED policy and toolbar tests**
 
 ```ts
 it("shows Export last only for Showroom and explains every disabled state", async () => {
@@ -1770,7 +1770,7 @@ it("shows Export last only for Showroom and explains every disabled state", asyn
 
 Add cases for 3D/split ready enabled, renderer initializing/failed/disabled, missing desktop capability, stale export handle, active operation, focus retention, exact action order and no dormant callback.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -1781,7 +1781,7 @@ node --test tests/visible-actions.test.mjs
 
 Expected: FAIL because `export` is not an action and visible-action policy still forbids it.
 
-- [ ] **Step 3: Add the exact action and closed disabled-reason policy**
+- [x] **Step 3: Add the exact action and closed disabled-reason policy**
 
 Append to `ShowroomToolActionId` and the Preview group after `frame-route`:
 
@@ -1829,7 +1829,7 @@ function exportDisabledReason(input: {
 
 Render the reason once as an accessible description. Do not show Export for Market and do not create an alternate menu entry.
 
-- [ ] **Step 4: Run GREEN and typechecks after explicit approval**
+- [x] **Step 4: Run GREEN and typechecks after explicit approval**
 
 Run:
 
@@ -1843,7 +1843,7 @@ git diff --check
 
 Expected: tests pass; Preview order is exact; typechecks and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm every visible action has a real callback, Market absence, 2D instruction, desktop-only Sandbox reason and no export or Player false affordance.
 
@@ -1885,7 +1885,7 @@ export interface SceneCanvasProps {
 }
 ```
 
-- [ ] **Step 1: Write RED handle, aspect and lifecycle tests**
+- [x] **Step 1: Write RED handle, aspect and lifecycle tests**
 
 ```tsx
 it("publishes only the ready current port and clears it before destroy", async () => {
@@ -1909,7 +1909,7 @@ it("publishes only the ready current port and clears it before destroy", async (
 
 Add exact tests for late init/status/camera after replacement, context loss/retry clearing old handle, floor/session generation replacement, 1600 x 900 and 800 x 450 ResizeObserver inputs while the panel is open, removal of aspect lock on close, split remaining fixed 50/50 with 2D mounted, and pointer/wheel input blocked only while an operation is active.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -1919,7 +1919,7 @@ pnpm.cmd vitest run apps/studio/src/features/plan-editor/scene-canvas.test.tsx a
 
 Expected: FAIL because SceneCanvas has no export handle or framing props.
 
-- [ ] **Step 3: Publish and retire a scope-safe handle**
+- [x] **Step 3: Publish and retire a scope-safe handle**
 
 Inside the active renderer effect, publish only after initialization and current-scope readiness:
 
@@ -1970,7 +1970,7 @@ Use a dedicated wrapper rather than CSS-transforming the canvas:
 
 The actual observed host dimensions must be 16:9; do not stretch a non-16:9 render with CSS. In split, keep the existing pane grid at 50/50 and apply this wrapper only inside the 3D half.
 
-- [ ] **Step 4: Run GREEN and typecheck after explicit approval**
+- [x] **Step 4: Run GREEN and typecheck after explicit approval**
 
 Run:
 
@@ -1982,7 +1982,7 @@ git diff --check
 
 Expected: lifecycle/aspect/split tests pass; typecheck and diff check exit 0.
 
-- [ ] **Step 5: Review and commit**
+- [x] **Step 5: Review and commit**
 
 Review must confirm current scope, null-before-destroy ordering, no late handle, real ResizeObserver dimensions, fixed split and input lock without camera persistence.
 
@@ -2044,7 +2044,7 @@ export interface ExportPanelProps {
 }
 ```
 
-- [ ] **Step 1: Write RED panel, integration and focus tests**
+- [x] **Step 1: Write RED panel, integration and focus tests**
 
 ```tsx
 it("reports truthful phases and returns focus after awaited cancellation", async () => {
@@ -2066,7 +2066,7 @@ it("reports truthful phases and returns focus after awaited cancellation", async
 
 Add exact tests for two presets only, 4K disabled with actual maxTextureSize/maxRenderbufferSize, required texture IDs sorted, no start on texture issue, real 16:9 open state, exact upload bytes, no percentage in preparing/rendering/encoding, camera/floor/view/preset controls locked only while running, project replacement/unmount/context loss cancellation, late progress/result/focus rejection, failure retry retaining preset, success fields, Export Again, no absolute path/Open Folder/Save As/share/clipboard action, and ordinary project edit after native begin not cancelling the immutable operation.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -2076,7 +2076,7 @@ pnpm.cmd vitest run apps/studio/src/features/plan-editor/export-panel.test.tsx a
 
 Expected: FAIL because the panel and coordinator integration do not exist.
 
-- [ ] **Step 3: Implement the controlled panel surface**
+- [x] **Step 3: Implement the controlled panel surface**
 
 Render only the closed preset set:
 
@@ -2109,7 +2109,7 @@ function progressText(progress: ProjectExportProgress): string {
 
 The result view renders only relative path, resolution, byte size, SHA-256, Export Again and Close.
 
-- [ ] **Step 4: Connect a scope-safe coordinator in PlanEditor**
+- [x] **Step 4: Connect a scope-safe coordinator in PlanEditor**
 
 Add `sessionGeneration: number` to `PlanEditorState`, initialize it to `0`, and set it to `state.sessionGeneration + 1` only in `replaceSession`; floor/view/renderer changes do not increment it. Add a focused store test proving a stale generation is distinguishable even if a test supplies the same session ID twice.
 
@@ -2169,7 +2169,7 @@ activeExportRef.current = operation;
 
 Opening the panel takes a disposable preview capture only to display current GPU/texture availability; Start always recaptures through the coordinator. While running, disable floor/view/preset controls and set `SceneCanvas.interactionLocked`; do not block normal ProjectStore edits. Closing/Escape/project replacement/unmount calls the same `await operation.cancel()` before panel removal or focus restoration. A monotonically increasing panel generation rejects late callbacks.
 
-- [ ] **Step 5: Run GREEN and focused checks after explicit approval**
+- [x] **Step 5: Run GREEN and focused checks after explicit approval**
 
 Run:
 
@@ -2182,7 +2182,7 @@ git diff --check
 
 Expected: all workflow/lifecycle/accessibility tests pass; typechecks and diff check exit 0.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 Review must trace panel generation, awaited cancellation, exact locked controls, immutable edit rule, preview-capture disposal, safe result content, focus and every late callback.
 
@@ -2227,7 +2227,7 @@ hotspots/media: e2500000-0000-4000-8000-000000000701 .. 0730
 route:          e2500000-0000-4000-8000-000000000901 .. 0991
 ```
 
-- [ ] **Step 1: Write RED semantic and asset-manifest tests**
+- [x] **Step 1: Write RED semantic and asset-manifest tests**
 
 ```js
 test("Showroom Demo has the exact approved semantic inventory", () => {
@@ -2253,7 +2253,7 @@ test("Showroom Demo has the exact approved semantic inventory", () => {
 
 Add assertions for one calibrated sanitized SVG plan reference, ten product-hotspot POIs, ten ProductContent records, ten MediaAsset records sharing exactly three content/texture image AssetRecords, one additional plan-reference AssetRecord, three material definitions and floor/wall/fixture assignments, PNG/JPEG/safe-SVG textures, one connected network, one guided route with five ordered stops, soft-light/shadow environment, strict UUID/order stability, manifest hashes and no script/event/remote URL in either SVG.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -2264,7 +2264,7 @@ pnpm.cmd vitest run packages/core-model/src/core-model.test.ts
 
 Expected: FAIL because the fixture and asset manifest do not exist.
 
-- [ ] **Step 3: Generate four fixed local asset files and their manifest**
+- [x] **Step 3: Generate four fixed local asset files and their manifest**
 
 `generate-assets.mjs` contains literal bytes and overwrites only the four named fixture outputs plus `manifest.json` in its own directory:
 
@@ -2309,13 +2309,13 @@ writeFileSync(
 
 The test decodes the complete inline JPEG constant and rejects a truncated byte stream. Run exactly: `node fixtures/assets/showroom-demo/generate-assets.mjs`.
 
-- [ ] **Step 4: Author the canonical schema-v3 snapshot**
+- [x] **Step 4: Author the canonical schema-v3 snapshot**
 
 The JSON has one floor/layer and the exact ID ranges above. Use four non-overlapping room polygons, one zone, perimeter/interior walls with four valid doors and four valid windows, catalogue durable dimensions for 21 typed fixtures plus one generic fixture, ten hotspots each linked by one ProductContent to one MediaAsset, and distribute the ten MediaAssets deterministically across asset IDs 0502-0504.
 
 Set one complete plan calibration with two distinct source points, `distance = 10000`, `unit = "mm"` and the sanitized plan SVG asset. Use three MaterialDefinitions whose `assetId` values are floor.png, wall.jpg and fixture.svg and assign them to at least one space-floor, one wall and all fixtures. Route node IDs 0901-0905 form a connected chain with positive distances and the guided route stop list contains those five IDs in order. Use the approved soft environment with nonzero key direction and shadows enabled. Arrays are sorted by ID.
 
-- [ ] **Step 5: Run GREEN and fixture policy after explicit approval**
+- [x] **Step 5: Run GREEN and fixture policy after explicit approval**
 
 Run:
 
@@ -2328,7 +2328,7 @@ git diff --check
 
 Expected: exact inventory, parser, asset hashes, safe SVG and offline tests pass; typecheck and diff check exit 0.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 Review must independently count every entity/record, verify fixture/material/route semantics, decode all assets, recompute hashes, and confirm no binary `.twinproj` or PNG export output is staged.
 
@@ -2373,7 +2373,7 @@ pub fn create_project_with_identity(
 ) -> Result<OpenedProject, ProjectIoError>;
 ```
 
-- [ ] **Step 1: Write RED identity and materialization tests**
+- [x] **Step 1: Write RED identity and materialization tests**
 
 ```rust
 #[test]
@@ -2400,7 +2400,7 @@ fn materializes_reopens_and_recovers_the_exact_demo_snapshot() {
 
 Add cases for deterministic project/floor/layer/createdAt, invalid identity, existing destination refusal without alteration, wrong extension, asset hash/media mismatch, import sanitizer rejection, exact 11-operation transaction, checkpoint equality, clean close, semantic digest stability and no extra output beside the requested project.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -2411,7 +2411,7 @@ cargo test -p asset-io --test showroom_demo
 
 Expected: FAIL because deterministic identity and generator support do not exist.
 
-- [ ] **Step 3: Refactor create into one production-safe identity boundary**
+- [x] **Step 3: Refactor create into one production-safe identity boundary**
 
 Production remains unchanged:
 
@@ -2431,7 +2431,7 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
 
 `create_project_with_identity` runs the existing validation, exclusive create, manifest/database/checkpoint/fsync path with the supplied IDs/time; it validates three distinct RFC4122 UUIDs and never becomes a Tauri command. Keep all failure cleanup identical to production create.
 
-- [ ] **Step 4: Implement the generator support and exact journal**
+- [x] **Step 4: Implement the generator support and exact journal**
 
 The example main accepts exactly one OS path argument, rejects missing/extra arguments and an existing target, then calls:
 
@@ -2467,7 +2467,7 @@ Every records payload adds the full sorted target collection from `before: null`
 
 For recovery evidence, perform the same fixed materialization inside a `tempfile::TempDir`, open and drop that probe uncleanly, call confirmed recovery, compare equality, close recovered state and let only the temporary probe be deleted. The requested destination remains clean and contains no export.
 
-- [ ] **Step 5: Run GREEN and generator checks after explicit approval**
+- [x] **Step 5: Run GREEN and generator checks after explicit approval**
 
 Run:
 
@@ -2481,7 +2481,7 @@ git diff --check
 
 Expected: deterministic identity, import, 11-operation replay, checkpoint, close/reopen and recovery equality pass; example compiles through `--all-targets`; no protected manifest change.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 Review must validate production create equivalence, no Tauri exposure, exact journal inverse/order, fixed asset identities, existing-target refusal, temporary recovery probe containment and absence of committed `.twinproj`.
 
@@ -2509,7 +2509,7 @@ git commit -m "feat: generate the deterministic Showroom Demo"
 - Consumes: complete TypeScript and native export stacks plus canonical Demo.
 - Produces executable evidence across projection capture, orientation/chunking, PNG codec, project publication, Studio state and recovery; injected rendering is explicitly not real-GPU evidence.
 
-- [ ] **Step 1: Write RED end-to-end acceptance tests**
+- [x] **Step 1: Write RED end-to-end acceptance tests**
 
 ```ts
 it.each([
@@ -2532,7 +2532,7 @@ it.each([
 
 Rust acceptance writes deterministic corner/row colors through `AppService`, finishes, decodes the published PNG and asserts top-left/right and bottom-left/right pixels, 8-bit RGBA/sRGB/opaque alpha, relative path/hash, unchanged snapshot sequence, close/reopen equality and no stage file. A second case cancels at every phase and asserts no publication. Studio acceptance exercises Showroom 2D/3D/split, Market absence, 16:9, 4K capability disablement, progress, focus and replacement cancellation using fake renderer/backend.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -2544,7 +2544,7 @@ cargo test -p desktop-host --test m2_5_vertical_acceptance
 
 Expected: tests compile; any failure identifies a concrete M2.5 acceptance gap. If all pass on first run, record that RED introduced no new missing behavior and do not manufacture a failure.
 
-- [ ] **Step 3: Fix only demonstrated M2.5 gaps**
+- [x] **Step 3: Fix only demonstrated M2.5 gaps**
 
 For every failure, record command, test name, error, owning task and changed file before editing. The permitted repair flow is:
 
@@ -2560,7 +2560,7 @@ Demo semantics/persistence -> fixtures or generator
 
 Do not broaden the milestone or change a locked interface to make the acceptance test easier.
 
-- [ ] **Step 4: Run GREEN acceptance and focused type/Rust checks after explicit approval**
+- [x] **Step 4: Run GREEN acceptance and focused type/Rust checks after explicit approval**
 
 Run:
 
@@ -2579,11 +2579,11 @@ git diff --check
 
 Expected: all named acceptance/check commands pass, except only the already documented privileged Windows reparse test if still unavailable. The evidence makes no browser/GPU/visual claim.
 
-- [ ] **Step 5: Independent specification and code review**
+- [x] **Step 5: Independent specification and code review**
 
 The reviewer receives the approved design, this plan, Task 18 diff and actual command outputs. Required verdict fields are `Spec Compliance`, `Code Quality`, `Critical`, `Important`, `Minor`, `Ready`. Resolve every Critical/Important finding and rerun the directly affected command; record any accepted Minor with exact reason.
 
-- [ ] **Step 6: Commit vertical acceptance**
+- [x] **Step 6: Commit vertical acceptance**
 
 ```bash
 git add -- packages/exporter/src/m2-5-vertical-acceptance.test.ts apps/studio/src/features/plan-editor/m2-5-vertical-acceptance.test.tsx crates/project-io/tests/m2_5_vertical_acceptance.rs crates/desktop-host/tests/m2_5_vertical_acceptance.rs
@@ -2623,7 +2623,7 @@ git commit -m "test: accept AetherTwin M2.5 export workflow"
 - Consumes: actual focused command outputs and review verdicts from Tasks 1-18.
 - Produces stable architecture/product/format decisions and a report that distinguishes automated contract evidence from unperformed runtime evidence.
 
-- [ ] **Step 1: Write RED documentation-policy tests**
+- [x] **Step 1: Write RED documentation-policy tests**
 
 ```js
 test("M2.5 policy locks export ownership without changing schema", () => {
@@ -2640,7 +2640,7 @@ test("M2.5 policy locks export ownership without changing schema", () => {
 
 Add policy assertions for exactly 12 commands, exactly 2 capabilities, both protected manifests, two presets, project-relative result, no `.twinproj`/export PNG committed, no Player/Market 3D/export false entry, Demo fixture/generator locations, offline sources, M2.1 durable decisions retained and unresolved `57 2` branch divergence guard retained.
 
-- [ ] **Step 2: Run RED after explicit approval**
+- [x] **Step 2: Run RED after explicit approval**
 
 Run:
 
@@ -2650,7 +2650,7 @@ node --test tests/workspace-structure.test.mjs tests/project-format-policy.test.
 
 Expected: FAIL because `docs/M2_REPORT.md` and M2.5 policy text are absent.
 
-- [ ] **Step 3: Update long-lived documents without deleting prior decisions**
+- [x] **Step 3: Update long-lived documents without deleting prior decisions**
 
 Record these exact durable facts:
 
@@ -2672,7 +2672,7 @@ Market Export action: absent
 
 `DECISIONS.md` retains content-addressed publication/undo-not-delete, verified protocol reads, atomic reference/calibration and explicit recovery/shutdown decisions, then appends M2.5 ownership/protocol decisions. `HANDOFF.md` retains `57 2`, no rebase/merge/reset/baseline-change and human integration guard.
 
-- [ ] **Step 4: Write `docs/M2_REPORT.md` from actual evidence**
+- [x] **Step 4: Write `docs/M2_REPORT.md` from actual evidence**
 
 Use this fixed section order:
 
@@ -2694,7 +2694,7 @@ For every command actually run, record date, exact command, exit code, test coun
 
 Mark Tasks 1-19 complete in this plan only after their commits and reviews exist; leave Task 20 unchecked. `PLANS.md` names Task 20 as the only remaining M2 item.
 
-- [ ] **Step 5: Run GREEN policy and document checks after explicit approval**
+- [x] **Step 5: Run GREEN policy and document checks after explicit approval**
 
 Run:
 
@@ -2705,7 +2705,7 @@ git diff --check
 
 Expected: all policy tests pass; diff check exits 0; no build/browser/GPU claim appears.
 
-- [ ] **Step 6: Independent documentation review and commit**
+- [x] **Step 6: Independent documentation review and commit**
 
 The reviewer checks every number/path/claim against source and actual logs, confirms all prior durable decisions and branch guards remain, and returns no unresolved Critical/Important finding.
 

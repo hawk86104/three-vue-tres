@@ -4,6 +4,34 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+test("M2.5 closure records ownership, durable decisions, and integration guards", () => {
+  const architecture = readFileSync(join(root, "docs/ARCHITECTURE.md"), "utf8");
+  const decisions = readFileSync(join(root, "docs/DECISIONS.md"), "utf8");
+  const handoff = readFileSync(join(root, "HANDOFF.md"), "utf8");
+  const report = readFileSync(join(root, "docs/M2_REPORT.md"), "utf8");
+
+  assert.match(
+    architecture,
+    /render-scene-3d[\s\S]*exporter[\s\S]*desktop-host[\s\S]*project-io[\s\S]*media-export/iu,
+  );
+  assert.match(report, /exactly twelve/iu);
+  assert.match(report, /exactly two/iu);
+  assert.match(report, /real GPU[\s\S]*not verified/iu);
+
+  for (const durableDecision of [
+    /content-addressed[\s\S]*undo[\s\S]*not delete/iu,
+    /verified[\s\S]*protocol[\s\S]*read/iu,
+    /atomic[\s\S]*(?:reference|calibration)/iu,
+    /explicit[\s\S]*(?:recovery|shutdown)/iu,
+  ]) {
+    assert.match(decisions, durableDecision);
+  }
+  assert.match(handoff, /57\s+2/u);
+  assert.match(handoff, /(?:do not|must not)[\s\S]*rebase[\s\S]*merge[\s\S]*reset/iu);
+  assert.match(handoff, /crates\/asset-io\/Cargo\.toml/u);
+  assert.match(handoff, /crates\/desktop-host\/Cargo\.toml/u);
+});
+
 const root = fileURLToPath(new URL("..", import.meta.url));
 const required = [
   "apps/studio",
