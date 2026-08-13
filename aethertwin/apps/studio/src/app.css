@@ -511,7 +511,6 @@ input {
   border-radius: var(--aether-radius-md);
   background: var(--aether-surface-2);
   color: var(--aether-text);
-  box-shadow: 0 18px 48px rgb(0 0 0 / 32%);
 }
 
 .studio-export-panel label {

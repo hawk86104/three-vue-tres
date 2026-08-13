@@ -1,6 +1,6 @@
 import type { ProjectProfile } from "@aethertwin/core-model";
 import { StatusNotice } from "@aethertwin/design-system";
-import type { ProjectExportBackend } from "@aethertwin/exporter";
+import type { ProjectExportBackend, ProjectExportOperation } from "@aethertwin/exporter";
 import {
   ProjectStore,
   RecentProjects,
@@ -150,6 +150,7 @@ function StudioApp({
 }) {
   const [store] = useState(() => new ProjectStore(backend));
   const storeLifecycleGeneration = useRef(0);
+  const activeExportOperation = useRef<ProjectExportOperation | null>(null);
   const [recentRepository] = useState(
     () => new RecentProjects(recentStorage(backend.mode)),
   );
@@ -167,10 +168,16 @@ function StudioApp({
     const generation = storeLifecycleGeneration.current + 1;
     storeLifecycleGeneration.current = generation;
     return () => {
+      const exportOperation = activeExportOperation.current;
+      activeExportOperation.current = null;
       void Promise.resolve().then(() => {
         if (storeLifecycleGeneration.current === generation) {
-          return store
-            .dispose()
+          const disposal = exportOperation === null
+            ? store.dispose()
+            : exportOperation.cancel()
+              .catch(() => undefined)
+              .then(() => store.dispose());
+          return disposal
             .finally(() => disposeBackend(backend))
             .catch(() => undefined);
         }
@@ -285,6 +292,9 @@ function StudioApp({
         backendMode={backend.mode}
         exportBackend={exportBackend}
         onBeforeClose={recordCurrentProject}
+        onExportOperationChange={(operation) => {
+          activeExportOperation.current = operation;
+        }}
         onBack={() => {
           setView("center");
           setCenterError(null);

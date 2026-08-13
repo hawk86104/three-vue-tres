@@ -217,7 +217,7 @@ fn cancellation_error_command_surface_csp_and_capabilities_are_stable() {
     assert_eq!(error["code"], "ASSET_IMPORT_OPERATION_NOT_FOUND");
 
     let commands = include_str!("../src/commands.rs");
-    assert_eq!(commands.matches("#[tauri::command]").count(), 8);
+    assert_eq!(commands.matches("#[tauri::command]").count(), 12);
     for command in [
         "create_project",
         "open_project",

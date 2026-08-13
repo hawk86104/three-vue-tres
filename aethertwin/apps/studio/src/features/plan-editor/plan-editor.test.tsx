@@ -27,7 +27,7 @@ import {
   SHOWROOM_FIXTURE_CATALOGUE,
   showroomFixture,
 } from "@aethertwin/mode-showroom";
-import type { ProjectExportBackend } from "@aethertwin/exporter";
+import type { ProjectExportBackend, ProjectExportOperation } from "@aethertwin/exporter";
 import type {
   SceneExportCapture,
   SceneRendererFactory,
@@ -869,9 +869,9 @@ describe("PlanEditor Task 10 shell", () => {
     const user = userEvent.setup();
     const textureWait = deferred();
     const renderer = new FakeSceneRenderer();
-    let capture: SceneExportCapture;
+    const captureRef: { current?: SceneExportCapture } = {};
     const captureSpy = vi.spyOn(renderer.exportPort, "capture")
-      .mockImplementation(() => capture);
+      .mockImplementation(() => captureRef.current!);
     const waitForTextures = vi.spyOn(renderer.exportPort, "waitForTextures")
       .mockReturnValue(textureWait.promise);
     const exportBackend = exportBackendStub();
@@ -880,7 +880,7 @@ describe("PlanEditor Task 10 shell", () => {
       sceneRendererFactory: () => renderer,
       exportBackend,
     });
-    capture = {
+    captureRef.current = {
       provenance: {
         projectId: fixture.snapshot.project.id,
         snapshotSequence: fixture.snapshot.sequence,
@@ -928,8 +928,8 @@ describe("PlanEditor Task 10 shell", () => {
     const renderGate = deferred();
     const cancelGate = deferred();
     const renderer = new FakeSceneRenderer();
-    let capture: SceneExportCapture;
-    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
     vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
     const render = vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
       await renderGate.promise;
@@ -950,7 +950,7 @@ describe("PlanEditor Task 10 shell", () => {
       sceneRendererFactory: () => renderer,
       exportBackend,
     });
-    capture = {
+    captureRef.current = {
       provenance: {
         projectId: fixture.snapshot.project.id,
         snapshotSequence: fixture.snapshot.sequence,
@@ -996,8 +996,8 @@ describe("PlanEditor Task 10 shell", () => {
     const renderGate = deferred();
     const cancelGate = deferred();
     const renderer = new FakeSceneRenderer();
-    let capture: SceneExportCapture;
-    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
     vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
     vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
       await renderGate.promise;
@@ -1018,7 +1018,7 @@ describe("PlanEditor Task 10 shell", () => {
       sceneRendererFactory: () => renderer,
       exportBackend,
     });
-    capture = {
+    captureRef.current = {
       provenance: {
         projectId: fixture.snapshot.project.id,
         snapshotSequence: fixture.snapshot.sequence,
@@ -1062,12 +1062,12 @@ describe("PlanEditor Task 10 shell", () => {
     expect(document.activeElement).not.toHaveAccessibleName("Export");
   });
 
-  it("cancels an active export when the editor unmounts", async () => {
+  it("installs a replacement project session after export cancellation fails", async () => {
     const user = userEvent.setup();
     const renderGate = deferred();
     const renderer = new FakeSceneRenderer();
-    let capture: SceneExportCapture;
-    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
     vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
     vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
       await renderGate.promise;
@@ -1075,20 +1075,22 @@ describe("PlanEditor Task 10 shell", () => {
     });
     const exportBackend = exportBackendStub();
     vi.mocked(exportBackend.begin).mockResolvedValue({
-      exportId: "00000000-0000-4000-8000-000000000097",
+      exportId: "00000000-0000-4000-8000-000000000098",
       preset: "full-hd",
       width: 1920,
       height: 1080,
       expectedByteLength: 8_294_400,
       maxChunkBytes: 1_048_576,
     });
-    vi.mocked(exportBackend.cancel).mockResolvedValue(undefined);
+    vi.mocked(exportBackend.cancel).mockRejectedValue(
+      new Error("native cancel failed"),
+    );
     const fixture = renderPlanEditorFixture({
       profile: "showroom",
       sceneRendererFactory: () => renderer,
       exportBackend,
     });
-    capture = {
+    captureRef.current = {
       provenance: {
         projectId: fixture.snapshot.project.id,
         snapshotSequence: fixture.snapshot.sequence,
@@ -1111,10 +1113,95 @@ describe("PlanEditor Task 10 shell", () => {
     await user.click(screen.getByRole("button", { name: "Export" }));
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
+    const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
+
+    act(() => { fixture.replaceProject(); });
+
+    await waitFor(() => expect(exportBackend.cancel).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      expect(fixture.sessionStore.getState().sessionGeneration)
+        .toBe(initialGeneration + 1);
+    });
+    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      .not.toBeInTheDocument();
+    await waitFor(() => {
+      const errorMessages = [...document.querySelectorAll(
+        ".aether-status-notice--error",
+      )].map((notice) => notice.textContent);
+      expect(errorMessages).toEqual(["EXPORT_FRAME_INVALID: The export could not be completed."]);
+    });
+    await act(async () => { renderGate.resolve(); });
+    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      .not.toBeInTheDocument();
+  });
+  it("cancels an active export when the editor unmounts", async () => {
+    const user = userEvent.setup();
+    const renderGate = deferred();
+    const cancelGate = deferred();
+    const renderer = new FakeSceneRenderer();
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
+    vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
+    vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
+      await renderGate.promise;
+      throw new Error("render stopped");
+    });
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockResolvedValue({
+      exportId: "00000000-0000-4000-8000-000000000097",
+      preset: "full-hd",
+      width: 1920,
+      height: 1080,
+      expectedByteLength: 8_294_400,
+      maxChunkBytes: 1_048_576,
+    });
+    vi.mocked(exportBackend.cancel).mockReturnValue(cancelGate.promise);
+    const publishedOperations: Array<ProjectExportOperation | null> = [];
+    const fixture = renderPlanEditorFixture({
+      profile: "showroom",
+      sceneRendererFactory: () => renderer,
+      exportBackend,
+      onExportOperationChange: (operation) => publishedOperations.push(operation),
+    });
+    captureRef.current = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: {
+        maxTextureSize: 4096,
+        maxRenderbufferSize: 4096,
+        maxSamples: 4,
+      },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    });
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
+    await waitFor(() => expect(publishedOperations.at(-1)).not.toBeNull());
+    const publishedOperation = publishedOperations.at(-1);
+    if (publishedOperation === null || publishedOperation === undefined) {
+      throw new Error("Expected the active export operation to be published");
+    }
 
     fixture.unmount();
 
     expect(exportBackend.cancel).toHaveBeenCalledOnce();
+    let barrierSettled = false;
+    const barrier = publishedOperation.cancel().finally(() => { barrierSettled = true; });
+    await act(async () => { await Promise.resolve(); });
+    expect(barrierSettled).toBe(false);
+    cancelGate.resolve();
+    await barrier;
+    expect(barrierSettled).toBe(true);
     renderGate.resolve();
   });
 
@@ -1123,8 +1210,8 @@ describe("PlanEditor Task 10 shell", () => {
     const renderGate = deferred();
     const cancelGate = deferred();
     const renderer = new FakeSceneRenderer();
-    let capture: SceneExportCapture;
-    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
     vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
     const render = vi.spyOn(renderer.exportPort, "render").mockImplementation(async () => {
       await renderGate.promise;
@@ -1145,7 +1232,7 @@ describe("PlanEditor Task 10 shell", () => {
       sceneRendererFactory: () => renderer,
       exportBackend,
     });
-    capture = {
+    captureRef.current = {
       provenance: {
         projectId: fixture.snapshot.project.id,
         snapshotSequence: fixture.snapshot.sequence,

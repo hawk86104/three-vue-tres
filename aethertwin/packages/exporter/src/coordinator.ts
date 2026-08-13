@@ -22,6 +22,22 @@ function cancelledError(): ProjectExportError {
 function expiredError(): ProjectExportError {
   return new ProjectExportError("EXPORT_CAPTURE_EXPIRED");
 }
+function attachCleanupFailure(primary: unknown, cleanup: unknown): void {
+  try {
+    if (
+      !(primary instanceof Error)
+      || Object.hasOwn(primary, "cause")
+      || !Object.isExtensible(primary)
+    ) return;
+    Object.defineProperty(primary, "cause", {
+      configurable: true,
+      value: cleanup,
+    });
+  } catch {
+    // Cleanup diagnostics must never replace the primary export failure.
+  }
+}
+
 
 function validateBeginResult(
   begun: ProjectExportBeginResult,
@@ -48,6 +64,7 @@ class ActiveProjectExport {
   private resolveResult!: (result: ProjectExportResult) => void;
   private rejectResult!: (reason: unknown) => void;
   private exportId: string | null = null;
+  private nativeBeginPromise: Promise<ProjectExportBeginResult> | null = null;
   private cancelled = false;
   private settled = false;
   private cancelPromise: Promise<void> | null = null;
@@ -85,16 +102,27 @@ class ActiveProjectExport {
   }
 
   private cancelNative(): Promise<void> {
-    if (this.exportId === null) return Promise.resolve();
     if (this.cancelPromise !== null) return this.cancelPromise;
-    this.cancelPromise = this.backend.cancel(
-      this.request.context.projectPath,
-      this.exportId,
-    ).catch(() => undefined);
+    if (this.exportId !== null) {
+      this.cancelPromise = this.backend.cancel(
+        this.request.context.projectPath,
+        this.exportId,
+      );
+      return this.cancelPromise;
+    }
+    if (this.nativeBeginPromise === null) return Promise.resolve();
+    this.cancelPromise = this.nativeBeginPromise.then(
+      (begun) => this.backend.cancel(
+        this.request.context.projectPath,
+        begun.exportId,
+      ),
+      () => undefined,
+    );
     return this.cancelPromise;
   }
 
   private async cancel(): Promise<void> {
+    if (this.cancelPromise !== null) return this.cancelPromise;
     if (this.settled) return;
     this.cancelled = true;
     await this.cancelNative();
@@ -115,10 +143,11 @@ class ActiveProjectExport {
       await this.request.port.waitForTextures(prepared.capture);
       this.assertLive();
 
-      const begun = await this.backend.begin(this.request.context.projectPath, {
+      this.nativeBeginPromise = this.backend.begin(this.request.context.projectPath, {
         provenance: prepared.capture.provenance,
         preset: this.request.preset,
       });
+      const begun = await this.nativeBeginPromise;
       this.exportId = begun.exportId;
       this.assertLive();
       validateBeginResult(
@@ -178,7 +207,11 @@ class ActiveProjectExport {
         await this.cancelNative();
         throw cancelledError();
       }
-      await this.cancelNative();
+      try {
+        await this.cancelNative();
+      } catch (cleanupFailure) {
+        attachCleanupFailure(error, cleanupFailure);
+      }
       throw error;
     } finally {
       this.settled = true;

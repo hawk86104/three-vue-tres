@@ -48,8 +48,8 @@ describe("M2.5 Studio vertical acceptance", () => {
     const renderer = new FakeSceneRenderer();
     const renderGate = frameGate();
     const cancelGate = deferred();
-    let capture!: SceneExportCapture;
-    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => capture);
+    const captureRef: { current?: SceneExportCapture } = {};
+    vi.spyOn(renderer.exportPort, "capture").mockImplementation(() => captureRef.current!);
     vi.spyOn(renderer.exportPort, "waitForTextures").mockResolvedValue(undefined);
     const render = vi.spyOn(renderer.exportPort, "render")
       .mockImplementation(async () => renderGate.promise);
@@ -78,7 +78,7 @@ describe("M2.5 Studio vertical acceptance", () => {
       sceneRendererFactory: () => renderer,
       exportBackend: backend,
     });
-    capture = Object.freeze({
+    captureRef.current = Object.freeze({
       scene: emptyScene,
       camera: Object.freeze({
         position: Object.freeze({ x: 4, y: 8, z: 12 }),
@@ -123,7 +123,7 @@ describe("M2.5 Studio vertical acceptance", () => {
       .toHaveClass("studio-scene-viewport--export");
 
     await user.click(within(panel).getByRole("button", { name: "Export PNG" }));
-    await waitFor(() => expect(render).toHaveBeenCalledWith(capture, {
+    await waitFor(() => expect(render).toHaveBeenCalledWith(captureRef.current, {
       preset: "full-hd",
       width: 1920,
       height: 1080,

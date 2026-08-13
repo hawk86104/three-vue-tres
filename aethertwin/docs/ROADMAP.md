@@ -4,13 +4,13 @@
 
 - M0 foundation: complete.
 - M1 unified 2D authoring core: complete; evidence is in `M1_REPORT.md`.
-- M2 showroom workflow: functionally complete and documented through M2.5 Task 19; only Task 20 final non-build closure remains.
+- M2 showroom workflow: complete and accepted through M2.5.
   - M2.1 safe assets and calibrated plan references: accepted.
   - M2.2 openings, room recognition, and parametric showroom fixtures: accepted.
   - M2.3 content and guided routes: accepted.
   - M2.4 synchronized 3D, durable materials/environment, and renderer lifecycle: complete and accepted. Tasks 0-18, the full non-build gate, and final independent review are closed with no findings.
-  - M2.5 export/demo/evidence: Tasks 1-19 implemented; Task 19 evidence is policy-verified 45/45 and independently reviewed with no findings; Task 20 is the only remaining gate.
-- M3 market workflow: deferred until after M2.
+  - M2.5 export/demo/evidence: accepted; Task 20's final non-build gate and independent review closed with no findings.
+- M3 market workflow: next milestone, deferred until a separate high-reasoning specification and atomic plan are approved.
 - M4 Player and media: deferred.
 - M5 hardening and performance profiling: deferred; no performance claim is made.
 
@@ -20,11 +20,11 @@ Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace p
 
 M2.4 keeps schema v3, one SQLite storage migration, exactly eight native invokes, and the existing two desktop capabilities. Showroom defaults to 2D and supports 3D and fixed 50/50 split; Market remains 2D-only. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.
 
-## Remaining M2 work: Tasks 19-20
+## M2 closure result
 
-The approved M2.5 plan is implemented through its functional and vertical-acceptance tasks. Showroom now has two fixed project-bound PNG presets, deterministic Demo sources, strict native publication, and cancellation/cleanup. Schema remains v3, the native surface is exactly twelve, and desktop capabilities remain exactly two.
+The approved M2.5 plan is complete. Showroom has two fixed project-bound PNG presets, deterministic Demo sources, strict native publication, and cancellation/cleanup. Schema remains v3, the native surface is exactly twelve commands, and desktop capabilities remain exactly two.
 
-Task 20 must run the complete approved non-build gate and final independent review before M2 is called closed. Publish, MP4, `.twinpack`, Player, Market 3D/export, GLTF, arbitrary lights/shaders, and 3D geometry editing remain deferred.
+Task 20's final gate passed frozen install, lint, typecheck, Node 45/45, Vitest 77 files and 1,500 tests, rustfmt, Rust 302 passed with 2 approved ignored privileged-Windows tests, four-crate all-targets Cargo check, and diff check. Final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. M2.5 is accepted and M2 is closed. Publish, MP4, `.twinpack`, Player, Market 3D/export, GLTF, arbitrary lights/shaders, and 3D geometry editing remain deferred.
 
 ## Milestone definitions
 

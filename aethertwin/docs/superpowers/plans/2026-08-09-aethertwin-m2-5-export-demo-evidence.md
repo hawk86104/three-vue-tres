@@ -2735,7 +2735,7 @@ git commit -m "docs: document AetherTwin M2 export evidence"
 - Consumes: all committed Tasks 0-19 and their evidence.
 - Produces accepted M2.5/M2 closure with actual complete gate logs, final independent verdict and no unresolved blocking finding.
 
-- [ ] **Step 1: Record the pre-gate repository invariants**
+- [x] **Step 1: Record the pre-gate repository invariants**
 
 Run read-only checks:
 
@@ -2757,7 +2757,7 @@ Get-Content -Raw -LiteralPath crates/desktop-host/capabilities/default.json
 
 Expected: only the two known protected manifests are unstaged before Task 20 edits; cached diff is empty; hashes match Global Constraints; command count is 12; capability policy remains exactly 2. If another file is dirty, identify ownership before continuing and do not overwrite it.
 
-- [ ] **Step 2: Obtain explicit approval and run the complete gate exactly**
+- [x] **Step 2: Obtain explicit approval and run the complete gate exactly**
 
 Run in this order and preserve each complete output:
 
@@ -2775,7 +2775,7 @@ git diff --check
 
 Expected: every command exits 0 except only a pre-approved/documented privileged Windows reparse test may remain ignored rather than failed. Record actual Node/Vitest/Rust counts from output. Do not run build, dev, debug, browser, Playwright, packaging, screenshot, real-GPU, visual or performance commands.
 
-- [ ] **Step 3: Classify and repair any gate failure before claiming success**
+- [x] **Step 3: Classify and repair any gate failure before claiming success**
 
 For each failure, record:
 
@@ -2791,7 +2791,7 @@ full-command rerun
 
 Repair only demonstrated M2.5 regressions. Preserve existing public behavior and all locked decisions. A dependency/network failure is recorded and retried only after connectivity returns; do not change versions or introduce a CDN. Do not classify a Task 19 documentation regression as pre-existing.
 
-- [ ] **Step 4: Run final independent specification and code review**
+- [x] **Step 4: Run final independent specification and code review**
 
 Provide the reviewer the approved design, this plan, commits since `26cc7534`, final staged/unstaged diff, complete gate logs and M2 report. Require:
 
@@ -2806,7 +2806,9 @@ Ready: Yes
 
 Resolve every Critical/Important finding and rerun all affected focused/full gates. A Minor may remain only when it does not violate acceptance and its exact reason/risk is recorded in `docs/M2_REPORT.md`.
 
-- [ ] **Step 5: Convert documents to final closure state**
+Actual final verdict on the final3 source bytes: Spec Compliance Pass; Code Quality Approved; Critical None; Important None; Minor None; Ready Yes. Three review waves were resolved with focused RED/GREEN evidence before the entire nine-command gate was restarted.
+
+- [x] **Step 5: Convert documents to final closure state**
 
 Update `docs/M2_REPORT.md` with actual commands, exit codes, counts, failures/repairs/retries and final review. Mark M2.5 accepted and M2 closed in README/ROADMAP/HANDOFF/PLANS only after Step 2 and Step 4 succeed. Mark Task 20 and every remaining checkbox in this plan complete. State explicitly:
 
@@ -2820,7 +2822,9 @@ build/browser/GPU/visual validation not run and not claimed
 local master/origin 57 2 divergence still requires human integration
 ```
 
-- [ ] **Step 6: Verify the closure-only staged scope and commit**
+The final3 gate passed Node 45/45, Vitest 77/77 files and 1,500/1,500 tests, Rust 302 passed with 2 approved ignored privileged-Windows tests, and every non-build command at exit 0. README, M2_REPORT, ROADMAP, HANDOFF, PLANS, and this plan now record M2.5 accepted and M2 closed without making build, browser, GPU, visual, or performance claims.
+
+- [x] **Step 6: Verify the closure-only staged scope and commit**
 
 Run:
 

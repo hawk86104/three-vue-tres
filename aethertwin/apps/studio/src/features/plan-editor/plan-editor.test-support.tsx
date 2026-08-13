@@ -9,7 +9,7 @@ import {
   type SpatialEntity,
 } from "@aethertwin/core-model";
 import type { FloorChange, PlanEditIntent } from "@aethertwin/plan-engine";
-import type { ProjectExportBackend } from "@aethertwin/exporter";
+import type { ProjectExportBackend, ProjectExportOperation } from "@aethertwin/exporter";
 import type { ProjectStore, ProjectStoreState } from "@aethertwin/project-store";
 import type {
   PlanPointerEvent,
@@ -170,6 +170,7 @@ export interface RenderPlanEditorFixtureOptions {
   readonly workspace?: PlanEditorDependencies["workspace"];
   readonly sceneRendererFactory?: SceneRendererFactory;
   readonly exportBackend?: ProjectExportBackend | null;
+  readonly onExportOperationChange?: (operation: ProjectExportOperation | null) => void;
   readonly renderer?: FakePlanRenderer;
 }
 
@@ -442,6 +443,9 @@ export function renderPlanEditorFixture(
       store={projectStore}
       backendMode="sandbox"
       exportBackend={options.exportBackend ?? null}
+      {...(options.onExportOperationChange === undefined
+        ? {}
+        : { onExportOperationChange: options.onExportOperationChange })}
       dependencies={{
         sessionStore,
         controller,

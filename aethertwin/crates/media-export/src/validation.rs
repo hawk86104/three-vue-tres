@@ -53,11 +53,14 @@ pub fn validate_png_and_hash<R: Read + Seek>(
             return Err(MediaExportError::ValidationFailed);
         }
 
-        while png_reader
+        while let Some(row) = png_reader
             .next_row()
             .map_err(|_| MediaExportError::ValidationFailed)?
-            .is_some()
-        {}
+        {
+            if row.data().chunks_exact(4).any(|pixel| pixel[3] != 255) {
+                return Err(MediaExportError::NonOpaqueAlpha);
+            }
+        }
         png_reader
             .finish()
             .map_err(|_| MediaExportError::ValidationFailed)?;

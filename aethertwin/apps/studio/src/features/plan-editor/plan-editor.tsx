@@ -126,6 +126,7 @@ export interface PlanEditorProps {
   readonly store: ProjectStore;
   readonly backendMode?: ProjectBackend["mode"];
   readonly exportBackend?: ProjectExportBackend | null;
+  readonly onExportOperationChange?: (operation: ProjectExportOperation | null) => void;
   readonly onBack?: () => void;
   readonly onBeforeClose?: () => void;
   readonly dependencies?: PlanEditorDependencies;
@@ -439,6 +440,7 @@ export function PlanEditor({
   onBack = () => undefined,
   onBeforeClose = () => undefined,
   exportBackend = null,
+  onExportOperationChange = () => undefined,
   dependencies,
 }: PlanEditorProps) {
   const state = useProjectState(store);
@@ -537,7 +539,7 @@ export function PlanEditor({
     return () => {
       mountedRef.current = false;
       exportPanelGenerationRef.current += 1;
-      void cancelActiveExport();
+      void cancelActiveExport().catch(() => undefined);
       sessionStore.getState().clearRoomRecognition();
       sessionStore.getState().clearSelectedFixtureKind();
     };
@@ -577,16 +579,24 @@ export function PlanEditor({
       const nextFloorId = state.snapshot?.project.floors[0]?.id ?? "";
       const operation = activeExportRef.current;
       void (async () => {
+        let cancellationError: Error | null = null;
         try {
           if (operation !== null) {
             await operation.cancel();
-            if (activeExportRef.current === operation) activeExportRef.current = null;
           }
         } catch (error) {
           if (
             mountedRef.current
             && projectSessionGeneration.current === replacementGeneration
-          ) setActionError(errorValue(error));
+          ) {
+            const failure = safeProjectExportFailure(error);
+            cancellationError = new Error(failure.code + ": " + failure.message);
+          }
+        } finally {
+          if (operation !== null && activeExportRef.current === operation) {
+            activeExportRef.current = null;
+            onExportOperationChange(null);
+          }
         }
         if (
           !mountedRef.current
@@ -601,6 +611,7 @@ export function PlanEditor({
           `plan-editor-project-session-${replacementGeneration}`,
           nextFloorId,
         );
+        if (cancellationError !== null) setActionError(cancellationError);
       })();
     }
   }, [sessionStore, state.snapshot, store]);
@@ -715,16 +726,18 @@ export function PlanEditor({
     await operation.cancel();
     if (activeExportRef.current === operation) {
       activeExportRef.current = null;
+      onExportOperationChange(null);
     }
   }
 
   async function closeAndReturn() {
     setActionError(null);
     try {
-      if (exportState === null) {
-        await cancelActiveExport();
-      } else {
-        await closeExportPanel();
+      try {
+        if (exportState === null) await cancelActiveExport();
+        else await closeExportPanel();
+      } catch {
+        // ProjectStore.close is the authoritative native cancellation/close retry barrier.
       }
       await store.flush();
       await store.save();
@@ -743,10 +756,11 @@ export function PlanEditor({
     }
     setActionError(null);
     try {
-      if (exportState === null) {
-        await cancelActiveExport();
-      } else {
-        await closeExportPanel();
+      try {
+        if (exportState === null) await cancelActiveExport();
+        else await closeExportPanel();
+      } catch {
+        // ProjectStore.close is the authoritative native cancellation/close retry barrier.
       }
       onBeforeClose();
       await store.close();
@@ -1660,6 +1674,7 @@ export function PlanEditor({
       return;
     }
     activeExportRef.current = operation;
+    onExportOperationChange(operation);
     void operation.result.then(
       (result) => {
         if (
@@ -1681,7 +1696,10 @@ export function PlanEditor({
         }
       },
     ).finally(() => {
-      if (activeExportRef.current === operation) activeExportRef.current = null;
+      if (activeExportRef.current === operation) {
+        activeExportRef.current = null;
+        onExportOperationChange(null);
+      }
     });
   }
 
@@ -1704,6 +1722,14 @@ export function PlanEditor({
         && initiator?.isConnected
       ) initiator.focus();
     }, 0);
+  }
+
+  function requestCloseExportPanel(): void {
+    void closeExportPanel().catch((error: unknown) => {
+      if (!mountedRef.current) return;
+      const failure = safeProjectExportFailure(error);
+      setActionError(new Error(`${failure.code}: ${failure.message}`));
+    });
   }
 
   const floorTree = (
@@ -1857,8 +1883,8 @@ export function PlanEditor({
                 if (exportState.kind !== "running") setExportState({ kind: "idle", preset });
               }}
               onStart={startExport}
-              onCancel={() => void closeExportPanel()}
-              onClose={() => void closeExportPanel()}
+              onCancel={requestCloseExportPanel}
+              onClose={requestCloseExportPanel}
               onExportAgain={() => {
                 setExportState({ kind: "idle", preset: exportState.preset });
               }}
@@ -1982,7 +2008,7 @@ export function PlanEditor({
                       sceneExportHandleRef.current = handle;
                       setSceneExportHandle(handle);
                       if (handle === null && exportState !== null) {
-                        void closeExportPanel();
+                        requestCloseExportPanel();
                       }
                     }}
                     exportPanelOpen={exportState !== null}

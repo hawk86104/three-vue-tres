@@ -269,6 +269,26 @@ fn validation_rejects_tampered_png_structure() {
 }
 
 #[test]
+fn terminal_validation_rejects_an_independently_encoded_transparent_rgba_png() {
+    let target = tempfile::NamedTempFile::new().unwrap();
+    let dimensions = PngDimensions {
+        width: 1,
+        height: 1,
+    };
+    {
+        let mut encoder = png::Encoder::new(target.reopen().unwrap(), 1, 1);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+        let mut writer = encoder.write_header().unwrap();
+        writer.write_image_data(&[17, 34, 51, 0]).unwrap();
+    }
+
+    let mut png_file = target.reopen().unwrap();
+    assert!(validate_png_and_hash(&mut png_file, dimensions).is_err());
+}
+
+#[test]
 fn validation_rejects_duplicate_terminal_iend() {
     let target = tempfile::NamedTempFile::new().unwrap();
     let dimensions = PngDimensions {

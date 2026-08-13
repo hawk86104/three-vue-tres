@@ -297,6 +297,112 @@ describe("ProjectExportCoordinator", () => {
     expect(events).toHaveLength(eventCountAfterCancel);
   });
 
+  it("waits for an in-flight begin and native cancellation before cancel resolves", async () => {
+    const events: string[] = [];
+    const beginGate = deferred<ProjectExportBeginResult>();
+    const cancelGate = deferred<void>();
+    const operation = createProjectExportCoordinator(fakeBackend(events, {
+      begin: async () => {
+        events.push("begin");
+        return await beginGate.promise;
+      },
+      cancel: async () => {
+        events.push("cancel");
+        await cancelGate.promise;
+      },
+    })).start({
+      port: fakePort(events),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: progress(events),
+    });
+    await waitForEvent(events, "begin");
+
+    let cancellationSettled = false;
+    const cancellation = operation.cancel().finally(() => { cancellationSettled = true; });
+    await settle();
+    expect(cancellationSettled).toBe(false);
+
+    beginGate.resolve({
+      ...fullHd,
+      exportId: "export-1",
+      expectedByteLength: byteLength,
+      maxChunkBytes: 1_048_576,
+    });
+    await waitForEvent(events, "cancel");
+    expect(cancellationSettled).toBe(false);
+    cancelGate.resolve();
+
+    await expect(cancellation).resolves.toBeUndefined();
+    await expect(operation.result).rejects.toMatchObject({ code: "EXPORT_CANCELLED" });
+  });
+
+  it("propagates and deduplicates an explicit native cancellation failure", async () => {
+    const events: string[] = [];
+    const renderGate = deferred<SceneExportFrame>();
+    const cancelFailure = new Error("native cancellation failed");
+    const operation = createProjectExportCoordinator(fakeBackend(events, {
+      cancel: async () => {
+        events.push("cancel");
+        throw cancelFailure;
+      },
+    })).start({
+      port: fakePort(events, { render: renderGate.promise }),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: progress(events),
+    });
+    await waitForEvent(events, "render");
+
+    await expect(operation.cancel()).rejects.toBe(cancelFailure);
+    await expect(operation.cancel()).rejects.toBe(cancelFailure);
+    expect(events.filter((event) => event === "cancel")).toHaveLength(1);
+
+    renderGate.resolve(frame);
+    await expect(operation.result).rejects.toBe(cancelFailure);
+    await expect(operation.cancel()).rejects.toBe(cancelFailure);
+  });
+
+  it("preserves the primary export failure when best-effort cleanup also fails", async () => {
+    const events: string[] = [];
+    const primaryFailure = new Error("render failed");
+    const cleanupFailure = new Error("cleanup failed");
+    const operation = createProjectExportCoordinator(fakeBackend(events, {
+      cancel: async () => {
+        events.push("cancel");
+        throw cleanupFailure;
+      },
+    })).start({
+      port: fakePort(events, { render: Promise.reject(primaryFailure) }),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: progress(events),
+    });
+
+    await expect(operation.result).rejects.toBe(primaryFailure);
+    expect(events.filter((event) => event === "cancel")).toHaveLength(1);
+  });
+
+  it("preserves a frozen primary export failure when cleanup also fails", async () => {
+    const events: string[] = [];
+    const primaryFailure = Object.freeze(new Error("render failed"));
+    const cleanupFailure = new Error("cleanup failed");
+    const operation = createProjectExportCoordinator(fakeBackend(events, {
+      cancel: async () => {
+        events.push("cancel");
+        throw cleanupFailure;
+      },
+    })).start({
+      port: fakePort(events, { render: Promise.reject(primaryFailure) }),
+      preset: "full-hd",
+      context: exportContext(),
+      onProgress: progress(events),
+    });
+
+    await expect(operation.result).rejects.toBe(primaryFailure);
+    expect(events.filter((event) => event === "cancel")).toHaveLength(1);
+  });
+
   it.each([
     ["cancellation", "rendering"],
     ["cancellation", "encoding-publishing"],

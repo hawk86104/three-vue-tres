@@ -1,24 +1,33 @@
 // @vitest-environment jsdom
 
-import type { ProjectExportBackend } from "@aethertwin/exporter";
+import type { ProjectExportBackend, ProjectExportOperation } from "@aethertwin/exporter";
+import type * as ProjectStoreModule from "@aethertwin/project-store";
 import { SandboxProjectBackend, type ProjectBackend } from "@aethertwin/project-store";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./app";
 
 const observations = vi.hoisted(() => ({
   projectBackends: [] as unknown[],
   planEditorProps: [] as Array<Record<string, unknown>>,
+  projectStores: [] as unknown[],
+  disposedStores: [] as unknown[],
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 vi.mock("@aethertwin/project-store", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@aethertwin/project-store")>();
+  const actual = await importOriginal<typeof ProjectStoreModule>();
   class ObservedProjectStore extends actual.ProjectStore {
     constructor(backend: ProjectBackend) {
       observations.projectBackends.push(backend);
       super(backend);
+      observations.projectStores.push(this);
+    }
+
+    override async dispose(): Promise<void> {
+      observations.disposedStores.push(this);
+      await super.dispose();
     }
   }
   return { ...actual, ProjectStore: ObservedProjectStore };
@@ -51,8 +60,11 @@ vi.mock("./features/plan-editor/plan-editor", () => ({
 }));
 
 afterEach(() => {
+  cleanup();
   observations.projectBackends.length = 0;
   observations.planEditorProps.length = 0;
+  observations.projectStores.length = 0;
+  observations.disposedStores.length = 0;
 });
 
 describe("App backend capability injection", () => {
@@ -75,6 +87,40 @@ describe("App backend capability injection", () => {
     if (useNull) {
       expect(observations.planEditorProps.at(-1)?.exportBackend).not.toBe(projectBackend);
     }
+  });
+
+  it("awaits the published export cancellation barrier before disposing the store", async () => {
+    const projectBackend = new SandboxProjectBackend();
+    const exportBackend = exportBackendStub();
+    let resolveCancellation!: () => void;
+    const cancellationGate = new Promise<void>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const cancel = vi.fn(() => cancellationGate);
+    const operation: ProjectExportOperation = {
+      cancel,
+      result: new Promise<never>(() => undefined),
+    };
+
+    const rendered = render(<App backend={projectBackend} exportBackend={exportBackend} />);
+    fireEvent.click(screen.getByRole("button", { name: "start" }));
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    await screen.findByTestId("plan-editor");
+    const currentStore = observations.projectStores.at(-1);
+    if (currentStore === undefined) throw new Error("Expected the active ProjectStore");
+
+    const publishOperation = observations.planEditorProps.at(-1)?.onExportOperationChange;
+    if (typeof publishOperation !== "function") {
+      throw new Error("Expected PlanEditor export-operation publication callback");
+    }
+    publishOperation(operation);
+    rendered.unmount();
+
+    await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+    expect(observations.disposedStores).not.toContain(currentStore);
+
+    resolveCancellation();
+    await waitFor(() => expect(observations.disposedStores).toContain(currentStore));
   });
 });
 

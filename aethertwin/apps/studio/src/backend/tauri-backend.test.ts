@@ -1516,17 +1516,15 @@ describe("TauriProjectBackend project export adapter", () => {
   const EXPORT_ID = "50000000-0000-4000-8000-000000000001";
   const beginResult = {
     exportId: EXPORT_ID,
-    preset: "full-hd" as const,
     width: 1920 as const,
     height: 1080 as const,
     expectedByteLength: 8_294_400,
     maxChunkBytes: 1_048_576 as const,
   };
   const finishResult = {
-    preset: "full-hd" as const,
     width: 1920 as const,
     height: 1080 as const,
-    relativePath: "exports/demo.mp4",
+    relativePath: "exports/demo.png",
     byteSize: 123_456,
     sha256: "a".repeat(64),
   };
@@ -1541,7 +1539,7 @@ describe("TauriProjectBackend project export adapter", () => {
     return { backend, opened };
   }
 
-  it("uses exact begin, finish, cancel payloads and raw chunk headers", async () => {
+  it("uses exact begin, write, and finish payloads with raw chunk headers", async () => {
     const { backend, opened } = await openedExportBackend();
     const provenance = {
       projectId: opened.snapshot.project.id,
@@ -1552,14 +1550,13 @@ describe("TauriProjectBackend project export adapter", () => {
     invoke
       .mockResolvedValueOnce(beginResult)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(finishResult)
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(finishResult);
 
     await expect(backend.begin(PROJECT_A, { provenance, preset: "full-hd" }))
-      .resolves.toEqual(beginResult);
+      .resolves.toEqual({ ...beginResult, preset: "full-hd" });
     await backend.writeChunk(PROJECT_A, EXPORT_ID, 7, bytes);
-    await expect(backend.finish(PROJECT_A, EXPORT_ID)).resolves.toEqual(finishResult);
-    await backend.cancel(PROJECT_A, EXPORT_ID);
+    await expect(backend.finish(PROJECT_A, EXPORT_ID))
+      .resolves.toEqual({ ...finishResult, preset: "full-hd" });
 
     expect(invoke.mock.calls).toEqual([
       ["begin_project_export", { payload: {
@@ -1575,13 +1572,204 @@ describe("TauriProjectBackend project export adapter", () => {
         "X-Aether-Chunk-Index": "7",
       } }],
       ["finish_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
-      ["cancel_project_export", { payload: { sessionId: SESSION_A, exportId: EXPORT_ID } }],
+    ]);
+  });
+
+  it("does not send a queued cancel after finish wins the terminal race", async () => {
+    const { backend, opened } = await openedExportBackend();
+    const finishGate = deferred<typeof finishResult>();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "finish_project_export") return finishGate.promise;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    const finishing = backend.finish(PROJECT_A, EXPORT_ID);
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+        "begin_project_export",
+        "finish_project_export",
+      ]);
+    });
+    const cancelling = backend.cancel(PROJECT_A, EXPORT_ID);
+    finishGate.resolve(finishResult);
+
+    await expect(finishing).resolves.toEqual({ ...finishResult, preset: "full-hd" });
+    await expect(cancelling).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "finish_project_export",
+    ]);
+  });
+
+  it("does not send a queued finish after cancel wins the terminal race", async () => {
+    const { backend, opened } = await openedExportBackend();
+    const cancelGate = deferred<void>();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "cancel_project_export") return cancelGate.promise;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    const cancelling = backend.cancel(PROJECT_A, EXPORT_ID);
+    await vi.waitFor(() => {
+      expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+        "begin_project_export",
+        "cancel_project_export",
+      ]);
+    });
+    const finishing = backend.finish(PROJECT_A, EXPORT_ID);
+    cancelGate.resolve();
+
+    await expect(cancelling).resolves.toBeUndefined();
+    await expect(finishing).rejects.toThrow(/active project export/i);
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "cancel_project_export",
+    ]);
+  });
+
+  it("forgets a terminal native finish failure before explicit close", async () => {
+    const { backend, opened } = await openedExportBackend();
+    const nativeFailure = {
+      code: "EXPORT_VALIDATION_FAILED",
+      message: "Export validation failed",
+      details: null,
+      logRef: "export-validation-ref",
+    };
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "finish_project_export") throw nativeFailure;
+      if (command === "close_project") return undefined;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toMatchObject({
+      code: nativeFailure.code,
+    });
+    await expect(backend.closeProject(PROJECT_A)).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "finish_project_export",
+      "close_project",
+    ]);
+  });
+  it("runs authoritative close after a lost native finish response", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "finish_project_export") throw new Error("response lost");
+      if (command === "cancel_project_export") {
+        throw {
+          code: "EXPORT_NOT_FOUND",
+          message: "The export operation is not active",
+          details: null,
+          logRef: "export-not-found-ref",
+        };
+      }
+      if (command === "close_project") return undefined;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toMatchObject({
+      code: "NATIVE_INVOCATION_FAILED",
+    });
+    await expect(backend.closeProject(PROJECT_A)).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "finish_project_export",
+      "cancel_project_export",
+      "close_project",
+    ]);
+  });
+
+  it("forgets a structured native cancel terminal before explicit close", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "cancel_project_export") {
+        throw {
+          code: "EXPORT_PUBLISH_FAILED",
+          message: "Export cleanup failed",
+          details: null,
+          logRef: "export-cleanup-ref",
+        };
+      }
+      if (command === "close_project") return undefined;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    await expect(backend.cancel(PROJECT_A, EXPORT_ID)).rejects.toMatchObject({
+      code: "EXPORT_PUBLISH_FAILED",
+    });
+    await expect(backend.closeProject(PROJECT_A)).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "cancel_project_export",
+      "close_project",
+    ]);
+  });
+
+  it("runs authoritative close after transport-uncertain cancellation", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "begin_project_export") return beginResult;
+      if (command === "cancel_project_export") throw new Error("response lost");
+      if (command === "close_project") return undefined;
+      throw new Error("unexpected native command");
+    });
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+
+    await expect(backend.cancel(PROJECT_A, EXPORT_ID)).rejects.toMatchObject({
+      code: "NATIVE_INVOCATION_FAILED",
+    });
+    await expect(backend.closeProject(PROJECT_A)).resolves.toBeUndefined();
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "cancel_project_export",
+      "cancel_project_export",
+      "close_project",
     ]);
   });
 
   it.each([
     ["missing begin key", { ...beginResult, exportId: undefined }],
-    ["wrong begin preset", { ...beginResult, preset: "ultra-hd" }],
+    ["unexpected begin preset", { ...beginResult, preset: "full-hd" }],
     ["wrong begin dimensions", { ...beginResult, width: 3840 }],
     ["unsafe expected byte count", { ...beginResult, expectedByteLength: Number.MAX_SAFE_INTEGER + 1 }],
     ["oversized chunk ceiling", { ...beginResult, maxChunkBytes: 1_048_577 }],
@@ -1599,16 +1787,78 @@ describe("TauriProjectBackend project export adapter", () => {
   });
 
   it.each([
-    ["absolute path", { ...finishResult, relativePath: "E:\\private\\demo.mp4" }],
-    ["outside exports", { ...finishResult, relativePath: "assets/demo.mp4" }],
-    ["wrong preset", { ...finishResult, preset: "ultra-hd" }],
+    ["absolute path", { ...finishResult, relativePath: "E:\\private\\demo.png" }],
+    ["outside exports", { ...finishResult, relativePath: "assets/demo.png" }],
+    ["unexpected preset", { ...finishResult, preset: "full-hd" }],
+    ["MP4 output", { ...finishResult, relativePath: "exports/demo.mp4" }],
+    ["nested output", { ...finishResult, relativePath: "exports/nested/demo.png" }],
+    ["unsafe output leaf", { ...finishResult, relativePath: "exports/demo?.png" }],
+    ["delete control leaf", { ...finishResult, relativePath: "exports/demo\u007f.png" }],
+    ["C1 control leaf", { ...finishResult, relativePath: "exports/demo\u0085.png" }],
+    ["control character leaf", { ...finishResult, relativePath: "exports/demo\u0001.png" }],
     ["wrong dimensions", { ...finishResult, height: 2160 }],
     ["unsafe byte size", { ...finishResult, byteSize: Number.MAX_SAFE_INTEGER + 1 }],
     ["invalid digest", { ...finishResult, sha256: "A".repeat(64) }],
   ] as const)("strictly rejects native finish response: %s", async (_label, response) => {
-    const { backend } = await openedExportBackend();
-    invoke.mockResolvedValueOnce(response);
+    const { backend, opened } = await openedExportBackend();
+    invoke
+      .mockResolvedValueOnce(beginResult)
+      .mockResolvedValueOnce(response);
+    await backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    });
     await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toThrow(/invalid|response|export/i);
+  });
+
+
+  it("cancels a trusted native export when the remaining begin response is invalid", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke
+      .mockResolvedValueOnce({ ...beginResult, expectedByteLength: 0 })
+      .mockResolvedValueOnce(undefined);
+
+    await expect(backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    })).rejects.toThrow(/invalid|response|export/i);
+
+    expect(invoke).toHaveBeenLastCalledWith("cancel_project_export", {
+      payload: { sessionId: SESSION_A, exportId: EXPORT_ID },
+    });
+  });
+
+  it("forgets a natively finished export even when its response is invalid", async () => {
+    const { backend, opened } = await openedExportBackend();
+    invoke
+      .mockResolvedValueOnce(beginResult)
+      .mockResolvedValueOnce({ ...finishResult, sha256: "INVALID" })
+      .mockResolvedValueOnce(undefined);
+    await backend.begin(PROJECT_A, {
+      provenance: {
+        projectId: opened.snapshot.project.id,
+        snapshotSequence: opened.snapshot.sequence,
+        activeFloorId: opened.snapshot.project.floors[0]!.id,
+      },
+      preset: "full-hd",
+    });
+
+    await expect(backend.finish(PROJECT_A, EXPORT_ID)).rejects.toThrow(/invalid|response|export/i);
+    await backend.closeProject(PROJECT_A);
+
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual([
+      "begin_project_export",
+      "finish_project_export",
+      "close_project",
+    ]);
   });
 
   it("rejects missing and stale project paths before invoking native export commands", async () => {

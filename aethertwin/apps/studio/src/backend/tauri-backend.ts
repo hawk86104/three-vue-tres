@@ -68,6 +68,30 @@ interface AssetImportResult {
 const SESSION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const PROJECT_EXPORT_FILE_NAME_PATTERN = /^[^<>:"/\\|?*]+\.png$/u;
+const TERMINAL_PROJECT_EXPORT_CODES = new Set([
+  "EXPORT_NOT_FOUND",
+  "EXPORT_SESSION_MISMATCH",
+  "SESSION_NOT_FOUND",
+  "EXPORT_CHUNK_OUT_OF_ORDER",
+  "EXPORT_CHUNK_TOO_LARGE",
+  "EXPORT_BYTE_COUNT_MISMATCH",
+  "EXPORT_ENCODE_FAILED",
+  "EXPORT_VALIDATION_FAILED",
+  "EXPORT_PUBLISH_FAILED",
+]);
+
+function isSafeProjectExportFileName(value: string): boolean {
+  if (!PROJECT_EXPORT_FILE_NAME_PATTERN.test(value)) return false;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined
+      && (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) return false;
+  }
+  return true;
+}
 const MEDIA_TYPES = new Set<AssetMediaType>([
   "image/png",
   "image/jpeg",
@@ -432,6 +456,13 @@ function sanitizeInvocationError(value: unknown): Error {
   );
 }
 
+function isKnownTerminalProjectExportError(
+  error: unknown,
+): error is ProjectBackendError {
+  return error instanceof ProjectBackendError
+    && TERMINAL_PROJECT_EXPORT_CODES.has(error.code);
+}
+
 async function invokeNative<T>(
   command: string,
   payload: UnknownRecord,
@@ -532,24 +563,37 @@ function parseCheckpointResult(
 function parseProjectExportDimensions(
   record: UnknownRecord,
   label: string,
+  expectedPreset?: ProjectExportDimensions["preset"],
 ): ProjectExportDimensions {
-  const preset = record.preset;
   const width = record.width;
   const height = record.height;
-  if (preset === "full-hd" && width === 1920 && height === 1080) {
-    return Object.freeze({ preset, width, height });
+  let dimensions: ProjectExportDimensions;
+  if (width === 1920 && height === 1080) {
+    dimensions = Object.freeze({ preset: "full-hd", width, height });
+  } else if (width === 3840 && height === 2160) {
+    dimensions = Object.freeze({ preset: "ultra-hd", width, height });
+  } else {
+    throw new Error(`Invalid ${label}: unsupported export dimensions`);
   }
-  if (preset === "ultra-hd" && width === 3840 && height === 2160) {
-    return Object.freeze({ preset, width, height });
+  if (expectedPreset !== undefined && dimensions.preset !== expectedPreset) {
+    throw new Error(`Invalid ${label}: dimensions do not match the requested preset`);
   }
-  throw new Error(`Invalid ${label}: preset and dimensions do not match`);
+  return dimensions;
 }
 
-function parseProjectExportBeginResult(value: unknown): ProjectExportBeginResult {
+function trustedProjectExportId(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const exportId = (value as UnknownRecord).exportId;
+  return typeof exportId === "string" && SESSION_ID_PATTERN.test(exportId) ? exportId : null;
+}
+
+function parseProjectExportBeginResult(
+  value: unknown,
+  expectedPreset: ProjectExportDimensions["preset"],
+): ProjectExportBeginResult {
   const label = "native project export begin response";
   const record = exactRecord(value, label, [
     "exportId",
-    "preset",
     "width",
     "height",
     "expectedByteLength",
@@ -559,7 +603,7 @@ function parseProjectExportBeginResult(value: unknown): ProjectExportBeginResult
   if (!SESSION_ID_PATTERN.test(exportId)) {
     throw new Error(`Invalid ${label}.exportId: expected a canonical UUID`);
   }
-  const dimensions = parseProjectExportDimensions(record, label);
+  const dimensions = parseProjectExportDimensions(record, label, expectedPreset);
   const expectedByteLength = requiredSafeInteger(record, "expectedByteLength", label);
   if (expectedByteLength < 1) {
     throw new Error(`Invalid ${label}.expectedByteLength`);
@@ -575,25 +619,25 @@ function parseProjectExportBeginResult(value: unknown): ProjectExportBeginResult
   });
 }
 
-function parseProjectExportResult(value: unknown): ProjectExportResult {
+function parseProjectExportResult(
+  value: unknown,
+  expectedDimensions: ProjectExportDimensions,
+): ProjectExportResult {
   const label = "native project export finish response";
   const record = exactRecord(value, label, [
-    "preset",
     "width",
     "height",
     "relativePath",
     "byteSize",
     "sha256",
   ]);
-  const dimensions = parseProjectExportDimensions(record, label);
+  const dimensions = parseProjectExportDimensions(record, label, expectedDimensions.preset);
   const relativePath = requiredString(record, "relativePath", label);
   const pathSegments = relativePath.split("/");
   if (
+    pathSegments.length !== 2 ||
     pathSegments[0] !== "exports" ||
-    pathSegments.length < 2 ||
-    pathSegments.some((segment) =>
-      segment.length === 0 || segment === "." || segment === ".." || segment.includes("\\")
-    )
+    !isSafeProjectExportFileName(pathSegments[1] ?? "")
   ) {
     throw new Error(`Invalid ${label}.relativePath`);
   }
@@ -614,7 +658,8 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
 
   private readonly sessions = new Map<string, string>();
   private readonly pendingCleanup = new Map<string, string | null>();
-  private readonly activeExports = new Map<string, ReadonlySet<string>>();
+  private readonly activeExports =
+    new Map<string, ReadonlyMap<string, ProjectExportDimensions>>();
   private operationTail: Promise<void> = Promise.resolve();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
@@ -820,11 +865,23 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
         activeFloorId: ownedRequest.provenance.activeFloorId,
         preset: ownedRequest.preset,
       });
-      const result = parseProjectExportBeginResult(response);
-      this.activeExports.set(
-        projectPath,
-        new Set([...(this.activeExports.get(projectPath) ?? []), result.exportId]),
-      );
+      let result: ProjectExportBeginResult;
+      try {
+        result = parseProjectExportBeginResult(response, ownedRequest.preset);
+      } catch (error) {
+        const exportId = trustedProjectExportId(response);
+        if (exportId !== null) {
+          try {
+            await invokeNative<void>("cancel_project_export", { sessionId, exportId });
+          } catch {
+            // Preserve the response-contract failure; native close remains the cleanup barrier.
+          }
+        }
+        throw error;
+      }
+      const activeExports = new Map(this.activeExports.get(projectPath));
+      activeExports.set(result.exportId, result);
+      this.activeExports.set(projectPath, activeExports);
       return result;
     });
   }
@@ -852,17 +909,41 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
   finish(projectPath: string, exportId: string): Promise<ProjectExportResult> {
     return this.enqueue(async () => {
       const sessionId = this.requireSession(projectPath);
-      const response = await invokeNative<unknown>("finish_project_export", { sessionId, exportId });
-      const result = parseProjectExportResult(response);
+      const expectedDimensions = this.activeExports.get(projectPath)?.get(exportId);
+      if (expectedDimensions === undefined) {
+        throw new Error(`No active project export for project: ${projectPath}`);
+      }
+      let response: unknown;
+      try {
+        response = await invokeNative<unknown>("finish_project_export", { sessionId, exportId });
+      } catch (error) {
+        if (isKnownTerminalProjectExportError(error)) {
+          this.forgetActiveExport(projectPath, exportId);
+        }
+        throw error;
+      }
       this.forgetActiveExport(projectPath, exportId);
-      return result;
+      return parseProjectExportResult(response, expectedDimensions);
     });
   }
 
   cancel(projectPath: string, exportId: string): Promise<void> {
+    const activeWhenRequested =
+      this.activeExports.get(projectPath)?.has(exportId) === true;
     return this.enqueue(async () => {
       const sessionId = this.requireSession(projectPath);
-      await invokeNative<void>("cancel_project_export", { sessionId, exportId });
+      if (
+        activeWhenRequested
+        && this.activeExports.get(projectPath)?.has(exportId) !== true
+      ) return;
+      try {
+        await invokeNative<void>("cancel_project_export", { sessionId, exportId });
+      } catch (error) {
+        if (isKnownTerminalProjectExportError(error)) {
+          this.forgetActiveExport(projectPath, exportId);
+        }
+        throw error;
+      }
       this.forgetActiveExport(projectPath, exportId);
     });
   }
@@ -932,8 +1013,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
     }
 
     if (activeSessionId !== undefined) {
-      const cancelFailure = await this.cancelSessionExports(activeSessionId);
-      if (cancelFailure !== null) throw cancelFailure;
+      await this.cancelSessionExports(activeSessionId);
       await invokeNative<void>("close_project", { sessionId: activeSessionId });
       this.sessions.delete(projectPath);
       this.activeExports.delete(projectPath);
@@ -953,7 +1033,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
 
     for (const sessionId of sessionIds) {
       try {
-        const cancelFailure = await this.cancelSessionExports(sessionId);
+        await this.cancelSessionExports(sessionId);
         await invokeNative<void>("close_project", { sessionId });
         for (const [projectPath, activeSessionId] of this.sessions) {
           if (activeSessionId === sessionId) {
@@ -962,9 +1042,6 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
           }
         }
         this.pendingCleanup.delete(sessionId);
-        if (cancelFailure !== null && firstFailure === null) {
-          firstFailure = cancelFailure;
-        }
       } catch (error) {
         if (firstFailure === null) {
           firstFailure = error instanceof Error ? error : new Error(String(error));
@@ -985,9 +1062,9 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
   }
   private forgetActiveExport(projectPath: string, exportId: string): void {
 
-    const exportIds = this.activeExports.get(projectPath);
-    if (exportIds === undefined || !exportIds.has(exportId)) return;
-    const remaining = new Set(exportIds);
+    const exports = this.activeExports.get(projectPath);
+    if (exports === undefined || !exports.has(exportId)) return;
+    const remaining = new Map(exports);
     remaining.delete(exportId);
     if (remaining.size === 0) {
       this.activeExports.delete(projectPath);
@@ -996,24 +1073,22 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
     }
   }
 
-  private async cancelSessionExports(sessionId: string): Promise<Error | null> {
+  private async cancelSessionExports(sessionId: string): Promise<void> {
     const projectPaths = [...this.sessions]
       .filter(([, activeSessionId]) => activeSessionId === sessionId)
       .map(([projectPath]) => projectPath);
-    let firstFailure: Error | null = null;
     for (const projectPath of projectPaths) {
-      for (const exportId of this.activeExports.get(projectPath) ?? []) {
+      for (const exportId of this.activeExports.get(projectPath)?.keys() ?? []) {
         try {
           await invokeNative<void>("cancel_project_export", { sessionId, exportId });
           this.forgetActiveExport(projectPath, exportId);
         } catch (error) {
-          if (firstFailure === null) {
-            firstFailure = error instanceof Error ? error : new Error(String(error));
+          if (isKnownTerminalProjectExportError(error)) {
+            this.forgetActiveExport(projectPath, exportId);
           }
         }
       }
     }
-    return firstFailure;
   }
 
   private enqueueImportStart<T>(

@@ -1,13 +1,13 @@
 # AetherTwin engineering handoff
 
-Updated: 2026-08-13
+Updated: 2026-08-14
 Product workspace: `aethertwin/`
 Active branch: `codex/aethertwin-m2`
-Current implementation baseline: `813bcebd`
+Task 20 reviewed implementation baseline: `190b89aebf34fa943983a607a77a1a4939b33cf4` (the closure commit hash is intentionally not invented before commit)
 
 ## 1. Current outcome
 
-M0 through M2.4 are accepted and closed. M2.5 Tasks 1-19 are implemented and independently reviewed; Task 20 is the only remaining final non-build closure gate.
+M0 through M2.5 are accepted and M2 is closed. The next product milestone is M3, which requires a separate approved specification and atomic implementation plan.
 
 Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
@@ -105,7 +105,9 @@ ProjectStore remains the business-state owner. Transient Studio/R3F owns rendere
 
 Task 18's final gate passed 13/13 focused Vitest, three TypeScript checks, media-export 12/12, project-io 2/2, desktop-host 1/1, four-crate all-targets Cargo check, rustfmt, and diff check. Independent re-review returned Spec Compliance Pass; Code Quality Approved; Critical/Important/Minor 0; Ready Yes. Details and explicit runtime exclusions are in `docs/M2_REPORT.md`.
 
-Task 19's policy gate passed 45/45 and `git diff --check` exited 0. Its independent documentation re-review returned Pass / Approved / Ready Yes with no Critical, Important, or Minor finding. Task 20 is the final whole-M2 non-build closure gate.
+Task 19's policy gate passed 45/45 and `git diff --check` exited 0. Its independent documentation re-review returned Pass / Approved / Ready Yes with no Critical, Important, or Minor finding.
+
+Task 20's final reviewed gate passed frozen install for 15 workspace projects, lint, typecheck across 14/15 workspace projects, Node 45/45, Vitest 77/77 files and 1,500/1,500 tests, rustfmt, Rust 302 passed with 2 approved privileged-Windows tests ignored, four-crate all-targets Cargo check, and diff check. Its final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. Schema v3, exactly 12 native commands, exactly 2 desktop capabilities, the Showroom Demo digest, and both protected manifest hashes remain verified.
 
 
 ## 8. Protected files
@@ -115,7 +117,7 @@ Do not modify, format, restore, stage, or commit these user-protected manifests:
 - `crates/asset-io/Cargo.toml` — SHA-256 `9D22219E9F87C64E34BD201446C6CC2DC05EE91372C11C60A0D3FFA692DE7606`
 - `crates/desktop-host/Cargo.toml` — SHA-256 `3713E909384117E3D3E8D63B246642A44FFEA51F90CCAF4D64B4C601B6C5900E`
 
-Task 18 implementation did not stage or commit files. The controller or human integrator owns any eventual closure commit and branch integration.
+The Task 20 closure scope excludes both protected manifests and `packages/mode-showroom/src/index.ts`. The human integrator still owns final branch integration.
 
 ## 9. Explicit exclusions
 
@@ -127,8 +129,8 @@ M2.5 does not include:
 - remote runtime media/services, telemetry, CDN fallback, or business APIs;
 - real-browser, real-GPU, visual-correctness, or performance validation.
 
-Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remain excluded by project rule and are not part of Task 18's authorized non-build gate.
+Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remained excluded by project rule and were not part of Task 20's authorized non-build gate.
 
 ## 10. Next operation
 
-Run M2.5 Task 20 exactly as approved: record invariants, obtain explicit command approval, run the complete non-build gate, classify any failure before repair, complete final independent review, convert documents to final closure state, and commit only the closure scope. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+M2 is closed. Before M3 implementation, create and approve a separate high-reasoning M3 specification and atomic plan. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.

@@ -1,7 +1,7 @@
 import showroomDemoFixture from "../../../fixtures/contracts/showroom-demo.v3.json";
 import { parseSnapshotV3 } from "@aethertwin/core-model";
-import {
-  projectScene,
+import { projectScene } from "@aethertwin/render-scene-3d";
+import type {
   SceneCameraState,
   SceneExportCapture,
   SceneExportFrame,
@@ -112,7 +112,7 @@ describe("M2.5 injected-rendering vertical acceptance", () => {
       sha256: "a".repeat(64),
     };
     const backend: ProjectExportBackend = {
-      begin: vi.fn(async (_path, _request) => ({
+      begin: vi.fn(async () => ({
         ...dimensions,
         exportId: "e2500000-0000-4000-8000-000000009001",
         expectedByteLength: byteLength,

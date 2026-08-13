@@ -85,9 +85,21 @@ Task 18 and M2.4 are accepted and closed. Task 17 evidence remains separately re
 - [x] Task 17 - real create/import/commit/checkpoint/recovery Demo materialization
 - [x] Task 18 - complete injected-renderer M2.5 vertical acceptance
 - [x] Task 19 - truthful documentation/policy evidence assembly (45/45 GREEN; independent review Pass / Approved / Ready Yes)
-- [ ] Task 20 - full non-build gate, final review, closure documents, and closure commit
+- [x] Task 20 - full non-build gate, final review, closure documents, and closure commit
 
-Task 19 is complete. Task 20 is the only remaining M2 item and must preserve schema v3, exactly twelve native commands, exactly two desktop capabilities, both protected manifest hashes, offline sources, Showroom-only export, Market 2D-only, and the unresolved `57 2` branch-integration guard.
+Tasks 0-20 are complete. M2.5 is accepted and M2 is closed while preserving schema v3, exactly twelve native commands, exactly two desktop capabilities, both protected manifest hashes, offline sources, Showroom-only export, Market 2D-only, and the unresolved `57 2` branch-integration guard.
+
+## M2.5 Task 20 closure gate
+
+- [x] Frozen install: exit 0; all 15 workspace projects already up to date.
+- [x] Lint: exit 0.
+- [x] Typecheck: exit 0 across 14 of 15 workspace projects.
+- [x] Node policy: 45/45.
+- [x] Vitest: 77/77 files and 1,500/1,500 tests; only known non-failing jsdom canvas notices.
+- [x] Rustfmt and four-crate all-targets Cargo check: exit 0.
+- [x] Rust tests: 302 passed; 2 approved privileged-Windows tests ignored.
+- [x] Final review: Spec Compliance Pass; Code Quality Approved; Critical/Important/Minor None; Ready Yes.
+- [x] Schema v3, 12 commands, 2 capabilities, protected hashes, Demo digest, and `57 2` human-integration guard verified.
 
 M2.5 adds no Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime asset, or Sandbox export surface.
 

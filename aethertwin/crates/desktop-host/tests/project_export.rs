@@ -165,6 +165,8 @@ fn native_export_success() {
     let original_checkpoint = opened.snapshot.checkpoint_sequence;
 
     let begun = invoke_json(&webview, "begin_project_export", begin_payload(&opened)).unwrap();
+    assert_eq!(begun.as_object().unwrap().len(), 5);
+    assert!(begun.get("preset").is_none());
     assert_eq!(begun["width"], FULL_HD_WIDTH);
     assert_eq!(begun["height"], FULL_HD_HEIGHT);
     assert_eq!(begun["expectedByteLength"], FULL_HD_RGBA_BYTES);
@@ -196,6 +198,8 @@ fn native_export_success() {
     )
     .unwrap();
     assert_eq!(result["width"], FULL_HD_WIDTH);
+    assert_eq!(result.as_object().unwrap().len(), 5);
+    assert!(result.get("preset").is_none());
     assert_eq!(result["height"], FULL_HD_HEIGHT);
     let relative_path = result["relativePath"].as_str().unwrap();
     assert!(relative_path.starts_with("exports/"));
