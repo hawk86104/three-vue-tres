@@ -217,6 +217,10 @@ importers:
       '@aethertwin/render-scene-3d':
         specifier: workspace:*
         version: link:../render-scene-3d
+    devDependencies:
+      '@aethertwin/core-model':
+        specifier: workspace:*
+        version: link:../core-model
 
   packages/mode-showroom:
     dependencies:

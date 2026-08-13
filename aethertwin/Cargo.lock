@@ -2670,6 +2670,7 @@ dependencies = [
  "fs2",
  "fs_at",
  "media-export",
+ "png 0.18.1",
  "remove_dir_all",
  "rusqlite",
  "rustix",
