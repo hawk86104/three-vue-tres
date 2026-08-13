@@ -19,8 +19,8 @@ use crate::schema::{
     timestamp_now, upsert_meta,
 };
 use crate::{
-    CheckpointResult, CreateProjectRequest, OpenedProject, ProjectIoError, ProjectManifest,
-    ProjectProfile, ProjectSnapshot, SpatialProject,
+    CheckpointResult, CreateProjectRequest, OpenedProject, ProjectCreationIdentity, ProjectIoError,
+    ProjectManifest, ProjectProfile, ProjectSnapshot, SpatialProject,
 };
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, params};
@@ -36,11 +36,35 @@ const APP_VERSION: &str = "0.1.0";
 const PROJECT_DIRECTORIES: [&str; 4] = ["assets", "thumbnails", "derived", "exports"];
 
 pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, ProjectIoError> {
+    create_project_with_identity(
+        request,
+        ProjectCreationIdentity {
+            project_id: Uuid::new_v4(),
+            floor_id: Uuid::new_v4(),
+            layer_id: Uuid::new_v4(),
+            created_at: Utc::now(),
+        },
+    )
+}
+
+pub fn create_project_with_identity(
+    request: CreateProjectRequest,
+    identity: ProjectCreationIdentity,
+) -> Result<OpenedProject, ProjectIoError> {
     let name = normalize_project_name(&request.name)?;
     let parent = canonical_parent(&request.parent)?;
     let destination = parent.join(format!("{name}{PROJECT_SUFFIX}"));
     if path_entry_exists(&destination) {
         return Err(ProjectIoError::ProjectAlreadyExists);
+    }
+    if !crate::model::valid_uuid(&identity.project_id)
+        || !crate::model::valid_uuid(&identity.floor_id)
+        || !crate::model::valid_uuid(&identity.layer_id)
+        || identity.project_id == identity.floor_id
+        || identity.project_id == identity.layer_id
+        || identity.floor_id == identity.layer_id
+    {
+        return Err(ProjectIoError::InvalidProjectStructure);
     }
 
     let mut staging = StagingWorkspace::create(&parent, &name)?;
@@ -51,8 +75,10 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
             fs::create_dir(staging_path.join(directory))?;
         }
 
-        let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let project_id = Uuid::new_v4();
+        let timestamp = identity
+            .created_at
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        let project_id = identity.project_id;
         let manifest = ProjectManifest {
             schema_version: CURRENT_SCHEMA_VERSION,
             project_id,
@@ -64,7 +90,13 @@ pub fn create_project(request: CreateProjectRequest) -> Result<OpenedProject, Pr
             min_compatible_app_version: APP_VERSION.into(),
         };
         manifest.validate()?;
-        let snapshot = initial_snapshot(project_id, &name, request.profile);
+        let snapshot = initial_snapshot(
+            project_id,
+            identity.floor_id,
+            identity.layer_id,
+            &name,
+            request.profile,
+        );
         snapshot.validate()?;
 
         create_database(&staging_path.join("project.db"), &manifest, &snapshot)?;
@@ -2023,6 +2055,15 @@ fn read_recovery_journal(
         .collect()
 }
 
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn read_project_journal_for_evidence(
+    project_path: &Path,
+) -> Result<Vec<JournalOperation>, ProjectIoError> {
+    let connection = open_database(&project_path.join("project.db"))?;
+    read_recovery_journal(&connection, 0)
+}
+
 fn validate_recovery_journal_groups(operations: &[JournalOperation]) -> Result<(), ProjectIoError> {
     let mut completed = BTreeSet::new();
     let mut current: Option<(&str, JournalAction)> = None;
@@ -2135,7 +2176,13 @@ fn read_immutable_meta<T: DeserializeOwned>(
     read_meta(connection, key).map_err(|_| ProjectIoError::ManifestDatabaseMismatch)
 }
 
-fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSnapshot {
+fn initial_snapshot(
+    id: Uuid,
+    floor_id: Uuid,
+    layer_id: Uuid,
+    name: &str,
+    profile: ProjectProfile,
+) -> ProjectSnapshot {
     ProjectSnapshot {
         schema_version: CURRENT_SCHEMA_VERSION,
         sequence: 0,
@@ -2146,11 +2193,11 @@ fn initial_snapshot(id: Uuid, name: &str, profile: ProjectProfile) -> ProjectSna
             tags: Vec::new(),
             profile,
             floors: vec![Floor {
-                id: Uuid::new_v4(),
+                id: floor_id,
                 name: "一层".into(),
                 tags: Vec::new(),
                 layers: vec![PlanLayer {
-                    id: Uuid::new_v4(),
+                    id: layer_id,
                     name: "默认图层".into(),
                     tags: Vec::new(),
                     visible: true,

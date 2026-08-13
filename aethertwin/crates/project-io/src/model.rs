@@ -40,6 +40,14 @@ pub struct CreateProjectRequest {
     pub profile: ProjectProfile,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectCreationIdentity {
+    pub project_id: Uuid,
+    pub floor_id: Uuid,
+    pub layer_id: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectManifest {

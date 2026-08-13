@@ -1,17 +1,93 @@
+use chrono::{DateTime, Utc};
 use project_io::{
-    CreateProjectRequest, ProjectIoError, ProjectProfile, create_project, open_project,
-    snapshot_checksum,
+    CreateProjectRequest, ProjectCreationIdentity, ProjectIoError, ProjectProfile, create_project,
+    create_project_with_identity, open_project, snapshot_checksum,
 };
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use std::fs;
 use tempfile::tempdir;
+use uuid::Uuid;
 
 fn request(parent: &std::path::Path, name: &str, profile: ProjectProfile) -> CreateProjectRequest {
     CreateProjectRequest {
         parent: parent.to_path_buf(),
         name: name.into(),
         profile,
+    }
+}
+
+fn fixed_creation_identity() -> ProjectCreationIdentity {
+    ProjectCreationIdentity {
+        project_id: Uuid::parse_str("e2500000-0000-4000-8000-000000000001").unwrap(),
+        floor_id: Uuid::parse_str("e2500000-0000-4000-8000-000000000002").unwrap(),
+        layer_id: Uuid::parse_str("e2500000-0000-4000-8000-000000000003").unwrap(),
+        created_at: "2026-08-09T12:34:56.789Z".parse::<DateTime<Utc>>().unwrap(),
+    }
+}
+
+#[test]
+fn deterministic_identity_uses_supplied_values_and_reopens_exactly() {
+    let root = tempdir().unwrap();
+    let identity = fixed_creation_identity();
+    let opened = create_project_with_identity(
+        request(
+            root.path(),
+            "Deterministic Identity",
+            ProjectProfile::Showroom,
+        ),
+        identity.clone(),
+    )
+    .unwrap();
+
+    assert_eq!(opened.manifest.project_id, identity.project_id);
+    assert_eq!(opened.manifest.created_at, "2026-08-09T12:34:56.789Z");
+    assert_eq!(opened.manifest.updated_at, opened.manifest.created_at);
+    assert_eq!(opened.snapshot.project.id, identity.project_id);
+    assert_eq!(opened.snapshot.project.floors[0].id, identity.floor_id);
+    assert_eq!(
+        opened.snapshot.project.floors[0].layers[0].id,
+        identity.layer_id
+    );
+
+    let reopened = open_project(&opened.project_path).unwrap();
+    assert_eq!(reopened.manifest, opened.manifest);
+    assert_eq!(reopened.snapshot, opened.snapshot);
+}
+
+#[test]
+fn deterministic_identity_rejects_invalid_or_duplicate_uuids_without_writing() {
+    let valid = fixed_creation_identity();
+    let invalid = [
+        ProjectCreationIdentity {
+            project_id: Uuid::nil(),
+            ..valid.clone()
+        },
+        ProjectCreationIdentity {
+            floor_id: valid.project_id,
+            ..valid.clone()
+        },
+        ProjectCreationIdentity {
+            layer_id: valid.floor_id,
+            ..valid
+        },
+    ];
+
+    for (index, identity) in invalid.into_iter().enumerate() {
+        let root = tempdir().unwrap();
+        assert_code(
+            create_project_with_identity(
+                request(
+                    root.path(),
+                    &format!("Invalid Identity {index}"),
+                    ProjectProfile::Showroom,
+                ),
+                identity,
+            )
+            .unwrap_err(),
+            "INVALID_PROJECT_STRUCTURE",
+        );
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
     }
 }
 

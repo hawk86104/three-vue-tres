@@ -18,13 +18,16 @@ pub use export_path::{
 pub use model::{
     AssetRecord, CheckpointResult, CommitBatch, CreateProjectRequest, Floor, GuidedRoute,
     JournalAction, JournalOperation, MediaAsset, MediaAssetKind, OpenedProject, PlanLayer,
-    ProductContent, ProjectManifest, ProjectProfile, ProjectSnapshot, RouteEdge, RouteNetwork,
-    RouteNode, RouteNodeKind, SaveState, SpatialProject,
+    ProductContent, ProjectCreationIdentity, ProjectManifest, ProjectProfile, ProjectSnapshot,
+    RouteEdge, RouteNetwork, RouteNode, RouteNodeKind, SaveState, SpatialProject,
 };
 pub use paths::validate_relative_resource_path;
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub use project::read_project_journal_for_evidence;
 pub use project::{
-    ProjectSession, create_project, open_project, open_session, recover_project,
-    validate_commit_batch,
+    ProjectSession, create_project, create_project_with_identity, open_project, open_session,
+    recover_project, validate_commit_batch,
 };
 pub use project_export::{
     PROJECT_EXPORT_MAX_CHUNK_BYTES, ProjectExportOperation, ProjectExportPreset,

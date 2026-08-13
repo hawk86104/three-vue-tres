@@ -5,21 +5,17 @@
   "project": {
     "id": "e2500000-0000-4000-8000-000000000001",
     "name": "AetherTwin Showroom Demo",
-    "tags": [
-      "demo",
-      "offline",
-      "deterministic"
-    ],
+    "tags": [],
     "profile": "showroom",
     "floors": [
       {
         "id": "e2500000-0000-4000-8000-000000000002",
-        "name": "Showroom Floor",
+        "name": "\u4e00\u5c42",
         "tags": [],
         "layers": [
           {
             "id": "e2500000-0000-4000-8000-000000000003",
-            "name": "Showroom Layer",
+            "name": "\u9ed8\u8ba4\u56fe\u5c42",
             "tags": [],
             "visible": true,
             "locked": false
