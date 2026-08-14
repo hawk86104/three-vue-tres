@@ -475,7 +475,7 @@ export interface WebDemoAppProps {
 export function WebDemoApp(props: WebDemoAppProps): ReactNode;
 ```
 
-- [ ] **Step 1: Write lifecycle RED tests**
+- [x] **Step 1: Write lifecycle RED tests**
 
 Mock only `PlanEditor`; use real `ProjectStore` and `SandboxProjectBackend` where timing permits. Cover:
 
@@ -525,7 +525,7 @@ await Promise.resolve();
 expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/web-demo/web-demo-app.test.tsx
@@ -533,7 +533,7 @@ pnpm.cmd vitest run apps/studio/src/web-demo/web-demo-app.test.tsx
 
 Expected: FAIL because `WebDemoApp` does not exist.
 
-- [ ] **Step 3: Implement a generation-owned session**
+- [x] **Step 3: Implement a generation-owned session**
 
 Use this state model:
 
@@ -595,7 +595,7 @@ useEffect(() => {
 
 Keep the default dependency object module-stable so it does not restart the effect on every render.
 
-- [ ] **Step 4: Render truthful UI and reset behavior**
+- [x] **Step 4: Render truthful UI and reset behavior**
 
 Use these exact branches:
 
@@ -634,7 +634,7 @@ return (
 
 Map the four codes to four fixed Chinese messages; do not render `error.message`, `error.stack`, URL or filename.
 
-- [ ] **Step 5: Add bounded styles**
+- [x] **Step 5: Add bounded styles**
 
 ```css
 .studio-web-demo {
@@ -663,7 +663,7 @@ Map the four codes to four fixed Chinese messages; do not render `error.message`
 }
 ```
 
-- [ ] **Step 6: Run GREEN and regression checks**
+- [x] **Step 6: Run GREEN and regression checks**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/web-demo/web-demo-app.test.tsx apps/studio/src/features/plan-editor/editor-session.test.ts apps/studio/src/features/plan-editor/scene-canvas.test.tsx
@@ -673,7 +673,7 @@ git diff --check
 
 Expected: WebDemo lifecycle tests PASS; existing session/scene lifecycle tests PASS; Studio typecheck and diff check exit 0. JSDOM canvas notices, if emitted without failure, must be recorded rather than described as GPU evidence.
 
-- [ ] **Step 7: Review and commit**
+- [x] **Step 7: Review and commit**
 
 ```powershell
 git add -- apps/studio/src/web-demo/web-demo-app.tsx apps/studio/src/web-demo/web-demo-app.test.tsx apps/studio/src/app.css docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md

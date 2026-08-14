@@ -1157,3 +1157,28 @@ input {
     grid-template-columns: 1fr;
   }
 }
+
+.studio-web-demo {
+  display: grid;
+  min-height: 100vh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.studio-web-demo__notice {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--aether-border);
+  background: var(--aether-surface-2);
+  color: var(--aether-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.studio-web-demo-state {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+}
