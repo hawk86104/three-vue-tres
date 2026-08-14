@@ -278,7 +278,7 @@ export function loadWebDemoSeed(
 ): Promise<SandboxProjectSeed>;
 ```
 
-- [ ] **Step 1: Write loader RED tests**
+- [x] **Step 1: Write loader RED tests**
 
 Create fetch fixtures with `new Response(bytes, { status: 200, headers: { "content-type": mediaType } })`. Cover:
 
@@ -313,7 +313,7 @@ Add exact rejection tests for:
 - returned arrays, manifest, snapshot and records are frozen/owned;
 - fetch receives the same AbortSignal for all four local URLs.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/web-demo/load-web-demo.test.ts
@@ -321,7 +321,7 @@ pnpm.cmd vitest run apps/studio/src/web-demo/load-web-demo.test.ts
 
 Expected: FAIL because `load-web-demo.ts` and its exports do not exist.
 
-- [ ] **Step 3: Create the static fixture boundary**
+- [x] **Step 3: Create the static fixture boundary**
 
 `web-demo-fixtures.ts` must contain only imports and immutable constants:
 
@@ -348,7 +348,7 @@ export const canonicalWebDemoSources: WebDemoFixtureSources = Object.freeze({
 
 No `new URL(userValue)`, remote fallback or filesystem path is allowed.
 
-- [ ] **Step 4: Implement strict parsing and seed construction**
+- [x] **Step 4: Implement strict parsing and seed construction**
 
 Lock these constants:
 
@@ -431,7 +431,7 @@ export async function loadWebDemoSeed(
 
 `parseWebDemoManifest()` must require an array of exactly four objects, exact keys `file/sha256/mediaType/purpose`, the approved file order, lowercase 64-hex digests, matching allowed media types and no duplicate. `requireExactAsset()` must normalize Content-Type before `;`, require one matching snapshot digest, equal media type, equal byte length and equal digest. After all four loads, require every snapshot asset to be consumed exactly once.
 
-- [ ] **Step 5: Run GREEN and Studio typecheck**
+- [x] **Step 5: Run GREEN and Studio typecheck**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/web-demo/load-web-demo.test.ts
@@ -441,7 +441,7 @@ git diff --check
 
 Expected: loader tests PASS; Studio typecheck exits 0; no whitespace error.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 ```powershell
 git add -- apps/studio/src/web-demo/web-demo-fixtures.ts apps/studio/src/web-demo/load-web-demo.ts apps/studio/src/web-demo/load-web-demo.test.ts docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md
