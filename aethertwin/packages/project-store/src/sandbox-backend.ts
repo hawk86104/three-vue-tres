@@ -545,6 +545,7 @@ export class SandboxProjectBackend implements ProjectBackend {
     const expectedAssets = new Map(
       snapshot.assets.map((asset) => [asset.relativePath, asset] as const),
     );
+    if (expectedAssets.size !== snapshot.assets.length) throw new Error("Invalid sandbox seed");
     const ownedBlobs = new Map<string, Blob>();
     for (const input of seed.assets) {
       if (ownedBlobs.has(input.relativePath)) throw new Error("Invalid sandbox seed");

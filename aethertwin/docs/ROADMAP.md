@@ -10,6 +10,7 @@
   - M2.3 content and guided routes: accepted.
   - M2.4 synchronized 3D, durable materials/environment, and renderer lifecycle: complete and accepted. Tasks 0-18, the full non-build gate, and final independent review are closed with no findings.
   - M2.5 export/demo/evidence: accepted; Task 20's final non-build gate and independent review closed with no findings.
+- Local Web Demo: source implementation and the complete non-build source gate are complete on the accepted M2 baseline; independent source review is current, while build/localhost/browser/WebGL acceptance remains a separate pending Task 6 that requires explicit approval.
 - M3 market workflow: next milestone, deferred until a separate high-reasoning specification and atomic plan are approved.
 - M4 Player and media: deferred.
 - M5 hardening and performance profiling: deferred; no performance claim is made.
@@ -25,6 +26,12 @@ M2.4 keeps schema v3, one SQLite storage migration, exactly eight native invokes
 The approved M2.5 plan is complete. Showroom has two fixed project-bound PNG presets, deterministic Demo sources, strict native publication, and cancellation/cleanup. Schema remains v3, the native surface is exactly twelve commands, and desktop capabilities remain exactly two.
 
 Task 20's final gate passed frozen install, lint, typecheck, Node 45/45, Vitest 77 files and 1,500 tests, rustfmt, Rust 302 passed with 2 approved ignored privileged-Windows tests, four-crate all-targets Cargo check, and diff check. Final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. M2.5 is accepted and M2 is closed. Publish, MP4, `.twinpack`, Player, Market 3D/export, GLTF, arbitrary lights/shaders, and 3D geometry editing remain deferred.
+
+## Local Web Demo delivery
+
+The dedicated `web-demo` Vite mode is implemented as an isolated localhost preview: it verifies and opens the canonical Showroom Demo in an in-memory sandbox, defaults to 2D, reuses 3D/split, and leaves ordinary production Web fail-closed. It does not add persistence, browser export, native commands, capabilities, remote sources, or a supported `file://` artifact.
+
+The configured endpoint is `http://127.0.0.1:4173`, but build/dev-server/browser/real-WebGL acceptance is intentionally not inferred from source tests. That runtime evidence remains the next separately approved gate before the preview may be described as visibly experienced.
 
 ## Milestone definitions
 

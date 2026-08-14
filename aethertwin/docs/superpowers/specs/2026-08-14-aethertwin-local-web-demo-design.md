@@ -2,9 +2,15 @@
 
 **Date:** 2026-08-14
 
-**Status:** Approved in conversation
+**Status:** Source implementation complete; runtime acceptance pending explicit approval
 
 **Baseline:** `codex/aethertwin-m2@87b6dbc4`
+
+## Implementation status
+
+Tasks 1-4 are implemented, independently reviewed, and committed through `5f49ace12d7226a9a3eace727b90f87c6aa73f13`: seeded sandbox state, verified bundled fixtures, generation-safe WebDemoApp lifecycle, and the exclusive Vite/root/policy boundary are present. Task 5 documentation and independent-review repairs are applied. Focused RED/GREEN covered duplicate seed paths, duplicate manifest consumption, and strict port binding; final lint, typecheck, Node 51/51, Vitest 81 files / 1,542 tests, and diff check all exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
+
+Task 6 remains a distinct acceptance gate. No `build:web-demo`, localhost server, real browser, screenshot, Playwright, or real WebGL command has run under current approval, so this status claims implementation but not visible rendering or visual correctness.
 
 ## Goal
 
@@ -176,11 +182,13 @@ the existing complete 2D fallback and retry behavior.
 ```json
 {
   "scripts": {
-    "web-demo": "vite --mode web-demo --host 127.0.0.1 --port 4173",
+    "web-demo": "vite --mode web-demo --host 127.0.0.1 --port 4173 --strictPort",
     "build:web-demo": "vite build --mode web-demo"
   }
 }
 ```
+
+`--strictPort` makes an occupied `4173` fail closed instead of silently moving the documented preview to another port.
 
 The Vite base remains `"./"`, so `build:web-demo` produces an
 `apps/studio/dist/` directory with `index.html` plus relative static assets.

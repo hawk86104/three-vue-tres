@@ -10,7 +10,7 @@ ProjectStore and CommandBus are the only durable publication path. Floors, entit
 
 Camera, view mode, renderer status/error, selection, route projection, drafts, previews, and focus state are scoped Zustand session state only. PixiJS and Three/R3F objects are projections. They never become records and never directly mutate business data.
 
-ProjectStore is the sole Blob URL owner. Renderer resource tables own only decoded textures, geometry, materials, and temporary render targets. They release those resources exactly once but never revoke a ProjectStore-owned Blob URL.
+ProjectStore is the sole owner of renderer-facing source leases. Source backends own Blob URL creation/revocation; the dedicated Web Demo uses `SandboxProjectBackend` for that role. Renderer resource tables own only decoded textures, geometry, materials, and temporary render targets. They release those resources exactly once but never revoke a source-backend Blob URL directly.
 
 ## Schema v3 and command stability
 

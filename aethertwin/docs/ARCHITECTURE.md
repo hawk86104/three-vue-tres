@@ -12,7 +12,7 @@ apps/studio (React)
   -> render-scene-3d -> exporter -> desktop-host -> project-io -> media-export
   -> project-store -> command-bus + core-model
   -> desktop: TauriProjectBackend -> desktop-host -> project-io + asset-io
-  -> development web: SandboxProjectBackend + ProjectStore-owned Blob leases
+  -> development web: SandboxProjectBackend-owned seeded Blob URLs + ProjectStore source leases
 
 apps/player -> design-system (deferred noninteractive boundary)
 ```
@@ -30,13 +30,13 @@ apps/player -> design-system (deferred noninteractive boundary)
 | singleton scene environment | ProjectStore snapshot via `scene.environment.patch` | schema v3 / SQLite |
 | view mode, per-floor camera, renderer status/error | Studio Zustand session | transient only |
 | selection, tools, drafts, previews, focused route | Studio Zustand session | transient only |
-| Blob URL leases | ProjectStore | transient source lease |
+| Asset source leases / Blob URLs | ProjectStore owns renderer-facing leases; the source backend owns URL creation/revocation | transient source lease |
 | Three/R3F geometry, materials, textures, render targets | render-scene-3d resource registry | transient renderer resource |
 | export request, progress, result, cancellation | Studio/exporter coordinator | transient only |
 | PNG codec and validation | media-export | transient stream/file evidence |
 | export staging, name, and publication | project-io | generated `exports/` output |
 
-Zustand stores transient UI state only. React, PixiJS, Three.js, R3F, and Zustand never own or directly mutate business data. Three/R3F records are projections keyed back to durable source IDs. The 3D layer consumes ProjectStore asset-source and issue ports; it never persists URLs and never revokes a ProjectStore-owned Blob URL.
+Zustand stores transient UI state only. React, PixiJS, Three.js, R3F, and Zustand never own or directly mutate business data. Three/R3F records are projections keyed back to durable source IDs. The 3D layer consumes ProjectStore asset-source and issue ports; it never persists URLs and never directly revokes a source-backend Blob URL.
 
 ## 2D building, content, and route boundary
 
@@ -69,7 +69,7 @@ The environment maps the one durable ambient light and one durable directional k
 
 Geometry is owned per stable scene record. Materials and decoded textures are fingerprint-shared through reference counts. A replacement attaches new records before retiring old records. Async completions carry a generation; late results are discarded and any newly allocated renderer resources are released. R3F automatic disposal is disabled for registry-owned resources so each resource is released exactly once.
 
-ProjectStore remains the sole Blob URL owner. Renderer destroy, scene replacement, failed decode, and late completion release only renderer-owned resources and source leases through the supplied port.
+ProjectStore remains the sole owner of renderer-facing source leases. The source backend owns Blob URL creation/revocation; in the dedicated Web Demo that backend is `SandboxProjectBackend`. Renderer destroy, scene replacement, failed decode, and late completion release only renderer-owned resources and source leases through the supplied port.
 
 A WebGL creation failure or renderer failure preserves the complete 2D workflow. Context loss gets one automatic reconstruction attempt. A further failure moves the 3D renderer to `disabled`; an explicit retry creates a fresh recovery round. Texture decode failure preserves base-color rendering. No browser, GPU, or visual correctness is inferred from the injected/fake-renderer tests.
 
@@ -78,6 +78,14 @@ A WebGL creation failure or renderer failure preserves the complete 2D workflow.
 `render-scene-3d` captures one immutable current scene/camera/provenance and performs dedicated offscreen readback. The pure `exporter` package validates preset, scope, textures, GPU limits, frame dimensions, and top-left bounded row streaming. It never owns React, DOM, Tauri, paths, files, or PNG encoding.
 
 `desktop-host` owns the strict JSON/raw-byte IPC boundary and the per-session active-export lifecycle. `project-io` owns the verified project `exports/` directory, private staging, no-overwrite naming, crash cleanup, and project-relative result. `media-export` alone owns opaque RGBA8 sRGB PNG encoding and validation. This dependency direction is `render-scene-3d -> exporter -> desktop-host -> project-io -> media-export`; no layer writes business state.
+
+## Local Web Demo source boundary
+
+`StudioRoot` is the only mode fork. Ordinary modes mount the existing `App` and retain the unchanged fail-closed `selectBackend()`/Tauri path; only Vite `--mode web-demo` mounts `WebDemoApp`.
+
+`WebDemoApp` owns verified bundled-seed loading, generation/Abort control, and the in-memory `ProjectStore`/`SandboxProjectBackend` session lifecycle. `SandboxProjectBackend` remains the sole creator and revoker of Web Demo Blob URLs while ProjectStore owns their source leases. No partially validated snapshot or asset set is published.
+
+The preview reuses the normal PlanEditor with default 2D plus the existing synchronized 3D and fixed split projections. It adds no browser persistence, service worker, native command, capability, browser export backend, or production-Web sandbox bypass. Refresh/Back/Retry creates a new canonical session. The localhost build/server/browser/WebGL runtime gate remains separate and pending explicit approval.
 
 
 ## Native command and permission boundary
@@ -107,4 +115,6 @@ M2.4 Tasks 0-17 are implemented and independently reviewed at the current baseli
 
 Task 18's full non-build gate passed: frozen install exited 0 for 14 workspace projects and was already up to date; lint first exited 1 on eight M2.4-introduced issues, then passed after minimal repairs in five files; typecheck exited 0 with 13 of 14 workspace projects completed; Node policy tests passed 32/32; Vitest passed 68 files and 1,355 tests with only the known non-failing JSDOM HTMLCanvasElement.getContext notice; rustfmt exited 0; Rust tests passed 208 with one approved ignored Windows privileged reparse/symlink test while the deterministic reparse-bit unit test passed; and Cargo check exited 0. Schema v3, the exact eight commands, and both protected hashes remain unchanged. Final independent review passed with no findings: Spec Compliance Pass; Code/Doc Quality Approved; Critical/Important/Minor None; Ready Yes. M2.4 is accepted and closed.
 
-M2.5 Tasks 1-19 implement and document Showroom PNG export and deterministic Demo evidence without changing schema v3 or storage migration 1. Task 19 is independently reviewed; Task 20 is the only remaining final non-build gate. Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lighting/shaders, 3D geometry editing, and remote runtime assets remain absent. No build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual, or performance evidence is claimed.
+M2.5 Tasks 0-20 are complete and independently closed without changing schema v3 or storage migration 1. Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lighting/shaders, 3D geometry editing, and remote runtime assets remain absent.
+
+The Local Web Demo source implementation is present on top of that accepted baseline. Source tests and policy gates are distinct from Task 6 runtime acceptance: no build, dev server, browser, Playwright, screenshot, real-GPU, visual, or performance result is claimed until that separately approved gate runs.

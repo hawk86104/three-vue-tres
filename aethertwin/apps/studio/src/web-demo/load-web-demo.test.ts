@@ -4,7 +4,7 @@ import snapshotFixture from "../../../../fixtures/contracts/showroom-demo.v3.jso
 import { describe, expect, it, vi } from "vitest";
 import {
   WEB_DEMO_ASSET_FILES,
-  WebDemoLoadError,
+  type WebDemoLoadError,
   loadWebDemoSeed,
   type WebDemoAssetFile,
   type WebDemoFixtureSources,
@@ -207,6 +207,26 @@ describe("loadWebDemoSeed", () => {
       signal: new AbortController().signal,
       fetch: fixtureFetch(),
       sources: sources({ snapshot: duplicate }),
+    }), "WEB_DEMO_ASSET_INVALID");
+  });
+
+  it("rejects two manifest files that consume the same snapshot asset", async () => {
+    const collapsed = clone(snapshotFixture);
+    const removedAsset = collapsed.assets.pop()!;
+    const sharedAsset = collapsed.assets[0]!;
+    const collapsedSnapshot = JSON.parse(
+      JSON.stringify(collapsed).replaceAll(removedAsset.id, sharedAsset.id),
+    ) as typeof snapshotFixture;
+    const manifest = clone(manifestFixture) as MutableManifestEntry[];
+    const duplicateEntry = manifest.find(({ file }) => file === "fixture.svg")!;
+    duplicateEntry.sha256 = sharedAsset.sha256;
+
+    await expectCode(loadWebDemoSeed({
+      signal: new AbortController().signal,
+      fetch: fixtureFetch((file) => responseFor(
+        file === "fixture.svg" ? "plan-reference.svg" : file,
+      )),
+      sources: sources({ manifest, snapshot: collapsedSnapshot }),
     }), "WEB_DEMO_ASSET_INVALID");
   });
 

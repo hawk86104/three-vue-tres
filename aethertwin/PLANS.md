@@ -104,3 +104,20 @@ Tasks 0-20 are complete. M2.5 is accepted and M2 is closed while preserving sche
 M2.5 adds no Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime asset, or Sandbox export surface.
 
 Build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-GPU, visual-correctness, and performance evidence are not authorized by this plan and are not claimed.
+
+## Local Web Demo
+
+- [x] Task 1 - seeded in-memory SandboxProjectBackend
+- [x] Task 2 - verified canonical bundled snapshot and four local assets
+- [x] Task 3 - generation-safe WebDemoApp and editor lifecycle
+- [x] Task 4 - exclusive StudioRoot, dedicated Vite mode, scripts, and policy lock
+- [x] Task 5 - documentation, complete non-build source gate, and independent closure review
+- [ ] Task 6 - explicitly approved build, localhost server, browser, and real WebGL acceptance
+
+Tasks 1-4 are committed through `5f49ace12d7226a9a3eace727b90f87c6aa73f13`. The Web Demo validates the canonical Showroom seed atomically, owns one in-memory generation, reuses 2D/3D/split, and leaves ordinary production Web fail-closed. It adds no browser persistence, browser export, native invoke, capability, remote source, or supported `file://` artifact.
+
+Task 5's complete non-build source gate passed after attributable lint, policy, and independent-review repairs. Duplicate seed paths, duplicate manifest consumption, strict port binding, and documentation truth each received focused correction; final lint/typecheck passed, Node passed 51/51, Vitest passed 81/81 files and 1,542/1,542 tests, and diff check exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
+
+Task 6 remains pending explicit approval, so no build, localhost server, browser, screenshot, real-WebGL, visual-correctness, or performance result is claimed.
+
+The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and `packages/mode-showroom/src/index.ts` remain protected, excluded, and unstaged. The unresolved `57 2` branch-integration guard remains a human decision.

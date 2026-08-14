@@ -2674,6 +2674,29 @@ describe("SandboxProjectBackend seeded project", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects duplicate durable asset paths before publishing seeded state", async () => {
+    const { seed } = await createSeed();
+    const firstAsset = seed.openedProject.snapshot.assets[0]!;
+    const secondAsset = seed.openedProject.snapshot.assets[1]!;
+    const duplicatePathSeed: SandboxProjectSeed = {
+      ...seed,
+      openedProject: {
+        ...seed.openedProject,
+        snapshot: {
+          ...seed.openedProject.snapshot,
+          assets: [
+            firstAsset,
+            { ...firstAsset, id: secondAsset.id },
+          ],
+        },
+      },
+      assets: [seed.assets[0]!],
+    };
+
+    expect(() => new SandboxProjectBackend({ seed: duplicatePathSeed }))
+      .toThrow("Invalid sandbox seed");
+  });
+
   it("owns one URL per seeded relative path and revokes every URL exactly once", async () => {
     const { seed, snapshot } = await createSeed();
     const backend = new SandboxProjectBackend({ seed });

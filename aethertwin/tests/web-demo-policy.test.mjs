@@ -36,7 +36,7 @@ test("the Web Demo has exactly two dedicated scripts", () => {
   );
 
   assert.deepEqual(scripts, [
-    ["web-demo", "vite --mode web-demo --host 127.0.0.1 --port 4173"],
+    ["web-demo", "vite --mode web-demo --host 127.0.0.1 --port 4173 --strictPort"],
     ["build:web-demo", "vite build --mode web-demo"],
   ]);
 });

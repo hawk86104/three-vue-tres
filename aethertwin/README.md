@@ -14,6 +14,22 @@ AetherTwin is a local-first, desktop-first digital-twin authoring product with e
 - WebGL or texture-decode failure that preserves 2D and base-color rendering; one automatic context-loss recovery attempt, then `disabled` until an explicit retry starts a fresh round;
 - a Showroom-only Export panel with `full-hd` 1920 x 1080 and `ultra-hd` 3840 x 2160 presets, scope-safe capture, bounded PNG streaming, cancellation, no-overwrite publication, and a project-relative result.
 
+## Local Web Demo
+
+The dedicated localhost Web Demo source is implemented without changing the ordinary desktop or production-Web startup path. From `aethertwin/`, its configured command is:
+
+```powershell
+pnpm.cmd --filter @aethertwin/studio web-demo
+```
+
+The configured address is `http://127.0.0.1:4173`; the command fails if that port is occupied rather than falling back to another port. This mode automatically opens the fully verified canonical Showroom Demo, starts in 2D, and reuses the existing 3D and fixed split views. Its project and assets are held only in memory; Back, Retry, or browser refresh creates a fresh canonical session, so edits do not survive refresh.
+
+PNG export remains desktop-only. In the Web Demo, Export stays visible but disabled with the desktop-required explanation. Browser persistence, `.twinproj` open/save, recovery, native dialogs, and browser publication are not implemented. Direct `file://` launch and a single self-contained HTML file are unsupported; the first supported delivery is localhost serving.
+
+The source/tests for this mode are implemented, but the build command, localhost server, real browser, and real WebGL experience have not yet been run under the required explicit runtime approval. Therefore this document does not claim visible rendering or visual correctness yet.
+
+The Task 5 non-build source gate passed after recorded, attributable repairs: lint first found one type-only import; Node policy exposed one stale deferred-action rule; independent review then found duplicate asset mappings, a non-strict port, and documentation inconsistencies. Each behavioral repair was proven by focused RED/GREEN tests. On the final bytes, lint and typecheck exited 0, Node passed 51/51, Vitest passed 81/81 files and 1,542/1,542 tests, and `git diff --check` exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
+
 ## Ownership and dependency direction
 
 ```text
@@ -35,7 +51,7 @@ Development sandbox
   -> SandboxProjectBackend (in-memory project metadata and Blob-backed assets)
 ```
 
-ProjectStore is the durable UI coordinator and the only owner of Blob URL leases. Materials, assignments, the scene environment, assets, building/content/route records, and all other business data exist only in the ProjectStore snapshot. Camera, view mode, renderer status/errors, selection, previews, and other session state exist only in Zustand. React, PixiJS, Three.js, R3F, decoded textures, and renderer resource tables do not own or mutate business data and never revoke ProjectStore-owned Blob URLs.
+ProjectStore is the durable UI coordinator and owns renderer-facing asset source leases. In the dedicated Web Demo, `SandboxProjectBackend` alone creates and revokes seeded asset Blob URLs. Materials, assignments, the scene environment, assets, building/content/route records, and all other business data exist only in the ProjectStore snapshot. Camera, view mode, renderer status/errors, selection, previews, and other session state exist only in Zustand. React, PixiJS, Three.js, R3F, decoded textures, and renderer resource tables do not own or mutate business data and never revoke source-backend URLs directly.
 
 The native boundary is exactly twelve typed Tauri invokes: six project commands, `import_project_asset`, `cancel_project_asset_import`, and `begin_project_export`, `write_project_export_chunk`, `finish_project_export`, `cancel_project_export`. Asset bytes use the session-bound `aethertwin-asset` protocol. Desktop capabilities remain exactly `core:window:default` and `dialog:allow-open` for the `main` window; export adds no capability.
 

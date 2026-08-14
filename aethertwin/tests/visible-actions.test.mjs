@@ -129,7 +129,16 @@ test("M2.3 exposes exactly fourteen authoring tools through the live session han
   );
 });
 
-test("runtime source contains no deferred platform or export claims", () => {
+test("runtime source contains no unapproved deferred platform or export claims", () => {
+  const approvedWebDemoNotice =
+    "\u672c\u5730\u9884\u89c8 \u00b7 \u4fee\u6539\u5c06\u5728\u5237\u65b0\u540e\u91cd\u7f6e \u00b7 PNG \u5bfc\u51fa\u4ec5\u684c\u9762\u7248";
+  assert.equal(
+    runtime.split(approvedWebDemoNotice).length - 1,
+    1,
+    "the truthful disabled-export Web Demo notice must appear exactly once",
+  );
+  const runtimeWithoutApprovedNotice = runtime.replace(approvedWebDemoNotice, "");
+
   for (const label of [
     "BIM",
     "IoT",
@@ -141,7 +150,11 @@ test("runtime source contains no deferred platform or export claims", () => {
     "发布",
     "导出",
   ]) {
-    assert.doesNotMatch(runtime, new RegExp(label), `forbidden deferred action: ${label}`);
+    assert.doesNotMatch(
+      runtimeWithoutApprovedNotice,
+      new RegExp(label),
+      `forbidden deferred action: ${label}`,
+    );
   }
 });
 test("M2.1 exposes wired Import and Calibrate actions without later-M2 controls", () => {

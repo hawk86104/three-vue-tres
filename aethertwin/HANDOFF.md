@@ -3,11 +3,11 @@
 Updated: 2026-08-14
 Product workspace: `aethertwin/`
 Active branch: `codex/aethertwin-m2`
-Task 20 reviewed implementation baseline: `190b89aebf34fa943983a607a77a1a4939b33cf4` (the closure commit hash is intentionally not invented before commit)
+Local Web Demo source baseline: `5f49ace12d7226a9a3eace727b90f87c6aa73f13` (the Task 5 closure commit hash is intentionally not invented before commit)
 
 ## 1. Current outcome
 
-M0 through M2.5 are accepted and M2 is closed. The next product milestone is M3, which requires a separate approved specification and atomic implementation plan.
+M0 through M2.5 are accepted and M2 is closed. The dedicated Local Web Demo source implementation is committed through Task 4; Task 5's documentation and non-build gate have passed, independent source review is current, and Task 6 runtime acceptance remains pending explicit approval.
 
 Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
@@ -15,6 +15,8 @@ Normative plans:
 
 - M2.4: `docs/superpowers/plans/2026-08-03-aethertwin-m2-4-synchronized-3d.md`
 - M2.5: `docs/superpowers/plans/2026-08-09-aethertwin-m2-5-export-demo-evidence.md`
+- Local Web Demo design: `docs/superpowers/specs/2026-08-14-aethertwin-local-web-demo-design.md`
+- Local Web Demo plan: `docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md`
 
 The ignored execution ledger `.superpowers/sdd/progress.md` is the authoritative task-by-task implementation/review record.
 
@@ -33,7 +35,7 @@ Do not rebase, merge, reset, or change the baseline during this handoff. Final i
 - Market remains 2D-only.
 - Camera, view mode, renderer status/error, selection, and previews are transient Zustand state.
 - Materials, assignments, environment, and all other business data are durable ProjectStore snapshot state.
-- ProjectStore is the only Blob URL owner.
+- ProjectStore owns asset source leases. In the dedicated Web Demo, `SandboxProjectBackend` alone creates and revokes seeded asset Blob URLs.
 - Three.js/R3F owns only transient renderer resources and never owns or mutates business data.
 - Material textures are project-bound PNG, JPEG, or sanitized SVG only.
 - No remote runtime assets, durable absolute paths, CDN fallback, or generic filesystem read surface exists.
@@ -51,7 +53,7 @@ The 3D projection covers:
 
 Materials resolve deterministically for space floors, walls, and fixtures. Missing/failed textures retain `baseColor`. The singleton scene environment is durable and changes through strict reversible `scene.environment.patch`.
 
-Renderer records use stable keys and incremental reconciliation. New records attach before old records retire. Async texture completions are generation guarded. Geometry, materials, textures, and temporary targets are released exactly once by the renderer resource registry; ProjectStore-owned Blob URLs are released only through the ProjectStore source port.
+Renderer records use stable keys and incremental reconciliation. New records attach before old records retire. Async texture completions are generation guarded. Geometry, materials, textures, and temporary targets are released exactly once by the renderer resource registry; ProjectStore source leases are released only through the ProjectStore source port, while the dedicated Web Demo backend owns its seeded asset Blob URLs.
 
 A WebGL failure leaves 2D intact. Context loss gets one automatic recovery attempt. A further failure moves the renderer to `disabled`; explicit retry starts a fresh recovery round.
 
@@ -110,16 +112,30 @@ Task 19's policy gate passed 45/45 and `git diff --check` exited 0. Its independ
 Task 20's final reviewed gate passed frozen install for 15 workspace projects, lint, typecheck across 14/15 workspace projects, Node 45/45, Vitest 77/77 files and 1,500/1,500 tests, rustfmt, Rust 302 passed with 2 approved privileged-Windows tests ignored, four-crate all-targets Cargo check, and diff check. Its final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. Schema v3, exactly 12 native commands, exactly 2 desktop capabilities, the Showroom Demo digest, and both protected manifest hashes remain verified.
 
 
-## 8. Protected files
+## 8. Local Web Demo source state
 
-Do not modify, format, restore, stage, or commit these user-protected manifests:
+Tasks 1-4 are committed at the recorded source baseline. The dedicated Vite mode mounts `WebDemoApp` through the sole `StudioRoot` fork, verifies the canonical Showroom snapshot and four bundled assets before publication, and opens a fresh in-memory `SandboxProjectBackend`/ProjectStore session. Ordinary `App`, `selectBackend()`, Tauri commands, capabilities, schema, and desktop export remain unchanged.
+
+The configured command is `pnpm.cmd --filter @aethertwin/studio web-demo` and the configured address is `http://127.0.0.1:4173`. The Web Demo defaults to 2D, reuses 3D/split, resets on Back/Retry/refresh, and keeps Export disabled because PNG publication is desktop-only. It has no browser persistence, service worker, native dialogs, supported `file://` launch, or browser export.
+
+Task 5's non-build gate passed on the current source/docs: lint exited 0; typecheck exited 0 across 14/15 workspace projects; Node policy passed 51/51; Vitest passed 81/81 files and 1,542/1,542 tests; and `git diff --check` exited 0 with only preserved line-ending warnings.
+
+The first lint run exited 1 on one Web Demo test type-only import. The first Node run passed 50/51 and exposed a stale deferred-action policy that did not permit the single exact truthful disabled-export notice; the focused repair passed 7/7 before the complete 51/51 rerun. Vitest emitted only the known non-failing JSDOM canvas notices, which are not browser/GPU evidence.
+
+Independent Task 5 source review identified four Important and two Minor findings. Duplicate seed paths, duplicate manifest consumption, strict port binding, Blob URL ownership wording, HANDOFF ordering, and the recorded commit scope were corrected; the three behavioral repairs each had a focused failing RED followed by GREEN. Clean re-review returned Critical/Important/Minor 0, Spec Compliance Pass, Code Quality Approved, Ready Yes. Build, dev server, browser, screenshot, and real WebGL have not run, so no visible-runtime claim is made.
+
+
+## 9. Protected files
+
+Do not modify, format, restore, stage, or commit these user-protected working-tree entries:
 
 - `crates/asset-io/Cargo.toml` — SHA-256 `9D22219E9F87C64E34BD201446C6CC2DC05EE91372C11C60A0D3FFA692DE7606`
 - `crates/desktop-host/Cargo.toml` — SHA-256 `3713E909384117E3D3E8D63B246642A44FFEA51F90CCAF4D64B4C601B6C5900E`
+- `packages/mode-showroom/src/index.ts`: preserved pre-existing working-tree entry; no Web Demo content change
 
-The Task 20 closure scope excludes both protected manifests and `packages/mode-showroom/src/index.ts`. The human integrator still owns final branch integration.
+The Local Web Demo scope excludes all three entries. The human integrator still owns final branch integration.
 
-## 9. Explicit exclusions
+## 10. Explicit exclusions
 
 M2.5 does not include:
 
@@ -131,6 +147,6 @@ M2.5 does not include:
 
 Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remained excluded by project rule and were not part of Task 20's authorized non-build gate.
 
-## 10. Next operation
+## 11. Next operation
 
-M2 is closed. Before M3 implementation, create and approve a separate high-reasoning M3 specification and atomic plan. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+Obtain current explicit approval for Task 6 before running `build:web-demo`, starting the localhost server, opening a browser, or claiming real WebGL/visual evidence. After Local Web Demo runtime acceptance, M3 still requires a separate high-reasoning specification and atomic plan. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.

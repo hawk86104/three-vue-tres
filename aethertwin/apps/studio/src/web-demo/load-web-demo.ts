@@ -222,7 +222,8 @@ export async function loadWebDemoSeed(
   options.signal.throwIfAborted();
   const consumed = new Set(loaded.map(({ asset }) => asset.id));
   if (
-    consumed.size !== snapshot.assets.length
+    loaded.length !== snapshot.assets.length
+    || consumed.size !== loaded.length
     || snapshot.assets.some(({ id }) => !consumed.has(id))
   ) invalidAsset();
 

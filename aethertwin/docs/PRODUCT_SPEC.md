@@ -2,7 +2,7 @@
 
 AetherTwin supports exactly two immutable project profiles: `showroom` and `market`. Profile cannot change after creation; any future conversion requires an explicit migration workflow.
 
-M0 through M2.4 are accepted and closed. M2.5 Tasks 1-19 are implemented and independently reviewed; Task 20 is the only remaining final closure gate. Schema remains v3, no SQLite storage migration is added, and the native surface is exactly twelve invokes: the prior eight plus `begin_project_export`, `write_project_export_chunk`, `finish_project_export`, and `cancel_project_export`.
+M0 through M2.5 are accepted and M2 is closed. Schema remains v3, no SQLite storage migration is added, and the native surface is exactly twelve invokes: the prior eight plus `begin_project_export`, `write_project_export_chunk`, `finish_project_export`, and `cancel_project_export`.
 
 ## Implemented editor profiles and views
 
@@ -18,10 +18,10 @@ The M1 plan tools remain Select, Pan, Boundary, Wall, Zone, Space unit, Fixture,
 - Space-floor, wall, and fixture material assignments resolve deterministically. Missing definitions use stable defaults. Selection is a separate overlay, not a mutation of the durable material.
 - Material definitions, assignments, and the singleton scene environment are durable ProjectStore data. Material/environment changes are reversible, replayable, reopen-safe, and recovery-safe.
 - Material textures use only project-bound PNG, JPEG, or sanitized SVG imports. Missing or undecodable texture bytes report a safe renderer issue and keep `baseColor`; no remote runtime URL is used.
-- Renderer geometry, material, texture, and render-target resources are generation-safe and released exactly once through the renderer registry. ProjectStore remains the only Blob URL owner.
+- Renderer geometry, material, texture, and render-target resources are generation-safe and released exactly once through the renderer registry. ProjectStore owns renderer-facing source leases; source backends own Blob URL creation/revocation.
 - WebGL failure never disables 2D. One context-loss reconstruction is automatic; a second failure moves 3D to `disabled`, and explicit retry begins a new recovery round.
 - Camera, view mode, renderer status/error, selection, and preview state live only in scoped Zustand session state and are never persisted.
-- The public `SceneExportPort` exposes immutable camera/scene capture and offscreen RGBA readback for future M2.5 work. M2.4 has no Export UI and produces no export artifact.
+- M2.4 introduced the public immutable camera/scene `SceneExportPort`; M2.5 now consumes it for scoped offscreen RGBA readback. M2.4 itself added no Export UI or export artifact.
 
 ## Implemented durable showroom workflow
 
@@ -40,10 +40,18 @@ All stored plan distances are millimetres and rotations are radians. Absolute na
 - Capture, preflight, row ordering, PNG encoding, native IPC, project publication, and cleanup have separate owners. None mutates ProjectStore business state.
 - The canonical offline Showroom Demo is source data and local assets, not a committed `.twinproj` or exported PNG.
 
+## Implemented Local Web Demo source surface
+
+- Only the dedicated Vite `web-demo` mode selects `WebDemoApp`; ordinary modes keep the existing `App`, `selectBackend()`, Tauri backend, twelve commands, and two capabilities unchanged and fail closed outside Tauri.
+- The loader validates the canonical schema-v3 Showroom snapshot, manifest, four local assets, media types, sizes, and SHA-256 values before publishing one immutable sandbox seed.
+- The preview starts in 2D and reuses the implemented 3D and fixed split editor. Its store/backend generation is in-memory and is replaced on Back, Retry, or refresh; no browser persistence or service worker exists.
+- Web Demo supplies no export backend. Export remains visible but disabled for the desktop-only reason; browser PNG publication and `.twinproj` open/save are absent.
+- Source and policy tests cover this surface. The localhost build, server, browser, and real WebGL acceptance remain a separate explicitly approved runtime gate and are not yet claimed.
+
 
 ## Ownership rules
 
-ProjectStore and CommandBus are the only durable publication path. Three.js, R3F, PixiJS, React, and Zustand do not own business data. ProjectStore is the only Blob URL owner. Renderer resources are transient projections keyed to durable source IDs; the 3D layer may release its own GPU/Three resources but may not revoke ProjectStore URLs.
+ProjectStore and CommandBus are the only durable publication path. Three.js, R3F, PixiJS, React, and Zustand do not own business data. ProjectStore owns ordinary project source leases. In the dedicated Web Demo, `SandboxProjectBackend` alone creates and revokes seeded asset Blob URLs while ProjectStore owns their leases. Renderer resources are transient projections keyed to durable source IDs; the 3D layer may release its own GPU/Three resources but may not revoke source-owner URLs.
 
 ## M2.4 evidence state
 

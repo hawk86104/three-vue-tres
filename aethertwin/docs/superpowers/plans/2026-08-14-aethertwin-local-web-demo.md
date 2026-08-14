@@ -774,7 +774,7 @@ Add these exact package scripts without changing dependencies or lockfile:
 
 ```json
 {
-  "web-demo": "vite --mode web-demo --host 127.0.0.1 --port 4173",
+  "web-demo": "vite --mode web-demo --host 127.0.0.1 --port 4173 --strictPort",
   "build:web-demo": "vite build --mode web-demo"
 }
 ```
@@ -816,8 +816,16 @@ git commit -m "feat: add the AetherTwin localhost Web Demo mode"
 ### Task 5: Documentation and Source-Level Closure
 
 **Files:**
+- Modify: `packages/project-store/src/sandbox-backend.ts`
+- Modify: `packages/project-store/src/project-store.test.ts`
+- Modify: `apps/studio/src/web-demo/load-web-demo.ts`
+- Modify: `apps/studio/src/web-demo/load-web-demo.test.ts`
+- Modify: `apps/studio/package.json`
+- Modify: `tests/web-demo-policy.test.mjs`
+- Modify: `tests/visible-actions.test.mjs`
 - Modify: `README.md`
 - Modify: `docs/ARCHITECTURE.md`
+- Modify: `docs/DECISIONS.md`
 - Modify: `docs/PRODUCT_SPEC.md`
 - Modify: `docs/ROADMAP.md`
 - Modify: `HANDOFF.md`
@@ -829,7 +837,7 @@ git commit -m "feat: add the AetherTwin localhost Web Demo mode"
 - Consumes: verified source behavior from Tasks 1–4.
 - Produces: truthful launch instructions, isolation constraints, current verification state and next runtime gate.
 
-- [ ] **Step 1: Update user-facing commands and limitations**
+- [x] **Step 1: Update user-facing commands and limitations**
 
 Add this README command block:
 
@@ -839,20 +847,20 @@ pnpm.cmd --filter @aethertwin/studio web-demo
 
 Document `http://127.0.0.1:4173`, auto-opened Showroom Demo, refresh reset, desktop-only PNG export, and that `file://` is unsupported. Do not claim the command has been visibly run until Task 6 completes.
 
-- [ ] **Step 2: Update architecture and product truth**
+- [x] **Step 2: Update architecture and product truth**
 
 Record:
 
 - `StudioRoot` is the only mode fork;
 - Web Demo owns seed loading and in-memory lifecycle;
 - `selectBackend()` and Tauri remain unchanged;
-- Sandbox remains the sole Blob URL owner;
+- `SandboxProjectBackend` remains the sole creator/revoker of seeded Web Demo asset Blob URLs, while ProjectStore owns source leases;
 - default 2D and existing 3D/split are reused;
 - no browser persistence or browser export.
 
 Mark the design spec source implementation state as complete only if Tasks 1–4 gates are green. Mark runtime validation separately as pending.
 
-- [ ] **Step 3: Update handoff and plan ledgers**
+- [x] **Step 3: Update handoff and plan ledgers**
 
 `HANDOFF.md` and `PLANS.md` must record:
 
@@ -863,7 +871,7 @@ Mark the design spec source implementation state as complete only if Tasks 1–4
 - three protected dirty files and integration guard;
 - next action is Task 6 explicit runtime approval.
 
-- [ ] **Step 4: Run complete non-build source gates**
+- [x] **Step 4: Run complete non-build source gates**
 
 ```powershell
 pnpm.cmd lint
@@ -875,7 +883,7 @@ git diff --check
 
 Expected: every command exits 0. Record actual test counts, warnings and any retry. Do not run build/dev/browser as part of this step.
 
-- [ ] **Step 5: Independent review**
+- [x] **Step 5: Independent review**
 
 Use `requesting-code-review` against the complete Web Demo diff. The reviewer must check:
 
@@ -890,11 +898,13 @@ Use `requesting-code-review` against the complete Web Demo diff. The reviewer mu
 
 Resolve every Critical or Important finding, rerun affected gates, and record the clean verdict. Minor findings may remain only when explicitly documented and behavior-neutral.
 
-- [ ] **Step 6: Commit source-level closure**
+The initial review found four Important and two Minor issues. After focused RED/GREEN repairs and documentation corrections, clean re-review returned Critical/Important/Minor 0, Spec Compliance Pass, Code Quality Approved, Ready Yes.
+
+- [x] **Step 6: Commit source-level closure**
 
 ```powershell
-git add -- README.md docs/ARCHITECTURE.md docs/PRODUCT_SPEC.md docs/ROADMAP.md HANDOFF.md PLANS.md docs/superpowers/specs/2026-08-14-aethertwin-local-web-demo-design.md docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md
-git commit -m "docs: close AetherTwin Web Demo source implementation"
+git add -- packages/project-store/src/sandbox-backend.ts packages/project-store/src/project-store.test.ts apps/studio/src/web-demo/load-web-demo.ts apps/studio/src/web-demo/load-web-demo.test.ts apps/studio/package.json tests/web-demo-policy.test.mjs tests/visible-actions.test.mjs README.md docs/ARCHITECTURE.md docs/DECISIONS.md docs/PRODUCT_SPEC.md docs/ROADMAP.md HANDOFF.md PLANS.md docs/superpowers/specs/2026-08-14-aethertwin-local-web-demo-design.md docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md
+git commit -m "fix: close AetherTwin Web Demo source implementation"
 ```
 
 After commit, `git status --short` must show only the three protected pre-existing dirty files.
