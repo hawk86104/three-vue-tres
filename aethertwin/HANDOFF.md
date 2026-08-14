@@ -7,7 +7,7 @@ Local Web Demo source baseline: `5f49ace12d7226a9a3eace727b90f87c6aa73f13` (the 
 
 ## 1. Current outcome
 
-M0 through M2.5 are accepted and M2 is closed. The dedicated Local Web Demo source implementation is committed through Task 4; Task 5's documentation and non-build gate have passed, independent source review is current, and Task 6 runtime acceptance remains pending explicit approval.
+M0 through M2.5 are accepted and M2 is closed. The dedicated Local Web Demo source implementation and Task 5 source gate are complete, and Task 6 localhost/browser/WebGL runtime acceptance passed under explicit approval.
 
 Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
@@ -112,7 +112,7 @@ Task 19's policy gate passed 45/45 and `git diff --check` exited 0. Its independ
 Task 20's final reviewed gate passed frozen install for 15 workspace projects, lint, typecheck across 14/15 workspace projects, Node 45/45, Vitest 77/77 files and 1,500/1,500 tests, rustfmt, Rust 302 passed with 2 approved privileged-Windows tests ignored, four-crate all-targets Cargo check, and diff check. Its final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. Schema v3, exactly 12 native commands, exactly 2 desktop capabilities, the Showroom Demo digest, and both protected manifest hashes remain verified.
 
 
-## 8. Local Web Demo source state
+## 8. Local Web Demo runtime state
 
 Tasks 1-4 are committed at the recorded source baseline. The dedicated Vite mode mounts `WebDemoApp` through the sole `StudioRoot` fork, verifies the canonical Showroom snapshot and four bundled assets before publication, and opens a fresh in-memory `SandboxProjectBackend`/ProjectStore session. Ordinary `App`, `selectBackend()`, Tauri commands, capabilities, schema, and desktop export remain unchanged.
 
@@ -122,7 +122,11 @@ Task 5's non-build gate passed on the current source/docs: lint exited 0; typech
 
 The first lint run exited 1 on one Web Demo test type-only import. The first Node run passed 50/51 and exposed a stale deferred-action policy that did not permit the single exact truthful disabled-export notice; the focused repair passed 7/7 before the complete 51/51 rerun. Vitest emitted only the known non-failing JSDOM canvas notices, which are not browser/GPU evidence.
 
-Independent Task 5 source review identified four Important and two Minor findings. Duplicate seed paths, duplicate manifest consumption, strict port binding, Blob URL ownership wording, HANDOFF ordering, and the recorded commit scope were corrected; the three behavioral repairs each had a focused failing RED followed by GREEN. Clean re-review returned Critical/Important/Minor 0, Spec Compliance Pass, Code Quality Approved, Ready Yes. Build, dev server, browser, screenshot, and real WebGL have not run, so no visible-runtime claim is made.
+Independent Task 5 source review identified four Important and two Minor findings. Duplicate seed paths, duplicate manifest consumption, strict port binding, Blob URL ownership wording, HANDOFF ordering, and the recorded commit scope were corrected; the three behavioral repairs each had a focused failing RED followed by GREEN. Clean re-review returned Critical/Important/Minor 0, Spec Compliance Pass, Code Quality Approved, Ready Yes.
+
+Task 6 then ran under explicit runtime approval. The dedicated build exited 0 after transforming 3,215 modules and emitted relative assets. Vite bound the strict address `http://127.0.0.1:4173`; the controlled server is intentionally still running for the requested preview. Headed Chromium verified the canonical inventory, 2D/3D/fixed split, shared selection and floor, disabled desktop-only Export, fresh Back/refresh behavior, WebGL2, one automatic context reconstruction, and second-loss fallback to a complete interactive 2D pane. All 181 recorded requests were loopback or same-origin Blob URLs; localStorage, sessionStorage, and cookies were empty. The final browser console contained zero errors. No screenshot was captured and no cross-device visual-correctness or performance claim is made.
+
+Runtime findings were repaired with focused RED/GREEN coverage: canonical assets bypass Vite inlining, Pixi receives explicit SVG parser metadata, deterministic 2x2 raster fixtures upload to WebGL, R3F recovery waits for the retired nested root, the supported shadow mode is used, and the shell provides an inline local favicon. Final gates passed lint, typecheck for 14/15 workspace projects, Node 53/53, Vitest 82/82 files and 1,547/1,547 tests, the final build, and diff checks.
 
 
 ## 9. Protected files
@@ -143,10 +147,11 @@ M2.5 does not include:
 - Player, kiosk mode, visitor themes, or Market 3D;
 - GLTF import/export, arbitrary lights/shaders, or 3D geometry editing;
 - remote runtime media/services, telemetry, CDN fallback, or business APIs;
-- real-browser, real-GPU, visual-correctness, or performance validation.
+- cross-device visual-correctness or performance certification.
 
 Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remained excluded by project rule and were not part of Task 20's authorized non-build gate.
+Local Web Demo Task 6 is the separate localhost browser/WebGL gate recorded above; it does not add packaged-desktop or cross-device claims.
 
 ## 11. Next operation
 
-Obtain current explicit approval for Task 6 before running `build:web-demo`, starting the localhost server, opening a browser, or claiming real WebGL/visual evidence. After Local Web Demo runtime acceptance, M3 still requires a separate high-reasoning specification and atomic plan. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+Use the live preview at `http://127.0.0.1:4173` and stop its controlled Vite process when the user is finished. After Local Web Demo runtime acceptance, M3 still requires a separate high-reasoning specification and atomic plan. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.

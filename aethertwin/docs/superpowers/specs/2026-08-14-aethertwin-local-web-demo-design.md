@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-14
 
-**Status:** Source implementation complete; runtime acceptance pending explicit approval
+**Status:** Runtime accepted on localhost under explicit approval
 
 **Baseline:** `codex/aethertwin-m2@87b6dbc4`
 
@@ -10,7 +10,7 @@
 
 Tasks 1-4 are implemented, independently reviewed, and committed through `5f49ace12d7226a9a3eace727b90f87c6aa73f13`: seeded sandbox state, verified bundled fixtures, generation-safe WebDemoApp lifecycle, and the exclusive Vite/root/policy boundary are present. Task 5 documentation and independent-review repairs are applied. Focused RED/GREEN covered duplicate seed paths, duplicate manifest consumption, and strict port binding; final lint, typecheck, Node 51/51, Vitest 81 files / 1,542 tests, and diff check all exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
 
-Task 6 remains a distinct acceptance gate. No `build:web-demo`, localhost server, real browser, screenshot, Playwright, or real WebGL command has run under current approval, so this status claims implementation but not visible rendering or visual correctness.
+Task 6 ran under explicit approval on 2026-08-14. `build:web-demo` exited 0, the strict server bound `http://127.0.0.1:4173`, and headed Chromium exercised the canonical 2D, 3D, fixed split, Back, refresh, shared selection/floor, disabled Export, and real WebGL2 paths. Forced context loss proved one automatic reconstruction followed by safe `disabled` fallback to a complete interactive 2D pane. All recorded requests were loopback or same-origin Blob URLs; localStorage, sessionStorage, and cookies were empty. Chromium recorded zero console errors. No screenshot was captured, and this evidence does not claim cross-device visual correctness or performance.
 
 ## Goal
 
@@ -257,10 +257,11 @@ tests and type checks passing, policy invariants unchanged, `git diff --check`
 clean, and an independent specification/code review with no unresolved
 Critical or Important finding.
 
-Runtime completion is separate. Only after explicit approval may the agent run
-the Web Demo command and browser/GPU checks. Until those checks run, the project
-may claim that the localhost preview is implemented, but not that it visibly
-rendered, achieved visual correctness, or passed real WebGL validation.
+Runtime completion was performed separately under explicit approval. The final
+localhost session visibly rendered and passed the recorded real WebGL2 and
+fallback checks on the acceptance machine. That evidence remains bounded to the
+tested browser and machine; it does not establish cross-device visual
+correctness or performance.
 
 The existing unrelated working-tree entries
 `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and
