@@ -285,6 +285,20 @@ function cloneOpenedProject(project: OpenedProject): OpenedProject {
   });
 }
 
+export interface SandboxProjectSeedAsset {
+  readonly relativePath: string;
+  readonly blob: Blob;
+}
+
+export interface SandboxProjectSeed {
+  readonly openedProject: OpenedProject;
+  readonly assets: readonly SandboxProjectSeedAsset[];
+}
+
+export interface SandboxProjectBackendOptions {
+  readonly seed?: SandboxProjectSeed;
+}
+
 export class SandboxProjectBackend implements ProjectBackend {
   readonly mode = "sandbox" as const;
   checkpointCount = 0;
@@ -298,6 +312,10 @@ export class SandboxProjectBackend implements ProjectBackend {
   private nextTimestamp = 0;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
+
+  constructor(options: SandboxProjectBackendOptions = {}) {
+    if (options.seed !== undefined) this.installSeed(options.seed);
+  }
 
   async createProject(request: CreateProjectRequest): Promise<OpenedProject> {
     const snapshot = createInitialSnapshot({
@@ -508,6 +526,49 @@ export class SandboxProjectBackend implements ProjectBackend {
       }
     }
     if (urls.size === 0) this.objectUrls.delete(projectPath);
+  }
+
+  private installSeed(seed: SandboxProjectSeed): void {
+    const opened = cloneOpenedProject(seed.openedProject);
+    const snapshot = parseSnapshot(opened.snapshot);
+    const manifest = parseManifest(opened.manifest);
+    const expectedPath = `sandbox://${snapshot.project.id}`;
+
+    if (opened.projectPath !== expectedPath) throw new Error("Invalid sandbox seed");
+    if (
+      manifest.projectId !== snapshot.project.id
+      || manifest.name !== snapshot.project.name
+      || manifest.profile !== snapshot.project.profile
+      || manifest.schemaVersion !== snapshot.schemaVersion
+    ) throw new Error("Invalid sandbox seed");
+
+    const expectedAssets = new Map(
+      snapshot.assets.map((asset) => [asset.relativePath, asset] as const),
+    );
+    const ownedBlobs = new Map<string, Blob>();
+    for (const input of seed.assets) {
+      if (ownedBlobs.has(input.relativePath)) throw new Error("Invalid sandbox seed");
+      const asset = expectedAssets.get(input.relativePath);
+      if (
+        asset === undefined
+        || !(input.blob instanceof Blob)
+        || input.blob.type !== asset.mediaType
+        || input.blob.size !== asset.size
+      ) throw new Error("Invalid sandbox seed");
+      ownedBlobs.set(
+        input.relativePath,
+        new Blob([input.blob], { type: asset.mediaType }),
+      );
+    }
+    if (ownedBlobs.size !== expectedAssets.size) throw new Error("Invalid sandbox seed");
+
+    this.projects.set(expectedPath, cloneOpenedProject({
+      projectPath: expectedPath,
+      manifest,
+      snapshot,
+      recovered: opened.recovered,
+    }));
+    this.blobs.set(expectedPath, ownedBlobs);
   }
 
   private revokeProjectUrls(projectPath: string): void {

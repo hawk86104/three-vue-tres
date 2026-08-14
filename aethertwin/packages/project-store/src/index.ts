@@ -49,4 +49,9 @@ export {
   type KeyValueStorage,
   type RecentProject,
 } from "./recent-projects";
-export { SandboxProjectBackend } from "./sandbox-backend";
+export {
+  SandboxProjectBackend,
+  type SandboxProjectBackendOptions,
+  type SandboxProjectSeed,
+  type SandboxProjectSeedAsset,
+} from "./sandbox-backend";

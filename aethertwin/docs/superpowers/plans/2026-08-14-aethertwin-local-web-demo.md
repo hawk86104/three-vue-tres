@@ -95,7 +95,7 @@ export interface SandboxProjectBackendOptions {
 - `new SandboxProjectBackend()` keeps the current deterministic empty behavior.
 - `new SandboxProjectBackend({ seed })` synchronously validates and atomically installs one opened project.
 
-- [ ] **Step 1: Write the seeded-backend RED tests**
+- [x] **Step 1: Write the seeded-backend RED tests**
 
 Add one `describe("SandboxProjectBackend seeded project", ...)` block. Use `createManifest()` and a small parsed snapshot with two distinct `AssetRecord` entries. Cover these exact assertions:
 
@@ -131,7 +131,7 @@ Also verify:
 - `closeProject()` and idempotent `dispose()` revoke each created URL exactly once;
 - a rejected seed publishes neither a project nor a Blob map.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -141,7 +141,7 @@ pnpm.cmd vitest run packages/project-store/src/project-store.test.ts -t "Sandbox
 
 Expected: FAIL because the constructor ignores the seed and `openProject()` reports that the seeded sandbox project is missing.
 
-- [ ] **Step 3: Add the seed interfaces and atomic constructor**
+- [x] **Step 3: Add the seed interfaces and atomic constructor**
 
 Implement this constructor boundary:
 
@@ -200,7 +200,7 @@ export class SandboxProjectBackend implements ProjectBackend {
 
 Keep all validation in local values and mutate `projects`/`blobs` only after every check passes. Do not hash here: async SHA-256 verification belongs to Task 2.
 
-- [ ] **Step 4: Export the exact public types**
+- [x] **Step 4: Export the exact public types**
 
 Update `packages/project-store/src/index.ts`:
 
@@ -213,7 +213,7 @@ export {
 } from "./sandbox-backend";
 ```
 
-- [ ] **Step 5: Run GREEN and type checks**
+- [x] **Step 5: Run GREEN and type checks**
 
 Run:
 
@@ -225,7 +225,7 @@ git diff --check
 
 Expected: seeded and existing Sandbox tests PASS; ProjectStore typecheck exits 0; diff check has no whitespace error.
 
-- [ ] **Step 6: Review and commit**
+- [x] **Step 6: Review and commit**
 
 Confirm `git diff --name-only` contains only the three Task 1 files plus this plan checkbox update. Confirm all three protected dirty files remain unstaged.
 

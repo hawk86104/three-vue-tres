@@ -38,6 +38,7 @@ import {
   type KeyValueStorage,
   type ProductMediaImportInput,
   type ProductMediaImportResult,
+  type SandboxProjectSeed,
 } from "./index";
 
 afterEach(() => {
@@ -2494,6 +2495,214 @@ describe("ProjectStore content and route durability", () => {
       canRedo: false,
     });
     await store.close();
+  });
+});
+
+describe("SandboxProjectBackend seeded project", () => {
+  const createSeed = async () => {
+    const { createInitialSnapshot, createManifest, parseSnapshot } = await import(
+      "@aethertwin/core-model"
+    );
+    const pngBytes = new Uint8Array([1, 2, 3]);
+    const ids = [
+      "00000000-0000-4000-8000-000000000123",
+      "00000000-0000-4000-8000-000000000124",
+      "00000000-0000-4000-8000-000000000127",
+    ][Symbol.iterator]();
+    const initial = createInitialSnapshot({
+      name: "Seeded demo",
+      profile: "showroom",
+      uuid: () => ids.next().value!,
+    });
+    const snapshot = parseSnapshot({
+      ...initial,
+      assets: [
+        {
+          id: "00000000-0000-4000-8000-000000000125",
+          sha256: "a".repeat(64),
+          relativePath: `assets/sha256/aa/${"a".repeat(64)}.png`,
+          mediaType: "image/png",
+          size: 3,
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000126",
+          sha256: "b".repeat(64),
+          relativePath: `assets/sha256/bb/${"b".repeat(64)}.svg`,
+          mediaType: "image/svg+xml",
+          size: 4,
+        },
+      ],
+    });
+    const manifest = createManifest(snapshot, {
+      now: () => "2026-08-14T00:00:00.000Z",
+      appVersion: "0.1.0",
+    });
+    const seed = {
+      openedProject: {
+        projectPath: `sandbox://${snapshot.project.id}`,
+        manifest: structuredClone(manifest),
+        snapshot: structuredClone(snapshot),
+        recovered: false,
+      },
+      assets: [
+        {
+          relativePath: snapshot.assets[0]!.relativePath,
+          blob: new Blob([pngBytes], { type: "image/png" }),
+        },
+        {
+          relativePath: snapshot.assets[1]!.relativePath,
+          blob: new Blob([new Uint8Array([4, 5, 6, 7])], { type: "image/svg+xml" }),
+        },
+      ],
+    };
+    return { manifest, pngBytes, seed, snapshot };
+  };
+
+  it("opens a seeded project and preserves deterministic empty construction", async () => {
+    const { manifest, seed, snapshot } = await createSeed();
+    const backend = new SandboxProjectBackend({ seed });
+
+    await expect(backend.openProject(`sandbox://${snapshot.project.id}`)).resolves.toMatchObject({
+      snapshot,
+      manifest,
+      recovered: false,
+    });
+    await expect(new SandboxProjectBackend().createProject({
+      name: "Empty",
+      location: "sandbox",
+      profile: "showroom",
+    }))
+      .resolves.toMatchObject({
+        projectPath: "sandbox://00000000-0000-4000-8000-000000000001",
+      });
+  });
+
+  it("owns seed records, the input asset array, and Blob bytes", async () => {
+    const { pngBytes, seed, snapshot } = await createSeed();
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:owned");
+    try {
+      const backend = new SandboxProjectBackend({ seed });
+      pngBytes[0] = 99;
+      (seed.openedProject.manifest as unknown as { name: string }).name = "Changed";
+      (seed.openedProject.snapshot as unknown as {
+        project: { name: string };
+      }).project.name = "Changed";
+      seed.assets.length = 0;
+
+      const opened = await backend.openProject(`sandbox://${snapshot.project.id}`);
+      expect(opened.manifest.name).toBe("Seeded demo");
+      expect(opened.snapshot.project.name).toBe("Seeded demo");
+      expect(opened.snapshot.assets).toHaveLength(2);
+
+      await backend.resolveAsset(`sandbox://${snapshot.project.id}`, snapshot.assets[0]!.id);
+      const ownedBlob = createObjectURL.mock.calls[0]![0];
+      expect(ownedBlob).toBeInstanceOf(Blob);
+      await expect((ownedBlob as Blob).arrayBuffer()).resolves.toEqual(
+        new Uint8Array([1, 2, 3]).buffer,
+      );
+    } finally {
+      createObjectURL.mockRestore();
+    }
+  });
+
+  it("rejects every incoherent seed and leaves rejected installation unpublished", async () => {
+    const { manifest, seed, snapshot } = await createSeed();
+    const invalidSeeds = [
+      { ...seed, openedProject: { ...seed.openedProject, projectPath: "sandbox://wrong" } },
+      {
+        ...seed,
+        openedProject: {
+          ...seed.openedProject,
+          manifest: { ...manifest, projectId: "00000000-0000-4000-8000-000000000999" },
+        },
+      },
+      {
+        ...seed,
+        openedProject: { ...seed.openedProject, manifest: { ...manifest, name: "Wrong" } },
+      },
+      {
+        ...seed,
+        openedProject: { ...seed.openedProject, manifest: { ...manifest, profile: "market" } },
+      },
+      {
+        ...seed,
+        openedProject: {
+          ...seed.openedProject,
+          manifest: { ...manifest, schemaVersion: manifest.schemaVersion + 1 },
+        },
+      },
+      { ...seed, assets: [seed.assets[0]!, seed.assets[0]!] },
+      { ...seed, assets: [seed.assets[0]!] },
+      {
+        ...seed,
+        assets: [...seed.assets, { relativePath: "assets/extra.png", blob: seed.assets[0]!.blob }],
+      },
+      {
+        ...seed,
+        assets: [
+          {
+            ...seed.assets[0]!,
+            blob: new Blob([new Uint8Array([1, 2, 3])], { type: "image/svg+xml" }),
+          },
+          seed.assets[1]!,
+        ],
+      },
+      {
+        ...seed,
+        assets: [
+          {
+            ...seed.assets[0]!,
+            blob: new Blob([new Uint8Array([1, 2])], { type: "image/png" }),
+          },
+          seed.assets[1]!,
+        ],
+      },
+    ];
+
+    for (const invalidSeed of invalidSeeds) {
+      expect(() => new SandboxProjectBackend({
+        seed: invalidSeed as SandboxProjectSeed,
+      })).toThrow();
+    }
+
+    const backend = new SandboxProjectBackend();
+    const installSeed = backend as unknown as { installSeed(value: unknown): void };
+    expect(() => installSeed.installSeed(invalidSeeds[0]!)).toThrow();
+    await expect(backend.openProject(`sandbox://${snapshot.project.id}`)).rejects.toThrow();
+    await expect(
+      backend.resolveAsset(`sandbox://${snapshot.project.id}`, snapshot.assets[0]!.id),
+    ).rejects.toThrow();
+  });
+
+  it("owns one URL per seeded relative path and revokes every URL exactly once", async () => {
+    const { seed, snapshot } = await createSeed();
+    const backend = new SandboxProjectBackend({ seed });
+    const createObjectURL = vi.spyOn(URL, "createObjectURL")
+      .mockReturnValueOnce("blob:seeded-png")
+      .mockReturnValueOnce("blob:seeded-svg");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL");
+    try {
+      await expect(
+        backend.resolveAsset(`sandbox://${snapshot.project.id}`, snapshot.assets[0]!.id),
+      ).resolves.toEqual({ assetId: snapshot.assets[0]!.id, url: "blob:seeded-png" });
+      await expect(
+        backend.resolveAsset(`sandbox://${snapshot.project.id}`, snapshot.assets[0]!.id),
+      ).resolves.toEqual({ assetId: snapshot.assets[0]!.id, url: "blob:seeded-png" });
+      await expect(
+        backend.resolveAsset(`sandbox://${snapshot.project.id}`, snapshot.assets[1]!.id),
+      ).resolves.toEqual({ assetId: snapshot.assets[1]!.id, url: "blob:seeded-svg" });
+      expect(createObjectURL).toHaveBeenCalledTimes(2);
+
+      await backend.closeProject(`sandbox://${snapshot.project.id}`);
+      await backend.dispose();
+      await backend.dispose();
+      expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:seeded-png");
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:seeded-svg");
+    } finally {
+      createObjectURL.mockRestore();
+      revokeObjectURL.mockRestore();
+    }
   });
 });
 
