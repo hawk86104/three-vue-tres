@@ -4,6 +4,7 @@ import { existsSync, globSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const studioPackage = JSON.parse(readFileSync("apps/studio/package.json", "utf8"));
+const studioIndexSource = readFileSync("apps/studio/index.html", "utf8");
 const viteSource = readFileSync("apps/studio/vite.config.ts", "utf8");
 const selectBackendSource = readFileSync(
   "apps/studio/src/backend/select-backend.ts",
@@ -11,6 +12,10 @@ const selectBackendSource = readFileSync(
 );
 const failClosedTestSource = readFileSync(
   "apps/studio/src/backend/tauri-backend.test.ts",
+  "utf8",
+);
+const webDemoFixturesSource = readFileSync(
+  "apps/studio/src/web-demo/web-demo-fixtures.ts",
   "utf8",
 );
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
@@ -39,6 +44,11 @@ test("the Web Demo has exactly two dedicated scripts", () => {
     ["web-demo", "vite --mode web-demo --host 127.0.0.1 --port 4173 --strictPort"],
     ["build:web-demo", "vite build --mode web-demo"],
   ]);
+});
+
+test("the Studio shell provides an inline local favicon", () => {
+  assert.match(studioIndexSource, /<link rel="icon" href="data:image\/svg\+xml,/u);
+  assert.doesNotMatch(studioIndexSource, /favicon\.ico|(?:https?|wss?):\/\//iu);
 });
 
 test("the dedicated Vite mode is the only source of the Web Demo flag", () => {
@@ -75,6 +85,20 @@ test("Web Demo runtime sources remain local-only and browser-persistence-free", 
     /ProjectExportBackend|TauriProjectBackend|begin_project_export|write_project_export_chunk/u,
   );
   assert.doesNotMatch(webDemoRuntimeSource, /\binvoke\s*\(/u);
+});
+
+test("canonical Web Demo assets bypass Vite byte rewriting", () => {
+  const assetImports = webDemoFixturesSource
+    .split(/\r?\n/u)
+    .filter((line) => line.includes("fixtures/assets/showroom-demo/"));
+
+  assert.deepEqual(assetImports, [
+    "import manifest from \"../../../../fixtures/assets/showroom-demo/manifest.json\";",
+    "import planReferenceUrl from \"../../../../fixtures/assets/showroom-demo/plan-reference.svg?url&no-inline\";",
+    "import floorUrl from \"../../../../fixtures/assets/showroom-demo/floor.png?url&no-inline\";",
+    "import wallUrl from \"../../../../fixtures/assets/showroom-demo/wall.jpg?url&no-inline\";",
+    "import fixtureUrl from \"../../../../fixtures/assets/showroom-demo/fixture.svg?url&no-inline\";",
+  ]);
 });
 
 test("the Web Demo adds no dependency or lockfile mutation", () => {

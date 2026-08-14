@@ -2265,17 +2265,17 @@
     },
     {
       "id": "e2500000-0000-4000-8000-000000000502",
-      "sha256": "5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5",
-      "relativePath": "assets/sha256/5a/5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5.png",
+      "sha256": "d16e80c6e2d5bd39e1d5f3ab7ff23898ec2078d3b47652924c9710cb834fd12c",
+      "relativePath": "assets/sha256/d1/d16e80c6e2d5bd39e1d5f3ab7ff23898ec2078d3b47652924c9710cb834fd12c.png",
       "mediaType": "image/png",
-      "size": 68
+      "size": 94
     },
     {
       "id": "e2500000-0000-4000-8000-000000000503",
-      "sha256": "63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a",
-      "relativePath": "assets/sha256/63/63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a.jpg",
+      "sha256": "b561ffa8e780a9d33fedce3228b9974f727c472390b978d516ebf77d0e59912c",
+      "relativePath": "assets/sha256/b5/b561ffa8e780a9d33fedce3228b9974f727c472390b978d516ebf77d0e59912c.jpg",
       "mediaType": "image/jpeg",
-      "size": 517
+      "size": 757
     },
     {
       "id": "e2500000-0000-4000-8000-000000000504",

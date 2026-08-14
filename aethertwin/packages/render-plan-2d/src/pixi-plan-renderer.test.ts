@@ -146,7 +146,9 @@ const pixiHarness = vi.hoisted(() => {
     async init(): Promise<void> { await TestApplication.initGate; }
   }
 
-  const load = vi.fn<(url: string) => Promise<TestTexture>>();
+  const load = vi.fn<(
+    asset: { readonly src: string; readonly parser: "svg" | "texture" },
+  ) => Promise<TestTexture>>();
   const unload = vi.fn<(url: string) => Promise<void>>();
   return {
     TestApplication,
@@ -404,7 +406,7 @@ function installSharedFakeAssetCache(
     cache.delete(url);
     texture.destroy();
   });
-  pixiHarness.load.mockImplementation((url) => {
+  pixiHarness.load.mockImplementation(({ src: url }) => {
     const cached = cache.get(url);
     if (cached !== undefined) return cached;
     const pending = sourceLoads(url);
@@ -682,6 +684,31 @@ describe('Pixi resource ownership compatibility', () => {
 });
 
 describe("Pixi reference resources", () => {
+  it("selects the SVG parser for an extensionless verified blob source", async () => {
+    const texture = new pixiHarness.TestTexture();
+    const sourcePort: PlanAssetSourcePort = {
+      resolve: async (assetId) => ({
+        assetId,
+        url: `blob:aethertwin/${assetId}`,
+        mediaType: "image/svg+xml",
+      }),
+    };
+    pixiHarness.load.mockResolvedValue(texture);
+    const port = pixiRendererModule.createPixiRenderPort(sourcePort);
+    await port.init(document.createElement("div"), { handle: () => undefined });
+
+    const node = imageNode("svg-reference", "svg-asset");
+    port.upsert(node);
+    await settleResources();
+
+    expect(pixiHarness.load).toHaveBeenCalledWith({
+      src: "blob:aethertwin/svg-asset",
+      parser: "svg",
+    });
+    port.remove(node.key);
+    await settleResources();
+  });
+
   it("leases one cached URL across different asset IDs in the same render port", async () => {
     const texture = new pixiHarness.TestTexture();
     const sharedUrl = "blob:aethertwin/shared-floor-plan";
@@ -817,7 +844,10 @@ describe("Pixi reference resources", () => {
     sourceGate.resolve(projectAssetSource("asset-shared"));
     await settleResources();
     expect(pixiHarness.load).toHaveBeenCalledOnce();
-    expect(pixiHarness.load).toHaveBeenCalledWith("blob:aethertwin/asset-shared");
+    expect(pixiHarness.load).toHaveBeenCalledWith({
+      src: "blob:aethertwin/asset-shared",
+      parser: "texture",
+    });
 
     const texture = new pixiHarness.TestTexture();
     pixiHarness.unload.mockImplementation(async () => texture.destroy());
@@ -853,8 +883,8 @@ describe("Pixi reference resources", () => {
     const loadB = deferred<InstanceType<typeof pixiHarness.TestTexture>>();
     const resolve = vi.fn(async (assetId: string) => projectAssetSource(assetId));
     const sourcePort: PlanAssetSourcePort = { resolve };
-    pixiHarness.load.mockImplementation((url) => (
-      url.endsWith("asset-a") ? loadA.promise : loadB.promise
+    pixiHarness.load.mockImplementation(({ src }) => (
+      src.endsWith("asset-a") ? loadA.promise : loadB.promise
     ));
     const port = pixiRendererModule.createPixiRenderPort(sourcePort);
     await port.init(document.createElement("div"), { handle: () => undefined });

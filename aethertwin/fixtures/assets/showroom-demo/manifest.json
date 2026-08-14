@@ -7,13 +7,13 @@
   },
   {
     "file": "floor.png",
-    "sha256": "5aec7926f4c5d6ada032be746c1fb719efe5066510b11e8dd5a42f31cff359a5",
+    "sha256": "d16e80c6e2d5bd39e1d5f3ab7ff23898ec2078d3b47652924c9710cb834fd12c",
     "mediaType": "image/png",
     "purpose": "space-floor texture and shared content image"
   },
   {
     "file": "wall.jpg",
-    "sha256": "63dc907b6262441b36fa89e125a6d07a503602fc6f7bed072685440c05b12c9a",
+    "sha256": "b561ffa8e780a9d33fedce3228b9974f727c472390b978d516ebf77d0e59912c",
     "mediaType": "image/jpeg",
     "purpose": "wall texture and shared content image"
   },

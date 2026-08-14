@@ -79,6 +79,7 @@ class FakeBackend implements SceneRendererBackend {
 
   constructor(
     private readonly initImpl: () => Promise<void> = async () => undefined,
+    private readonly destroyImpl: () => void = () => undefined,
   ) {}
 
   async init(host: HTMLElement, events: SceneRendererBackendEvents): Promise<void> {
@@ -119,6 +120,7 @@ class FakeBackend implements SceneRendererBackend {
 
   destroy(): void {
     this.destroyCount += 1;
+    this.destroyImpl();
     if (this.destroyFailure !== null) throw this.destroyFailure;
   }
 }
@@ -365,6 +367,40 @@ describe("scene renderer lifecycle", () => {
     renderer.destroy();
     expect(afterRetryRecovery.destroyCount).toBe(1);
     expect(statuses.at(-1)?.status).toBe("destroyed");
+  });
+
+  it("waits for retired backend cleanup before recovering the same host", async () => {
+    let hostOwned = false;
+    const first = new FakeBackend(
+      async () => {
+        hostOwned = true;
+      },
+      () => {
+        queueMicrotask(() => {
+          hostOwned = false;
+        });
+      },
+    );
+    const replacement = new FakeBackend(async () => {
+      if (hostOwned) throw new Error("retired backend still owns the host");
+      hostOwned = true;
+    });
+    const renderer = createSceneRenderer(
+      dependencies(),
+      backendQueue([first, replacement]),
+    );
+    const { sink, statuses } = sinkHarness();
+    await renderer.init({} as HTMLElement, sink);
+    renderer.update(inputFor());
+
+    first.events?.onContextLost();
+    await flushMicrotasks();
+
+    expect(replacement.updateCalls).toHaveLength(1);
+    expect(statuses.slice(-2).map(({ status }) => status)).toEqual([
+      "recovering",
+      "ready",
+    ]);
   });
 
   it("reports WebGL initialization failure, allows retry, and rejects late initialization after destroy", async () => {

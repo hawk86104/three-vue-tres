@@ -269,11 +269,23 @@ test("Showroom Demo asset manifest is exact, local, complete, and sanitized", ()
 
   const png = readFileSync(`${assetRoot}/floor.png`);
   assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.deepEqual(
+    [png.readUInt32BE(16), png.readUInt32BE(20), png[24], png[25]],
+    [2, 2, 8, 6],
+    "floor texture must use a browser-normalized 2x2 RGBA PNG encoding",
+  );
   const jpeg = readFileSync(`${assetRoot}/wall.jpg`);
   const completeJpeg = (bytes) => bytes.length > 4
     && bytes[0] === 0xff && bytes[1] === 0xd8
     && bytes.at(-2) === 0xff && bytes.at(-1) === 0xd9;
   assert.equal(completeJpeg(jpeg), true);
+  const jpegStartOfFrame = jpeg.indexOf(Buffer.from([0xff, 0xc0]));
+  assert.notEqual(jpegStartOfFrame, -1);
+  assert.deepEqual(
+    [jpeg.readUInt16BE(jpegStartOfFrame + 5), jpeg.readUInt16BE(jpegStartOfFrame + 7)],
+    [2, 2],
+    "wall texture must use a browser-normalized 2x2 JPEG encoding",
+  );
   assert.equal(completeJpeg(jpeg.subarray(0, -1)), false);
 
   for (const file of ["plan-reference.svg", "fixture.svg"]) {

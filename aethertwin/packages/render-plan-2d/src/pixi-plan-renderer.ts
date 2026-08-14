@@ -18,6 +18,7 @@ import type {
   PlanRenderer,
   PlanRendererEventSink,
   PlanRendererInput,
+  ProjectAssetSource,
   RenderNode,
 } from "./types";
 
@@ -58,6 +59,11 @@ interface SharedTextureLease {
   released: boolean;
 }
 
+interface PixiTextureAsset {
+  readonly src: string;
+  readonly parser: "svg" | "texture";
+}
+
 const sharedTextureEntries = new Map<string, SharedTextureEntry>();
 const sharedTextureOperations = new Set<Promise<void>>();
 let reservedPixiPortCount = 0;
@@ -76,13 +82,21 @@ async function waitForSharedTextureIdle(): Promise<void> {
   }
 }
 
-async function acquireSharedTexture(url: string): Promise<SharedTextureLease> {
+function createPixiTextureAsset(source: ProjectAssetSource): PixiTextureAsset {
+  return {
+    src: source.url,
+    parser: source.mediaType === "image/svg+xml" ? "svg" : "texture",
+  };
+}
+
+async function acquireSharedTexture(source: ProjectAssetSource): Promise<SharedTextureLease> {
+  const url = source.url;
   while (true) {
     let entry = sharedTextureEntries.get(url);
     if (entry === undefined) {
       entry = {
         url,
-        texture: Promise.resolve().then(() => Assets.load<Texture>(url)),
+        texture: Promise.resolve().then(() => Assets.load<Texture>(createPixiTextureAsset(source))),
         references: 0,
         retirement: null,
         blocked: false,
@@ -792,7 +806,7 @@ class PixiRenderPort implements PlanRenderPort {
           || resource.references.size === 0
           || this.#resources.get(resource.assetId) !== resource
         ) return;
-        const lease = await acquireSharedTexture(source.url);
+        const lease = await acquireSharedTexture(source);
         const texture = lease.texture;
         if (
           this.#destroyed

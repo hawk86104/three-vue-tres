@@ -22,7 +22,7 @@ import {
   Color,
   DirectionalLight,
   Group,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   RGBAFormat,
   Scene,
@@ -494,7 +494,7 @@ export class R3FSceneSurface {
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = PCFSoftShadowMap;
+    renderer.shadowMap.type = PCFShadowMap;
     this.contextCanvas = renderer.domElement;
     this.contextCanvas.addEventListener("webglcontextlost", this.onContextLost);
     const resolve = this.readyResolve;
@@ -597,7 +597,7 @@ export class R3FSceneSurface {
       ));
     }
     reject?.(new Error("R3F surface was destroyed during initialization"));
-    if (domRoot !== null) cleanup(() => domRoot.unmount());
+    if (domRoot !== null) queueMicrotask(() => domRoot.unmount());
     for (const texture of textures) {
       cleanup(() => texture.dispose());
     }
@@ -610,7 +610,7 @@ export class R3FSceneSurface {
       <CanvasErrorBoundary onError={(error) => this.failInitialization(error)}>
         <Canvas
           frameloop="demand"
-          shadows
+          shadows="percentage"
           camera={{
             position: [8, 6, 8],
             fov: 45,

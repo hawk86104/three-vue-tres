@@ -230,7 +230,15 @@ class DefaultSceneRenderer implements SceneRenderer {
       return;
     }
     this.autoRecoveryUsed = true;
-    void this.activateBackend("recovering", "disabled").catch(() => undefined);
+    const retiredGeneration = this.backendGeneration;
+    queueMicrotask(() => {
+      if (
+        this.destroyed
+        || this.backend !== null
+        || this.backendGeneration !== retiredGeneration
+      ) return;
+      void this.activateBackend("recovering", "disabled").catch(() => undefined);
+    });
   }
 
   private isCurrentBackend(
