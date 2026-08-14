@@ -697,7 +697,7 @@ git commit -m "feat: open the AetherTwin Web Demo editor"
 - Consumes: Task 3 `WebDemoApp`, existing `App`, Vite `ConfigEnv.mode`.
 - Produces: `StudioRoot`, `web-demo` and `build:web-demo` scripts, compile-time `VITE_AETHERTWIN_WEB_DEMO="1"` only in the dedicated mode and `"0"` in every ordinary mode.
 
-- [ ] **Step 1: Write root/config/policy RED tests**
+- [x] **Step 1: Write root/config/policy RED tests**
 
 `studio-root.test.tsx` mocks `App` and `WebDemoApp` and asserts exactly one is mounted:
 
@@ -725,7 +725,7 @@ expect(webDemo.build).toEqual({ outDir: "dist", emptyOutDir: true });
 
 `tests/web-demo-policy.test.mjs` asserts the exact scripts, absence of committed `.env*`, absence of `dist/`, and that `select-backend.ts` contains neither `VITE_AETHERTWIN_WEB_DEMO` nor a production sandbox bypass.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/studio-root.test.tsx apps/studio/vite.config.test.ts
@@ -734,7 +734,7 @@ node --test tests/web-demo-policy.test.mjs
 
 Expected: FAIL because `StudioRoot`, the mode-specific define and both scripts are missing.
 
-- [ ] **Step 3: Add the exclusive root selector**
+- [x] **Step 3: Add the exclusive root selector**
 
 ```tsx
 import { App } from "./app";
@@ -753,7 +753,7 @@ export function StudioRoot({
 
 Update `main.tsx` so `StrictMode` contains only `<StudioRoot />`. Do not import `WebDemoApp` directly from `main.tsx`.
 
-- [ ] **Step 4: Add the dedicated Vite flag and scripts**
+- [x] **Step 4: Add the dedicated Vite flag and scripts**
 
 ```ts
 export default defineConfig(({ mode }) => ({
@@ -779,7 +779,7 @@ Add these exact package scripts without changing dependencies or lockfile:
 }
 ```
 
-- [ ] **Step 5: Lock policy invariants**
+- [x] **Step 5: Lock policy invariants**
 
 `tests/web-demo-policy.test.mjs` must assert:
 
@@ -792,7 +792,7 @@ Add these exact package scripts without changing dependencies or lockfile:
 
 Reuse `tests/offline-source-policy.test.mjs` for the exact 12 invokes and 2 capabilities; do not duplicate its parser.
 
-- [ ] **Step 6: Run GREEN and source-level vertical checks**
+- [x] **Step 6: Run GREEN and source-level vertical checks**
 
 ```powershell
 pnpm.cmd vitest run apps/studio/src/studio-root.test.tsx apps/studio/vite.config.test.ts apps/studio/src/web-demo/load-web-demo.test.ts apps/studio/src/web-demo/web-demo-app.test.tsx apps/studio/src/features/project-center/project-center.test.tsx apps/studio/src/features/plan-editor/plan-editor.test.tsx apps/studio/src/features/plan-editor/editor-session.test.ts
@@ -804,7 +804,7 @@ git diff --check
 
 Expected: all listed tests PASS; both typechecks exit 0; source policy still reports exact schema/native boundaries; no whitespace error. These commands do not prove browser layout or WebGL.
 
-- [ ] **Step 7: Review and commit**
+- [x] **Step 7: Review and commit**
 
 ```powershell
 git add -- apps/studio/src/studio-root.tsx apps/studio/src/studio-root.test.tsx apps/studio/src/main.tsx apps/studio/vite.config.ts apps/studio/vite.config.test.ts apps/studio/package.json tests/web-demo-policy.test.mjs docs/superpowers/plans/2026-08-14-aethertwin-local-web-demo.md

@@ -6,7 +6,9 @@
   "scripts": {
     "test": "vitest run --root ../.. apps/studio/src/features/project-center/project-center.test.tsx apps/studio/src/backend/tauri-backend.test.ts apps/studio/src/features/plan-editor/plan-editor.test.tsx apps/studio/src/features/plan-editor/editor-session.test.ts apps/studio/src/features/plan-editor/interaction-controller.test.ts apps/studio/src/features/plan-editor/plan-canvas.test.tsx",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "vite build"
+    "build": "vite build",
+    "web-demo": "vite --mode web-demo --host 127.0.0.1 --port 4173",
+    "build:web-demo": "vite build --mode web-demo"
   },
   "dependencies": {
     "@aethertwin/core-model": "workspace:*",

@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./app";
 import "./app.css";
+import { StudioRoot } from "./studio-root";
 
 const root = document.getElementById("root");
 
@@ -11,6 +11,6 @@ if (root === null) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <StudioRoot />
   </StrictMode>,
 );
