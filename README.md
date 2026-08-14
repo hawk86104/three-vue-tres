@@ -433,7 +433,7 @@ If you run into any issues while using the project, feel free to reach out throu
 
 # ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hawk86104/three-vue-tres,hawk86104/vue3-ts-cesium-map-show&type=Date)](https://star-history.com/#hawk86104/three-vue-tres&hawk86104/vue3-ts-cesium-map-show&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=hawk86104/three-vue-tres,hawk86104/vue3-ts-cesium-map-show&type=Date)](https://star-history.dera.page/#hawk86104/three-vue-tres&hawk86104/vue3-ts-cesium-map-show&Date)
 
 # ™️ Copyright Information
 
