@@ -416,7 +416,7 @@ TvT.js 与 AI 的结合已经进入内容生产和工程开发两条主线：AI 
 
 # ⭐ 点星历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hawk86104/three-vue-tres,hawk86104/vue3-ts-cesium-map-show&type=Date)](https://star-history.com/#hawk86104/three-vue-tres&hawk86104/vue3-ts-cesium-map-show&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=hawk86104/three-vue-tres,hawk86104/vue3-ts-cesium-map-show&type=Date)](https://star-history.dera.page/#hawk86104/three-vue-tres&hawk86104/vue3-ts-cesium-map-show&Date)
 
 # ™️ 版权信息
 
