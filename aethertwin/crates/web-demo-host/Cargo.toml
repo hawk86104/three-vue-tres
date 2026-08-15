@@ -1,0 +1,16 @@
+[package]
+name = "aethertwin-web-demo-host"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "aethertwin-web-demo-host"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile.workspace = true

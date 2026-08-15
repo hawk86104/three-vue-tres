@@ -37,7 +37,7 @@
 **Create:** `crates/web-demo-host/` with a standard-library-only Cargo package,
 host tests, and a workspace registration that introduces no Tauri dependency.
 
-- [ ] **RED — write focused host tests.** Cover fixed sibling `app/` discovery;
+- [x] **RED — write focused host tests.** Cover fixed sibling `app/` discovery;
   binding `127.0.0.1:4173`; fallback to a loopback OS-assigned port after a
   controlled `4173` conflict; generated browser URL; nonfatal browser-open
   failure; GET and HEAD; bounded headers and read timeout; MIME allowlist;
@@ -45,7 +45,7 @@ host tests, and a workspace registration that introduces no Tauri dependency.
   absent-file 404; method rejection; no directory listing or SPA fallback; and
   rejection of percent encoding, backslashes, drive paths, empty/dot/dot-dot
   segments, NUL, non-regular files, and canonical paths outside `app/`.
-- [ ] **Run RED exactly:**
+- [x] **Run RED exactly:**
 
   ```powershell
   cargo test -p aethertwin-web-demo-host
@@ -53,7 +53,7 @@ host tests, and a workspace registration that introduces no Tauri dependency.
 
   Expected: fail because `aethertwin-web-demo-host` and its strict server contract do not
   yet exist.
-- [ ] **GREEN — implement the minimum host.** Use `std::net`, `std::fs`,
+- [x] **GREEN — implement the minimum host.** Use `std::net`, `std::fs`,
   `std::io`, `std::process`, and other Rust standard-library modules only.
   Resolve the executable's directory, canonicalize sibling `app/`, bind only
   loopback, try `4173` before port `0`, print the copyable URL, invoke the
@@ -61,7 +61,7 @@ host tests, and a workspace registration that introduces no Tauri dependency.
   retain visible-console lifetime semantics. Implement exact static-response
   parsing and the design's headers/cache rules; do not add a generic static
   file server or Tauri linkage.
-- [ ] **Run GREEN exactly:**
+- [x] **Run GREEN exactly:**
 
   ```powershell
   cargo test -p aethertwin-web-demo-host
@@ -69,7 +69,7 @@ host tests, and a workspace registration that introduces no Tauri dependency.
   cargo check -p aethertwin-web-demo-host
   ```
 
-- [ ] **Commit:** stage only Task 1 files and this plan checkbox update, then
+- [x] **Commit:** stage only Task 1 files and this plan checkbox update, then
   commit `feat: add the portable Web Demo loopback host`.
 - [ ] **Independent review:** verify source containment, request parsing,
   canonical-path checks, loopback-only binding, fallback behavior, headers,

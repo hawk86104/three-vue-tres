@@ -60,6 +60,10 @@ const required = [
   "crates/project-io/src/lib.rs",
   "crates/asset-io",
   "crates/media-export",
+  "crates/web-demo-host",
+  "crates/web-demo-host/Cargo.toml",
+  "crates/web-demo-host/src/lib.rs",
+  "crates/web-demo-host/src/main.rs",
   "Cargo.lock",
   "docs/ARCHITECTURE.md",
   "docs/PRODUCT_SPEC.md",
@@ -112,7 +116,7 @@ test("workspace exposes only the two product profiles", () => {
   assert.doesNotMatch(spec, /third profile/i);
 });
 
-test("active Rust workspace members include the M2.1 asset boundary", () => {
+test("active Rust workspace members include the portable Web Demo host", () => {
   const workspace = readFileSync(join(root, "Cargo.toml"), "utf8");
   const projectIo = readFileSync(
     join(root, "crates/project-io/Cargo.toml"),
@@ -125,7 +129,7 @@ test("active Rust workspace members include the M2.1 asset boundary", () => {
 
   assert.match(
     workspace,
-    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host",\s*"crates\/asset-io",\s*"crates\/media-export"\]/,
+    /members\s*=\s*\["crates\/project-io",\s*"crates\/desktop-host",\s*"crates\/asset-io",\s*"crates\/media-export",\s*"crates\/web-demo-host"\]/,
   );
   assert.match(projectIo, /name\s*=\s*"project-io"/);
   assert.match(desktopHost, /name\s*=\s*"desktop-host"/);

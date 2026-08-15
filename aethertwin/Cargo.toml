@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/project-io", "crates/desktop-host", "crates/asset-io", "crates/media-export"]
+members = ["crates/project-io", "crates/desktop-host", "crates/asset-io", "crates/media-export", "crates/web-demo-host"]
 
 [workspace.package]
 edition = "2024"
