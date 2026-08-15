@@ -48,10 +48,10 @@ host tests, and a workspace registration that introduces no Tauri dependency.
 - [ ] **Run RED exactly:**
 
   ```powershell
-  cargo test -p web-demo-host
+  cargo test -p aethertwin-web-demo-host
   ```
 
-  Expected: fail because `web-demo-host` and its strict server contract do not
+  Expected: fail because `aethertwin-web-demo-host` and its strict server contract do not
   yet exist.
 - [ ] **GREEN — implement the minimum host.** Use `std::net`, `std::fs`,
   `std::io`, `std::process`, and other Rust standard-library modules only.
@@ -64,9 +64,9 @@ host tests, and a workspace registration that introduces no Tauri dependency.
 - [ ] **Run GREEN exactly:**
 
   ```powershell
-  cargo test -p web-demo-host
+  cargo test -p aethertwin-web-demo-host
   cargo fmt --all -- --check
-  cargo check -p web-demo-host
+  cargo check -p aethertwin-web-demo-host
   ```
 
 - [ ] **Commit:** stage only Task 1 files and this plan checkbox update, then
@@ -143,8 +143,8 @@ the design/plan status only as supported by actual source evidence.
   node --test tests/*.test.mjs
   pnpm.cmd vitest run
   cargo fmt --all -- --check
-  cargo check -p web-demo-host
-  cargo test -p web-demo-host
+  cargo check -p aethertwin-web-demo-host
+  cargo test -p aethertwin-web-demo-host
   git diff --check
   ```
 
