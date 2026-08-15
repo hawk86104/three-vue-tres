@@ -256,6 +256,15 @@ fn head_returns_exact_content_length_and_no_body() {
     assert!(response.headers.contains("Content-Length: 9\r\n"));
     assert!(response.body.is_empty());
     assert_common_headers(&response);
+
+    let invalid = request(
+        host.address,
+        b"HEAD /../escape.js HTTP/1.1\r\nHost: localhost\r\n\r\n",
+    );
+    assert_eq!(invalid.status, 400);
+    assert!(invalid.headers.contains("Content-Length: 12\r\n"));
+    assert!(invalid.body.is_empty());
+    assert_common_headers(&invalid);
     host.stop();
 }
 
@@ -281,6 +290,7 @@ fn mime_allowlist_and_cache_policy_are_exact() {
         fixture.write(name, name.as_bytes());
     }
     fixture.write("assets/index-a1b2c3d4.js", b"immutable");
+    fixture.write("assets/plain.js", b"immutable without a digest-shaped name");
     let host = RunningHost::start(fixture.config());
 
     for (name, content_type) in cases {
@@ -298,6 +308,13 @@ fn mime_allowlist_and_cache_policy_are_exact() {
     assert_eq!(asset.status, 200);
     assert!(
         asset
+            .headers
+            .contains("Cache-Control: public, max-age=31536000, immutable\r\n")
+    );
+    let plain_asset = get(host.address, "/assets/plain.js");
+    assert_eq!(plain_asset.status, 200);
+    assert!(
+        plain_asset
             .headers
             .contains("Cache-Control: public, max-age=31536000, immutable\r\n")
     );

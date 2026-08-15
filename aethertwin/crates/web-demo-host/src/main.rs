@@ -38,11 +38,15 @@ where
 {
     let host = PortableHost::bind(HostConfig::packaged(app_root))?;
     let url = host.url();
-    println!("AetherTwin portable preview: {url}");
+    println!("{}", startup_message(&url));
     if open_browser(&url).is_err() {
         eprintln!("PREVIEW_BROWSER_OPEN_FAILED");
     }
     host.serve_until(shutdown)
+}
+
+fn startup_message(url: &str) -> String {
+    format!("AetherTwin portable preview: {url}\nClose this window to stop the preview.")
 }
 
 #[cfg(windows)]
@@ -60,7 +64,7 @@ fn open_default_browser(_url: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{run_with, sibling_app_root};
+    use super::{run_with, sibling_app_root, startup_message};
     use std::cell::Cell;
 
     use std::fs;
@@ -83,6 +87,14 @@ mod tests {
         assert_eq!(
             sibling_app_root(&executable),
             Some(std::path::PathBuf::from("bundle").join("app"))
+        );
+    }
+
+    #[test]
+    fn startup_message_prints_the_actual_url_and_close_window_instruction() {
+        assert_eq!(
+            startup_message("http://127.0.0.1:4173/"),
+            "AetherTwin portable preview: http://127.0.0.1:4173/\nClose this window to stop the preview."
         );
     }
 

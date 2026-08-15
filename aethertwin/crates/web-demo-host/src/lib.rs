@@ -329,9 +329,10 @@ fn handle_connection(
         Ok(head) => head,
         Err(error) => return write_error(stream, error, false),
     };
+    let head_only = head.starts_with(b"HEAD ");
     let request = match parse_request(&head) {
         Ok(request) => request,
-        Err(error) => return write_error(stream, error, false),
+        Err(error) => return write_error(stream, error, head_only),
     };
     let resolved = match resolve_file(app_root, &request.relative_path) {
         Ok(resolved) => resolved,
@@ -544,7 +545,7 @@ fn resolve_file(app_root: &Path, relative_path: &Path) -> Result<ResolvedFile, H
     }
     let cache_control = if relative_path == Path::new("index.html") {
         "no-store"
-    } else if is_hashed_asset(relative_path) {
+    } else if is_asset(relative_path) {
         "public, max-age=31536000, immutable"
     } else {
         "no-cache"
@@ -574,30 +575,14 @@ fn content_type(path: &Path) -> Option<&'static str> {
     }
 }
 
-fn is_hashed_asset(path: &Path) -> bool {
-    let first = path
-        .components()
+fn is_asset(path: &Path) -> bool {
+    path.components()
         .next()
         .and_then(|component| match component {
             Component::Normal(value) => value.to_str(),
             _ => None,
-        });
-    if first != Some("assets") {
-        return false;
-    }
-    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-        return false;
-    };
-    let Some(suffix) = stem
-        .rsplit(|character| character == '-' || character == '.')
-        .next()
-    else {
-        return false;
-    };
-    suffix.len() >= 8
-        && suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        })
+        == Some("assets")
 }
 
 fn write_file(
