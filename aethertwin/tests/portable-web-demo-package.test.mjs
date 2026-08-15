@@ -30,7 +30,7 @@ async function write(root, relative, bytes) {
 }
 
 async function createFixture() {
-  const root = await mkdtemp(join(tmpdir(), "aethertwin-portable-package-"));
+  const root = await mkdtemp(join(tmpdir(), "AetherTwin 便携 package-"));
   const files = new Map([
     [
       "apps/studio/dist/index.html",
@@ -314,8 +314,8 @@ test("ZIP is independently parseable, sorted, exact, and has no enclosing folder
       assert.deepEqual(data, await readFile(join(packageRoot, ...name.split("/"))));
       assert.doesNotMatch(name, /^AetherTwin-Preview\//u);
     }
-    assert.equal(new Set(entries.map(({ dosTime }) => dosTime)).size, 1);
-    assert.equal(new Set(entries.map(({ dosDate }) => dosDate)).size, 1);
+    assert.deepEqual([...new Set(entries.map(({ dosTime }) => dosTime))], [0x1062]);
+    assert.deepEqual([...new Set(entries.map(({ dosDate }) => dosDate))], [0x5d0f]);
   });
 });
 
@@ -368,9 +368,19 @@ test("HTML accepts only present relative local references", async () => {
     "../outside.js",
     "./assets/missing.js",
     "//example.invalid/unquoted.js",
+    "&sol;assets&sol;app-12345678.js",
+    "https&colon;&sol;&sol;example.invalid&sol;app.js",
+    "&period;&period;&sol;outside.js",
   ];
   for (const reference of invalid) {
     await withFixture(async ({ root }) => {
+      if (reference.includes("&")) {
+        await write(
+          root,
+          `apps/studio/dist/${reference}`,
+          Buffer.from("export const escaped = true;\n"),
+        );
+      }
       await write(
         root,
         "apps/studio/dist/index.html",
@@ -468,6 +478,56 @@ test("symlinked input is rejected when the OS permits the fixture", async (t) =>
   });
 });
 
+test("a directory junction or symlink cannot escape the repository root", async (t) => {
+  const outside = await mkdtemp(join(tmpdir(), "AetherTwin outside-"));
+  try {
+    await withFixture(async ({ root }) => {
+      const link = join(root, "apps", "studio", "dist", "assets", "linked-directory");
+      try {
+        await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if (["EPERM", "EACCES", "ENOSYS"].includes(error.code)) {
+          t.skip("directory link fixture unavailable");
+          return;
+        }
+        throw error;
+      }
+      await expectCode(
+        () => assemblePortablePackage(assemblyOptions(root)),
+        "PACKAGE_TREE_INVALID",
+      );
+    });
+  } finally {
+    await rm(outside, { force: true, recursive: true });
+  }
+});
+
+test("an output directory junction cannot redirect staging outside the repository", async (t) => {
+  const outside = await mkdtemp(join(tmpdir(), "AetherTwin output outside-"));
+  try {
+    await withFixture(async ({ root }) => {
+      const parent = join(root, "artifacts", "portable-web-demo", "win-x64");
+      await mkdir(parent, { recursive: true });
+      const link = join(parent, "AetherTwin-Preview");
+      try {
+        await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if (["EPERM", "EACCES", "ENOSYS"].includes(error.code)) {
+          t.skip("output directory link fixture unavailable");
+          return;
+        }
+        throw error;
+      }
+      await expectCode(
+        () => assemblePortablePackage(assemblyOptions(root)),
+        "PACKAGE_TREE_INVALID",
+      );
+    });
+  } finally {
+    await rm(outside, { force: true, recursive: true });
+  }
+});
+
 test("checksum verification rejects tamper, extra, missing, duplicate, and malformed entries", async () => {
   await withFixture(async ({ root }) => {
     await assemblePortablePackage(assemblyOptions(root));
@@ -530,6 +590,50 @@ test("checksum verification rejects tamper, extra, missing, duplicate, and malfo
           manifestBytes: Buffer.from("not-a-digest  app/index.html\n"),
         }),
       "PACKAGE_HASH_INVALID",
+    );
+  });
+});
+
+test("ZIP write failures are redacted and remove partial package output", async () => {
+  await withFixture(async ({ root }) => {
+    const packageRoot = join(
+      root,
+      "artifacts",
+      "portable-web-demo",
+      "win-x64",
+      "AetherTwin-Preview",
+    );
+    const zipFile = join(root, "artifacts", "AetherTwin-Preview-win-x64.zip");
+    await expectCode(
+      () =>
+        assemblePortablePackage({
+          ...assemblyOptions(root),
+          writeArchive: async ({ zipFile: destination }) => {
+            await mkdir(dirname(destination), { recursive: true });
+            await writeFile(destination, "partial archive");
+            throw new Error(`write failed at ${destination}`);
+          },
+        }),
+      "PACKAGE_ZIP_FAILED",
+    );
+    for (const path of [join(packageRoot, "README.txt"), zipFile]) {
+      await assert.rejects(
+        readFile(path),
+        (error) => error.code === "ENOENT",
+      );
+    }
+  });
+});
+
+test("a ZIP writer must publish one non-empty regular archive", async () => {
+  await withFixture(async ({ root }) => {
+    await expectCode(
+      () =>
+        assemblePortablePackage({
+          ...assemblyOptions(root),
+          writeArchive: async () => {},
+        }),
+      "PACKAGE_ZIP_FAILED",
     );
   });
 });

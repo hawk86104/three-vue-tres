@@ -307,6 +307,7 @@ function validateAppPaths(files) {
 function localHtmlReference(value) {
   if (
     value.length === 0 ||
+    value.includes("&") ||
     value.includes("\0") ||
     value.includes("\\") ||
     value.includes("%") ||
@@ -543,11 +544,20 @@ async function zipEntries(packageRoot) {
   return entries;
 }
 
+async function defaultWriteArchive({ zipFile, archive }) {
+  await mkdir(dirname(zipFile), { recursive: true });
+  await writeFile(zipFile, archive);
+}
+
 export async function assemblePortablePackage(options) {
   let packageAbsolute;
   let zipAbsolute;
   try {
     validateFixedPaths(options);
+    const writeArchive = options.writeArchive ?? defaultWriteArchive;
+    if (typeof writeArchive !== "function") {
+      throwCode("PACKAGE_INPUT_INVALID");
+    }
     const root = await canonicalRepositoryRoot(options.repositoryRoot);
     const app = await inspectPath(root, options.appDist, "directory");
     const host = await inspectPath(root, options.hostExecutable, "file");
@@ -611,8 +621,15 @@ export async function assemblePortablePackage(options) {
       entries: await zipEntries(packageAbsolute),
       builtAtUtc: options.builtAtUtc,
     });
-    await mkdir(dirname(zipAbsolute), { recursive: true });
-    await writeFile(zipAbsolute, archive);
+    try {
+      await writeArchive({ zipFile: zipAbsolute, archive });
+      const archiveStats = await lstat(zipAbsolute);
+      if (isLink(archiveStats) || !archiveStats.isFile() || archiveStats.size === 0) {
+        throw new Error("archive writer did not publish a regular file");
+      }
+    } catch (error) {
+      throwCode("PACKAGE_ZIP_FAILED", error);
+    }
     return {
       packageRoot: packageAbsolute,
       zipFile: zipAbsolute,

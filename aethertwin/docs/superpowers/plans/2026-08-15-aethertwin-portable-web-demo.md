@@ -84,6 +84,11 @@ assembler's fixed output contract is one internal ZIP whose root contains only
 `AetherTwin-Preview.exe`, `app/index.html` plus relative assets, `README.txt`,
 `BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`.
 
+The direct user plan's relative-asset requirement authorizes one narrow
+prerequisite compatibility repair: replace Studio's inline `data:` favicon
+with committed `./favicon.svg` and update its source policy test. This changes
+no Studio, Tauri, ProjectStore, or project-format API.
+
 - [x] **RED — write packaging/policy tests.** Cover the exact root script
   `package:web-demo:win-x64`; fixed payload names and no extra top-level files;
   relative references in `app/index.html`; host and app placement; deterministic
@@ -114,9 +119,9 @@ assembler's fixed output contract is one internal ZIP whose root contains only
   node --test tests/portable-web-demo-policy.test.mjs tests/portable-web-demo-package.test.mjs
   ```
 
-- [ ] **Commit:** stage only Task 2 implementation, tests, and this plan
+- [x] **Commit:** stage only Task 2 implementation, tests, and this plan
   checkbox update, then commit `feat: package the portable Web Demo`.
-- [ ] **Independent review:** check fixed output shape, safe staging-path
+- [x] **Independent review:** check fixed output shape, safe staging-path
   validation, hash manifest completeness, third-party notice derivation,
   no generated artifacts in Git, and the fact that the source tests do not
   masquerade as a produced or executed ZIP.

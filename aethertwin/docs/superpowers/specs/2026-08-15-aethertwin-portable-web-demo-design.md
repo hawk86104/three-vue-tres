@@ -104,6 +104,14 @@ staged tree before zipping: no file may escape the expected roots, no extra
 top-level payload may be introduced, and all checksums must describe the
 finished payload.
 
+The standard-library assembler rejects file and directory links exposed by
+Node as symbolic links (including Windows junction fixtures) and rejects every
+input or output whose canonical path escapes the repository. Consistent with
+the direct user plan, this is an escape-prevention guarantee; it does not claim
+portable detection of opaque, non-redirecting Windows reparse classes that the
+Node standard library does not expose. Runtime acceptance must use a freshly
+extracted ordinary-file tree and recheck its containment.
+
 ## Explicit exclusions and approval gate
 
 This design does not authorize package builds, browser launches, packaged
