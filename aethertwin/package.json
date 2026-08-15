@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "node --test tests/*.test.mjs && vitest run",
-    "build": "pnpm -r --if-present build"
+    "build": "pnpm -r --if-present build",
+    "package:web-demo:win-x64": "node scripts/portable-web-demo/package-win-x64.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

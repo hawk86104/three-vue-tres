@@ -71,7 +71,7 @@ host tests, and a workspace registration that introduces no Tauri dependency.
 
 - [x] **Commit:** stage only Task 1 files and this plan checkbox update, then
   commit `feat: add the portable Web Demo loopback host`.
-- [ ] **Independent review:** verify source containment, request parsing,
+- [x] **Independent review:** verify source containment, request parsing,
   canonical-path checks, loopback-only binding, fallback behavior, headers,
   cache directives, visible-console semantics, browser-open failure handling,
   and absence of Tauri or non-standard-library dependencies.
@@ -84,7 +84,7 @@ assembler's fixed output contract is one internal ZIP whose root contains only
 `AetherTwin-Preview.exe`, `app/index.html` plus relative assets, `README.txt`,
 `BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`.
 
-- [ ] **RED — write packaging/policy tests.** Cover the exact root script
+- [x] **RED — write packaging/policy tests.** Cover the exact root script
   `package:web-demo:win-x64`; fixed payload names and no extra top-level files;
   relative references in `app/index.html`; host and app placement; deterministic
   metadata shape; SHA-256 coverage of every payload file; notices presence;
@@ -92,7 +92,7 @@ assembler's fixed output contract is one internal ZIP whose root contains only
   package output; no Node/pnpm runtime requirement embedded in the ZIP; and no
   Tauri, remote service, `file://`, single-file HTML, Player, or publish
   surface introduced.
-- [ ] **Run RED exactly:**
+- [x] **Run RED exactly:**
 
   ```powershell
   node --test tests/portable-web-demo-policy.test.mjs tests/portable-web-demo-package.test.mjs
@@ -100,7 +100,7 @@ assembler's fixed output contract is one internal ZIP whose root contains only
 
   Expected: fail because the assembler, script, and output-contract policy do
   not yet exist.
-- [ ] **GREEN — implement the assembler.** Add exactly
+- [x] **GREEN — implement the assembler.** Add exactly
   `pnpm.cmd package:web-demo:win-x64` at the root. It invokes the approved
   existing Web-Demo build only as part of a separately approved package run,
   copies build output to `artifacts/` staging as sibling `app/`, copies the
@@ -108,7 +108,7 @@ assembler's fixed output contract is one internal ZIP whose root contains only
   license-notice, and SHA-256 files, validates the staged tree, and emits the
   ZIP. Do not commit any `artifacts/` contents and do not make packaging a
   hidden postinstall or ordinary test action.
-- [ ] **Run GREEN exactly:**
+- [x] **Run GREEN exactly:**
 
   ```powershell
   node --test tests/portable-web-demo-policy.test.mjs tests/portable-web-demo-package.test.mjs

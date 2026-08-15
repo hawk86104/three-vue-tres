@@ -46,9 +46,17 @@ test("the Web Demo has exactly two dedicated scripts", () => {
   ]);
 });
 
-test("the Studio shell provides an inline local favicon", () => {
-  assert.match(studioIndexSource, /<link rel="icon" href="data:image\/svg\+xml,/u);
-  assert.doesNotMatch(studioIndexSource, /favicon\.ico|(?:https?|wss?):\/\//iu);
+test("the Studio shell provides a packaged local favicon", () => {
+  assert.match(studioIndexSource, /<link rel="icon" href="\.\/favicon\.svg" \/>/u);
+  assert.doesNotMatch(studioIndexSource, /data:|favicon\.ico|(?:https?|wss?):\/\//iu);
+  assert.equal(existsSync("apps/studio/public/favicon.svg"), true);
+
+  const faviconSource = readFileSync("apps/studio/public/favicon.svg", "utf8");
+  assert.match(faviconSource, /<svg\b/u);
+  assert.doesNotMatch(
+    faviconSource,
+    /<script\b|\bon[a-z]+\s*=|\b(?:href|src)\s*=\s*["'](?:https?|wss?):\/\//iu,
+  );
 });
 
 test("the dedicated Vite mode is the only source of the Web Demo flag", () => {
