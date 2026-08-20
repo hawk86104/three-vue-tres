@@ -121,3 +121,25 @@ Task 5's complete non-build source gate passed after attributable lint, policy, 
 Task 6 ran under explicit approval. The final build exited 0 with 3,215 modules and relative assets; the strict localhost server bound `127.0.0.1:4173`; and headed Chromium passed the canonical 2D/3D/split, shared-state, disabled-Export, Back/refresh, offline-request, empty-storage, and WebGL fallback checks. One context loss automatically reconstructed 3D; the second left a complete interactive 2D pane. Final gates passed lint, 14/15 workspace typechecks, Node 53/53, and Vitest 82 files / 1,547 tests. Zero browser console errors remained. No screenshot was captured, and no cross-device visual-correctness or performance result is claimed.
 
 The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and `packages/mode-showroom/src/index.ts` remain protected, excluded, and unstaged. The unresolved `57 2` branch-integration guard remains a human decision.
+
+## Windows portable preview
+
+- [x] Task 1 - standard-library loopback host, source gates, and independent review
+- [x] Task 2 - fixed Windows x64 assembler, package policy, and independent review
+- [ ] Task 3 - truthful handoff, complete source-only gates, commit, and review
+- [ ] Task 4 - freshly approved package build, EXE/ZIP, and runtime acceptance
+
+The host is committed through `74b59244`; the assembler and review hardening are
+committed through `d37644f6`. The exact future package command is
+`pnpm.cmd package:web-demo:win-x64`. It is not an ordinary build/test hook.
+
+No portable package command, release build, ZIP, extraction, EXE launch,
+portable browser/network/storage/WebGL check, console-shutdown check, extracted
+checksum verification, or artifact cleanup has run. Earlier Vite localhost
+evidence remains evidence for the Local Web Demo only. Task 4 stays blocked on
+fresh explicit approval after Task 3 source closure and independent review.
+
+The approved Task 3 source gate now passes lint, typecheck, Node policy tests,
+the full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Task 3
+remains open only for its scoped documentation commit and independent review;
+this source evidence is not portable package or runtime acceptance.

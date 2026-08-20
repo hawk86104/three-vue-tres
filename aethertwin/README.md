@@ -32,6 +32,37 @@ Runtime acceptance exposed and repaired fixture byte rewriting, SVG/raster textu
 
 The Task 5 non-build source gate passed after recorded, attributable repairs: lint first found one type-only import; Node policy exposed one stale deferred-action rule; independent review then found duplicate asset mappings, a non-strict port, and documentation inconsistencies. Each behavioral repair was proven by focused RED/GREEN tests. On the final bytes, lint and typecheck exited 0, Node passed 51/51, Vitest passed 81/81 files and 1,542/1,542 tests, and `git diff --check` exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
 
+## Windows portable preview source
+
+The source for an internal, unsigned Windows 10/11 x64 portable preview is
+prepared, but no portable ZIP or EXE runtime acceptance is claimed yet. After
+fresh approval for the build/runtime gate, produce it from `aethertwin/` with:
+
+```powershell
+pnpm.cmd package:web-demo:win-x64
+```
+
+The intended recipient workflow is to unzip the package and double-click
+`AetherTwin-Preview.exe`; the target machine needs no Node.js, pnpm, or
+installer. The visible console prints the actual loopback URL, preferring
+`http://127.0.0.1:4173/` and using another free loopback port only when 4173 is
+occupied. If the default browser cannot open, copy that printed URL. Close the
+console to stop the preview. Edge and Chrome are the acceptance baseline.
+
+The fixed ZIP root contains `AetherTwin-Preview.exe`, `app/`, `README.txt`,
+`BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`. Verify the
+checksum file before internal use. The preview is still the in-memory canonical
+Showroom: 2D, synchronized 3D, and fixed split reuse existing behavior;
+Back/refresh/restart reset it; Export stays visible, truthful, and desktop-only.
+
+This source does not add browser persistence, project open/save or recovery,
+native dialogs, remote services, `file://`, a single-file HTML build, Player,
+publish, signing, ARM64, macOS, Firefox support, or cross-device/performance
+guarantees. The earlier Vite localhost browser evidence applies only to that
+previous Local Web Demo gate; package creation, extraction, EXE launch,
+network/storage/WebGL inspection, console shutdown, extracted-file checksums,
+and cleanup still require a new explicit approval and fresh evidence.
+
 ## Ownership and dependency direction
 
 ```text

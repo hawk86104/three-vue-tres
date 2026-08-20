@@ -112,6 +112,16 @@ portable detection of opaque, non-redirecting Windows reparse classes that the
 Node standard library does not expose. Runtime acceptance must use a freshly
 extracted ordinary-file tree and recheck its containment.
 
+## Source implementation status
+
+The loopback host source is committed through `74b59244`; the fixed assembler
+and review hardening are committed through `d37644f6`. Both completed focused
+source gates and independent review. The approved full non-build source gate
+also passed; its scoped documentation commit and independent closure review are
+the remaining source steps. The separately approved package/runtime gate has
+not run. No EXE, ZIP, extracted payload, server, or portable browser evidence is
+claimed by this source status.
+
 ## Explicit exclusions and approval gate
 
 This design does not authorize package builds, browser launches, packaged

@@ -131,16 +131,16 @@ no Studio, Tauri, ProjectStore, or project-format API.
 **Modify:** `README.md`, `HANDOFF.md`, `PLANS.md`, license-policy material, and
 the design/plan status only as supported by actual source evidence.
 
-- [ ] **Document operating truth.** Explain the internal unsigned Windows
+- [x] **Document operating truth.** Explain the internal unsigned Windows
   10/11 x64 ZIP, no target-side Node/pnpm/installer, visible-console start,
   loopback URL and preferred/fallback ports, Edge/Chrome scope, close-to-stop
   behavior, browser-open failure handling, checksums, and all excluded
   surfaces. State that runtime acceptance has not run until freshly approved.
-- [ ] **Update handoff and planning ledger.** Record the branch/head, exact
+- [x] **Update handoff and planning ledger.** Record the branch/head, exact
   source commands and results, independent-review findings, protected dirty
   files, generated-artifact policy, and the next explicit-approval runtime
   gate. Do not claim browser, package, or cross-device evidence.
-- [ ] **Run full non-build source gates exactly:**
+- [x] **Run full non-build source gates exactly:**
 
   ```powershell
   pnpm.cmd lint
