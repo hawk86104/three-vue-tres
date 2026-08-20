@@ -126,7 +126,7 @@ The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desk
 
 - [x] Task 1 - standard-library loopback host, source gates, and independent review
 - [x] Task 2 - fixed Windows x64 assembler, package policy, and independent review
-- [ ] Task 3 - truthful handoff, complete source-only gates, commit, and review
+- [x] Task 3 - truthful handoff, complete source-only gates, commit, and review
 - [ ] Task 4 - freshly approved package build, EXE/ZIP, and runtime acceptance
 
 The host is committed through `74b59244`; the assembler and review hardening are
@@ -139,8 +139,8 @@ checksum verification, or artifact cleanup has run. Earlier Vite localhost
 evidence remains evidence for the Local Web Demo only. Task 4 stays blocked on
 fresh explicit approval after Task 3 source closure and independent review.
 
-The approved Task 3 source gate now passes lint, typecheck, Node policy tests,
-the full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Its
-scoped handoff commit is `fe229e03`; Task 3 remains open only for independent
-closure re-review. This source evidence is not portable package or runtime
-acceptance.
+The approved Task 3 source gate passes lint, typecheck, Node policy tests, the
+full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Its scoped
+handoff commit is `fe229e03`; review-status repair `a4a2dc92` received clean
+independent re-review. Task 3 source closure is complete, but this evidence is
+not portable package or runtime acceptance.

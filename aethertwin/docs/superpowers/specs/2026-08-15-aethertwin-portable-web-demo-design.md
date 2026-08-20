@@ -118,9 +118,11 @@ The loopback host source is committed through `74b59244`; the fixed assembler
 and review hardening are committed through `d37644f6`. Both completed focused
 source gates and independent review. The approved full non-build source gate
 also passed, and its scoped documentation commit is `fe229e03`. Independent
-closure re-review is the remaining source step. The separately approved
-package/runtime gate has not run. No EXE, ZIP, extracted payload, server, or
-portable browser evidence is claimed by this source status.
+closure re-review of status repair `a4a2dc92` returned Critical/Important/Minor
+0, Spec Pass, Documentation Approved, and Ready Yes. Tasks 1 through 3 source
+closure is complete. The separately approved package/runtime gate has not run.
+No EXE, ZIP, extracted payload, server, or portable browser evidence is claimed
+by this source status.
 
 ## Explicit exclusions and approval gate
 

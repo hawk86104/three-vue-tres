@@ -157,7 +157,7 @@ the design/plan status only as supported by actual source evidence.
   exit codes and any warnings truthfully.
 - [x] **Commit:** stage only Task 3 files and this plan checkbox update, then
   commit `docs: hand off the AetherTwin portable Web Demo`.
-- [ ] **Independent review:** confirm no unsupported runtime claim, no scope
+- [x] **Independent review:** confirm no unsupported runtime claim, no scope
   drift, all public instructions use the exact root packaging command, and the
   approvals boundary remains explicit.
 

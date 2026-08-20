@@ -138,8 +138,9 @@ Runtime findings were repaired with focused RED/GREEN coverage: canonical assets
 The standard-library loopback host is committed through `74b59244`; the
 assembler is committed through `d37644f6`. Both received independent review;
 the assembler re-review returned Critical 0, Important 0, and Ready Yes.
-The scoped Task 3 source-gate and handoff commit is `fe229e03`; its independent
-closure re-review remains pending.
+The scoped Task 3 source-gate and handoff commit is `fe229e03`; review-status
+repair `a4a2dc92` received clean independent re-review: Critical/Important/Minor
+0, Spec Pass, Documentation Approved, Ready Yes.
 
 The exact source entry point is `pnpm.cmd package:web-demo:win-x64`. It is not
 an install, test, postinstall, or ordinary build hook and it has not been run
@@ -194,4 +195,4 @@ Local Web Demo Task 6 is the separate localhost browser/WebGL gate recorded abov
 
 ## 12. Next operation
 
-After the portable source gate and review are complete, obtain fresh explicit approval for `pnpm.cmd package:web-demo:win-x64` and the bounded runtime acceptance listed above. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+Portable Task 3 source closure and independent review are complete. Obtain fresh explicit approval for `pnpm.cmd package:web-demo:win-x64` and the bounded Task 4 runtime acceptance listed above. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
