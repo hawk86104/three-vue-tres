@@ -18,6 +18,10 @@ const webDemoFixturesSource = readFileSync(
   "apps/studio/src/web-demo/web-demo-fixtures.ts",
   "utf8",
 );
+const pixiPlanRendererSource = readFileSync(
+  "packages/render-plan-2d/src/pixi-plan-renderer.ts",
+  "utf8",
+);
 const trackedFiles = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
   .filter(Boolean)
@@ -93,6 +97,17 @@ test("Web Demo runtime sources remain local-only and browser-persistence-free", 
     /ProjectExportBackend|TauriProjectBackend|begin_project_export|write_project_export_chunk/u,
   );
   assert.doesNotMatch(webDemoRuntimeSource, /\binvoke\s*\(/u);
+});
+
+test("strict-CSP Web Demo installs Pixi static polyfills before renderer imports", () => {
+  const polyfillImport = pixiPlanRendererSource.indexOf(
+    'import "pixi.js/unsafe-eval";',
+  );
+  const rendererImport = pixiPlanRendererSource.indexOf('} from "pixi.js";');
+
+  assert.notEqual(polyfillImport, -1);
+  assert.notEqual(rendererImport, -1);
+  assert.ok(polyfillImport < rendererImport);
 });
 
 test("canonical Web Demo assets bypass Vite byte rewriting", () => {

@@ -1,3 +1,4 @@
+import "pixi.js/unsafe-eval";
 import {
   Application,
   Assets,
