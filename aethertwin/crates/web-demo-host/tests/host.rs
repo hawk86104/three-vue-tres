@@ -12,7 +12,7 @@ use aethertwin_web_demo_host::{
 };
 use tempfile::TempDir;
 
-const CSP: &str = "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'";
+const CSP: &str = "default-src 'self'; connect-src 'self' blob:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'";
 
 struct Fixture {
     _temp: TempDir,
@@ -147,6 +147,18 @@ fn packaged_defaults_are_exact() {
     assert_eq!(DEFAULT_READ_TIMEOUT, Duration::from_secs(5));
     assert_eq!(config.max_header_bytes, DEFAULT_MAX_HEADER_BYTES);
     assert_eq!(DEFAULT_MAX_HEADER_BYTES, 16 * 1024);
+}
+#[test]
+fn csp_allows_owned_blob_fetches_without_remote_connections() {
+    let fixture = Fixture::new(b"index");
+    let host = RunningHost::start(fixture.config());
+
+    let response = get(host.address, "/");
+    assert_eq!(response.status, 200);
+    assert!(response.headers.contains("connect-src 'self' blob:;"),);
+    assert!(!response.headers.contains("connect-src http:"));
+    assert!(!response.headers.contains("connect-src https:"));
+    host.stop();
 }
 
 #[test]

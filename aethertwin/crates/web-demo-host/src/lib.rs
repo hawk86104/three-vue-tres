@@ -15,7 +15,7 @@ pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 const MAX_ACTIVE_CONNECTIONS: usize = 32;
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(5);
-const CSP: &str = "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'";
+const CSP: &str = "default-src 'self'; connect-src 'self' blob:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HostErrorCode {
