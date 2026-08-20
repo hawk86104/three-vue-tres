@@ -703,6 +703,47 @@ test("CLI uses only the fixed Windows x64 child sequence with shell false", asyn
   });
 });
 
+test(
+  "default Windows runner invokes the fixed pnpm shim",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "AetherTwin runner-"));
+    const bin = join(root, "bin");
+    const marker = join(root, "pnpm-invoked.txt");
+    await mkdir(bin, { recursive: true });
+    await writeFile(
+      join(bin, "pnpm.cmd"),
+      `@echo off\r\necho invoked>"${marker}"\r\nexit /b 7\r\n`,
+      "utf8",
+    );
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${bin};${originalPath ?? ""}`;
+    try {
+      await expectCode(
+        () =>
+          runPortablePackage({
+            args: [],
+            platform: "win32",
+            architecture: "x64",
+            repositoryRoot: root,
+            environment: {},
+            readSourceCommit: async () => COMMIT,
+          }),
+        "PACKAGE_BUILD_FAILED",
+      );
+      const observed = await readFile(marker, "utf8").catch(() => "");
+      assert.equal(observed.trim(), "invoked");
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 test("CLI rejects arguments/platform drift and redacts child failures", async () => {
   const calls = [];
   const base = {

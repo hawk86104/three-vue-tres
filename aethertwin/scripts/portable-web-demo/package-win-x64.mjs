@@ -44,7 +44,13 @@ function defaultRunChild({ executable, args, cwd, shell, stdio }) {
   return new Promise((resolvePromise, reject) => {
     let child;
     try {
-      child = spawn(executable, args, { cwd, shell, stdio });
+      const isWindowsCommand =
+        process.platform === "win32" && executable.toLowerCase().endsWith(".cmd");
+      child = spawn(
+        isWindowsCommand ? (process.env.ComSpec ?? "cmd.exe") : executable,
+        isWindowsCommand ? ["/d", "/s", "/c", executable, ...args] : args,
+        { cwd, shell, stdio },
+      );
     } catch (error) {
       reject(error);
       return;
