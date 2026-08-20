@@ -1,15 +1,15 @@
 # AetherTwin engineering handoff
 
-Updated: 2026-08-15
+Updated: 2026-08-20
 Product workspace: `aethertwin/`
 Active branch: `codex/aethertwin-m2`
 Local Web Demo source baseline: `5f49ace12d7226a9a3eace727b90f87c6aa73f13` (the Task 5 closure commit hash is intentionally not invented before commit)
-Portable preview Task 3 source commit: `fe229e03` (host, assembler, source gates, and handoff; no generated package)
+Portable preview accepted package source: `6ec8d499425f7578902fc18799839a00ee9e4bd9` (generated package cleaned after acceptance)
 
 ## 1. Current outcome
 
 M0 through M2.5 are accepted and M2 is closed. The dedicated Local Web Demo source implementation and Task 5 source gate are complete, and Task 6 localhost/browser/WebGL runtime acceptance passed under explicit approval.
-The Windows portable-preview host and assembler source are implemented and independently reviewed; package creation and runtime acceptance have not run.
+The Windows portable preview completed its separately approved package, Edge/Chrome runtime, integrity, shutdown, and cleanup acceptance on 2026-08-20.
 
 Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
@@ -133,42 +133,45 @@ Task 6 then ran under explicit runtime approval. The dedicated build exited 0 af
 Runtime findings were repaired with focused RED/GREEN coverage: canonical assets bypass Vite inlining, Pixi receives explicit SVG parser metadata, deterministic 2x2 raster fixtures upload to WebGL, R3F recovery waits for the retired nested root, the supported shadow mode is used, and the shell provides a local favicon. Final gates passed lint, typecheck for 14/15 workspace projects, Node 53/53, Vitest 82/82 files and 1,547/1,547 tests, the final build, and diff checks.
 
 
-## 9. Windows portable preview source state
+## 9. Windows portable preview accepted state
 
-The standard-library loopback host is committed through `74b59244`; the
-assembler is committed through `d37644f6`. Both received independent review;
-the assembler re-review returned Critical 0, Important 0, and Ready Yes.
-The scoped Task 3 source-gate and handoff commit is `fe229e03`; review-status
-repair `a4a2dc92` received clean independent re-review: Critical/Important/Minor
-0, Spec Pass, Documentation Approved, Ready Yes.
+Tasks 1-3 remain anchored by host commit `74b59244`, assembler hardening
+`d37644f6`, source handoff `fe229e03`, and clean review repair `a4a2dc92`.
+Task 4 then ran under fresh explicit approval on 2026-08-20. Runtime repairs
+were committed as `4d3e84ff` (Windows `.cmd` launch), `cf1c8bc6` (Pixi strict
+CSP), and `6ec8d499` (owned Blob fetches under CSP).
 
-The exact source entry point is `pnpm.cmd package:web-demo:win-x64`. It is not
-an install, test, postinstall, or ordinary build hook and it has not been run
-on this source baseline.
+The exact entry point remains `pnpm.cmd package:web-demo:win-x64`; it is not an
+install, test, postinstall, or ordinary build hook. The accepted internal,
+unsigned Windows 10/11 x64 artifact was built from
+`6ec8d499425f7578902fc18799839a00ee9e4bd9` and had ZIP SHA-256
+`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
+Its six fixed root entries, all 26 payload checksums, all relative HTML
+references, and ordinary-file containment verified after extraction to a path
+containing Chinese characters and spaces.
 
-The intended internal, unsigned Windows 10/11 x64 ZIP contains the EXE, `app/`,
-`README.txt`, `BUILD_INFO.json`, `SHA256SUMS.txt`, and the committed notices.
-The target needs no Node.js, pnpm, or installer.
+With PATH limited to Windows system tools, the EXE had no Node.js or pnpm child
+process. It bound `127.0.0.1:4173` when free and `127.0.0.1:50073` during the
+controlled occupied-port run. Automated sessions with the installed Edge and
+Chrome binaries verified canonical 2D, synchronized 3D, fixed split, shared
+selection, Back/refresh/restart reset, disabled desktop-only Export, WebGL2,
+and an intact 2D pane after forced context loss. Recorded requests were only
+loopback or owned Blob/data URLs; localStorage, sessionStorage, cookies,
+IndexedDB, Cache Storage, and service-worker registrations were empty. Stopping
+each verified host process closed its listener.
 
-No package command, Web Demo build, Rust release build, ZIP, extraction,
-EXE launch, portable localhost service, Edge/Chrome session, restricted-PATH,
-network/storage/WebGL inspection, shutdown check, extracted checksum, or cleanup
-has run for this portable target. The earlier Local Web Demo evidence above is
-not portable EXE/ZIP evidence.
+Final source bytes passed lint, 14/15 workspace typechecks, Node 73/74 with one
+privileged-Windows symlink skip, Vitest 82/82 files and 1,547/1,547 tests,
+Rust fmt/check, all 18 host tests, and `git diff --check`. The only non-failing
+notices were the known JSDOM canvas messages and Vite's large-chunk warning.
 
-The approved non-build source-closure gate completed on 2026-08-20. Lint and
-workspace typecheck exited 0; Node passed 71/72 tests with one
-Windows-symlink-privilege skip; Vitest passed 82/82 files and 1,547/1,547 tests
-with only the known JSDOM canvas notice; Rust fmt, host check, and all 17 host
-tests exited 0. `git diff --check` first identified one extra EOF blank line in
-`PLANS.md`; after that exact documentation repair it exited 0 with only
-working-copy LF-to-CRLF warnings. These are source-level results only.
-
-The next runtime approval must explicitly cover the exact package command,
-extraction to a Chinese-and-space path, EXE launch, occupied-4173 fallback,
-restricted PATH, Edge and Chrome, network/storage/WebGL checks, extracted-file
-checksums, console shutdown, and safe cleanup of verified generated paths.
-
+After hash and shutdown verification, the generated ZIP/staging tree, Studio
+`dist/`, and the four explicitly resolved acceptance extraction directories
+were removed. The artifact is reproducible by the exact command above but is
+not currently retained in the worktree. This remains bounded evidence for this
+machine and the installed Edge/Chrome versions; no screenshot, signing,
+installer, external distribution, cross-device certification, or performance
+result is claimed.
 
 ## 10. Protected files
 
@@ -190,9 +193,9 @@ M2.5 does not include:
 - remote runtime media/services, telemetry, CDN fallback, or business APIs;
 - cross-device visual-correctness or performance certification.
 
-Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remained excluded by project rule and were not part of Task 20's authorized non-build gate.
-Local Web Demo Task 6 is the separate localhost browser/WebGL gate recorded above; it does not add packaged-desktop or cross-device claims.
+Build, dev/debug, browser, Playwright, packaging, packaged-runtime, screenshot, and real-GPU commands remained excluded from Task 20's earlier non-build gate.
+Local Web Demo Task 6 and portable Task 4 are separate, explicitly approved runtime gates; neither adds signing, external distribution, or cross-device claims.
 
 ## 12. Next operation
 
-Portable Task 3 source closure and independent review are complete. Obtain fresh explicit approval for `pnpm.cmd package:web-demo:win-x64` and the bounded Task 4 runtime acceptance listed above. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+Portable Task 4 acceptance is complete and generated artifacts are cleaned. The next human decision is branch integration or a fresh regeneration with the exact package command. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.

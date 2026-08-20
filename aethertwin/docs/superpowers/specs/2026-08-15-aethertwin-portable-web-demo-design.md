@@ -1,7 +1,7 @@
 # AetherTwin Portable Web Demo Design
 
 **Date:** 2026-08-15  
-**Status:** Approved implementation design; package build and runtime acceptance require fresh explicit approval
+**Status:** Implemented; separately approved Windows x64 package/runtime acceptance passed on 2026-08-20
 
 ## Goal
 
@@ -112,25 +112,32 @@ portable detection of opaque, non-redirecting Windows reparse classes that the
 Node standard library does not expose. Runtime acceptance must use a freshly
 extracted ordinary-file tree and recheck its containment.
 
-## Source implementation status
+## Implementation and runtime status
 
-The loopback host source is committed through `74b59244`; the fixed assembler
-and review hardening are committed through `d37644f6`. Both completed focused
-source gates and independent review. The approved full non-build source gate
-also passed, and its scoped documentation commit is `fe229e03`. Independent
-closure re-review of status repair `a4a2dc92` returned Critical/Important/Minor
-0, Spec Pass, Documentation Approved, and Ready Yes. Tasks 1 through 3 source
-closure is complete. The separately approved package/runtime gate has not run.
-No EXE, ZIP, extracted payload, server, or portable browser evidence is claimed
-by this source status.
+The loopback host source is committed through `74b59244`; assembler and review
+hardening through `d37644f6`; source handoff through `fe229e03`; and clean
+review-status repair through `a4a2dc92`. Tasks 1 through 3 completed focused
+gates and independent review.
 
-## Explicit exclusions and approval gate
+Task 4 received fresh explicit approval and ran on 2026-08-20. Runtime findings
+were repaired through `4d3e84ff`, `cf1c8bc6`, and `6ec8d499`. The accepted ZIP
+was built from `6ec8d499425f7578902fc18799839a00ee9e4bd9` with SHA-256
+`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
+Its fixed tree, 26 payload hashes, relative references, restricted-PATH host,
+preferred and fallback loopback ports, Edge/Chrome application behavior,
+network/storage boundary, WebGL2 fallback, shutdown, and cleanup all passed the
+bounded acceptance described by the implementation plan.
 
-This design does not authorize package builds, browser launches, packaged
-runtime tests, screenshots, GPU tests, or cleanup of generated output. Real
-build and runtime acceptance are not run before fresh explicit approval in the
-current conversation. Source-level test evidence and review do not claim that
-the ZIP has run, opened a browser, or rendered correctly on a target machine.
+## Bounded acceptance and exclusions
+
+This design did not itself authorize runtime work; the user separately approved
+the package build, browser launches, packaged-runtime checks, and safe cleanup
+in the acceptance conversation. Generated artifacts were verified and then
+removed, so no EXE, ZIP, `dist/`, or extracted payload is committed or retained
+as a working-tree deliverable. The result is internal Windows x64 evidence for
+this machine and the installed Edge/Chrome versions only. It does not add a
+screenshot, signing, installer, external distribution, Firefox/ARM64/macOS
+support, cross-device visual certification, or performance certification.
 
 The protected unrelated working-copy changes in
 `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and

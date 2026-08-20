@@ -127,20 +127,29 @@ The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desk
 - [x] Task 1 - standard-library loopback host, source gates, and independent review
 - [x] Task 2 - fixed Windows x64 assembler, package policy, and independent review
 - [x] Task 3 - truthful handoff, complete source-only gates, commit, and review
-- [ ] Task 4 - freshly approved package build, EXE/ZIP, and runtime acceptance
+- [x] Task 4 - explicitly approved package build, EXE/ZIP, runtime acceptance, and cleanup
 
-The host is committed through `74b59244`; the assembler and review hardening are
-committed through `d37644f6`. The exact future package command is
-`pnpm.cmd package:web-demo:win-x64`. It is not an ordinary build/test hook.
+Tasks 1-3 source closure remains anchored by host commit `74b59244`, assembler
+hardening `d37644f6`, source handoff `fe229e03`, and clean review repair
+`a4a2dc92`. Task 4 then ran under fresh explicit approval on 2026-08-20.
 
-No portable package command, release build, ZIP, extraction, EXE launch,
-portable browser/network/storage/WebGL check, console-shutdown check, extracted
-checksum verification, or artifact cleanup has run. Earlier Vite localhost
-evidence remains evidence for the Local Web Demo only. Task 4 stays blocked on
-fresh explicit approval after Task 3 source closure and independent review.
+The exact command `pnpm.cmd package:web-demo:win-x64` built the accepted ZIP
+from source commit `6ec8d499425f7578902fc18799839a00ee9e4bd9`; its SHA-256 was
+`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
+The six fixed root entries, 26 payload hashes, relative HTML references, and an
+ordinary-file extraction under a Chinese-and-space path all verified. Under a
+restricted PATH the EXE used no Node.js or pnpm child process, preferred 4173,
+fell back to another loopback port when occupied, and stopped both listeners on
+process shutdown.
 
-The approved Task 3 source gate passes lint, typecheck, Node policy tests, the
-full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Its scoped
-handoff commit is `fe229e03`; review-status repair `a4a2dc92` received clean
-independent re-review. Task 3 source closure is complete, but this evidence is
-not portable package or runtime acceptance.
+Automated installed Edge and Chrome sessions passed canonical 2D/3D/fixed
+split, shared selection, Back/refresh/restart reset, desktop-only disabled
+Export, empty storage, loopback/Blob/data-only requests, WebGL2, and 2D survival
+after forced context loss. Runtime findings in Windows `.cmd` spawning, Pixi's
+strict-CSP shader path, and Blob fetch CSP were repaired in `4d3e84ff`,
+`cf1c8bc6`, and `6ec8d499`. Final source gates passed lint, 14/15 workspace
+typechecks, Node 73/74 with one privileged-symlink skip, Vitest 82/82 files and
+1,547/1,547 tests, Rust fmt/check and 18/18 host tests, and diff check. Generated
+artifacts and extraction paths were safely removed after verification. No
+screenshot, signing, cross-device visual certification, or performance result
+is claimed.

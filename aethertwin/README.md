@@ -32,11 +32,11 @@ Runtime acceptance exposed and repaired fixture byte rewriting, SVG/raster textu
 
 The Task 5 non-build source gate passed after recorded, attributable repairs: lint first found one type-only import; Node policy exposed one stale deferred-action rule; independent review then found duplicate asset mappings, a non-strict port, and documentation inconsistencies. Each behavioral repair was proven by focused RED/GREEN tests. On the final bytes, lint and typecheck exited 0, Node passed 51/51, Vitest passed 81/81 files and 1,542/1,542 tests, and `git diff --check` exited 0. Clean independent re-review returned Critical/Important/Minor 0, Spec Pass, Quality Approved, Ready Yes.
 
-## Windows portable preview source
+## Windows portable preview
 
-The source for an internal, unsigned Windows 10/11 x64 portable preview is
-prepared, but no portable ZIP or EXE runtime acceptance is claimed yet. After
-fresh approval for the build/runtime gate, produce it from `aethertwin/` with:
+The internal, unsigned Windows 10/11 x64 portable preview completed its
+separately approved package and runtime acceptance on 2026-08-20. Regenerate it
+from `aethertwin/` with:
 
 ```powershell
 pnpm.cmd package:web-demo:win-x64
@@ -49,19 +49,34 @@ installer. The visible console prints the actual loopback URL, preferring
 occupied. If the default browser cannot open, copy that printed URL. Close the
 console to stop the preview. Edge and Chrome are the acceptance baseline.
 
-The fixed ZIP root contains `AetherTwin-Preview.exe`, `app/`, `README.txt`,
-`BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`. Verify the
-checksum file before internal use. The preview is still the in-memory canonical
-Showroom: 2D, synchronized 3D, and fixed split reuse existing behavior;
-Back/refresh/restart reset it; Export stays visible, truthful, and desktop-only.
+The accepted ZIP was built from source commit
+`6ec8d499425f7578902fc18799839a00ee9e4bd9` and had SHA-256
+`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
+Its fixed root contained `AetherTwin-Preview.exe`, `app/`, `README.txt`,
+`BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`; all 26
+payload checksums and all relative HTML references were verified after
+extraction to a path containing Chinese characters and spaces. The generated
+ZIP, staging tree, Studio `dist/`, and acceptance extraction were then removed
+as required by the artifact policy, so this hash records the accepted artifact
+rather than promising that the ZIP remains in the worktree.
+
+With PATH restricted to Windows system tools, the EXE used no Node.js or pnpm
+child process, bound `127.0.0.1:4173`, and selected another loopback port when
+4173 was deliberately occupied. Automated sessions using the installed Edge
+and Chrome binaries verified the canonical Showroom in 2D, synchronized 3D,
+and fixed split; shared selection, Back/refresh/restart reset behavior, the
+disabled desktop-only Export explanation, WebGL2, and 2D survival after forced
+WebGL context loss. Observed requests were limited to loopback plus owned
+Blob/data URLs, browser storage remained empty, and stopping each console
+process closed its listener.
 
 This source does not add browser persistence, project open/save or recovery,
 native dialogs, remote services, `file://`, a single-file HTML build, Player,
 publish, signing, ARM64, macOS, Firefox support, or cross-device/performance
-guarantees. The earlier Vite localhost browser evidence applies only to that
-previous Local Web Demo gate; package creation, extraction, EXE launch,
-network/storage/WebGL inspection, console shutdown, extracted-file checksums,
-and cleanup still require a new explicit approval and fresh evidence.
+guarantees. This is bounded evidence for the accepted artifact on this machine
+with the installed Edge and Chrome versions, not a signed release,
+cross-device visual certification, or performance certification. No screenshot
+was captured.
 
 ## Ownership and dependency direction
 
@@ -102,4 +117,4 @@ M2.5 Task 18's final vertical gate passed 13/13 focused Vitest tests, three Type
 
 M2.5 Task 20's final reviewed non-build gate passed on the final source bytes: frozen install for all 15 workspace projects, lint, typecheck across 14/15 workspace projects, Node policy 45/45, Vitest 77/77 files and 1,500/1,500 tests, rustfmt, Rust 302 passed with 2 approved privileged-Windows tests ignored, four-crate all-targets Cargo check, and diff check. The final independent review returned Spec Compliance Pass, Code Quality Approved, Critical/Important/Minor None, and Ready Yes. Schema remains v3; the native surface is exactly twelve commands; desktop capabilities remain exactly two; both protected manifest hashes remain unchanged. Full evidence and exclusions are in `docs/M2_REPORT.md`. M2.5 is accepted and M2 is closed.
 
-Build, dev/debug, browser, Playwright, packaged-runtime, packaging, screenshot, real-browser, real-GPU, visual-correctness, and performance evidence is not claimed. In a non-Tauri production web context Studio fails closed; the Vite-only sandbox is not a browser-persistence claim.
+Task 20's earlier non-build gate did not claim build or runtime evidence; Local Web Demo Task 6 and portable Task 4 later ran as separate, explicitly approved gates described above. No screenshot, cross-device visual-correctness, or performance evidence is claimed. In a non-Tauri production web context Studio fails closed; the Vite-only sandbox is not a browser-persistence claim.
