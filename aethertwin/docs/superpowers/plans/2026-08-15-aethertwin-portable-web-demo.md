@@ -155,7 +155,7 @@ the design/plan status only as supported by actual source evidence.
 
   These gates are source-only and do not replace runtime acceptance. Record all
   exit codes and any warnings truthfully.
-- [ ] **Commit:** stage only Task 3 files and this plan checkbox update, then
+- [x] **Commit:** stage only Task 3 files and this plan checkbox update, then
   commit `docs: hand off the AetherTwin portable Web Demo`.
 - [ ] **Independent review:** confirm no unsupported runtime claim, no scope
   drift, all public instructions use the exact root packaging command, and the

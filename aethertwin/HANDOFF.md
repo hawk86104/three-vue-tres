@@ -4,7 +4,7 @@ Updated: 2026-08-15
 Product workspace: `aethertwin/`
 Active branch: `codex/aethertwin-m2`
 Local Web Demo source baseline: `5f49ace12d7226a9a3eace727b90f87c6aa73f13` (the Task 5 closure commit hash is intentionally not invented before commit)
-Portable preview source baseline: `d37644f6` (host and assembler source plus review fixes; no generated package)
+Portable preview Task 3 source commit: `fe229e03` (host, assembler, source gates, and handoff; no generated package)
 
 ## 1. Current outcome
 
@@ -138,6 +138,8 @@ Runtime findings were repaired with focused RED/GREEN coverage: canonical assets
 The standard-library loopback host is committed through `74b59244`; the
 assembler is committed through `d37644f6`. Both received independent review;
 the assembler re-review returned Critical 0, Important 0, and Ready Yes.
+The scoped Task 3 source-gate and handoff commit is `fe229e03`; its independent
+closure re-review remains pending.
 
 The exact source entry point is `pnpm.cmd package:web-demo:win-x64`. It is not
 an install, test, postinstall, or ordinary build hook and it has not been run

@@ -117,10 +117,10 @@ extracted ordinary-file tree and recheck its containment.
 The loopback host source is committed through `74b59244`; the fixed assembler
 and review hardening are committed through `d37644f6`. Both completed focused
 source gates and independent review. The approved full non-build source gate
-also passed; its scoped documentation commit and independent closure review are
-the remaining source steps. The separately approved package/runtime gate has
-not run. No EXE, ZIP, extracted payload, server, or portable browser evidence is
-claimed by this source status.
+also passed, and its scoped documentation commit is `fe229e03`. Independent
+closure re-review is the remaining source step. The separately approved
+package/runtime gate has not run. No EXE, ZIP, extracted payload, server, or
+portable browser evidence is claimed by this source status.
 
 ## Explicit exclusions and approval gate
 

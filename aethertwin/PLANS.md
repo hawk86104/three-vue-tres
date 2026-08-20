@@ -140,6 +140,7 @@ evidence remains evidence for the Local Web Demo only. Task 4 stays blocked on
 fresh explicit approval after Task 3 source closure and independent review.
 
 The approved Task 3 source gate now passes lint, typecheck, Node policy tests,
-the full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Task 3
-remains open only for its scoped documentation commit and independent review;
-this source evidence is not portable package or runtime acceptance.
+the full Vitest suite, Rust fmt/check/host tests, and `git diff --check`. Its
+scoped handoff commit is `fe229e03`; Task 3 remains open only for independent
+closure re-review. This source evidence is not portable package or runtime
+acceptance.
