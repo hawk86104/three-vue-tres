@@ -51,4 +51,13 @@ describe("StudioRoot", () => {
     expect(screen.getByTestId("web-demo")).toHaveTextContent("zh-CN");
     expect(getItem).not.toHaveBeenCalledWith("aethertwin.studio.locale.v1");
   });
+
+  it("uses initialLocale over persisted storage without persisting the override", () => {
+    window.localStorage.setItem("aethertwin.studio.locale.v1", "en");
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    render(<StudioRoot webDemo={false} initialLocale="zh-CN" />);
+
+    expect(screen.getByTestId("ordinary-app")).toHaveTextContent("zh-CN");
+    expect(setItem).not.toHaveBeenCalled();
+  });
 });

@@ -35,6 +35,19 @@ describe("formatMessage", () => {
   it("uses a Chinese UI-safe fallback for invalid runtime identifiers", () => {
     expect(formatMessage("en", "missing.runtime.id" as StudioMessageId)).toBe("界面文本不可用");
   });
+
+  it("reports absent named interpolation values before catalogue functions run", () => {
+    expect(() => formatMessage(
+      "en",
+      "projectCenter.reopenProject",
+      {} as { readonly name: string },
+    )).toThrow('Missing interpolation value "name" for message "projectCenter.reopenProject".');
+    expect(() => formatMessage(
+      "zh-CN",
+      "projectCenter.projectCount",
+      { count: undefined } as unknown as { readonly count: number },
+    )).toThrow('Missing interpolation value "count" for message "projectCenter.projectCount".');
+  });
 });
 
 const checkedEnglishCatalogue = enMessages satisfies StudioMessageCatalogue;

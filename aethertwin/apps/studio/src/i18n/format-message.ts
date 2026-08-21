@@ -22,6 +22,35 @@ export type {
 
 const invalidMessageFallback = "界面文本不可用";
 
+class MissingInterpolationValueError extends Error {}
+
+function checkedArguments(
+  id: StudioMessageId,
+  args: readonly unknown[],
+  expectedCount: number,
+): readonly unknown[] {
+  if (
+    expectedCount > 0
+    && (args.length < expectedCount || args[0] === null || typeof args[0] !== "object")
+  ) {
+    throw new MissingInterpolationValueError(`Missing interpolation values for message "${id}".`);
+  }
+  return args.map((argument) => {
+    if (argument === null || typeof argument !== "object") return argument;
+    return new Proxy(argument, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (typeof key === "string" && value === undefined) {
+          throw new MissingInterpolationValueError(
+            `Missing interpolation value "${key}" for message "${id}".`,
+          );
+        }
+        return value;
+      },
+    });
+  });
+}
+
 function invoke(
   locale: StudioLocale,
   id: StudioMessageId,
@@ -30,7 +59,16 @@ function invoke(
   const catalogue: StudioMessageCatalogue = locale === "en" ? enMessages : zhCNMessages;
   const formatter = catalogue[id];
   if (typeof formatter !== "function") return invalidMessageFallback;
-  return (formatter as (...parameters: never[]) => string)(...(args as never[]));
+  try {
+    const values = checkedArguments(id, args, formatter.length);
+    return (formatter as (...parameters: never[]) => string)(...(values as never[]));
+  } catch (error) {
+    if (error instanceof MissingInterpolationValueError) {
+      if (import.meta.env.DEV) throw error;
+      return invalidMessageFallback;
+    }
+    throw error;
+  }
 }
 
 export function formatMessage<K extends StudioMessageId>(

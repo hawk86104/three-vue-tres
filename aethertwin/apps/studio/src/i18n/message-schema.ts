@@ -2,6 +2,10 @@ import type { zhCNMessages } from "./messages.zh-CN";
 
 export type StudioLocale = "zh-CN" | "en";
 
+export function isStudioLocale(value: unknown): value is StudioLocale {
+  return value === "zh-CN" || value === "en";
+}
+
 export type StudioMessageCatalogue = {
   readonly [K in keyof typeof zhCNMessages]:
     (...args: Parameters<(typeof zhCNMessages)[K]>) => string;

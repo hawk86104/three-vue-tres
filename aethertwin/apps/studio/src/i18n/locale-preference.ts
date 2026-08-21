@@ -1,4 +1,4 @@
-import type { StudioLocale } from "./message-schema";
+import { isStudioLocale, type StudioLocale } from "./message-schema";
 
 const localePreferenceKey = "aethertwin.studio.locale.v1";
 
@@ -7,8 +7,8 @@ export interface LocalePreference {
   write(locale: StudioLocale): void;
 }
 
-function isStudioLocale(value: string | null): value is StudioLocale {
-  return value === "zh-CN" || value === "en";
+export function normalizeStudioLocale(value: unknown): StudioLocale {
+  return isStudioLocale(value) ? value : "zh-CN";
 }
 
 export function createBrowserLocalePreference(
@@ -25,7 +25,7 @@ export function createBrowserLocalePreference(
     },
     write(locale) {
       try {
-        storage.setItem(localePreferenceKey, locale);
+        storage.setItem(localePreferenceKey, normalizeStudioLocale(locale));
       } catch {
         // Persistence is optional; the provider retains the current document selection.
       }
@@ -34,11 +34,11 @@ export function createBrowserLocalePreference(
 }
 
 export function createMemoryLocalePreference(initial?: StudioLocale): LocalePreference {
-  let value = initial ?? null;
+  let value = initial === undefined ? null : normalizeStudioLocale(initial);
   return {
     read: () => value,
     write: (locale) => {
-      value = locale;
+      value = normalizeStudioLocale(locale);
     },
   };
 }

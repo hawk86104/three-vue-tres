@@ -42,4 +42,12 @@ describe("memory locale preference", () => {
     preference.write("en");
     expect(preference.read()).toBe("en");
   });
+
+  it("normalizes unsupported runtime input to Chinese", () => {
+    const preference = createMemoryLocalePreference("fr-FR" as never);
+
+    expect(preference.read()).toBe("zh-CN");
+    preference.write("fr-FR" as never);
+    expect(preference.read()).toBe("zh-CN");
+  });
 });

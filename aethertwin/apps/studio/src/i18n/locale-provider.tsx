@@ -14,7 +14,7 @@ import {
   type StudioMessageDescriptor,
   type StudioTranslator,
 } from "./format-message";
-import type { LocalePreference } from "./locale-preference";
+import { normalizeStudioLocale, type LocalePreference } from "./locale-preference";
 
 export interface LocaleContextValue {
   readonly locale: StudioLocale;
@@ -33,9 +33,13 @@ const fallbackContext: LocaleContextValue = {
 
 const LocaleContext = createContext<LocaleContextValue>(fallbackContext);
 
-function readLocale(preference: LocalePreference): StudioLocale {
+function readLocale(
+  preference: LocalePreference,
+  initialLocale?: StudioLocale,
+): StudioLocale {
+  if (initialLocale !== undefined) return normalizeStudioLocale(initialLocale);
   try {
-    return preference.read() ?? fallbackLocale;
+    return normalizeStudioLocale(preference.read());
   } catch {
     return fallbackLocale;
   }
@@ -43,16 +47,21 @@ function readLocale(preference: LocalePreference): StudioLocale {
 
 export function LocaleProvider({
   preference,
+  initialLocale,
   children,
 }: {
   readonly preference: LocalePreference;
+  readonly initialLocale?: StudioLocale;
   readonly children: ReactNode;
 }): React.JSX.Element {
-  const [locale, setLocaleState] = useState<StudioLocale>(() => readLocale(preference));
+  const [locale, setLocaleState] = useState<StudioLocale>(
+    () => readLocale(preference, initialLocale),
+  );
   const setLocale = useCallback((nextLocale: StudioLocale) => {
-    setLocaleState(nextLocale);
+    const normalizedLocale = normalizeStudioLocale(nextLocale);
+    setLocaleState(normalizedLocale);
     try {
-      preference.write(nextLocale);
+      preference.write(normalizedLocale);
     } catch {
       // The in-memory selection remains usable when an adapter fails to persist.
     }
