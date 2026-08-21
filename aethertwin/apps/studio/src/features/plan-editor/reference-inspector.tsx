@@ -2,6 +2,8 @@ import type { PlanLayer, PlanReference } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import { parseLength } from "@aethertwin/plan-engine";
 import { useEffect, useRef, useState } from "react";
+import { useDisplayName } from "../../i18n/display-name-provider";
+import { useI18n } from "../../i18n/locale-provider";
 
 export interface ReferenceInspectorProps {
   readonly reference: PlanReference;
@@ -43,6 +45,8 @@ export function ReferenceInspector({
   onApplyPlanReferencePatch,
   onError,
 }: ReferenceInspectorProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const committedName = reference.name;
   const committedTags = reference.tags.join(", ");
   const committedOpacity = String(reference.opacity);
@@ -110,7 +114,7 @@ export function ReferenceInspector({
       || rotation.trim().length === 0
       || !Number.isFinite(nextRotationDegrees)
     ) {
-      setLocalError("\u900f\u660e\u5ea6\u5fc5\u987b\u5728 0 \u5230 1 \u4e4b\u95f4\uff0c\u4f4d\u7f6e\u548c\u89d2\u5ea6\u5fc5\u987b\u662f\u6709\u9650\u6570\u5b57\u3002");
+      setLocalError(t("inspector.invalidReference"));
       return;
     }
 
@@ -131,37 +135,38 @@ export function ReferenceInspector({
 
   return (
     <div className="studio-inspector-form" aria-busy={publishing}>
-      <h2>{"\u5e73\u9762\u53c2\u8003"}</h2>
+      <h2>{t("inspector.reference")}</h2>
+      <p>{displayName({ kind: "plan-reference", id: reference.id, authoredName: reference.name })}</p>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>{"\u56fe\u5c42"}</dt><dd>{layer.name}</dd></div>
+        <div><dt>{t("inspector.entityLayer")}</dt><dd>{displayName({ kind: "layer", id: layer.id, authoredName: layer.name })}</dd></div>
         <div>
-          <dt>{"\u72b6\u6001"}</dt>
-          <dd>{reference.locked ? "\u5df2\u9501\u5b9a" : "\u53ef\u7f16\u8f91"}</dd>
+          <dt>{t("inspector.status")}</dt>
+          <dd>{reference.locked ? t("inspector.locked") : t("inspector.editable")}</dd>
         </div>
       </dl>
       {layer.locked ? (
-        <StatusNotice tone="info">{"\u56fe\u5c42\u5df2\u9501\u5b9a"}</StatusNotice>
+        <StatusNotice tone="info">{t("inspector.referenceLayerLocked")}</StatusNotice>
       ) : null}
       {!layer.visible ? (
-        <StatusNotice tone="info">{"\u56fe\u5c42\u5df2\u9690\u85cf"}</StatusNotice>
+        <StatusNotice tone="info">{t("inspector.referenceLayerHidden")}</StatusNotice>
       ) : null}
       {localError === null ? null : (
         <StatusNotice tone="error">{localError}</StatusNotice>
       )}
       <Field
-        label={"\u5e73\u9762\u53c2\u8003\u540d\u79f0"}
+        label={t("inspector.referenceName")}
         value={name}
         readOnly={propertiesReadOnly || publishing}
         onChange={(event) => setName(event.currentTarget.value)}
       />
       <Field
-        label={"\u5e73\u9762\u53c2\u8003\u6807\u7b7e"}
+        label={t("inspector.referenceTags")}
         value={tags}
         readOnly={propertiesReadOnly || publishing}
         onChange={(event) => setTags(event.currentTarget.value)}
       />
       <Field
-        label={"\u900f\u660e\u5ea6"}
+        label={t("inspector.referenceOpacity")}
         value={opacity}
         inputMode="decimal"
         readOnly={propertiesReadOnly || publishing}
@@ -182,7 +187,7 @@ export function ReferenceInspector({
         onChange={(event) => setY(event.currentTarget.value)}
       />
       <Field
-        label={"\u65cb\u8f6c (\u00b0)"}
+        label={t("inspector.referenceRotation")}
         value={rotation}
         inputMode="decimal"
         readOnly={propertiesReadOnly || publishing}
@@ -193,26 +198,26 @@ export function ReferenceInspector({
           type="checkbox"
           checked={reference.locked}
           disabled={!layerAllowsEdits || publishing}
-          aria-label={"\u9501\u5b9a\u5e73\u9762\u53c2\u8003"}
+          aria-label={t("inspector.referenceLock")}
           onChange={(event) => {
             void publish({ ...reference, locked: event.currentTarget.checked });
           }}
         />
-        {"\u9501\u5b9a\u5e73\u9762\u53c2\u8003"}
+        {t("inspector.referenceLock")}
       </label>
       <Button
         variant="secondary"
         disabled={propertiesReadOnly || publishing}
         onClick={() => void commit()}
       >
-        {"\u5e94\u7528\u5e73\u9762\u53c2\u8003"}
+        {t("inspector.applyReference")}
       </Button>
       <Button
         variant="secondary"
         disabled={propertiesReadOnly || publishing}
         onClick={() => void publish(null)}
       >
-        {"\u5220\u9664\u5e73\u9762\u53c2\u8003"}
+        {t("inspector.deleteReference")}
       </Button>
     </div>
   );

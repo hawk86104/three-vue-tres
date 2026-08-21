@@ -2,6 +2,9 @@ import type { Opening, PlanLayer, Wall } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import { parseLength } from "@aethertwin/plan-engine";
 import { useEffect, useRef, useState } from "react";
+import { OPENING_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { useDisplayName } from "../../i18n/display-name-provider";
+import { useI18n } from "../../i18n/locale-provider";
 
 export interface OpeningInspectorProps {
   readonly opening: Opening;
@@ -44,6 +47,8 @@ export function OpeningInspector({
   onApplyOpeningPatch,
   onError,
 }: OpeningInspectorProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const committedName = opening.name;
   const committedKind = opening.kind;
   const committedWidth = String(opening.width);
@@ -107,7 +112,7 @@ export function OpeningInspector({
       || nextDistance === null
     ) {
       setLocalError(
-        "宽度和高度必须为正长度，窗台高度和沿墙距离必须为非负有限长度。",
+        t("inspector.invalidOpening"),
       );
       return;
     }
@@ -127,60 +132,60 @@ export function OpeningInspector({
 
   return (
     <div className="studio-inspector-form" aria-busy={publishing}>
-      <h2>门窗</h2>
+      <h2>{t("inspector.opening")}</h2>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>支撑墙</dt><dd>{wall.name}</dd></div>
-        <div><dt>支撑墙 ID</dt><dd>{wall.id}</dd></div>
-        <div><dt>图层</dt><dd>{layer.name}</dd></div>
-        <div><dt>状态</dt><dd>{editable ? "可编辑" : "已锁定"}</dd></div>
+        <div><dt>{t("inspector.supportWall")}</dt><dd>{displayName({ kind: "entity", id: wall.id, authoredName: wall.name })}</dd></div>
+        <div><dt>{t("inspector.supportWallId")}</dt><dd>{wall.id}</dd></div>
+        <div><dt>{t("inspector.entityLayer")}</dt><dd>{displayName({ kind: "layer", id: layer.id, authoredName: layer.name })}</dd></div>
+        <div><dt>{t("inspector.status")}</dt><dd>{editable ? t("inspector.editable") : t("inspector.locked")}</dd></div>
       </dl>
       {!editable ? (
-        <StatusNotice tone="info">支撑墙或图层不可编辑</StatusNotice>
+        <StatusNotice tone="info">{t("inspector.openingUnavailable")}</StatusNotice>
       ) : null}
       {localError === null ? null : (
         <StatusNotice tone="error">{localError}</StatusNotice>
       )}
       <Field
-        label="门窗名称"
+        label={t("inspector.openingName")}
         value={name}
         readOnly={!editable || publishing}
         onChange={(event) => setName(event.currentTarget.value)}
       />
       <label className="studio-plan-inspector__select">
-        门窗类型
+        {t("inspector.openingType")}
         <select
-          aria-label="门窗类型"
+          aria-label={t("inspector.openingType")}
           value={kind}
           disabled={!editable || publishing}
           onChange={(event) => setKind(event.currentTarget.value as Opening["kind"])}
         >
-          <option value="door">Door</option>
-          <option value="window">Window</option>
+          <option value="door">{t(OPENING_KIND_MESSAGE_IDS.door)}</option>
+          <option value="window">{t(OPENING_KIND_MESSAGE_IDS.window)}</option>
         </select>
       </label>
       <Field
-        label="宽度 (mm)"
+        label={t("inspector.openingWidth")}
         value={width}
         inputMode="decimal"
         readOnly={!editable || publishing}
         onChange={(event) => setWidth(event.currentTarget.value)}
       />
       <Field
-        label="高度 (mm)"
+        label={t("inspector.openingHeight")}
         value={height}
         inputMode="decimal"
         readOnly={!editable || publishing}
         onChange={(event) => setHeight(event.currentTarget.value)}
       />
       <Field
-        label="窗台高度 (mm)"
+        label={t("inspector.sillHeight")}
         value={sillHeight}
         inputMode="decimal"
         readOnly={!editable || publishing}
         onChange={(event) => setSillHeight(event.currentTarget.value)}
       />
       <Field
-        label="沿墙距离 (mm)"
+        label={t("inspector.distanceAlongWall")}
         value={distance}
         inputMode="decimal"
         readOnly={!editable || publishing}
@@ -191,14 +196,14 @@ export function OpeningInspector({
         disabled={!editable || publishing}
         onClick={() => void commit()}
       >
-        应用门窗
+        {t("inspector.applyOpening")}
       </Button>
       <Button
         variant="secondary"
         disabled={!editable || publishing}
         onClick={() => void publish(null)}
       >
-        删除门窗
+        {t("inspector.deleteOpening")}
       </Button>
     </div>
   );

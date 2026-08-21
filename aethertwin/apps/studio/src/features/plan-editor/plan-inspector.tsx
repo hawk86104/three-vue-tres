@@ -1438,7 +1438,8 @@ export function PlanInspector({
         layer={layer}
         onApplyPlanReferencePatch={async (before, after) => {
           if (onApplyPlanReferencePatch === undefined) {
-            throw new Error("Plan-reference mutations are unavailable.");
+            onError(new Error(t("inspector.referenceMutationsUnavailable")));
+            return;
           }
           await onApplyPlanReferencePatch(before, after);
         }}

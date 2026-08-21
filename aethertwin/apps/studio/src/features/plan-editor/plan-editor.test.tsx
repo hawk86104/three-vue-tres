@@ -2430,7 +2430,7 @@ describe("PlanEditor Task 12 plan-reference selection", () => {
     expect(row).toHaveAttribute("aria-selected", "true");
     const inspector = screen.getByRole("complementary", { name: "\u68c0\u67e5\u5668" });
     expect(within(inspector).getByRole("heading", {
-      name: "\u5e73\u9762\u53c2\u8003",
+      name: "参考图",
     })).toBeVisible();
     expect(within(inspector).getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"))
       .toHaveValue(reference.name);

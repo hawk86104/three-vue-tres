@@ -1,7 +1,6 @@
 import type {
   Opening,
   FixtureKind,
-  MediaAssetKind,
   PointOfInterestKind,
   ProjectProfile,
   RouteNodeKind,
@@ -67,11 +66,6 @@ export const POINT_OF_INTEREST_KIND_MESSAGE_IDS = {
   storage: "kind.poi.storage", nursery: "kind.poi.nursery", water: "kind.poi.water", atm: "kind.poi.atm",
   "closed-area": "kind.poi.closedArea", custom: "kind.poi.custom", "product-hotspot": "kind.poi.productHotspot",
 } as const satisfies Record<PointOfInterestKind, StudioMessageId>;
-
-export const MEDIA_ASSET_KIND_MESSAGE_IDS = {
-  image: "kind.media.image",
-  video: "kind.media.video",
-} as const satisfies Readonly<Record<MediaAssetKind, StudioMessageId>>;
 
 export const ROUTE_NODE_KIND_MESSAGE_IDS = {
   junction: "kind.routeNode.junction", entrance: "kind.routeNode.entrance", "showroom-stop": "kind.routeNode.showroomStop",

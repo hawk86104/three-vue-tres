@@ -74,10 +74,10 @@ describe("ReferenceInspector", () => {
     const user = userEvent.setup();
     const { onApplyPlanReferencePatch } = renderInspector();
 
-    fireEvent.change(screen.getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"), {
+    fireEvent.change(screen.getByLabelText("参考图名称"), {
       target: { value: "  North concourse  " },
     });
-    fireEvent.change(screen.getByLabelText("\u5e73\u9762\u53c2\u8003\u6807\u7b7e"), {
+    fireEvent.change(screen.getByLabelText("参考图标签"), {
       target: { value: " north, surveyed, north,  " },
     });
     fireEvent.change(screen.getByLabelText("\u900f\u660e\u5ea6"), {
@@ -93,7 +93,7 @@ describe("ReferenceInspector", () => {
       target: { value: "30" },
     });
     await user.click(screen.getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "应用参考图",
     }));
 
     await waitFor(() => expect(onApplyPlanReferencePatch).toHaveBeenCalledOnce());
@@ -123,7 +123,7 @@ describe("ReferenceInspector", () => {
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
     await user.click(screen.getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "应用参考图",
     }));
 
     expect(screen.getByRole("alert")).toBeVisible();
@@ -135,7 +135,7 @@ describe("ReferenceInspector", () => {
     const { onApplyPlanReferencePatch } = renderInspector();
 
     await user.click(screen.getByRole("button", {
-      name: "\u5220\u9664\u5e73\u9762\u53c2\u8003",
+      name: "删除参考图",
     }));
 
     await waitFor(() => expect(onApplyPlanReferencePatch).toHaveBeenCalledOnce());
@@ -147,26 +147,26 @@ describe("ReferenceInspector", () => {
     const locked = { ...reference, locked: true };
     const { onApplyPlanReferencePatch } = renderInspector({ selected: locked });
 
-    expect(screen.getByRole("heading", { name: "\u5e73\u9762\u53c2\u8003" })).toBeVisible();
-    expect(screen.getByText("\u5df2\u9501\u5b9a")).toBeVisible();
-    const name = screen.getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0");
+    expect(screen.getByRole("heading", { name: "参考图" })).toBeVisible();
+    expect(screen.getByText("锁定")).toBeVisible();
+    const name = screen.getByLabelText("参考图名称");
     expect(name).toHaveValue(locked.name);
     expect(name).toHaveAttribute("readonly");
     name.focus();
     expect(name).toHaveFocus();
-    for (const label of ["\u5e73\u9762\u53c2\u8003\u6807\u7b7e", "\u900f\u660e\u5ea6", "X (mm)", "Y (mm)", "\u65cb\u8f6c (\u00b0)"]) {
+    for (const label of ["参考图标签", "透明度", "X (mm)", "Y (mm)", "旋转 (°)"]) {
       expect(screen.getByLabelText(label)).toHaveAttribute("readonly");
     }
 
     expect(screen.getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "应用参考图",
     })).toBeDisabled();
     expect(screen.getByRole("button", {
-      name: "\u5220\u9664\u5e73\u9762\u53c2\u8003",
+      name: "删除参考图",
     })).toBeDisabled();
 
     await user.click(screen.getByRole("checkbox", {
-      name: "\u9501\u5b9a\u5e73\u9762\u53c2\u8003",
+      name: "锁定参考图",
     }));
 
     await waitFor(() => expect(onApplyPlanReferencePatch).toHaveBeenCalledOnce());
@@ -183,20 +183,20 @@ describe("ReferenceInspector", () => {
     });
 
     expect(screen.getByText("\u56fe\u5c42\u5df2\u9501\u5b9a")).toBeVisible();
-    expect(screen.getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"))
+    expect(screen.getByLabelText("参考图名称"))
       .toHaveAttribute("readonly");
 
-    for (const label of ["\u5e73\u9762\u53c2\u8003\u6807\u7b7e", "\u900f\u660e\u5ea6", "X (mm)", "Y (mm)", "\u65cb\u8f6c (\u00b0)"]) {
+    for (const label of ["参考图标签", "透明度", "X (mm)", "Y (mm)", "旋转 (°)"]) {
       expect(screen.getByLabelText(label)).toHaveAttribute("readonly");
     }
     expect(screen.getByRole("checkbox", {
-      name: "\u9501\u5b9a\u5e73\u9762\u53c2\u8003",
+      name: "锁定参考图",
     })).toBeDisabled();
     expect(screen.getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "应用参考图",
     })).toBeDisabled();
     expect(screen.getByRole("button", {
-      name: "\u5220\u9664\u5e73\u9762\u53c2\u8003",
+      name: "删除参考图",
     })).toBeDisabled();
     expect(onApplyPlanReferencePatch).not.toHaveBeenCalled();
   });
@@ -209,11 +209,11 @@ describe("ReferenceInspector", () => {
     const { onApplyPlanReferencePatch } = renderInspector({
       apply: async () => pending,
     });
-    fireEvent.change(screen.getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"), {
+    fireEvent.change(screen.getByLabelText("参考图名称"), {
       target: { value: "Pending edit" },
     });
     const apply = screen.getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "应用参考图",
     });
 
     act(() => {

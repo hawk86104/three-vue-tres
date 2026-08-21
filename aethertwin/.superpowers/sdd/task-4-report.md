@@ -30,3 +30,10 @@ The newly added English inspector test failed before implementation because the 
 - Final exact combined command, captured to the temporary log, passed: `2` test files, `132` tests, exit `0`, duration `29.50s`.
 - Final `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` exited `0`.
 - Final `git diff --check` exited `0`; only LF-to-CRLF warnings were emitted.
+
+## Review fixes
+
+- Localized the valid Reference image and Opening selected inspectors, preserving authored editable values, option values, IDs, and mutation records.
+- Opening-kind option labels consume `OPENING_KIND_MESSAGE_IDS`; their `door`/`window` values remain stable.
+- Removed the definition-only media-kind map because no Task 4 inspector surface displays media kind; its later owner is the product-content/media workflow.
+- Replaced the raw unavailable-reference-mutation throw with a locale-safe error reported through the existing error boundary.
