@@ -205,7 +205,7 @@ describe("PlanEditor M0 behavior contract", () => {
     const inspector = screen.getByRole("complementary", { name: "检查器" });
     expect(within(inspector).getByLabelText("项目名称")).toHaveValue("北岸展厅");
     expect(within(inspector).getByLabelText("项目标签")).toHaveValue("featured, north");
-    expect(inspector).toHaveTextContent("showroom");
+    expect(inspector).toHaveTextContent("展厅");
     expect(inspector).toHaveTextContent(/Schema\s*3/i);
     expect(inspector).toHaveTextContent("未保存");
     expect(inspector).toHaveTextContent(/sandbox/i);
@@ -3125,9 +3125,9 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
     await user.click(rowByData("data-entity-id", fixture.id));
 
     const inspector = screen.getByRole("complementary", { name: "检查器" });
-    const kindMetadata = within(inspector).getByText("展具种类").parentElement;
-    expect(kindMetadata).toHaveTextContent("display-case");
-    expect(within(inspector).queryByLabelText("展具种类")).not.toBeInTheDocument();
+    const kindMetadata = within(inspector).getByText("种类").parentElement;
+    expect(kindMetadata).toHaveTextContent("展示柜");
+    expect(within(inspector).queryByLabelText("种类")).not.toBeInTheDocument();
     expect(within(inspector).getByLabelText("对象名称")).toHaveValue(legacyFixture.name);
     expect(within(inspector).getByLabelText("对象 X (mm)")).toHaveValue("0");
     expect(within(inspector).getByLabelText("对象 Y (mm)")).toHaveValue("0");

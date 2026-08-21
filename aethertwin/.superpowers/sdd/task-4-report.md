@@ -22,3 +22,11 @@ The newly added English inspector test failed before implementation because the 
 - `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` exited successfully with no output.
 - `git diff --check` exited successfully; Git emitted only LF-to-CRLF working-copy warnings, including pre-existing modified protected files.
 - No build, dev server, preview, browser, debug, or WebGL validation was run, as required by the project rules.
+
+## Follow-up verification
+
+- The earlier incomplete combined-command capture was diagnosed with a hidden process and temporary log. It was a real two-assertion failure in `plan-editor.test.tsx`, not an output limit: old assertions expected the raw `showroom` and `display-case` values after Task 4 deliberately localized those presentation values.
+- Updated only those Task 4 integration assertions and added bilingual direct-inspector coverage for project, floor, layer, entity, multi/empty, and stale plan-reference/opening/entity contexts, plus the Web Demo presentation resolver/authored input boundary.
+- Final exact combined command, captured to the temporary log, passed: `2` test files, `132` tests, exit `0`, duration `29.50s`.
+- Final `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` exited `0`.
+- Final `git diff --check` exited `0`; only LF-to-CRLF warnings were emitted.
