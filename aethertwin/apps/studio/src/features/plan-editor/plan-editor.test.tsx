@@ -165,12 +165,14 @@ describe("PlanEditor language control", () => {
   it("switches editor presentation without recreating the current project or session", async () => {
     const { store } = await sandboxProject("North Gallery");
     const floorId = store.getState().snapshot!.project.floors[0]!.id;
+    const layerId = store.getState().snapshot!.project.floors[0]!.layers[0]!.id;
     const sessionStore = createPlanEditorStore({ activeFloorId: floorId });
     render(
       <LocaleProvider preference={createMemoryLocalePreference("en")}>
         <PlanEditor store={store} dependencies={{ sessionStore }} />
       </LocaleProvider>,
     );
+    act(() => sessionStore.getState().setActiveTool("wall"));
     const language = screen.getByRole("combobox", { name: "Interface language" });
     const user = userEvent.setup();
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
@@ -178,6 +180,9 @@ describe("PlanEditor language control", () => {
     expect(screen.getByRole("button", { name: "返回" })).toBeVisible();
     expect(store.getState().snapshot!.project.name).toBe("North Gallery");
     expect(sessionStore.getState().activeFloorId).toBe(floorId);
+    expect(store.getState().snapshot!.project.floors[0]!.layers[0]!.id).toBe(layerId);
+    expect(sessionStore.getState().activeTool).toBe("wall");
+    expect(language).toHaveFocus();
   });
 });
 
@@ -2101,14 +2106,12 @@ describe("PlanEditor Task 11 asset entry points", () => {
   });
 });
 describe("renderPlanEditorFixture Task 11 compatibility", () => {
-  it("returns the rendered default primary fixture with its stable treeitem name", () => {
+  it("returns the rendered default primary fixture with its stable treeitem ID", () => {
     const { fixture } = renderPlanEditorFixture();
     const typedFixture: Fixture = fixture;
 
     expect(typedFixture).toBeDefined();
-    expect(
-      screen.getByRole("treeitem", { name: typedFixture.name }),
-    ).toHaveAttribute("data-entity-id", typedFixture.id);
+    expect(rowByData("data-entity-id", typedFixture.id)).toBeVisible();
   });
 });
 
@@ -3308,7 +3311,7 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
       const row = within(accessibility).getByRole("button", {
         name: `选择对象：${entity.name}`,
       }).closest("li");
-      expect(row).toHaveTextContent(`展具种类 ${entity.kind}`);
+      expect(row).toHaveTextContent("陈设种类");
       expect(row).toHaveTextContent(`宽度 ${descriptor.defaultSize.width} mm`);
       expect(row).toHaveTextContent(`深度 ${descriptor.defaultSize.depth} mm`);
       expect(row).toHaveTextContent(`垂直高度 ${descriptor.defaultSize.height} mm`);
@@ -3318,7 +3321,7 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
     const genericRow = within(accessibility).getByRole("button", {
       name: `选择对象：${genericFixture.name}`,
     }).closest("li");
-    expect(genericRow).toHaveTextContent("展具种类 generic");
+    expect(genericRow).toHaveTextContent("陈设种类 通用陈设");
     expect(genericRow).toHaveTextContent("宽度 900 mm");
     expect(genericRow).toHaveTextContent("深度 450 mm");
     expect(genericRow).toHaveTextContent("垂直高度 未设置");

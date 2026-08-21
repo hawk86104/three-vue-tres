@@ -18,6 +18,9 @@ const expectedActions = [
 test("Showroom visible actions use the approved stable IDs in order", () => {
   const actionIds = policy.split('action("').slice(1).map((part) => part.split('"')[0]);
   assert.deepEqual(actionIds, expectedActions);
+  assert.match(toolbar, /const actionId = tool === "space-unit"[\s\S]*?"room"/u);
+  assert.match(toolbar, /data-action=\{profile === "showroom" \? actionId : undefined\}/u);
+  assert.match(toolbar, /data-action="recognize-rooms"/u);
   assert.match(toolbar, /data-action=\{id\}/u);
   assert.match(toolbar, /SHOWROOM_TOOL_ACTION_MESSAGE_IDS\[id\]/u);
   for (const actionId of expectedActions) {
@@ -27,6 +30,7 @@ test("Showroom visible actions use the approved stable IDs in order", () => {
 
 test("visible controls are wired through live callbacks, not presentation labels", () => {
   assert.match(toolbar, /onClick=\{\(event\) => onToolChange\(tool, event\.currentTarget\)\}/u);
+  assert.match(toolbar, /onClick=\{\(event\) => onRecognizeRooms\(event\.currentTarget\)\}/u);
   assert.match(toolbar, /onClick=\{onClick === undefined[\s\S]*?\(event\) => onClick\(event\.currentTarget\)/u);
   for (const callback of ["onSave", "onUndo", "onRedo", "onClose"]) {
     assert.match(editorShell, new RegExp(`onClick=\\{${callback}\\}`, "u"));

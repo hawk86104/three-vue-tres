@@ -1,4 +1,5 @@
 import type {
+  Opening,
   FixtureKind,
   PointOfInterestKind,
   ProjectProfile,
@@ -42,10 +43,20 @@ export const SPACE_UNIT_KIND_MESSAGE_IDS = {
   exhibition: "toolbar.market.units", service: "toolbar.market.units", restricted: "toolbar.market.units",
 } as const satisfies Record<SpaceUnitKind, StudioMessageId>;
 
+export const ENTITY_TYPE_MESSAGE_IDS = {
+  boundary: "action.boundary", wall: "action.wall", zone: "action.zone",
+  "space-unit": "toolbar.market.units", fixture: "action.fixtureCatalogue",
+  poi: "action.poi", dimension: "action.dimension",
+} as const satisfies Record<"boundary" | "wall" | "zone" | "space-unit" | "fixture" | "poi" | "dimension", StudioMessageId>;
+
+export const OPENING_KIND_MESSAGE_IDS = {
+  door: "action.door", window: "action.window",
+} as const satisfies Record<Opening["kind"], StudioMessageId>;
+
 export const FIXTURE_KIND_MESSAGE_IDS = {
-  "display-case": "action.fixtureCatalogue", "display-table": "action.fixtureCatalogue", shelf: "action.fixtureCatalogue",
-  checkout: "action.fixtureCatalogue", screen: "action.fixtureCatalogue", partition: "action.fixtureCatalogue",
-  signage: "action.fixtureCatalogue", generic: "action.fixtureCatalogue",
+  "display-case": "kind.fixture.displayCase", "display-table": "kind.fixture.displayTable", shelf: "kind.fixture.shelf",
+  checkout: "kind.fixture.checkout", screen: "kind.fixture.screen", partition: "kind.fixture.partition",
+  signage: "kind.fixture.signage", generic: "kind.fixture.generic",
 } as const satisfies Record<FixtureKind, StudioMessageId>;
 
 export const POINT_OF_INTEREST_KIND_MESSAGE_IDS = {

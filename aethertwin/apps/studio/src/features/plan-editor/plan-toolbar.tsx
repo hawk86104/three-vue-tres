@@ -227,6 +227,11 @@ export function PlanToolbar({
           <div className="studio-plan-toolbar__tools">
             {group.tools.map(({ tool, label }) => {
               const active = tool === activeTool;
+              const actionId = tool === "space-unit"
+                ? "room"
+                : tool === "fixture"
+                  ? "fixture-catalogue"
+                  : tool;
               return (
                 <Button
                   key={tool}
@@ -239,6 +244,7 @@ export function PlanToolbar({
                   aria-pressed={active}
                   data-active={active ? "true" : undefined}
                   data-tool={tool}
+                  data-action={profile === "showroom" ? actionId : undefined}
                   onClick={(event) => onToolChange(tool, event.currentTarget)}
                 >
                   {t(label)}
@@ -327,6 +333,7 @@ export function PlanToolbar({
               <Button
                 variant="secondary"
                 className="studio-plan-toolbar__action"
+                data-action="recognize-rooms"
                 onClick={(event) => onRecognizeRooms(event.currentTarget)}
               >
                 {t("action.recognizeRooms")}

@@ -26,3 +26,21 @@
 - Protected pre-existing dirty files `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and `packages/mode-showroom/src/index.ts` were not modified or staged. Manifests, lockfiles, and Cargo protected files were untouched.
 - Build/dev/preview/browser/debug/WebGL verification was skipped, as required by the project rules.
 
+## Controller review fix (Task 3)
+
+### RED and scope
+
+- Focused RED covered every runtime kind-map key, Showroom `room`/`recognize-rooms` action IDs, English fixture/POI accessibility output, and the omitted reference-handler branch. It failed before the new entity/opening maps and rendered toolbar IDs existed.
+- The fix localizes Task-3-owned accessibility fixture details, room candidates, entity/POI/fixture semantics, route nodes, plan references, and openings; authored names and reference IDs, measurements, and numeric values remain data.
+- FloorTree now translates reference/entity/route semantics and ARIA labels with typed maps. Reference and route-node controls are omitted when their live callbacks are absent; no silent no-op target remains.
+- PlanEditor localizes only its sidebar tabs/ARIA. Verified exclusions: Task 8 export disabled/reason/canvas/renderer copy; Task 6 opening-preview/spatial workflow; Task 7 route/content workflow; Task 5 asset workflow; and Task 4 Inspector UI were not changed.
+- Showroom tool callbacks still receive their original `PlanTool` (including internal `space-unit`); only the presentation `data-action` maps it to canonical `room`. The special recognizer is `recognize-rooms`. The policy now checks declared/rendered IDs and real callback paths without translated literals.
+
+### Review-fix verification and self-review
+
+- Focused added-test command: PASS — 4 files, 18 tests, 1.60s.
+- Focused live switch command: PASS — 1 test (113 skipped), 2.69s. It verifies English-to-Chinese in-place switching with authored floor/layer identity, the ongoing wall tool, and LanguageSwitcher focus retained.
+- Exact required Vitest command: PASS — 6 files, 149 tests, 29.66s, exit 0 (temporary-only output capture used for the desktop 30-second output limit).
+- `node --test tests/visible-actions.test.mjs`: PASS — 2 tests, 0 failures, exit 0.
+- Both required TypeScript commands: PASS — exit 0. `git diff --check`: PASS — exit 0; only CRLF conversion warnings.
+- Self-review confirmed only Task 3 files and this requested report are staged; protected dirty Cargo files, mode-showroom source, manifests, and lockfiles remain unstaged. Build/dev/preview/browser/debug/WebGL gates remain skipped by project rule.

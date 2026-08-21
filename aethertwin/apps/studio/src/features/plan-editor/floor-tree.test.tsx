@@ -13,4 +13,10 @@ describe("FloorTree localization", () => {
     expect(screen.getByRole("button", { name: "Select floor: Level Uno" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Select layer: Sketch α" })).toBeVisible();
   });
+
+  it("does not expose a silent reference action without its live handler", () => {
+    const snapshot = { project: { name: "North Gallery", floors: [{ id: "floor-1", name: "Level Uno", layers: [{ id: "layer-1", name: "Sketch α", visible: true, locked: false }] }], entities: [], planReferences: [{ id: "ref-1", name: "Plan.pdf", floorId: "floor-1", layerId: "layer-1", locked: false }], routeNetworks: [] } } as never;
+    render(<StudioI18nTestProvider locale="en"><FloorTree snapshot={snapshot} activeFloorId="floor-1" selectedIds={new Set()} onFloorSelect={vi.fn()} onLayerSelect={vi.fn()} onEntitySelect={vi.fn()} onApplyFloorPatch={vi.fn()} /></StudioI18nTestProvider>);
+    expect(screen.queryByRole("button", { name: "Select plan reference: Plan.pdf" })).not.toBeInTheDocument();
+  });
 });

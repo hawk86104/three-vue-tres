@@ -40,13 +40,15 @@ afterEach(cleanup);
 
 describe("PlanToolbar localization", () => {
   it("uses stable action IDs while presenting the English catalogue", () => {
-    render(toolbar());
+    render(toolbar({ onRecognizeRooms: vi.fn() }));
 
     expect(screen.getByRole("group", { name: "Preview" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Export PNG" }))
       .toHaveAttribute("data-action", "export");
     expect(screen.getByRole("button", { name: "Product hotspot" }))
       .toHaveAttribute("data-tool", "product-hotspot");
+    expect(screen.getByRole("button", { name: "Room" })).toHaveAttribute("data-action", "room");
+    expect(screen.getByRole("button", { name: "Recognize rooms" })).toHaveAttribute("data-action", "recognize-rooms");
   });
 });
 

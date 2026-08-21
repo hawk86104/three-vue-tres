@@ -1754,7 +1754,7 @@ export function PlanEditor({
   );
   const treePanel = assetPicker === null ? floorTree : (
     <div className="studio-plan-sidebar">
-      <div className="studio-plan-sidebar__tabs" role="tablist" aria-label={"\u5de6\u4fa7\u9762\u677f"}>
+      <div className="studio-plan-sidebar__tabs" role="tablist" aria-label={t("editor.sidebar")}>
         <button
           ref={treeTabRef}
           id={treeTabId}
@@ -1766,7 +1766,7 @@ export function PlanEditor({
           onKeyDown={handleSidePanelTabKeyDown}
           onClick={() => sessionStore.getState().setSidePanel("tree")}
         >
-          {"\u9879\u76ee\u6811"}
+          {t("editor.projectTree")}
         </button>
         <button
           ref={assetLibraryTabRef}
@@ -1779,7 +1779,7 @@ export function PlanEditor({
           onKeyDown={handleSidePanelTabKeyDown}
           onClick={() => sessionStore.getState().setSidePanel("assets")}
         >
-          {"\u8d44\u4ea7\u5e93"}
+          {t("editor.assetLibrary")}
         </button>
       </div>
       {sessionState.sidePanel === "tree" ? (

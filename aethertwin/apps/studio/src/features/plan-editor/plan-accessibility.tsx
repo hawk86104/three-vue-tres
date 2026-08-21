@@ -6,6 +6,8 @@ import type { InteractionController } from "./interaction-controller";
 
 import { useState, type FormEvent } from 'react';
 import { useI18n } from "../../i18n/locale-provider";
+import { ENTITY_TYPE_MESSAGE_IDS, FIXTURE_KIND_MESSAGE_IDS, OPENING_KIND_MESSAGE_IDS, POINT_OF_INTEREST_KIND_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import type { StudioTranslator } from "../../i18n/message-schema";
 
 export interface PlanAccessibilityProps {
   readonly snapshot: ProjectSnapshot;
@@ -25,17 +27,17 @@ function metric(value: number): string {
     : String(Number(value.toPrecision(12)));
 }
 
-function fixtureDetails(fixture: Fixture): string {
+function fixtureDetails(fixture: Fixture, t: StudioTranslator): string {
   const verticalHeight = fixture.spatial3D?.height ?? (
     fixture.kind === "generic"
       ? null
       : showroomFixture(fixture.kind).defaultSize.height
   );
   return [
-    `展具种类 ${fixture.kind}`,
-    `宽度 ${metric(fixture.size.width)} mm`,
-    `深度 ${metric(fixture.size.height)} mm`,
-    `垂直高度 ${verticalHeight === null ? "未设置" : `${metric(verticalHeight)} mm`}`,
+    `${t("access.fixtureKind")} ${t(FIXTURE_KIND_MESSAGE_IDS[fixture.kind])}`,
+    `${t("access.width")} ${metric(fixture.size.width)} mm`,
+    `${t("access.depth")} ${metric(fixture.size.height)} mm`,
+    `${t("access.height")} ${verticalHeight === null ? t("access.unset") : `${metric(verticalHeight)} mm`}`,
   ].join(" · ");
 }
 
@@ -139,26 +141,30 @@ export function PlanAccessibility({
           {roomRecognition?.candidates.map((candidate, index) => (
             <li key={`room-candidate-${candidate.key}`}>
               <span>
-                房间候选 {index + 1} · {metric(candidate.area / 1_000_000)} m² · {candidate.key === roomRecognition?.selectedCandidateKey ? "已选择" : "未选择"} · {roomRecognition?.stale ? "已过期" : "可预览"}
+                {t("access.roomCandidate", { index: index + 1 })} · {metric(candidate.area / 1_000_000)} m² · {candidate.key === roomRecognition?.selectedCandidateKey ? t("access.selected") : t("access.unselected")} · {roomRecognition?.stale ? t("access.stale") : t("access.available")}
               </span>
               <button
                 type="button"
-                aria-label={`预览候选 ${index + 1}`}
+                aria-label={t("access.previewCandidate", { index: index + 1 })}
                 aria-pressed={candidate.key === roomRecognition?.selectedCandidateKey}
                 onClick={() => sessionStore.getState().selectRoomCandidate(candidate.key)}
               >
-                预览
+                {t("access.preview")}
               </button>
             </li>
           ))}
           {entities.map((entity) => {
             const selected = selectedIds.has(entity.id);
             const locked = entity.locked || visibleLayers.get(entity.layerId) === true;
+            const semanticName = entity.type === "fixture"
+              ? t(FIXTURE_KIND_MESSAGE_IDS[entity.kind])
+              : entity.type === "poi"
+                ? t(POINT_OF_INTEREST_KIND_MESSAGE_IDS[entity.kind])
+                : t(ENTITY_TYPE_MESSAGE_IDS[entity.type]);
             return (
               <li key={entity.id}>
                 <span>
-                  {entity.type === 'poi' ? `${entity.kind} · ` : ''}
-                  {entity.type} · {entity.type === "fixture" ? `${fixtureDetails(entity)} · ` : ""}{entity.name} · {selected ? t("access.selected") : t("access.unselected")} · {locked ? t("access.locked") : t("access.editable")}
+                  {semanticName} · {entity.type === "fixture" ? `${fixtureDetails(entity, t)} · ` : ""}{entity.name} · {selected ? t("access.selected") : t("access.unselected")} · {locked ? t("access.locked") : t("access.editable")}
                 </span>
                 <button
                   type="button"
@@ -176,15 +182,15 @@ export function PlanAccessibility({
             return (
               <li key={node.id} data-route-node-id={node.id}>
                 <span>
-                  路线节点 · {node.name} · {node.kind} · {selected ? "已选择" : "未选择"}
+                  {t("access.routeNode")} · {node.name} · {t(ROUTE_NODE_KIND_MESSAGE_IDS[node.kind])} · {selected ? t("access.selected") : t("access.unselected")}
                 </span>
                 <button
                   type="button"
-                  aria-label={`选择路线节点：${node.name}`}
+                  aria-label={t("access.selectRouteNode", { name: node.name })}
                   aria-pressed={selected}
                   onClick={() => sessionStore.getState().setSelection([node.id])}
                 >
-                  选择
+                  {t("access.select")}
                 </button>
               </li>
             );
@@ -201,25 +207,25 @@ export function PlanAccessibility({
                 data-reference-id={reference.id}
               >
                 <span>
-                  平面参考 · {reference.name} · {reference.id} · {selected ? "已选择" : "未选择"} · {calibrated ? "已校准" : "未缩放"} · {calibrated ? `${metric(reference.transform.scale.x)} mm/px · ` : ""}{locked ? "已锁定" : "未锁定"} · {metric(reference.opacity * 100)}%
+                  {t("access.reference")} · {reference.name} · {reference.id} · {selected ? t("access.selected") : t("access.unselected")} · {calibrated ? t("access.calibrated") : t("access.unscaled")} · {calibrated ? `${metric(reference.transform.scale.x)} mm/px · ` : ""}{locked ? t("access.locked") : t("access.unlocked")} · {metric(reference.opacity * 100)}%
                 </span>
                 <button
                   type="button"
-                  aria-label={`选择平面参考：${reference.name}`}
+                  aria-label={t("access.selectReference", { name: reference.name })}
                   aria-pressed={selected}
                   onClick={() => sessionStore.getState().setSelection([reference.id])}
                 >
-                  选择
+                  {t("access.select")}
                 </button>
                 <button
                   type="button"
-                  aria-label={`校准平面参考：${reference.name}`}
+                  aria-label={t("access.calibrateReference", { name: reference.name })}
                   disabled={locked || onStartCalibration === undefined}
                   onClick={(event) => {
                     onStartCalibration?.(reference.id, event.currentTarget);
                   }}
                 >
-                  校准
+                  {t("toolbar.calibrate")}
                 </button>
               </li>
             );
@@ -233,26 +239,26 @@ export function PlanAccessibility({
                 data-opening-id={opening.id}
               >
                 <span>
-                  {opening.kind} · {opening.name} · {wall.name} · {wall.id} · 沿墙距离 {metric(opening.distanceAlongWall)} mm · {metric(opening.width)} × {metric(opening.height)} mm · 窗台高度 {metric(opening.sillHeight)} mm · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
+                  {t(OPENING_KIND_MESSAGE_IDS[opening.kind])} · {opening.name} · {wall.name} · {wall.id} · {t("access.distanceAlongWall")} {metric(opening.distanceAlongWall)} mm · {metric(opening.width)} × {metric(opening.height)} mm · {t("access.sillHeight")} {metric(opening.sillHeight)} mm · {selected ? t("access.selected") : t("access.unselected")} · {locked ? t("access.locked") : t("access.editable")}
                 </span>
                 <button
                   type="button"
-                  aria-label={`选择门窗：${opening.name}`}
+                  aria-label={t("access.selectOpening", { name: opening.name })}
                   aria-pressed={selected}
                   onClick={() => sessionStore.getState().setSelection([opening.id])}
                 >
-                  选择
+                  {t("access.select")}
                 </button>
                 <button
                   type="button"
-                  aria-label={`删除门窗：${opening.name}`}
+                  aria-label={t("access.deleteOpening", { name: opening.name })}
                   disabled={locked}
                   onClick={() => {
                     sessionStore.getState().setSelection([opening.id]);
                     void controller.keyDown("Delete");
                   }}
                 >
-                  删除
+                  {t("access.delete")}
                 </button>
               </li>
             );

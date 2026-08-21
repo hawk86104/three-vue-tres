@@ -10,6 +10,7 @@ import { Button, Field } from "@aethertwin/design-system";
 import type { FloorChange } from "@aethertwin/plan-engine";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/locale-provider";
+import { ENTITY_TYPE_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 
 interface LayerTreeItemProps {
   readonly floor: Floor;
@@ -21,7 +22,7 @@ interface LayerTreeItemProps {
   readonly selectedIds: ReadonlySet<string>;
   readonly onSelect: () => void;
   readonly onEntitySelect: (entityId: string, additive: boolean) => void;
-  readonly onReferenceSelect: (referenceId: string) => void;
+  readonly onReferenceSelect?: (referenceId: string) => void;
   readonly onApplyFloorPatch: (change: FloorChange) => Promise<void>;
 }
 
@@ -171,7 +172,7 @@ function LayerTreeItem({
             <li
               key={reference.id}
               role="treeitem"
-              aria-label={reference.name}
+              aria-label={t("floor.selectReference", { name: reference.name })}
               aria-selected={selectedIds.has(reference.id)}
               className={
                 selectedIds.has(reference.id)
@@ -181,21 +182,21 @@ function LayerTreeItem({
               data-reference-id={reference.id}
               onClick={(event) => {
                 event.stopPropagation();
-                onReferenceSelect(reference.id);
+                onReferenceSelect?.(reference.id);
               }}
             >
               <button
                 type="button"
                 className="studio-floor-tree__selection studio-floor-tree__entity-selection"
-                aria-label={`${"\u9009\u62e9\u5e73\u9762\u53c2\u8003\uff1a"}${reference.name}`}
+                aria-label={t("floor.selectReference", { name: reference.name })}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onReferenceSelect(reference.id);
+                  onReferenceSelect?.(reference.id);
                 }}
               >
                 <span>{reference.name}</span>
-                <small>{"\u5e73\u9762\u53c2\u8003"}</small>
-                {reference.locked ? <small>{"\u5df2\u9501\u5b9a"}</small> : null}
+                <small>{t("floor.reference")}</small>
+                {reference.locked ? <small>{t("floor.locked")}</small> : null}
               </button>
             </li>
           ))}
@@ -203,7 +204,7 @@ function LayerTreeItem({
             <li
               key={entity.id}
               role="treeitem"
-              aria-label={entity.name}
+              aria-label={t("floor.selectEntity", { name: entity.name })}
               aria-selected={selectedIds.has(entity.id)}
               className={
                 selectedIds.has(entity.id)
@@ -219,15 +220,15 @@ function LayerTreeItem({
               <button
                 type="button"
                 className="studio-floor-tree__selection studio-floor-tree__entity-selection"
-                aria-label={`选择对象：${entity.name}`}
+                aria-label={t("floor.selectEntity", { name: entity.name })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onEntitySelect(entity.id, event.shiftKey);
                 }}
               >
                 <span>{entity.name}</span>
-                <small>{entity.type}</small>
-                {entity.locked ? <small>已锁定</small> : null}
+                <small>{t(ENTITY_TYPE_MESSAGE_IDS[entity.type])}</small>
+                {entity.locked ? <small>{t("floor.locked")}</small> : null}
               </button>
             </li>
           ))}
@@ -258,18 +259,18 @@ export function FloorTree({
   onFloorSelect,
   onLayerSelect,
   onEntitySelect,
-  onReferenceSelect = () => undefined,
-  onRouteNodeSelect = () => undefined,
+  onReferenceSelect,
+  onRouteNodeSelect,
   onApplyFloorPatch,
 }: FloorTreeProps) {
   const { t } = useI18n();
   const activeEntities = snapshot.project.entities.filter(
     (entity) => entity.floorId === activeFloorId,
   );
-  const activeReferences = snapshot.project.planReferences.filter(
+  const activeReferences = (onReferenceSelect === undefined ? [] : snapshot.project.planReferences).filter(
     (reference) => reference.floorId === activeFloorId,
   );
-  const activeRouteNodes = snapshot.project.routeNetworks.flatMap((network) => (
+  const activeRouteNodes = (onRouteNodeSelect === undefined ? [] : snapshot.project.routeNetworks).flatMap((network) => (
     network.nodes.filter((node) => node.floorId === activeFloorId)
   ));
 
@@ -329,7 +330,9 @@ export function FloorTree({
                     selectedIds={selectedIds}
                     onSelect={() => onLayerSelect(floor.id, layer.id)}
                     onEntitySelect={onEntitySelect}
-                    onReferenceSelect={onReferenceSelect}
+                    {...(onReferenceSelect === undefined
+                      ? {}
+                      : { onReferenceSelect })}
                     onApplyFloorPatch={onApplyFloorPatch}
                   />
                 ))}
@@ -337,7 +340,7 @@ export function FloorTree({
                   <li
                     key={node.id}
                     role="treeitem"
-                    aria-label={node.name}
+                    aria-label={t("floor.selectRouteNode", { name: node.name })}
                     aria-selected={selectedIds.has(node.id)}
                     className={
                       selectedIds.has(node.id)
@@ -347,20 +350,20 @@ export function FloorTree({
                     data-route-node-id={node.id}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onRouteNodeSelect(node.id);
+                      onRouteNodeSelect?.(node.id);
                     }}
                   >
                     <button
                       type="button"
                       className="studio-floor-tree__selection studio-floor-tree__entity-selection"
-                      aria-label={`选择路线节点：${node.name}`}
+                      aria-label={t("floor.selectRouteNode", { name: node.name })}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onRouteNodeSelect(node.id);
+                        onRouteNodeSelect?.(node.id);
                       }}
                     >
                       <span>{node.name}</span>
-                      <small>{node.kind}</small>
+                      <small>{t(ROUTE_NODE_KIND_MESSAGE_IDS[node.kind])}</small>
                     </button>
                   </li>
                 ))}
