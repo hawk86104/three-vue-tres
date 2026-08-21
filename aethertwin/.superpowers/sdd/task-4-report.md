@@ -58,3 +58,8 @@ The newly added English inspector test failed before implementation because the 
 - Exact Task 4 combined Vitest: 2 files, 138 tests passed, exit 0 (33.02s).
 - Studio `tsc --noEmit`: exit 0.
 - `git diff --check`: exit 0.
+
+## Final test correction
+
+- Reference image and Opening integrations now edit in zh-CN, switch in place to en, preserve unsaved edited state, and submit once through English controls. Their asserted callbacks retain source IDs, `door`, and normalized raw numeric values.
+- Exact combined Vitest: 2 files, 138 tests passed, exit 0 (42.82s); Studio typecheck and diff check exited 0.
