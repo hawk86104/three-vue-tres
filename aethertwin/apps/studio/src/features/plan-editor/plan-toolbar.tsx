@@ -7,19 +7,23 @@ import {
 import type { SceneRendererStatus } from "@aethertwin/render-scene-3d";
 import type { PlanTool, SceneViewMode } from "./editor-session";
 import { useEffect, useId, useRef } from "react";
+import { SHOWROOM_TOOL_ACTION_MESSAGE_IDS, SHOWROOM_TOOL_GROUP_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import type { StudioMessageId } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
 
 interface ToolDefinition {
   readonly tool: PlanTool;
-  readonly label: string;
+  readonly label: StudioMessageId;
 }
 
 interface ToolActionDefinition {
   readonly id: ShowroomToolActionId;
-  readonly label: string;
+  readonly label: StudioMessageId;
 }
 
 interface ToolGroup {
-  readonly label: string;
+  readonly id: string;
+  readonly label: StudioMessageId;
   readonly tools: readonly ToolDefinition[];
   readonly actions?: readonly ToolActionDefinition[];
 }
@@ -31,20 +35,13 @@ export interface ExportActionState {
 }
 
 const toolById: Readonly<Record<PlanTool, ToolDefinition>> = {
-  select: { tool: "select", label: "选择" },
-  pan: { tool: "pan", label: "平移" },
-  boundary: { tool: "boundary", label: "边界" },
-  wall: { tool: "wall", label: "墙体" },
-  door: { tool: "door", label: "门" },
-  window: { tool: "window", label: "窗" },
-  zone: { tool: "zone", label: "区域" },
-  "space-unit": { tool: "space-unit", label: "空间单元" },
-  fixture: { tool: "fixture", label: "展具" },
-  poi: { tool: "poi", label: "兴趣点" },
-  dimension: { tool: "dimension", label: "尺寸" },
-  "product-hotspot": { tool: "product-hotspot", label: "\u4ea7\u54c1\u70ed\u70b9" },
-  "route-node": { tool: "route-node", label: "\u8def\u7ebf\u8282\u70b9" },
-  "route-edge": { tool: "route-edge", label: "\u8def\u7ebf\u8fb9" },
+  select: { tool: "select", label: "action.select" }, pan: { tool: "pan", label: "action.pan" },
+  boundary: { tool: "boundary", label: "action.boundary" }, wall: { tool: "wall", label: "action.wall" },
+  door: { tool: "door", label: "action.door" }, window: { tool: "window", label: "action.window" },
+  zone: { tool: "zone", label: "action.zone" }, "space-unit": { tool: "space-unit", label: "toolbar.market.units" },
+  fixture: { tool: "fixture", label: "action.fixtureCatalogue" }, poi: { tool: "poi", label: "action.poi" },
+  dimension: { tool: "dimension", label: "action.dimension" }, "product-hotspot": { tool: "product-hotspot", label: "action.productHotspot" },
+  "route-node": { tool: "route-node", label: "action.routeNode" }, "route-edge": { tool: "route-edge", label: "action.routeEdge" },
 };
 
 const showroomOpeningTools: readonly ToolDefinition[] = Object.freeze(
@@ -60,7 +57,7 @@ const showroomFixtureTools: readonly ToolDefinition[] = Object.freeze(
     .find(({ id }) => id === "fixtures")
     ?.actions.flatMap(({ id }) => (
       id === "fixture-catalogue"
-        ? [{ ...toolById.fixture, label: "展具目录" }]
+        ? [{ ...toolById.fixture, label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS[id] }]
         : []
     )) ?? [],
 );
@@ -85,56 +82,57 @@ const showroomTourTools: readonly ToolDefinition[] = Object.freeze(
 );
 
 const showroomContentActions: readonly ToolActionDefinition[] = Object.freeze([
-  { id: "attach-product-media", label: "\u6dfb\u52a0\u5a92\u4f53" },
+  { id: "attach-product-media", label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS["attach-product-media"] },
 ]);
 const showroomTourActions: readonly ToolActionDefinition[] = Object.freeze([
-  { id: "edit-route-stops", label: "\u7f16\u8f91\u505c\u9760\u70b9" },
-  { id: "preview-guided-route", label: "\u9884\u89c8\u8def\u7ebf" },
+  { id: "edit-route-stops", label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS["edit-route-stops"] },
+  { id: "preview-guided-route", label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS["preview-guided-route"] },
 ]);
 const showroomPreviewActions: readonly ToolActionDefinition[] =
-  SHOWROOM_TOOL_GROUPS.find(({ id }) => id === "preview")?.actions
-  ?? Object.freeze([]);
+  SHOWROOM_TOOL_GROUPS.find(({ id }) => id === "preview")?.actions.map(({ id }) => ({
+    id,
+    label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS[id],
+  })) ?? Object.freeze([]);
 const profileGroups: Readonly<Record<ProjectProfile, readonly ToolGroup[]>> = {
   market: [
-    { label: "选择", tools: [toolById.select, toolById.pan] },
+    { id: "select", label: "toolbar.market.select", tools: [toolById.select, toolById.pan] },
     {
-      label: "场地",
+      id: "site", label: "toolbar.market.site",
       tools: [toolById.boundary, toolById.wall, toolById.zone],
     },
     {
-      label: "空间单元",
-      tools: [{ ...toolById["space-unit"], label: "摊位" }, toolById.fixture],
+      id: "units", label: "toolbar.market.units", tools: [toolById["space-unit"], toolById.fixture],
     },
-    { label: "标记", tools: [toolById.poi, toolById.dimension] },
+    { id: "markers", label: "toolbar.market.markers", tools: [toolById.poi, toolById.dimension] },
   ],
   showroom: [
-    { label: "选择", tools: [toolById.select, toolById.pan] },
+    { id: "select", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.select, tools: [toolById.select, toolById.pan] },
     {
-      label: "建筑",
+      id: "building", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.building,
       tools: [
         toolById.boundary,
         toolById.wall,
         ...showroomOpeningTools,
         toolById.zone,
-        { ...toolById["space-unit"], label: "房间" },
+        { ...toolById["space-unit"], label: SHOWROOM_TOOL_ACTION_MESSAGE_IDS.room },
       ],
     },
     {
-      label: "展具",
+      id: "fixtures", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.fixtures,
       tools: showroomFixtureTools,
     },
     {
-      label: "内容",
+      id: "content", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.content,
       tools: showroomContentTools,
       actions: showroomContentActions,
     },
     {
-      label: "导览",
+      id: "tour", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.tour,
       tools: showroomTourTools,
       actions: showroomTourActions,
     },
     {
-      label: "预览",
+      id: "preview", label: SHOWROOM_TOOL_GROUP_MESSAGE_IDS.preview,
       tools: [],
       actions: showroomPreviewActions,
     },
@@ -186,6 +184,7 @@ export function PlanToolbar({
   onEditRouteStops,
   onPreviewGuidedRoute,
 }: PlanToolbarProps) {
+  const { t } = useI18n();
   const rendererUnavailable =
     rendererStatus === "failed" || rendererStatus === "disabled";
   const showRendererIssue = profile === "showroom" && rendererUnavailable;
@@ -210,20 +209,20 @@ export function PlanToolbar({
     });
   }, [showRendererIssue]);
 
-  const rendererIssueText = rendererStatus === "disabled"
-    ? "3D 预览已停用"
-    : "3D 预览不可用";
+  const rendererIssueText = t(rendererStatus === "disabled"
+    ? "toolbar.rendererDisabled"
+    : "toolbar.rendererUnavailable");
   return (
     <div className="studio-plan-toolbar" data-profile={profile}>
       {profileGroups[profile].map((group) => (
         <div
-          key={group.label}
+          key={group.id}
           className="studio-plan-toolbar__group"
           role="group"
-          aria-label={group.label}
+          aria-label={t(group.label)}
         >
           <span className="studio-plan-toolbar__group-label" aria-hidden="true">
-            {group.label}
+            {t(group.label)}
           </span>
           <div className="studio-plan-toolbar__tools">
             {group.tools.map(({ tool, label }) => {
@@ -242,7 +241,7 @@ export function PlanToolbar({
                   data-tool={tool}
                   onClick={(event) => onToolChange(tool, event.currentTarget)}
                 >
-                  {label}
+                  {t(label)}
                 </Button>
               );
             })}
@@ -318,7 +317,7 @@ export function PlanToolbar({
                     ? undefined
                     : (event) => onClick(event.currentTarget)}
                 >
-                  {label}
+                  {t(label)}
                 </Button>
               );
             })}
@@ -330,7 +329,7 @@ export function PlanToolbar({
                 className="studio-plan-toolbar__action"
                 onClick={(event) => onRecognizeRooms(event.currentTarget)}
               >
-                识别房间
+                {t("action.recognizeRooms")}
               </Button>
             ) : null}
             {onImportFloorPlan !== undefined
@@ -341,7 +340,7 @@ export function PlanToolbar({
                 disabled={importFloorPlanDisabled}
                 onClick={(event) => onImportFloorPlan(event.currentTarget)}
               >
-                导入平面图
+                {t("toolbar.importFloorPlan")}
               </Button>
             ) : null}
             {onCalibrate !== undefined
@@ -351,7 +350,7 @@ export function PlanToolbar({
                 className="studio-plan-toolbar__action"
                 onClick={(event) => onCalibrate(event.currentTarget)}
               >
-                校准
+                {t("toolbar.calibrate")}
               </Button>
             ) : null}
           </div>
@@ -367,17 +366,17 @@ export function PlanToolbar({
           id={rendererStatusId}
           className="studio-plan-toolbar__renderer-status"
           role="status"
-          aria-label="3D 预览状态"
+          aria-label={t("toolbar.rendererStatus")}
           aria-live="polite"
         >
           <strong>{rendererIssueText}</strong>
-          <span>：{rendererError ?? "当前环境无法启动 WebGL。"}</span>
+          <span>：{rendererError ?? t("toolbar.rendererFallback")}</span>
           <Button
             variant="secondary"
             className="studio-plan-toolbar__renderer-retry"
             onClick={(event) => onRendererRetry(event.currentTarget)}
           >
-            重试 3D
+            {t("toolbar.retry3d")}
           </Button>
         </div>
       )}

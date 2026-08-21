@@ -19,7 +19,12 @@ function createProps(
 ): EditorShellProps {
   return {
     projectName: "Demo",
-    profile: "market",
+    profileLabel: "market",
+    messages: {
+      back: "返回", save: "保存", close: "关闭", undo: "撤销", redo: "重做",
+      saveStates: { dirty: "未保存", saving: "保存中", saved: "已保存", error: "保存失败", recovered: "已恢复" },
+      leftPanelLabel: "项目树", canvasLabel: "二维平面编辑器", rightPanelLabel: "检查器",
+    },
     saveState: "saved",
     canUndo: false,
     canRedo: false,
@@ -37,10 +42,39 @@ function createProps(
 }
 
 describe("EditorShell", () => {
+  it("renders caller-owned bilingual messages and header accessory verbatim", () => {
+    render(
+      <EditorShell
+        {...createProps({
+          profileLabel: "Showroom",
+          messages: {
+            back: "Back",
+            undo: "Undo",
+            redo: "Redo",
+            saveStates: { dirty: "Unsaved", saving: "Saving", saved: "Saved", error: "Save failed", recovered: "Recovered" },
+            leftPanelLabel: "Project tree",
+            canvasLabel: "2D plan editor",
+            rightPanelLabel: "Inspector",
+            close: "Close",
+          },
+          headerAccessory: <label>Interface language<select><option>English</option></select></label>,
+        } as EditorShellProps)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Saved");
+    expect(screen.getByRole("navigation", { name: "Project tree" })).toBeVisible();
+    expect(screen.getByRole("main", { name: "2D plan editor" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "Inspector" })).toBeVisible();
+    expect(screen.getByLabelText("Interface language")).toBeVisible();
+  });
+
   it.each(["showroom", "market"] as const)(
     "shows the %s profile, project identity, and only M0 actions",
     (profile) => {
-      render(<EditorShell {...createProps({ profile })} />);
+      render(<EditorShell {...createProps({ profileLabel: profile })} />);
 
       const banner = screen.getByRole("banner");
       const topbar = banner.querySelector<HTMLElement>(".aether-editor-shell__topbar");
@@ -72,7 +106,7 @@ describe("EditorShell", () => {
   it("renders the required plan toolbar in a named second header row", () => {
     render(<EditorShell {...createProps()} />);
 
-    const toolbar = screen.getByRole("toolbar", { name: "平面工具" });
+    const toolbar = screen.getByRole("toolbar", { name: "二维平面编辑器" });
     expect(within(toolbar).getByRole("button", { name: "选择" })).toBeVisible();
     expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
     expect(screen.getAllByRole("banner")).toHaveLength(1);

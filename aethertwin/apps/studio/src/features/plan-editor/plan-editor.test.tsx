@@ -161,6 +161,26 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+describe("PlanEditor language control", () => {
+  it("switches editor presentation without recreating the current project or session", async () => {
+    const { store } = await sandboxProject("North Gallery");
+    const floorId = store.getState().snapshot!.project.floors[0]!.id;
+    const sessionStore = createPlanEditorStore({ activeFloorId: floorId });
+    render(
+      <LocaleProvider preference={createMemoryLocalePreference("en")}>
+        <PlanEditor store={store} dependencies={{ sessionStore }} />
+      </LocaleProvider>,
+    );
+    const language = screen.getByRole("combobox", { name: "Interface language" });
+    const user = userEvent.setup();
+    expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
+    await user.selectOptions(language, "zh-CN");
+    expect(screen.getByRole("button", { name: "返回" })).toBeVisible();
+    expect(store.getState().snapshot!.project.name).toBe("North Gallery");
+    expect(sessionStore.getState().activeFloorId).toBe(floorId);
+  });
+});
+
 describe("PlanEditor M0 behavior contract", () => {
   it("renders the real project tree and bounded project metadata controls", async () => {
     const { store } = await sandboxProject("北岸展厅");
@@ -477,7 +497,7 @@ describe("PlanEditor M0 behavior contract", () => {
     fireEvent.blur(nameField);
     expect(await screen.findByText("项目名称不能使用 Windows 保留设备名")).toBeVisible();
 
-    const switcher = screen.getByLabelText("界面语言");
+    const switcher = screen.getAllByLabelText("界面语言").at(-1)!;
     await user.selectOptions(switcher, "en");
     expect(await screen.findByText("The Project name cannot use a Windows reserved device name.")).toBeVisible();
   });
@@ -693,8 +713,8 @@ const marketToolLabels = [
   "\u8fb9\u754c",
   "\u5899\u4f53",
   "\u533a\u57df",
-  "\u644a\u4f4d",
-  "\u5c55\u5177",
+  "\u7a7a\u95f4\u5355\u5143",
+  "\u9648\u8bbe\u76ee\u5f55",
   "\u5174\u8da3\u70b9",
   "\u5c3a\u5bf8",
 ] as const;
@@ -709,21 +729,21 @@ const showroomToolLabels = [
   "\u533a\u57df",
   "\u623f\u95f4",
   "\u8bc6\u522b\u623f\u95f4",
-  "\u5c55\u5177\u76ee\u5f55",
+  "\u9648\u8bbe\u76ee\u5f55",
   "\u5174\u8da3\u70b9",
   "\u5c3a\u5bf8",
-  "\u4ea7\u54c1\u70ed\u70b9",
+  "\u4e92\u52a8\u70ed\u70b9",
   "\u6dfb\u52a0\u5a92\u4f53",
   "\u8def\u7ebf\u8282\u70b9",
   "\u8def\u7ebf\u8fb9",
   "\u7f16\u8f91\u505c\u9760\u70b9",
-  "\u9884\u89c8\u8def\u7ebf",
+  "\u9884\u89c8\u5bfc\u89c8\u8def\u7ebf",
   "2D",
   "3D",
-  "Split",
-  "Frame Selection",
-  "Frame Route",
-  "Export",
+  "\u5206\u5c4f",
+  "\u5b9a\u4f4d\u9009\u62e9",
+  "\u5b9a\u4f4d\u8def\u7ebf",
+  "\u5bfc\u51fa PNG",
 ] as const;
 
 function rowByData(attribute: string, id: string): HTMLElement {
@@ -750,7 +770,7 @@ describe("PlanEditor Task 10 shell", () => {
     ["market", ["选择", "场地", "空间单元", "标记"], marketToolLabels],
     [
       "showroom",
-      ["选择", "建筑", "展具", "内容", "导览", "预览"],
+      ["选择", "建筑", "陈设", "内容", "导览", "预览"],
       showroomToolLabels,
     ],
   ] as const)(
@@ -758,7 +778,7 @@ describe("PlanEditor Task 10 shell", () => {
     (profile, groupLabels, expectedToolLabels) => {
       renderPlanEditorFixture({ profile });
 
-      const toolbar = screen.getByRole("toolbar", { name: "平面工具" });
+      const toolbar = screen.getByRole("toolbar", { name: "二维平面编辑器" });
       expect(
         within(toolbar)
           .getAllByRole("group")
@@ -802,7 +822,7 @@ describe("PlanEditor Task 10 shell", () => {
     const user = userEvent.setup();
     const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
 
-    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
+    await user.click(screen.getByRole("button", { name: "\u9648\u8bbe\u76ee\u5f55" }));
     const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
 
@@ -821,7 +841,7 @@ describe("PlanEditor Task 10 shell", () => {
     cleanup();
     renderPlanEditorFixture({ profile: "market" });
     expect(screen.queryByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "\u5c55\u5177" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "\u9648\u8bbe\u76ee\u5f55" })).toBeVisible();
   });
 
   it("exposes the M2.4 showroom content, tour, and preview entry points", async () => {
@@ -829,7 +849,7 @@ describe("PlanEditor Task 10 shell", () => {
     const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
 
     for (const [label, tool] of [
-      ["\u4ea7\u54c1\u70ed\u70b9", "product-hotspot"],
+      ["\u4e92\u52a8\u70ed\u70b9", "product-hotspot"],
       ["\u8def\u7ebf\u8282\u70b9", "route-node"],
       ["\u8def\u7ebf\u8fb9", "route-edge"],
     ] as const) {
@@ -843,7 +863,7 @@ describe("PlanEditor Task 10 shell", () => {
     for (const label of [
       "\u6dfb\u52a0\u5a92\u4f53",
       "\u7f16\u8f91\u505c\u9760\u70b9",
-      "\u9884\u89c8\u8def\u7ebf",
+      "\u9884\u89c8\u5bfc\u89c8\u8def\u7ebf",
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeDisabled();
     }
@@ -866,7 +886,7 @@ describe("PlanEditor Task 10 shell", () => {
       <PlanEditor store={store} exportBackend={null} dependencies={{ sessionStore, workspace }} />,
     );
 
-    expect(screen.getByRole("button", { name: "Export" }))
+    expect(screen.getByRole("button", { name: "导出 PNG" }))
       .toHaveAccessibleDescription("PNG export requires the desktop app.");
 
     rendered.rerender(
@@ -876,16 +896,16 @@ describe("PlanEditor Task 10 shell", () => {
         dependencies={{ sessionStore, workspace }}
       />,
     );
-    expect(screen.getByRole("button", { name: "Export" }))
+    expect(screen.getByRole("button", { name: "导出 PNG" }))
       .toHaveAccessibleDescription("Switch to 3D or Split to export.");
 
     const scope = sessionStore.getState().beginSceneRenderer();
     act(() => sessionStore.getState().setViewMode("3d"));
-    expect(screen.getByRole("button", { name: "Export" }))
+    expect(screen.getByRole("button", { name: "导出 PNG" }))
       .toHaveAccessibleDescription("3D preview is not ready.");
 
     act(() => sessionStore.getState().setSceneRendererStatus(scope, "ready", null));
-    expect(screen.getByRole("button", { name: "Export" }))
+    expect(screen.getByRole("button", { name: "导出 PNG" }))
       .toHaveAccessibleDescription("3D export capture is not current.");
   });
 
@@ -918,7 +938,7 @@ describe("PlanEditor Task 10 shell", () => {
       },
     } as unknown as SceneExportCapture;
 
-    const exportButton = screen.getByRole("button", { name: "Export" });
+    const exportButton = screen.getByRole("button", { name: "导出 PNG" });
     expect(exportButton).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "3D" }));
     await waitFor(() => expect(renderer.initCount).toBe(1));
@@ -991,14 +1011,14 @@ describe("PlanEditor Task 10 shell", () => {
     await user.click(screen.getByRole("button", { name: "3D" }));
     await waitFor(() => expect(renderer.initCount).toBe(1));
     act(() => renderer.emitStatus("ready"));
-    const exportButton = screen.getByRole("button", { name: "Export" });
+    const exportButton = screen.getByRole("button", { name: "导出 PNG" });
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(render).toHaveBeenCalledOnce());
     expect(screen.getByRole("button", { name: "2D" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "3D" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Split" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "分屏" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Floor B/ })).toBeDisabled();
 
     await user.keyboard("{Escape}");
@@ -1060,9 +1080,9 @@ describe("PlanEditor Task 10 shell", () => {
     await waitFor(() => expect(renderer.initCount).toBe(1));
     act(() => renderer.emitStatus("ready"));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "导出 PNG" }));
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
@@ -1132,9 +1152,9 @@ describe("PlanEditor Task 10 shell", () => {
     await waitFor(() => expect(renderer.initCount).toBe(1));
     act(() => renderer.emitStatus("ready"));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "导出 PNG" }));
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
@@ -1205,9 +1225,9 @@ describe("PlanEditor Task 10 shell", () => {
     await waitFor(() => expect(renderer.initCount).toBe(1));
     act(() => renderer.emitStatus("ready"));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "导出 PNG" }));
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     await waitFor(() => expect(publishedOperations.at(-1)).not.toBeNull());
@@ -1274,9 +1294,9 @@ describe("PlanEditor Task 10 shell", () => {
     await waitFor(() => expect(renderer.initCount).toBe(1));
     act(() => renderer.emitStatus("ready"));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "导出 PNG" }));
     await user.click(screen.getByRole("button", { name: "Export PNG" }));
     await waitFor(() => expect(render).toHaveBeenCalledOnce());
 
@@ -1299,7 +1319,7 @@ describe("PlanEditor Task 10 shell", () => {
 
     const twoD = screen.getByRole("button", { name: "2D" });
     const threeD = screen.getByRole("button", { name: "3D" });
-    const split = screen.getByRole("button", { name: "Split" });
+    const split = screen.getByRole("button", { name: "分屏" });
     expect(twoD).toHaveAttribute("aria-pressed", "true");
 
     await user.click(threeD);
@@ -1309,11 +1329,11 @@ describe("PlanEditor Task 10 shell", () => {
     expect(sessionStore.getState().viewMode).toBe("split");
     expect(split).toHaveAttribute("aria-pressed", "true");
 
-    await user.click(screen.getByRole("button", { name: "Frame Selection" }));
+    await user.click(screen.getByRole("button", { name: "定位选择" }));
     await waitFor(() => expect(previewRenderer.frameInputs.at(-1))
       .toBe("selection"));
     expect(sessionStore.getState().sceneFrameRequest).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Frame Route" }));
+    await user.click(screen.getByRole("button", { name: "定位路线" }));
     await waitFor(() => expect(previewRenderer.frameInputs.at(-1))
       .toBe("route"));
     expect(sessionStore.getState().sceneFrameRequest).toBeNull();
@@ -1355,11 +1375,11 @@ describe("PlanEditor Task 10 shell", () => {
     expect(threeD).toBeDisabled();
     expect(split).toBeDisabled();
     await waitFor(() => expect(twoD).toHaveFocus());
-    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "导出 PNG" })).toBeDisabled();
 
     cleanup();
     renderPlanEditorFixture({ profile: "market" });
-    for (const label of ["2D", "3D", "Split", "Frame Selection", "Frame Route", "Export"]) {
+    for (const label of ["2D", "3D", "分屏", "定位选择", "定位路线", "导出 PNG"]) {
       expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     }
   });
@@ -1446,7 +1466,7 @@ describe("PlanEditor Task 10 shell", () => {
     expect(rowByData("data-entity-id", fixture.id))
       .toHaveAttribute("aria-selected", "true");
 
-    await user.click(screen.getByRole("button", { name: "Split" }));
+    await user.click(screen.getByRole("button", { name: "分屏" }));
     expect(screen.getByRole("region", { name: "二维平面画布" }))
       .toBeInTheDocument();
     expect(screen.getByRole("region", { name: "三维场景" }))
@@ -1544,7 +1564,7 @@ describe("PlanEditor Task 10 shell", () => {
   it("clears the showroom fixture choice on floor switch and unmount", async () => {
     const user = userEvent.setup();
     const { floorB, sessionStore, unmount } = renderPlanEditorFixture({ profile: "showroom" });
-    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
+    await user.click(screen.getByRole("button", { name: "\u9648\u8bbe\u76ee\u5f55" }));
     await user.click(screen.getByRole("button", { name: /\u6807\u724c/ }));
     expect(sessionStore.getState().selectedFixtureKind).toBe("signage");
 
@@ -2068,7 +2088,7 @@ describe("PlanEditor Task 11 asset entry points", () => {
       "true",
     );
     expect(within(navigation).getByRole("region", { name: "\u8d44\u4ea7\u5e93" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97|\u5bfc\u51fa/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\u6821\u51c6|\u95e8\u7a97/ })).not.toBeInTheDocument();
   });
 
   it("keeps Task 11 controls absent when the import picker capability is unavailable", () => {
@@ -2738,7 +2758,7 @@ describe("PlanEditor Task 12 room recognition", () => {
 
     cleanup();
     renderPlanEditorFixture({ profile: "market" });
-    expect(screen.getByRole("button", { name: "\u644a\u4f4d" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "\u7a7a\u95f4\u5355\u5143" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "\u623f\u95f4" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "\u8bc6\u522b\u623f\u95f4" })).not.toBeInTheDocument();
   });
@@ -3303,7 +3323,7 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
     expect(genericRow).toHaveTextContent("深度 450 mm");
     expect(genericRow).toHaveTextContent("垂直高度 未设置");
 
-    await user.click(screen.getByRole("button", { name: "展具目录" }));
+    await user.click(screen.getByRole("button", { name: "陈设目录" }));
     const catalogue = screen.getByRole("region", { name: "展具目录" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
     expect(within(catalogue).queryByText(/generic|通用/i)).not.toBeInTheDocument();
@@ -3321,16 +3341,16 @@ describe('PlanEditor Task 10 product-hotspot integration', function () {
       dependencies={{ sessionStore, assetPicker: null }}
     />);
 
-    await user.click(screen.getByRole('button', { name: '产品热点' }));
+    await user.click(screen.getByRole('button', { name: '互动热点' }));
     expect(sessionStore.getState().activeTool).toBe('product-hotspot');
-    const x = screen.getByLabelText('产品热点 X 坐标 (mm)');
-    const y = screen.getByLabelText('产品热点 Y 坐标 (mm)');
+    const x = screen.getByLabelText('互动热点 X 坐标 (mm)');
+    const y = screen.getByLabelText('互动热点 Y 坐标 (mm)');
     await user.clear(x);
     await user.type(x, '1250');
     await user.clear(y);
     await user.type(y, '-750');
     await user.click(screen.getByRole('button', {
-      name: '在坐标创建产品热点',
+      name: '在坐标创建互动热点',
     }));
 
     await waitFor(function () {
@@ -3585,7 +3605,7 @@ describe("PlanEditor M2.3 Task 13 guided-route integration", () => {
     expect(within(canvas).getByRole("button", { name: "选择路线节点：Connected gallery" }))
       .toHaveAttribute("aria-pressed", "true");
 
-    const preview = screen.getByRole("button", { name: "预览路线" });
+    const preview = screen.getByRole("button", { name: "预览导览路线" });
     expect(preview).toBeEnabled();
     await user.click(preview);
     await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
@@ -3738,7 +3758,7 @@ describe("PlanEditor M2.3 Task 13 global curated-route regressions", () => {
       changes: routes.map((route) => ({ id: route.id, before: null, after: route })),
     }]);
     render(<PlanEditor store={store} />);
-    await userEvent.click(screen.getByRole("button", { name: "预览路线" }));
+    await userEvent.click(screen.getByRole("button", { name: "预览导览路线" }));
     expect(screen.getByRole("alert")).toHaveTextContent("只能有一条导览路线");
     expect(store.getState().snapshot!.project.guidedRoutes).toEqual(routes);
   });

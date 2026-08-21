@@ -101,6 +101,9 @@ import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
 import { RouteInspector } from "./route-inspector";
 import { RoutePanel } from "./route-panel";
+import { PROFILE_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
+import { useI18n } from "../../i18n/locale-provider";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -443,6 +446,7 @@ export function PlanEditor({
   onExportOperationChange = () => undefined,
   dependencies,
 }: PlanEditorProps) {
+  const { t } = useI18n();
   const state = useProjectState(store);
   const [actionError, setActionError] = useState<Error | null>(null);
   const [roomPanelOpen, setRoomPanelOpen] = useState(false);
@@ -1804,7 +1808,23 @@ export function PlanEditor({
   return (
     <EditorShell
       projectName={snapshot.project.name}
-      profile={snapshot.project.profile}
+      profileLabel={t(PROFILE_MESSAGE_IDS[snapshot.project.profile])}
+      messages={{
+        back: t("editor.back"),
+        save: t("editor.save"),
+        close: t("editor.close"),
+        undo: t("editor.undo"),
+        redo: t("editor.redo"),
+        saveStates: {
+          dirty: t("editor.save.dirty"), saving: t("editor.save.saving"),
+          saved: t("editor.save.saved"), error: t("editor.save.error"),
+          recovered: t("editor.save.recovered"),
+        },
+        leftPanelLabel: t("editor.leftPanel"),
+        canvasLabel: t("editor.canvas"),
+        rightPanelLabel: t("editor.rightPanel"),
+      }}
+      headerAccessory={<LanguageSwitcher />}
       saveState={state.saveState}
       canUndo={state.canUndo}
       canRedo={state.canRedo}

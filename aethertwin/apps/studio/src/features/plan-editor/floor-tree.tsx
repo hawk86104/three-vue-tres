@@ -9,6 +9,7 @@ import type {
 import { Button, Field } from "@aethertwin/design-system";
 import type { FloorChange } from "@aethertwin/plan-engine";
 import { useEffect, useState } from "react";
+import { useI18n } from "../../i18n/locale-provider";
 
 interface LayerTreeItemProps {
   readonly floor: Floor;
@@ -41,6 +42,7 @@ function LayerTreeItem({
   onReferenceSelect,
   onApplyFloorPatch,
 }: LayerTreeItemProps) {
+  const { t } = useI18n();
   const [name, setName] = useState(layer.name);
 
   useEffect(() => {
@@ -96,7 +98,7 @@ function LayerTreeItem({
         <button
           type="button"
           className="studio-floor-tree__selection studio-floor-tree__layer-selection"
-          aria-label={`选择图层：${layer.name}`}
+          aria-label={t("layer.select", { name: layer.name })}
           onClick={(event) => {
             event.stopPropagation();
             onSelect();
@@ -108,25 +110,25 @@ function LayerTreeItem({
           <input
             type="checkbox"
             checked={layer.visible}
-            aria-label={`图层可见：${layer.name}`}
+            aria-label={t("layer.visible", { name: layer.name })}
             onChange={(event) => void changeLayer({
               ...layer,
               visible: event.currentTarget.checked,
             })}
           />
-          显
+          {t("layer.show")}
         </label>
         <label className="studio-floor-tree__toggle" onClick={stopPropagation}>
           <input
             type="checkbox"
             checked={layer.locked}
-            aria-label={`图层锁定：${layer.name}`}
+            aria-label={t("layer.locked", { name: layer.name })}
             onChange={(event) => void changeLayer({
               ...layer,
               locked: event.currentTarget.checked,
             })}
           />
-          锁
+          {t("layer.lock")}
         </label>
       </div>
       <div
@@ -134,7 +136,7 @@ function LayerTreeItem({
         onClick={stopPropagation}
       >
         <Field
-          label={`图层名称：${layer.name}`}
+          label={t("layer.name", { name: layer.name })}
           value={name}
           onChange={(event) => setName(event.currentTarget.value)}
           onBlur={() => void commitName()}
@@ -144,7 +146,7 @@ function LayerTreeItem({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => void commitName()}
         >
-          {"应用图层名称：" + layer.name}
+          {t("layer.applyName", { name: layer.name })}
         </Button>
         <div className="studio-floor-tree__order-actions">
           <Button
@@ -152,14 +154,14 @@ function LayerTreeItem({
             disabled={index === 0}
             onClick={() => void move(-1)}
           >
-            {"上移图层：" + layer.name}
+            {t("layer.moveUp", { name: layer.name })}
           </Button>
           <Button
             variant="ghost"
             disabled={index === floor.layers.length - 1}
             onClick={() => void move(1)}
           >
-            {"下移图层：" + layer.name}
+            {t("layer.moveDown", { name: layer.name })}
           </Button>
         </div>
       </div>
@@ -260,6 +262,7 @@ export function FloorTree({
   onRouteNodeSelect = () => undefined,
   onApplyFloorPatch,
 }: FloorTreeProps) {
+  const { t } = useI18n();
   const activeEntities = snapshot.project.entities.filter(
     (entity) => entity.floorId === activeFloorId,
   );
@@ -273,10 +276,10 @@ export function FloorTree({
   return (
     <div className="studio-floor-tree">
       <div className="studio-floor-tree__heading">
-        <h2>楼层和空间</h2>
+        <h2>{t("floor.heading")}</h2>
         <p>{snapshot.project.name}</p>
       </div>
-      <ul role="tree" aria-label="楼层和空间" className="studio-floor-tree__root">
+      <ul role="tree" aria-label={t("floor.tree")} className="studio-floor-tree__root">
         {snapshot.project.floors.map((floor) => {
           const active = floor.id === activeFloorId;
           return (
@@ -300,14 +303,14 @@ export function FloorTree({
                 type="button"
                 disabled={floorSelectionDisabled}
                 className="studio-floor-tree__row studio-floor-tree__selection"
-                aria-label={`选择楼层：${floor.name}`}
+                aria-label={t("floor.select", { name: floor.name })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onFloorSelect(floor.id);
                 }}
               >
                 <span className="studio-floor-tree__row-label">{floor.name}</span>
-                {active ? <small>当前</small> : null}
+                {active ? <small>{t("floor.current")}</small> : null}
               </button>
               <ul role="group" className="studio-floor-tree__layers">
                 {floor.layers.map((layer, index) => (

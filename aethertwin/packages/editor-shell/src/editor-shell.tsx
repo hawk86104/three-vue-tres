@@ -1,42 +1,54 @@
 import { Badge, Button, StatusNotice } from "@aethertwin/design-system";
-import type { ProjectProfile, SaveState } from "@aethertwin/core-model";
+import type { SaveState } from "@aethertwin/core-model";
 import type React from "react";
 import "./editor-shell.css";
 
-export interface EditorShellProps {
-  projectName: string;
-  profile: ProjectProfile;
-  saveState: SaveState;
-  canUndo: boolean;
-  canRedo: boolean;
-  onBack(): void;
-  onSave(): void;
-  onUndo(): void;
-  onRedo(): void;
-  onClose(): void;
-  toolbar: React.ReactNode;
-  tree: React.ReactNode;
-  workspace: React.ReactNode;
-  inspector: React.ReactNode;
+export type EditorSaveState = SaveState;
+
+export interface EditorShellMessages {
+  readonly back: string;
+  readonly undo: string;
+  readonly redo: string;
+  readonly saveStates: Readonly<Record<EditorSaveState, string>>;
+  readonly leftPanelLabel: string;
+  readonly canvasLabel: string;
+  readonly rightPanelLabel: string;
+  readonly save?: string;
+  readonly close?: string;
 }
 
-const saveStatePresentation: Record<
-  SaveState,
-  {
-    label: string;
-    tone: "error" | "saved" | "recovered" | "info";
-  }
-> = {
-  dirty: { label: "未保存", tone: "info" },
-  saving: { label: "保存中", tone: "info" },
-  saved: { label: "已保存", tone: "saved" },
-  error: { label: "保存失败", tone: "error" },
-  recovered: { label: "已恢复", tone: "recovered" },
+export interface EditorShellProps {
+  readonly projectName: string;
+  readonly profileLabel: string;
+  readonly messages: EditorShellMessages;
+  readonly headerAccessory?: React.ReactNode;
+  readonly saveState: SaveState;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  readonly onBack: () => void;
+  readonly onSave: () => void;
+  readonly onUndo: () => void;
+  readonly onRedo: () => void;
+  readonly onClose: () => void;
+  readonly toolbar: React.ReactNode;
+  readonly tree: React.ReactNode;
+  readonly workspace: React.ReactNode;
+  readonly inspector: React.ReactNode;
+}
+
+const saveStateTone: Readonly<Record<EditorSaveState, "error" | "saved" | "recovered" | "info">> = {
+  dirty: "info",
+  saving: "info",
+  saved: "saved",
+  error: "error",
+  recovered: "recovered",
 };
 
 export function EditorShell({
   projectName,
-  profile,
+  profileLabel,
+  messages,
+  headerAccessory,
   saveState,
   canUndo,
   canRedo,
@@ -50,61 +62,43 @@ export function EditorShell({
   workspace,
   inspector,
 }: EditorShellProps) {
-  const status = saveStatePresentation[saveState];
   const isSaving = saveState === "saving";
 
   return (
     <div className="aether-editor-shell">
       <header className="aether-editor-shell__header">
         <div className="aether-editor-shell__topbar">
-          <Button variant="ghost" onClick={onBack}>
-            返回
-          </Button>
+          <Button variant="ghost" onClick={onBack}>{messages.back}</Button>
           <div className="aether-editor-shell__identity">
             <h1 className="aether-editor-shell__project-name">{projectName}</h1>
-            <Badge tone="accent">{profile}</Badge>
+            <Badge tone="accent">{profileLabel}</Badge>
           </div>
           <StatusNotice
             className="aether-editor-shell__save-status"
-            tone={status.tone}
+            tone={saveStateTone[saveState]}
             data-save-state={saveState}
           >
-            {status.label}
+            {messages.saveStates[saveState]}
           </StatusNotice>
           <div className="aether-editor-shell__actions">
             <Button busy={isSaving} variant="primary" onClick={onSave}>
-              保存
+              {messages.save ?? messages.saveStates.saved}
             </Button>
-            <Button disabled={!canUndo} variant="secondary" onClick={onUndo}>
-              撤销
-            </Button>
-            <Button disabled={!canRedo} variant="secondary" onClick={onRedo}>
-              重做
-            </Button>
-            <Button variant="ghost" onClick={onClose}>
-              关闭
-            </Button>
+            <Button disabled={!canUndo} variant="secondary" onClick={onUndo}>{messages.undo}</Button>
+            <Button disabled={!canRedo} variant="secondary" onClick={onRedo}>{messages.redo}</Button>
+            <Button variant="ghost" onClick={onClose}>{messages.close ?? messages.back}</Button>
+            {headerAccessory}
           </div>
         </div>
-        <div
-          className="aether-editor-shell__toolbar"
-          role="toolbar"
-          aria-label="平面工具"
-        >
+        <div className="aether-editor-shell__toolbar" role="toolbar" aria-label={messages.canvasLabel}>
           {toolbar}
         </div>
       </header>
 
       <div className="aether-editor-shell__body">
-        <nav className="aether-editor-shell__tree" aria-label="项目树">
-          {tree}
-        </nav>
-        <main className="aether-editor-shell__workspace" aria-label="二维平面编辑器">
-          {workspace}
-        </main>
-        <aside className="aether-editor-shell__inspector" aria-label="检查器">
-          {inspector}
-        </aside>
+        <nav className="aether-editor-shell__tree" aria-label={messages.leftPanelLabel}>{tree}</nav>
+        <main className="aether-editor-shell__workspace" aria-label={messages.canvasLabel}>{workspace}</main>
+        <aside className="aether-editor-shell__inspector" aria-label={messages.rightPanelLabel}>{inspector}</aside>
       </div>
     </div>
   );

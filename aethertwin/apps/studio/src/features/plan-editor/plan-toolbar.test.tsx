@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlanToolbar } from "./plan-toolbar";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
 
 type ToolbarProps = ComponentProps<typeof PlanToolbar> & {
   readonly exportAction: {
@@ -32,20 +33,32 @@ function toolbar(overrides: Partial<ToolbarProps> = {}) {
     onExport: vi.fn(),
     ...overrides,
   };
-  return <PlanToolbar {...props} />;
+  return <StudioI18nTestProvider locale="en"><PlanToolbar {...props} /></StudioI18nTestProvider>;
 }
 
 afterEach(cleanup);
+
+describe("PlanToolbar localization", () => {
+  it("uses stable action IDs while presenting the English catalogue", () => {
+    render(toolbar());
+
+    expect(screen.getByRole("group", { name: "Preview" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Export PNG" }))
+      .toHaveAttribute("data-action", "export");
+    expect(screen.getByRole("button", { name: "Product hotspot" }))
+      .toHaveAttribute("data-tool", "product-hotspot");
+  });
+});
 
 describe("PlanToolbar Showroom Export action", () => {
   it("renders Export last in the exact Preview order and never renders it for Market", () => {
     const { rerender } = render(toolbar());
     const preview = screen.getAllByRole("group").at(-1)!;
     expect(within(preview).getAllByRole("button").map(({ textContent }) => textContent))
-      .toEqual(["2D", "3D", "Split", "Frame Selection", "Frame Route", "Export"]);
+      .toEqual(["2D", "3D", "Split", "Frame selection", "Frame route", "Export PNG"]);
 
     rerender(toolbar({ profile: "market" }));
-    expect(screen.queryByRole("button", { name: "Export" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Export PNG" })).toBeNull();
   });
 
   it.each([
@@ -64,7 +77,7 @@ describe("PlanToolbar Showroom Export action", () => {
         rendererStatus,
         exportAction: { disabled: true, reason, active: reason.includes("already running") },
       }));
-      const button = screen.getByRole("button", { name: "Export" });
+      const button = screen.getByRole("button", { name: "Export PNG" });
       expect(button).toBeDisabled();
       expect(button).toHaveAccessibleDescription(reason);
       expect(screen.getAllByText(reason)).toHaveLength(1);
@@ -77,7 +90,7 @@ describe("PlanToolbar Showroom Export action", () => {
       const onExport = vi.fn();
       const user = userEvent.setup();
       render(toolbar({ viewMode, onExport }));
-      const button = screen.getByRole("button", { name: "Export" });
+      const button = screen.getByRole("button", { name: "Export PNG" });
 
       expect(button).toBeEnabled();
       button.focus();
@@ -102,7 +115,7 @@ describe("PlanToolbar Showroom Export action", () => {
       onExport,
     }));
 
-    await user.click(screen.getByRole("button", { name: "Export" }));
+    await user.click(screen.getByRole("button", { name: "Export PNG" }));
     expect(onExport).not.toHaveBeenCalled();
   });
 });

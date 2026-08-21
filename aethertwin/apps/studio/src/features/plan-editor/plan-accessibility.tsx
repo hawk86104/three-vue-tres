@@ -5,6 +5,7 @@ import type { PlanEditorState } from "./editor-session";
 import type { InteractionController } from "./interaction-controller";
 
 import { useState, type FormEvent } from 'react';
+import { useI18n } from "../../i18n/locale-provider";
 
 export interface PlanAccessibilityProps {
   readonly snapshot: ProjectSnapshot;
@@ -46,6 +47,7 @@ export function PlanAccessibility({
   controller,
   onStartCalibration,
 }: PlanAccessibilityProps) {
+  const { t } = useI18n();
   const floor = snapshot.project.floors.find((candidate) => (
     candidate.id === activeFloorId
   ));
@@ -101,14 +103,14 @@ export function PlanAccessibility({
 
   return (
     <section
-      aria-label="可访问对象列表"
+      aria-label={t("access.list")}
       className="studio-plan-accessibility"
     >
-      <h2>平面对象</h2>
+      <h2>{t("access.heading")}</h2>
       {snapshot.project.profile === 'showroom'
       && activeTool === 'product-hotspot' ? (
         <form onSubmit={(event) => { void submitProductHotspot(event); }}>
-          <label htmlFor='product-hotspot-x'>产品热点 X 坐标 (mm)</label>
+          <label htmlFor='product-hotspot-x'>{t("access.hotspotX")}</label>
           <input
             id='product-hotspot-x'
             inputMode='decimal'
@@ -116,7 +118,7 @@ export function PlanAccessibility({
             value={hotspotX}
             onChange={(event) => setHotspotX(event.currentTarget.value)}
           />
-          <label htmlFor='product-hotspot-y'>产品热点 Y 坐标 (mm)</label>
+          <label htmlFor='product-hotspot-y'>{t("access.hotspotY")}</label>
           <input
             id='product-hotspot-y'
             inputMode='decimal'
@@ -125,13 +127,13 @@ export function PlanAccessibility({
             onChange={(event) => setHotspotY(event.currentTarget.value)}
           />
           <button type='submit' disabled={!hotspotPointIsValid}>
-            在坐标创建产品热点
+            {t("access.createHotspot")}
           </button>
         </form>
       ) : null}
       {entities.length === 0 && references.length === 0 && routeNodes.length === 0 && openings.length === 0
       && (roomRecognition === null || roomRecognition.candidates.length === 0) ? (
-        <p>当前楼层没有可见对象。使用选择工具检查对象，或选择绘制工具开始创建。</p>
+        <p>{t("access.empty")}</p>
       ) : (
         <ul>
           {roomRecognition?.candidates.map((candidate, index) => (
@@ -156,15 +158,15 @@ export function PlanAccessibility({
               <li key={entity.id}>
                 <span>
                   {entity.type === 'poi' ? `${entity.kind} · ` : ''}
-                  {entity.type} · {entity.type === "fixture" ? `${fixtureDetails(entity)} · ` : ""}{entity.name} · {selected ? "已选择" : "未选择"} · {locked ? "已锁定" : "可编辑"}
+                  {entity.type} · {entity.type === "fixture" ? `${fixtureDetails(entity)} · ` : ""}{entity.name} · {selected ? t("access.selected") : t("access.unselected")} · {locked ? t("access.locked") : t("access.editable")}
                 </span>
                 <button
                   type="button"
-                  aria-label={`选择对象：${entity.name}`}
+                  aria-label={t("access.selectEntity", { name: entity.name })}
                   aria-pressed={selected}
                   onClick={() => sessionStore.getState().setSelection([entity.id])}
                 >
-                  选择
+                  {t("access.select")}
                 </button>
               </li>
             );
