@@ -52,3 +52,9 @@ The newly added English inspector test failed before implementation because the 
 ## Test-only closure
 
 - Added PlanInspector-level in-place locale-switch tests for valid reference-image and opening selections. They retain the same context IDs and unsaved form state while asserting raw callback IDs, `door` kind, and numeric values. Focused test: 24 passed.
+
+## Post-closure gates
+
+- Exact Task 4 combined Vitest: 2 files, 138 tests passed, exit 0 (33.02s).
+- Studio `tsc --noEmit`: exit 0.
+- `git diff --check`: exit 0.
