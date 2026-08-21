@@ -21,6 +21,7 @@ const { openFolderDialog } = vi.hoisted(() => ({ openFolderDialog: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openFolderDialog }));
 
 import { App } from "../../app";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
 import { selectBackend } from "../../backend/select-backend";
 import { ProjectBackendError } from "../../backend/tauri-backend";
 import {
@@ -57,6 +58,10 @@ const TRAILING_NAME_ERROR = "项目名称不能以点或空格结尾";
 const LONG_NAME_ERROR = "项目名称不能超过 80 个字符";
 
 describe("project name validation", () => {
+  it("returns stable ids rather than localized validation strings", () => {
+    expect(validateProjectName("")).toBe("empty");
+    expect(validateProjectName("folder/name")).toBe("separator");
+  });
   const reservedBasenames = [
     "CON",
     "PRN",
@@ -75,47 +80,27 @@ describe("project name validation", () => {
   it.each(reservedBasenames.flatMap((name) => [name, `${name}.project`]))(
     "rejects every Windows reserved basename variant: %s",
     (name) => {
-      expect(validateProjectName(name)).toEqual({ ok: false, error: RESERVED_NAME_ERROR });
+      expect(validateProjectName(name)).toBe("reserved-name");
     },
   );
 
   it.each([
-    ["\t\n\u00a0", EMPTY_NAME_ERROR],
-    ["\u0085", EMPTY_NAME_ERROR],
-    ["\uFEFF", EMPTY_NAME_ERROR],
-    ["项目 ", TRAILING_NAME_ERROR],
-    ["项目\t", TRAILING_NAME_ERROR],
-    ["项目\n", TRAILING_NAME_ERROR],
-    ["项目\u00a0", TRAILING_NAME_ERROR],
-    ["项目\u0085", TRAILING_NAME_ERROR],
-    ["项目\uFEFF", TRAILING_NAME_ERROR],
-    ["项目.", TRAILING_NAME_ERROR],
-    ["项目.\u00a0", TRAILING_NAME_ERROR],
-    ["项目.\u0085", TRAILING_NAME_ERROR],
-    ["项目.\uFEFF", TRAILING_NAME_ERROR],
+    ["\t\n\u00a0", "empty"], ["\u0085", "empty"], ["\uFEFF", "empty"],
+    ["项目 ", "trailing-dot-or-space"], ["项目\t", "trailing-dot-or-space"], ["项目\n", "trailing-dot-or-space"], ["项目\u00a0", "trailing-dot-or-space"], ["项目\u0085", "trailing-dot-or-space"], ["项目\uFEFF", "trailing-dot-or-space"], ["项目.", "trailing-dot-or-space"], ["项目.\u00a0", "trailing-dot-or-space"], ["项目.\u0085", "trailing-dot-or-space"], ["项目.\uFEFF", "trailing-dot-or-space"],
   ])(
     "rejects empty or trailing Unicode whitespace without normalizing to an invalid name: %j",
     (name, error) => {
-      expect(validateProjectName(name)).toEqual({
-        ok: false,
-        error,
-      });
+      expect(validateProjectName(name)).toBe(error);
     },
   );
 
   it("returns the canonical Unicode-aware name and counts Unicode code points", () => {
     const eightyCodePoints = "😀".repeat(80);
-    expect(validateProjectName("\t\u00a0  项目")).toEqual({ ok: true, name: "项目" });
-    expect(validateProjectName("\u0085项目")).toEqual({ ok: true, name: "项目" });
-    expect(validateProjectName("\uFEFF项目")).toEqual({ ok: true, name: "项目" });
-    expect(validateProjectName(eightyCodePoints)).toEqual({
-      ok: true,
-      name: eightyCodePoints,
-    });
-    expect(validateProjectName(`${eightyCodePoints}😀`)).toEqual({
-      ok: false,
-      error: LONG_NAME_ERROR,
-    });
+    expect(validateProjectName("\t\u00a0  项目")).toBeNull();
+    expect(validateProjectName("\u0085项目")).toBeNull();
+    expect(validateProjectName("\uFEFF项目")).toBeNull();
+    expect(validateProjectName(eightyCodePoints)).toBeNull();
+    expect(validateProjectName(`${eightyCodePoints}😀`)).toBe("too-long");
   });
 
   it("submits exactly the canonical name returned by validation", async () => {
@@ -222,8 +207,10 @@ describe("create project busy state", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "创建项目" }));
 
-    await act(async () => pendingCreate.reject(new Error("create failed")));
-    expect(await screen.findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    const rawError = "create failed";
+    await act(async () => pendingCreate.reject(new Error(rawError)));
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
+    expect(document.body).not.toHaveTextContent(rawError);
     expect(nameField).not.toHaveAttribute("aria-invalid");
     expect(nameField).not.toHaveAttribute("aria-describedby");
     expect(nameField).toHaveValue("失败展厅");
@@ -239,7 +226,7 @@ describe("create project busy state", () => {
 });
 
 async function openCreateDialog(profile: "showroom" | "market") {
-  const name = profile === "showroom" ? "新建店铺展厅" : "新建市集导览";
+  const name = profile === "showroom" ? "新建展厅" : "新建市集";
   await userEvent.click(await screen.findByRole("button", { name }));
   return screen.getByRole("dialog", { name: "新建项目" });
 }
@@ -326,33 +313,58 @@ function createDesktopBackend(projects = new Map<string, OpenedProject>()): Proj
 }
 
 describe("project center", () => {
+  it("keeps the AetherTwin brand literal and presents the sandbox location through the catalogue", async () => {
+    render(<StudioI18nTestProvider><App forceBackend="sandbox" /></StudioI18nTestProvider>);
+
+    expect((await screen.findAllByText("AetherTwin")).length).toBeGreaterThan(0);
+    const dialog = await openCreateDialog("showroom");
+    expect(within(dialog).getByLabelText("项目位置")).toHaveValue("演示沙盒");
+  });
+
+  it("keeps keyboard language-switch focus while translating Project Center display labels", async () => {
+    const user = userEvent.setup();
+    render(<StudioI18nTestProvider><App forceBackend="sandbox" /></StudioI18nTestProvider>);
+
+    await screen.findByRole("heading", { name: "AetherTwin Studio" });
+    const switcher = screen.getByLabelText("界面语言");
+    switcher.focus();
+    await user.selectOptions(switcher, "en");
+
+    expect(document.activeElement).toBe(switcher);
+    expect(screen.getByText("SHOWROOM")).toBeVisible();
+    expect(screen.getByText("MARKET")).toBeVisible();
+    expect(screen.getByText("SANDBOX")).toBeVisible();
+    expect(screen.getByText("RECENT")).toBeVisible();
+    expect(screen.getByText("0 projects")).toBeVisible();
+  });
+
   it("shows exactly the two fixed creation profiles and no deferred entry", async () => {
     render(<App forceBackend="sandbox" />);
 
     await screen.findByRole("heading", { name: "AetherTwin Studio" });
     const creationButtons = screen.getAllByRole("button", { name: /^新建/ });
     expect(creationButtons.map((button) => button.textContent)).toEqual([
-      "新建店铺展厅",
-      "新建市集导览",
+      "新建展厅",
+      "新建市集",
     ]);
     expect(screen.queryByText(/BIM|IoT|3DGS|点云|三维场景/)).not.toBeInTheDocument();
-    expect(screen.getByText("Web 沙盒 · 不持久保存")).toBeVisible();
-    expect(screen.getByRole("button", { name: "打开沙盒项目" })).toBeDisabled();
+    expect(screen.getByText("演示沙盒 · 不持久保存")).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开演示沙盒项目" })).toBeDisabled();
     expect(document.body).not.toHaveTextContent(/文件系统|文件夹|目录|选择位置|浏览项目/);
   });
 
   it.each([
-    ["showroom", "店铺展厅", "showroom"],
-    ["market", "市集导览", "market"],
+    ["showroom", "展厅", "展厅"],
+    ["market", "市集", "市集"],
   ] as const)("keeps the %s profile and sandbox location fixed", async (profile, title, badge) => {
     render(<App forceBackend="sandbox" />);
     const dialog = await openCreateDialog(profile);
 
-    expect(within(dialog).getByText(title)).toBeVisible();
-    expect(within(dialog).getByText(badge)).toBeVisible();
+    expect(within(dialog).getAllByText(title)).not.toHaveLength(0);
+    expect(within(dialog).getAllByText(badge)).not.toHaveLength(0);
     expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
-    expect(within(dialog).getByLabelText("项目位置")).toHaveValue("sandbox");
+    expect(within(dialog).getByLabelText("项目位置")).toHaveValue("演示沙盒");
     expect(within(dialog).getByLabelText("项目位置")).toBeDisabled();
     expect(openFolderDialog).not.toHaveBeenCalled();
   });
@@ -362,7 +374,7 @@ describe("project center", () => {
     render(<App backend={backend} />);
 
     expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
-    expect(screen.queryByText("Web 沙盒 · 不持久保存")).not.toBeInTheDocument();
+    expect(screen.queryByText("演示沙盒 · 不持久保存")).not.toBeInTheDocument();
     const dialog = await openCreateDialog("showroom");
     const location = within(dialog).getByLabelText("项目位置");
     expect(location).toHaveValue("");
@@ -370,7 +382,7 @@ describe("project center", () => {
     await userEvent.type(within(dialog).getByLabelText("项目名称"), "桌面展厅");
     await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
     expect(backend.createProject).not.toHaveBeenCalled();
-    expect(within(dialog).getByText("请选择项目位置")).toBeVisible();
+    expect(location).toHaveAttribute("aria-invalid", "true");
 
     openFolderDialog.mockResolvedValueOnce(null);
     await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
@@ -395,13 +407,13 @@ describe("project center", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
-    expect(document.body).not.toHaveTextContent(/Web 沙盒|打开沙盒项目|当前 Web 沙盒会话/);
-    await userEvent.click(screen.getByRole("button", { name: "重新打开 桌面展厅" }));
+    expect(document.body).not.toHaveTextContent(/演示沙盒|打开演示沙盒项目|当前演示沙盒会话/);
+    await userEvent.click(screen.getByRole("button", { name: "重新打开“桌面展厅”" }));
     expect(backend.openProject).toHaveBeenCalledWith("E:\\Twin Projects\\桌面展厅.twinproj");
     expect(await screen.findByRole("heading", { name: "桌面展厅" })).toBeVisible();
   });
 
-  it("shows a desktop ProjectBackendError message and log reference inside the create dialog", async () => {
+  it("shows a safe localized desktop error descriptor and log reference inside the create dialog", async () => {
     const backend = createDesktopBackend();
     vi.mocked(backend.createProject).mockRejectedValueOnce(
       new ProjectBackendError(
@@ -419,11 +431,11 @@ describe("project center", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
 
-    const message = await within(dialog).findByText("目标位置已经存在同名项目");
+    const message = await within(dialog).findByText("该位置已有同名项目。");
     const alert = message.closest<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert).toHaveTextContent("native-create-conflict");
-    expect(within(dialog).queryByText("创建失败，请重试")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("目标位置已经存在同名项目")).not.toBeInTheDocument();
     expect(dialog).toBeVisible();
   });
 
@@ -439,7 +451,7 @@ describe("project center", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
 
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(document.body).not.toHaveTextContent(internalMessage);
     expect(dialog).toBeVisible();
   });
@@ -463,7 +475,7 @@ describe("project center", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "选择项目位置" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "创建项目" }));
 
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("创建失败，请重试");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("该位置已有同名项目。");
     expect(document.body).not.toHaveTextContent(internalMessage);
     expect(document.body).not.toHaveTextContent(spoofedLogRef);
     expect(dialog).toBeVisible();
@@ -517,8 +529,8 @@ describe("project center", () => {
     await userEvent.click(await screen.findByRole("button", { name: "打开本地项目" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("项目结构无效或不完整");
-    expect(alert).toHaveTextContent("native-open-corrupt");
+    expect(alert).toHaveTextContent("项目恢复未完成，请确认项目未在其他窗口中使用后重试。");
+    expect(alert).not.toHaveTextContent("项目结构无效或不完整");
     expect(screen.queryByRole("main", { name: "二维平面编辑器" })).not.toBeInTheDocument();
   });
 
@@ -540,7 +552,7 @@ describe("project center", () => {
     render(<App backend={secondBackend} />);
     expect(await screen.findByText("持久市集")).toBeVisible();
     expect(document.body).not.toHaveTextContent(/沙盒/);
-    await userEvent.click(screen.getByRole("button", { name: "重新打开 持久市集" }));
+    await userEvent.click(screen.getByRole("button", { name: "重新打开“持久市集”" }));
 
     expect(secondBackend.openProject).toHaveBeenCalledWith(
       "D:\\AetherTwin\\持久市集.twinproj",
@@ -571,12 +583,12 @@ describe("project center", () => {
           `native-stale-${code.toLowerCase()}`,
         ),
       );
-      await userEvent.click(screen.getByRole("button", { name: `重新打开 ${projectName}` }));
+      await userEvent.click(screen.getByRole("button", { name: `重新打开“${projectName}”` }));
 
-      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      expect(await screen.findByRole("alert")).toHaveTextContent("找不到该项目。");
       await waitFor(() =>
         expect(
-          screen.queryByRole("button", { name: `重新打开 ${projectName}` }),
+          screen.queryByRole("button", { name: `重新打开“${projectName}”` }),
         ).not.toBeInTheDocument(),
       );
       const persisted = JSON.parse(
@@ -605,12 +617,11 @@ describe("project center", () => {
         "native-invalid-recent",
       ),
     );
-    await userEvent.click(screen.getByRole("button", { name: "重新打开 损坏展厅" }));
+    await userEvent.click(screen.getByRole("button", { name: "重新打开“损坏展厅”" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("项目结构无效或不完整");
-    expect(alert).toHaveTextContent("native-invalid-recent");
-    expect(screen.getByRole("button", { name: "重新打开 损坏展厅" })).toBeEnabled();
+    expect(alert).toHaveTextContent("项目恢复未完成，请确认项目未在其他窗口中使用后重试。");
+    expect(screen.getByRole("button", { name: "重新打开“损坏展厅”" })).toBeEnabled();
     const persisted = JSON.parse(
       window.localStorage.getItem("aethertwin.recentProjects.v1") ?? "[]",
     ) as Array<{ path?: string }>;
@@ -638,7 +649,7 @@ describe("project center", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "打开本地项目" }));
     expect(await screen.findByRole("button", { name: "恢复项目" })).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent("native-stale-lock");
+    expect(screen.getByRole("alert")).toHaveTextContent("项目恢复未完成，请确认项目未在其他窗口中使用后重试。");
 
     await userEvent.click(screen.getByRole("button", { name: "恢复项目" }));
     expect(screen.getByRole("dialog", { name: "确认恢复项目" })).toBeVisible();
@@ -683,7 +694,7 @@ describe("project center", () => {
     await userEvent.click(screen.getByRole("button", { name: "确认恢复" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("native-active-lock");
+      expect(screen.getByRole("alert")).toHaveTextContent("该项目正在其他窗口中使用，请关闭后重试。");
     });
     expect(screen.queryByRole("button", { name: "恢复项目" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "AetherTwin Studio" })).toBeVisible();
@@ -724,7 +735,7 @@ describe("project center", () => {
 
   it("focuses the name through Dialog entry and restores the real creation opener", async () => {
     render(<App forceBackend="sandbox" />);
-    const opener = await screen.findByRole("button", { name: "新建店铺展厅" });
+    const opener = await screen.findByRole("button", { name: "新建展厅" });
 
     await userEvent.click(opener);
     let dialog = screen.getByRole("dialog", { name: "新建项目" });
@@ -827,7 +838,7 @@ describe("project center", () => {
     await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
 
     expect(await screen.findByText("可重开市集")).toBeVisible();
-    const open = screen.getByRole("button", { name: "打开沙盒项目" });
+    const open = screen.getByRole("button", { name: "打开演示沙盒项目" });
     expect(open).toBeEnabled();
     await userEvent.click(open);
 
@@ -850,7 +861,7 @@ describe("project center", () => {
     expect(await screen.findByText("新展厅名")).toBeVisible();
     expect(screen.queryByText("旧展厅名")).not.toBeInTheDocument();
     expect(checkpoint).toHaveBeenCalledOnce();
-    await userEvent.click(screen.getByRole("button", { name: "打开沙盒项目" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开演示沙盒项目" }));
     expect(await screen.findByRole("heading", { name: "新展厅名" })).toBeVisible();
   });
 
@@ -886,7 +897,7 @@ describe("project center", () => {
     ).toBe(true);
     expect(checkpoint).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "打开沙盒项目" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开演示沙盒项目" })).not.toBeInTheDocument();
   });
 
   it("disposes a dirty in-flight Studio store exactly once without a post-unmount autosave", async () => {
@@ -1030,8 +1041,8 @@ describe("project center", () => {
     await userEvent.click(await screen.findByRole("button", { name: "关闭" }));
 
     vi.spyOn(backend, "openProject").mockRejectedValueOnce(new Error("cannot reopen"));
-    await userEvent.click(screen.getByRole("button", { name: "打开沙盒项目" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("cannot reopen");
+    await userEvent.click(screen.getByRole("button", { name: "打开演示沙盒项目" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
 
     await openCreateDialog("showroom");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -1046,9 +1057,9 @@ describe("project center", () => {
     first.unmount();
 
     render(<App forceBackend="sandbox" />);
-    expect(await screen.findByText("还没有沙盒项目")).toBeVisible();
+    expect(await screen.findByText("还没有演示沙盒项目")).toBeVisible();
     expect(screen.queryByText("临时市集")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开沙盒项目" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "打开演示沙盒项目" })).toBeDisabled();
   });
 });
 
@@ -1169,7 +1180,7 @@ describe("Studio entry boundaries", () => {
     vi.stubEnv("DEV", false);
     render(<App forceBackend="sandbox" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("WEB_SANDBOX_DISABLED");
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(screen.queryByRole("heading", { name: "AetherTwin Studio" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "项目操作" })).not.toBeInTheDocument();
     expect(openFolderDialog).not.toHaveBeenCalled();

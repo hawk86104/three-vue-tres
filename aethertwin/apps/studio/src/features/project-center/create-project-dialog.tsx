@@ -2,28 +2,24 @@ import type { ProjectProfile } from "@aethertwin/core-model";
 import { Badge, Button, Dialog, Field, StatusNotice } from "@aethertwin/design-system";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
-import { ProjectBackendError } from "../../backend/project-backend-error";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
+import { message, type StudioMessageDescriptor, type StudioMessageId } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
 
 const WINDOWS_RESERVED_DEVICE_NAME =
   /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/iu;
-
-const profilePresentation: Record<
-  ProjectProfile,
-  { readonly label: string; readonly description: string }
-> = {
-  showroom: {
-    label: "店铺展厅",
-    description: "创建店铺展厅项目的 M0 基础空间。",
-  },
-  market: {
-    label: "市集导览",
-    description: "创建市集导览项目的 M0 基础空间。",
-  },
+const profileLabelIds: Readonly<Record<ProjectProfile, StudioMessageId>> = {
+  showroom: "profile.showroom",
+  market: "profile.market",
+};
+const profileDescriptionIds: Readonly<Record<ProjectProfile, StudioMessageId>> = {
+  showroom: "dialog.showroomDescription",
+  market: "dialog.marketDescription",
 };
 
-export type ProjectNameValidation =
-  | { readonly ok: true; readonly name: string }
-  | { readonly ok: false; readonly error: string };
+export type ProjectNameValidationReason =
+  | "empty" | "dot-path" | "separator" | "reserved-name"
+  | "trailing-dot-or-space" | "too-long";
 
 function trimUnicodeWhiteSpace(value: string): string {
   return value
@@ -31,25 +27,35 @@ function trimUnicodeWhiteSpace(value: string): string {
     .replace(/[\p{White_Space}\uFEFF]+$/u, "");
 }
 
-export function validateProjectName(value: string): ProjectNameValidation {
+export function validateProjectName(value: string): ProjectNameValidationReason | null {
   const canonicalName = trimUnicodeWhiteSpace(value);
-  if (canonicalName.length === 0) {
-    return { ok: false, error: "请输入项目名称" };
-  }
-  if (/[\\/]/u.test(canonicalName)) {
-    return { ok: false, error: "项目名称不能包含路径分隔符" };
-  }
+  if (canonicalName.length === 0) return "empty";
+  if (canonicalName === "." || canonicalName === "..") return "dot-path";
+  if (/[\\/]/u.test(canonicalName)) return "separator";
   if (/(?:[.]|[\p{White_Space}\uFEFF])$/u.test(value)) {
-    return { ok: false, error: "项目名称不能以点或空格结尾" };
+    return "trailing-dot-or-space";
   }
   const nameBeforeExtension = canonicalName.split(".", 1)[0] ?? "";
   if (WINDOWS_RESERVED_DEVICE_NAME.test(nameBeforeExtension)) {
-    return { ok: false, error: "项目名称不能使用 Windows 保留设备名" };
+    return "reserved-name";
   }
   if (Array.from(canonicalName).length > 80) {
-    return { ok: false, error: "项目名称不能超过 80 个字符" };
+    return "too-long";
   }
-  return { ok: true, name: canonicalName };
+  return null;
+}
+
+export function normalizeProjectName(value: string): string { return trimUnicodeWhiteSpace(value); }
+
+function validationDescriptor(reason: ProjectNameValidationReason): StudioMessageDescriptor {
+  switch (reason) {
+    case "empty": return message("validation.empty");
+    case "dot-path": return message("validation.dotPath");
+    case "separator": return message("validation.separator");
+    case "reserved-name": return message("validation.reservedName");
+    case "trailing-dot-or-space": return message("validation.trailing");
+    case "too-long": return message("validation.tooLong");
+  }
 }
 
 export interface CreateProjectDialogProps {
@@ -60,19 +66,9 @@ export interface CreateProjectDialogProps {
   onCreate(name: string, profile: ProjectProfile, location?: string): Promise<void>;
 }
 
-interface CreateErrorNotice {
-  readonly message: string;
-  readonly logRef: string | null;
-}
-
+interface CreateErrorNotice { readonly descriptor: StudioMessageDescriptor; readonly logRef: string | null; }
 function createErrorNotice(value: unknown): CreateErrorNotice {
-  if (value instanceof ProjectBackendError) {
-    return Object.freeze({
-      message: value.message,
-      logRef: value.logRef.length === 0 ? null : value.logRef,
-    });
-  }
-  return Object.freeze({ message: "创建失败，请重试", logRef: null });
+  return Object.freeze({ descriptor: localizedErrorDescriptor(value), logRef: localizedErrorLogRef(value) });
 }
 
 export function CreateProjectDialog({
@@ -84,12 +80,12 @@ export function CreateProjectDialog({
 }: CreateProjectDialogProps) {
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<ProjectNameValidationReason | null>(null);
+  const [locationError, setLocationError] = useState<StudioMessageDescriptor | null>(null);
   const [createError, setCreateError] = useState<CreateErrorNotice | null>(null);
   const [busy, setBusy] = useState(false);
   const nameFieldRef = useRef<HTMLInputElement>(null);
-  const presentation = profilePresentation[profile];
+  const { format, t } = useI18n();
 
   useEffect(() => {
     if (!open) {
@@ -104,15 +100,15 @@ export function CreateProjectDialog({
 
   async function submit() {
     const validation = validateProjectName(name);
-    if (!validation.ok) {
-      setValidationError(validation.error);
+    if (validation !== null) {
+      setValidationError(validation);
       setCreateError(null);
       nameFieldRef.current?.focus();
       return;
     }
 
     if (mode === "desktop" && location.length === 0) {
-      setLocationError("请选择项目位置");
+      setLocationError(message("validation.empty"));
       setCreateError(null);
       return;
     }
@@ -122,9 +118,9 @@ export function CreateProjectDialog({
     setCreateError(null);
     try {
       if (mode === "desktop") {
-        await onCreate(validation.name, profile, location);
+        await onCreate(normalizeProjectName(name), profile, location);
       } else {
-        await onCreate(validation.name, profile);
+        await onCreate(normalizeProjectName(name), profile);
       }
       onOpenChange(false);
     } catch (error) {
@@ -141,13 +137,13 @@ export function CreateProjectDialog({
       const selected = await openFolderDialog({
         directory: true,
         multiple: false,
-        title: "选择项目位置",
+        title: t("dialog.openLocationTitle"),
       });
       if (typeof selected === "string") {
         setLocation(selected);
       }
     } catch {
-      setLocationError("无法选择项目位置，请重试");
+      setLocationError(message("error.generic"));
     }
   }
 
@@ -160,11 +156,10 @@ export function CreateProjectDialog({
           onOpenChange(nextOpen);
         }
       }}
-      title="新建项目"
+      title={t("dialog.createTitle")}
       description={
         mode === "desktop"
-          ? "选择本地目录并创建可持久保存的项目。"
-          : "项目只保存在当前 Web 沙盒会话中，关闭页面后不会保留。"
+          ? t("dialog.createDesktopDescription") : t("dialog.createSandboxDescription")
       }
     >
       <form
@@ -174,24 +169,24 @@ export function CreateProjectDialog({
           void submit();
         }}
       >
-        <div className="studio-create-form__profile" aria-label="固定项目类型">
-          <span>{presentation.label}</span>
-          <Badge tone="accent">{profile}</Badge>
-          <p>{presentation.description}</p>
+        <div className="studio-create-form__profile" aria-label={t("dialog.fixedProfile")}>
+          <span>{t(profileLabelIds[profile])}</span>
+          <Badge tone="accent">{t(profileLabelIds[profile])}</Badge>
+          <p>{t(profileDescriptionIds[profile])}</p>
         </div>
         {createError === null ? null : (
           <StatusNotice tone="error">
-            <span>{createError.message}</span>
+            <span>{format(createError.descriptor)}</span>
             {createError.logRef === null ? null : (
-              <span>日志参考：{createError.logRef}</span>
+              <span>{t("error.diagnosticReference", { logRef: createError.logRef })}</span>
             )}
           </StatusNotice>
         )}
         <Field
           ref={nameFieldRef}
-          label="项目名称"
+          label={t("dialog.projectName")}
           value={name}
-          error={validationError}
+          error={validationError === null ? null : format(validationDescriptor(validationError))}
           onChange={(event) => {
             setName(event.currentTarget.value);
             setValidationError(null);
@@ -200,26 +195,26 @@ export function CreateProjectDialog({
         />
         {mode === "desktop" ? (
           <div className="studio-create-form__location">
-            <Field label="项目位置" value={location} error={locationError} readOnly />
+            <Field label={t("dialog.projectLocation")} value={location} error={locationError === null ? null : format(locationError)} readOnly />
             <Button variant="secondary" disabled={busy} onClick={() => void chooseLocation()}>
-              选择项目位置
+              {t("dialog.chooseProjectLocation")}
             </Button>
           </div>
         ) : (
           <Field
-            label="项目位置"
-            value="sandbox"
-            helpText="Web 沙盒位置固定且不持久保存。"
+            label={t("dialog.projectLocation")}
+            value={t("dialog.sandboxLocationValue")}
+            helpText={t("dialog.sandboxLocation")}
             disabled
             readOnly
           />
         )}
         <div className="studio-create-form__actions">
           <Button variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
-            取消
+            {t("dialog.cancel")}
           </Button>
           <Button type="submit" busy={busy}>
-            创建项目
+            {t("dialog.create")}
           </Button>
         </div>
       </form>

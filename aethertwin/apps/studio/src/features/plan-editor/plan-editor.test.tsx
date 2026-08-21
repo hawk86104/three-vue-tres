@@ -35,6 +35,9 @@ import type {
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectBackendError } from "../../backend/tauri-backend";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
+import { createMemoryLocalePreference } from "../../i18n/locale-preference";
+import { LocaleProvider } from "../../i18n/locale-provider";
 import { createPlanEditorStore, type OpeningPreviewState } from "./editor-session";
 import { PlanEditor } from "./plan-editor";
 import { FakePlanRenderer, renderPlanEditorFixture } from "./plan-editor.test-support";
@@ -456,6 +459,27 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(describedText(nameField)).not.toContain("tag commit failed");
     expect(describedText(tagsField)).toContain("tag commit failed");
     expect(describedText(tagsField)).not.toContain("项目名称不能使用 Windows 保留设备名");
+  });
+
+  it("reformats a retained project-name validation reason after the locale changes", async () => {
+    const user = userEvent.setup();
+    const { store } = await sandboxProject("Validation locale");
+    render(
+      <LocaleProvider preference={createMemoryLocalePreference()}>
+        <LanguageSwitcher />
+        <PlanEditor store={store} />
+      </LocaleProvider>,
+    );
+
+    const nameField = screen.getByLabelText("项目名称");
+    await user.clear(nameField);
+    await user.type(nameField, "CON");
+    fireEvent.blur(nameField);
+    expect(await screen.findByText("项目名称不能使用 Windows 保留设备名")).toBeVisible();
+
+    const switcher = screen.getByLabelText("界面语言");
+    await user.selectOptions(switcher, "en");
+    expect(await screen.findByText("The Project name cannot use a Windows reserved device name.")).toBeVisible();
   });
 
   it.each([

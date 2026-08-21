@@ -6,11 +6,15 @@ import {
 } from "@aethertwin/project-store";
 import { useEffect, useState, type ReactNode } from "react";
 import { PlanEditor } from "../features/plan-editor/plan-editor";
+import { DisplayNameProvider } from "../i18n/display-name-provider";
+import { LanguageSwitcher } from "../i18n/language-switcher";
+import { useI18n } from "../i18n/locale-provider";
 import {
   WebDemoLoadError,
   loadWebDemoSeed,
   type WebDemoErrorCode,
 } from "./load-web-demo";
+import { webDemoDisplayNameResolver } from "./web-demo-display-name-ids";
 
 export interface WebDemoAppDependencies {
   readonly loadSeed: typeof loadWebDemoSeed;
@@ -42,26 +46,16 @@ const DEFAULT_DEPENDENCIES: WebDemoAppDependencies = Object.freeze({
   createStore: (backend: SandboxProjectBackend) => new ProjectStore(backend),
 });
 
-const ERROR_MESSAGES: Readonly<Record<WebDemoErrorCode, string>> = Object.freeze({
-  WEB_DEMO_PROJECT_INVALID: "本地示例项目无效，无法打开。",
-  WEB_DEMO_ASSET_UNAVAILABLE: "本地示例资源暂时无法载入，请重试。",
-  WEB_DEMO_ASSET_INVALID: "本地示例资源校验失败，无法打开。",
-  WEB_DEMO_INITIALIZATION_FAILED: "本地示例初始化失败，请重试。",
-});
-
 function webDemoErrorCode(error: unknown): WebDemoErrorCode {
   return error instanceof WebDemoLoadError
     ? error.code
     : "WEB_DEMO_INITIALIZATION_FAILED";
 }
 
-function webDemoErrorMessage(code: WebDemoErrorCode): string {
-  return ERROR_MESSAGES[code];
-}
-
 export function WebDemoApp({
   dependencies = DEFAULT_DEPENDENCIES,
 }: WebDemoAppProps): ReactNode {
+  const { t } = useI18n();
   const [generation, setGeneration] = useState(0);
   const [state, setState] = useState<WebDemoState>({
     kind: "loading",
@@ -107,7 +101,8 @@ export function WebDemoApp({
   if (state.kind === "loading") {
     return (
       <main className="studio-web-demo-state">
-        <StatusNotice>正在载入本地示例…</StatusNotice>
+        <LanguageSwitcher />
+        <StatusNotice>{t("webDemo.loading")}</StatusNotice>
       </main>
     );
   }
@@ -115,8 +110,9 @@ export function WebDemoApp({
   if (state.kind === "error") {
     return (
       <main className="studio-web-demo-state">
-        <StatusNotice tone="error">{webDemoErrorMessage(state.code)}</StatusNotice>
-        <Button onClick={() => setGeneration((value) => value + 1)}>Retry</Button>
+        <LanguageSwitcher />
+        <StatusNotice tone="error">{t(state.code === "WEB_DEMO_PROJECT_INVALID" ? "webDemo.projectInvalid" : state.code === "WEB_DEMO_ASSET_UNAVAILABLE" ? "webDemo.assetUnavailable" : state.code === "WEB_DEMO_ASSET_INVALID" ? "webDemo.assetInvalid" : "webDemo.initializationFailed")}</StatusNotice>
+        <Button onClick={() => setGeneration((value) => value + 1)}>{t("webDemo.retry")}</Button>
       </main>
     );
   }
@@ -124,14 +120,11 @@ export function WebDemoApp({
   return (
     <main className="studio-web-demo">
       <p className="studio-web-demo__notice" role="note">
-        本地预览 · 修改将在刷新后重置 · PNG 导出仅桌面版
+        {t("webDemo.notice")}
       </p>
-      <PlanEditor
-        store={state.store}
-        backendMode="sandbox"
-        exportBackend={null}
-        onBack={() => setGeneration((value) => value + 1)}
-      />
+      <DisplayNameProvider resolver={webDemoDisplayNameResolver}>
+        <PlanEditor store={state.store} backendMode="sandbox" exportBackend={null} onBack={() => setGeneration((value) => value + 1)} />
+      </DisplayNameProvider>
     </main>
   );
 }

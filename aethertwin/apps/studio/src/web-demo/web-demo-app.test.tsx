@@ -11,6 +11,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import snapshotFixture from "../../../../fixtures/contracts/showroom-demo.v3.json";
+import { StudioI18nTestProvider } from "../i18n/test-support";
 import { WebDemoLoadError, type LoadWebDemoSeedOptions } from "./load-web-demo";
 import { WebDemoApp } from "./web-demo-app";
 
@@ -100,6 +101,38 @@ afterEach(async () => {
 });
 
 describe("WebDemoApp lifecycle", () => {
+  it("keeps language-switch focus while translating loading copy without restarting the load", async () => {
+    const user = userEvent.setup();
+    const pending = deferred<SandboxProjectSeed>();
+    const deps = dependencies(() => pending.promise);
+    render(<StudioI18nTestProvider><WebDemoApp dependencies={deps} /></StudioI18nTestProvider>);
+
+    const switcher = screen.getByLabelText("界面语言");
+    switcher.focus();
+    await user.selectOptions(switcher, "en");
+
+    expect(document.activeElement).toBe(switcher);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading the local example…");
+    expect(deps.loadSeed).toHaveBeenCalledOnce();
+  });
+
+  it("keeps language-switch focus and localizes an existing error without retrying", async () => {
+    const user = userEvent.setup();
+    const deps = dependencies(async () => {
+      throw new WebDemoLoadError("WEB_DEMO_ASSET_UNAVAILABLE");
+    });
+    render(<StudioI18nTestProvider><WebDemoApp dependencies={deps} /></StudioI18nTestProvider>);
+
+    await screen.findByRole("alert");
+    const switcher = screen.getByLabelText("界面语言");
+    switcher.focus();
+    await user.selectOptions(switcher, "en");
+
+    expect(document.activeElement).toBe(switcher);
+    expect(screen.getByRole("alert")).toHaveTextContent("A local example asset is temporarily unavailable. Try again.");
+    expect(deps.loadSeed).toHaveBeenCalledOnce();
+  });
+
   it("shows truthful loading copy without an editor or invented percentage", () => {
     const pending = deferred<SandboxProjectSeed>();
     render(<WebDemoApp dependencies={dependencies(() => pending.promise)} />);
@@ -131,7 +164,7 @@ describe("WebDemoApp lifecycle", () => {
     await screen.findByTestId("plan-editor");
 
     expect(screen.getByRole("note")).toHaveTextContent(
-      "本地预览 · 修改将在刷新后重置 · PNG 导出仅桌面版",
+      "本地预览 · 修改将在刷新后重置 · 导出 PNG 仅桌面版",
     );
     expect(latestEditorProps()).toMatchObject({
       store: stores[0],
@@ -153,7 +186,7 @@ describe("WebDemoApp lifecycle", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
     expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
     expect(screen.queryByTestId("plan-editor")).not.toBeInTheDocument();
   });
 
@@ -165,7 +198,7 @@ describe("WebDemoApp lifecycle", () => {
     render(<WebDemoApp dependencies={deps} />);
 
     await screen.findByRole("alert");
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
     await screen.findByTestId("plan-editor");
 
     expect(loadSeed).toHaveBeenCalledTimes(2);
@@ -305,7 +338,7 @@ describe("WebDemoApp lifecycle", () => {
 
       expect(latestEditorProps().store).toBe(currentStore);
       expect(screen.getAllByTestId("plan-editor")).toHaveLength(1);
-      expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
       await waitFor(() => expect(disposalOrder).toEqual(["store", "backend"]));
       expect(oldStore.dispose).toHaveBeenCalledOnce();
       expect(oldBackend.dispose).toHaveBeenCalledOnce();
@@ -357,7 +390,7 @@ describe("WebDemoApp lifecycle", () => {
     expect(createdStores[0]?.dispose).toHaveBeenCalledOnce();
     expect(createdBackends[0]?.dispose).toHaveBeenCalledOnce();
 
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(screen.getByRole("button", { name: "重试" }));
     await screen.findByTestId("plan-editor");
 
     expect(createdStores).toHaveLength(2);
@@ -392,6 +425,6 @@ describe("WebDemoApp lifecycle", () => {
     await screen.findByText("3D unavailable; 2D remains active.");
     expect(screen.getByTestId("plan-editor")).toBeInTheDocument();
     expect(screen.getByRole("note")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
   });
 });

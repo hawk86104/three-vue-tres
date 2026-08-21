@@ -36,7 +36,9 @@ import type {
   SceneEnvironmentPatch,
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState, type Ref } from "react";
-import { validateProjectName } from "../project-center/create-project-dialog";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
+import { normalizeProjectName, validateProjectName, type ProjectNameValidationReason } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
 import { OpeningInspector } from "./opening-inspector";
 import { ReferenceInspector } from "./reference-inspector";
@@ -51,6 +53,15 @@ import {
 import { EnvironmentInspector } from "./environment-inspector";
 
 type AssetIssue = ProjectStoreState["assetIssues"][number];
+
+const projectNameValidationDescriptors: Readonly<Record<ProjectNameValidationReason, StudioMessageDescriptor>> = {
+  empty: message("validation.empty"),
+  "dot-path": message("validation.dotPath"),
+  separator: message("validation.separator"),
+  "reserved-name": message("validation.reservedName"),
+  "trailing-dot-or-space": message("validation.trailing"),
+  "too-long": message("validation.tooLong"),
+};
 
 export type InspectorContext =
   | { readonly kind: "project" }
@@ -150,16 +161,19 @@ function ProjectInspector({
   const [name, setName] = useState(committedName);
   const [tags, setTags] = useState(committedTags);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [nameValidationError, setNameValidationError] = useState<ProjectNameValidationReason | null>(null);
   const [tagsError, setTagsError] = useState<string | null>(null);
   const [nameHandledError, setNameHandledError] = useState<Error | null>(null);
   const [tagsHandledError, setTagsHandledError] = useState<Error | null>(null);
   const nameErrorId = `plan-inspector-name-error-${useId().replaceAll(":", "")}`;
   const tagsErrorId = `plan-inspector-tags-error-${useId().replaceAll(":", "")}`;
+  const { format } = useI18n();
 
   useEffect(() => {
     setName(committedName);
     setTags(committedTags);
     setNameError(null);
+    setNameValidationError(null);
     setTagsError(null);
     setNameHandledError(null);
     setTagsHandledError(null);
@@ -167,6 +181,7 @@ function ProjectInspector({
 
   function clearNameError() {
     setNameError(null);
+    setNameValidationError(null);
     setNameHandledError(null);
     onHandledStoreError(tagsHandledError);
   }
@@ -179,21 +194,24 @@ function ProjectInspector({
 
   async function commitName() {
     const validation = validateProjectName(name);
-    if (!validation.ok) {
-      setNameError(validation.error);
+    if (validation !== null) {
+      setNameError(null);
+      setNameValidationError(validation);
       setNameHandledError(null);
       onHandledStoreError(tagsHandledError);
       return;
     }
-    if (validation.name === committedName) {
+    const canonicalName = normalizeProjectName(name);
+    if (canonicalName === committedName) {
       clearNameError();
       return;
     }
     try {
-      await onRename(validation.name);
+      await onRename(canonicalName);
       clearNameError();
     } catch (error) {
       const handled = errorValue(error);
+      setNameValidationError(null);
       onHandledStoreError(handled);
       setNameError(handled.message);
       setNameHandledError(handled);
@@ -222,6 +240,9 @@ function ProjectInspector({
 
   const nameLogRef = logReference(nameHandledError);
   const tagsLogRef = logReference(tagsHandledError);
+  const renderedNameError = nameValidationError === null
+    ? nameError
+    : format(projectNameValidationDescriptors[nameValidationError]);
 
   return (
     <div className="studio-inspector-stack">
@@ -234,9 +255,9 @@ function ProjectInspector({
         <div><dt>后端模式</dt><dd>{backendMode}</dd></div>
         <div><dt>项目位置</dt><dd>{projectPath}</dd></div>
       </dl>
-      {nameError === null ? null : (
+      {renderedNameError === null ? null : (
         <StatusNotice id={nameErrorId} tone="error">
-          <span>{nameError}</span>
+          <span>{renderedNameError}</span>
           {nameLogRef === null ? null : <span>日志参考：{nameLogRef}</span>}
         </StatusNotice>
       )}
@@ -249,8 +270,8 @@ function ProjectInspector({
       <Field
         label="项目名称"
         value={name}
-        aria-describedby={nameError === null ? undefined : nameErrorId}
-        aria-invalid={nameError === null ? undefined : true}
+        aria-describedby={renderedNameError === null ? undefined : nameErrorId}
+        aria-invalid={renderedNameError === null ? undefined : true}
         onChange={(event) => {
           setName(event.currentTarget.value);
           clearNameError();

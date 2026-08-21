@@ -2,10 +2,22 @@ import type { ProjectProfile } from "@aethertwin/core-model";
 import { Badge, Button, Dialog, Panel, StatusNotice } from "@aethertwin/design-system";
 import type { RecentProject } from "@aethertwin/project-store";
 import { useState } from "react";
+import { type StudioMessageDescriptor, type StudioMessageId } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
+
+const profileLabelIds: Readonly<Record<ProjectProfile, StudioMessageId>> = {
+  showroom: "profile.showroom",
+  market: "profile.market",
+};
+const backendBadgeIds: Readonly<Record<NonNullable<ProjectCenterProps["mode"]>, StudioMessageId>> = {
+  desktop: "projectCenter.desktopBadge",
+  sandbox: "projectCenter.sandboxBadge",
+};
 
 export interface ProjectCenterProps {
   mode?: "desktop" | "sandbox";
-  error: string | null;
+  error: StudioMessageDescriptor | null;
   opening: boolean;
   recoveryAvailable?: boolean;
   recentProjects: readonly RecentProject[];
@@ -14,11 +26,6 @@ export interface ProjectCenterProps {
   onRecover?(): void;
   onStartCreate(profile: ProjectProfile): void;
 }
-
-const profileLabels: Record<ProjectProfile, string> = {
-  showroom: "店铺展厅",
-  market: "市集导览",
-};
 
 export function ProjectCenter({
   mode = "sandbox",
@@ -34,30 +41,31 @@ export function ProjectCenter({
   const [confirmingRecovery, setConfirmingRecovery] = useState(false);
   const newestProject = recentProjects[0];
   const isDesktop = mode === "desktop";
+  const { format, t } = useI18n();
 
   return (
     <main className="studio-project-center">
       <header className="studio-project-center__hero">
         <div>
-          <p className="studio-project-center__eyebrow">灵境孪生</p>
-          <h1>AetherTwin Studio</h1>
+          <p className="studio-project-center__eyebrow">{t("projectCenter.eyebrow")}</p>
+          <h1>{t("projectCenter.title")}</h1>
           <p className="studio-project-center__summary">
             {isDesktop
-              ? "从两个明确的空间档案开始，在本地持久化真实项目。"
-              : "从两个明确的空间档案开始，在浏览器会话中体验真实项目流程。"}
+              ? t("projectCenter.desktopSummary") : t("projectCenter.sandboxSummary")}
           </p>
         </div>
         <Badge tone="accent">
-          {isDesktop ? "本地项目 · 持久保存" : "Web 沙盒 · 不持久保存"}
+          {t(backendBadgeIds[mode])}
         </Badge>
+        <LanguageSwitcher />
       </header>
 
       {error === null ? null : (
         <div>
-          <StatusNotice tone="error">{error}</StatusNotice>
+          <StatusNotice tone="error">{format(error)}</StatusNotice>
           {isDesktop && recoveryAvailable ? (
             <Button variant="secondary" onClick={() => setConfirmingRecovery(true)}>
-              恢复项目
+              {t("projectCenter.recover")}
             </Button>
           ) : null}
         </div>
@@ -66,12 +74,12 @@ export function ProjectCenter({
       <Dialog
         open={confirmingRecovery}
         onOpenChange={setConfirmingRecovery}
-        title="确认恢复项目"
-        description="恢复会基于本地检查点和命令日志重建项目。仅在确认该项目未被其他会话使用时继续。"
+        title={t("projectCenter.recoveryTitle")}
+        description={t("projectCenter.recoveryDescription")}
       >
         <div className="aether-dialog__actions">
           <Button variant="ghost" onClick={() => setConfirmingRecovery(false)}>
-            取消
+            {t("dialog.cancel")}
           </Button>
           <Button
             onClick={() => {
@@ -79,33 +87,32 @@ export function ProjectCenter({
               onRecover();
             }}
           >
-            确认恢复
+            {t("projectCenter.confirmRecover")}
           </Button>
         </div>
       </Dialog>
 
-      <section className="studio-project-center__actions" aria-label="项目操作">
+      <section className="studio-project-center__actions" aria-label={t("projectCenter.actionsLabel")}>
         <Panel className="studio-project-center__action-card">
-          <p className="studio-project-center__card-kicker">SHOWROOM</p>
-          <h2>店铺展厅</h2>
-          <p>创建带有初始楼层的店铺展厅项目。</p>
-          <Button onClick={() => onStartCreate("showroom")}>新建店铺展厅</Button>
+          <p className="studio-project-center__card-kicker">{t("projectCenter.showroomKicker")}</p>
+          <h2>{t("projectCenter.showroom")}</h2>
+          <p>{t("projectCenter.showroomDescription")}</p>
+          <Button onClick={() => onStartCreate("showroom")}>{t("projectCenter.createShowroom")}</Button>
         </Panel>
         <Panel className="studio-project-center__action-card">
-          <p className="studio-project-center__card-kicker">MARKET</p>
-          <h2>市集导览</h2>
-          <p>创建带有初始楼层的市集导览项目。</p>
-          <Button onClick={() => onStartCreate("market")}>新建市集导览</Button>
+          <p className="studio-project-center__card-kicker">{t("projectCenter.marketKicker")}</p>
+          <h2>{t("projectCenter.market")}</h2>
+          <p>{t("projectCenter.marketDescription")}</p>
+          <Button onClick={() => onStartCreate("market")}>{t("projectCenter.createMarket")}</Button>
         </Panel>
         <Panel className="studio-project-center__action-card">
           <p className="studio-project-center__card-kicker">
-            {isDesktop ? "OPEN PROJECT" : "SANDBOX"}
+            {isDesktop ? t("projectCenter.desktopOpenKicker") : t("projectCenter.sandboxOpenKicker")}
           </p>
-          <h2>{isDesktop ? "本地项目" : "当前会话"}</h2>
+          <h2>{t("projectCenter.openProject")}</h2>
           <p>
             {isDesktop
-              ? "从本地选择一个现有 AetherTwin 项目并打开。"
-              : "重新打开当前 Web 沙盒会话中最近使用的项目。"}
+              ? t("projectCenter.openDesktopDescription") : t("projectCenter.openSandboxDescription")}
           </p>
           {isDesktop ? (
             <Button
@@ -114,7 +121,7 @@ export function ProjectCenter({
               disabled={opening}
               onClick={onOpenExisting}
             >
-              打开本地项目
+              {t("projectCenter.openDesktop")}
             </Button>
           ) : (
             <Button
@@ -125,27 +132,26 @@ export function ProjectCenter({
                 if (newestProject !== undefined) onOpen(newestProject.path);
               }}
             >
-              打开沙盒项目
+              {t("projectCenter.openSandbox")}
             </Button>
           )}
         </Panel>
       </section>
 
-      <Panel className="studio-project-center__recent" aria-label="最近项目">
+      <Panel className="studio-project-center__recent" aria-label={t("projectCenter.recent")}>
         <div className="studio-project-center__recent-heading">
           <div>
-            <p className="studio-project-center__card-kicker">RECENT</p>
-            <h2>最近项目</h2>
+            <p className="studio-project-center__card-kicker">{t("projectCenter.recentKicker")}</p>
+            <h2>{t("projectCenter.recent")}</h2>
           </div>
-          <span>{recentProjects.length} 个</span>
+          <span>{t("projectCenter.projectCount", { count: recentProjects.length })}</span>
         </div>
         {recentProjects.length === 0 ? (
           <div className="studio-empty-state">
-            <p>{isDesktop ? "还没有本地项目" : "还没有沙盒项目"}</p>
+            <p>{isDesktop ? t("projectCenter.desktopEmpty") : t("projectCenter.sandboxEmpty")}</p>
             <span>
               {isDesktop
-                ? "打开或新建的本地项目会显示在这里。"
-                : "新建的项目会在当前会话中显示在这里。"}
+                ? t("projectCenter.desktopEmptyDescription") : t("projectCenter.sandboxEmptyDescription")}
             </span>
           </div>
         ) : (
@@ -154,16 +160,16 @@ export function ProjectCenter({
               <li key={project.path}>
                 <div>
                   <strong>{project.name}</strong>
-                  <span>{profileLabels[project.profile]}</span>
+                  <span>{t(profileLabelIds[project.profile])}</span>
                 </div>
-                <Badge tone="accent">{project.profile}</Badge>
+                <Badge tone="accent">{t(profileLabelIds[project.profile])}</Badge>
                 <Button
                   variant="ghost"
                   disabled={opening}
                   onClick={() => onOpen(project.path)}
-                  aria-label={`重新打开 ${project.name}`}
+                  aria-label={t("projectCenter.reopenProject", { name: project.name })}
                 >
-                  重新打开
+                  {t("projectCenter.reopen")}
                 </Button>
               </li>
             ))}

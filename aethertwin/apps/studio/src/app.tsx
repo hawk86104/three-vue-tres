@@ -24,6 +24,8 @@ import { ProjectBackendError } from "./backend/project-backend-error";
 import { UiGallery } from "./dev/ui-gallery";
 import { CreateProjectDialog } from "./features/project-center/create-project-dialog";
 import { ProjectCenter } from "./features/project-center/project-center";
+import { localizedErrorDescriptor } from "./i18n/localized-error";
+import { useI18n } from "./i18n/locale-provider";
 import { PlanEditor } from "./features/plan-editor/plan-editor";
 const DevSceneGallery = import.meta.env.DEV
   ? lazy(async () => {
@@ -94,17 +96,6 @@ function useProjectStore(store: ProjectStore) {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-function readableError(value: unknown): string {
-  const message = value instanceof Error ? value.message : String(value);
-  if (value === null || typeof value !== "object" || !("logRef" in value)) {
-    return message;
-  }
-
-  return typeof value.logRef === "string" && value.logRef.length > 0
-    ? `${message}（日志参考：${value.logRef}）`
-    : message;
-}
-
 function missingRecentError(value: unknown): boolean {
   if (value === null || typeof value !== "object" || !("code" in value)) {
     return false;
@@ -148,6 +139,7 @@ function StudioApp({
   backend: ProjectBackend;
   exportBackend: ProjectExportBackend | null;
 }) {
+  const { t } = useI18n();
   const [store] = useState(() => new ProjectStore(backend));
   const storeLifecycleGeneration = useRef(0);
   const activeExportOperation = useRef<ProjectExportOperation | null>(null);
@@ -160,7 +152,7 @@ function StudioApp({
   const [dialogProfile, setDialogProfile] = useState<ProjectProfile | null>(null);
   const [view, setView] = useState<"center" | "editor">("center");
   const [opening, setOpening] = useState(false);
-  const [centerError, setCenterError] = useState<string | null>(null);
+  const [centerError, setCenterError] = useState<ReturnType<typeof localizedErrorDescriptor> | null>(null);
   const [recoveryPath, setRecoveryPath] = useState<string | null>(null);
   const state = useProjectStore(store);
 
@@ -230,7 +222,7 @@ function StudioApp({
       if (backend.mode === "desktop" && staleRecoveryRequired(error)) {
         setRecoveryPath(path);
       }
-      setCenterError(`打开失败：${readableError(error)}`);
+      setCenterError(localizedErrorDescriptor(error));
     } finally {
       setOpening(false);
     }
@@ -245,7 +237,7 @@ function StudioApp({
       const selected = await openFolderDialog({
         directory: true,
         multiple: false,
-        title: "打开本地项目",
+        title: t("dialog.openProjectTitle"),
       });
       if (typeof selected !== "string") return;
       selectedPath = selected;
@@ -260,7 +252,7 @@ function StudioApp({
       ) {
         setRecoveryPath(selectedPath);
       }
-      setCenterError(`打开失败：${readableError(error)}`);
+      setCenterError(localizedErrorDescriptor(error));
     } finally {
       setOpening(false);
     }
@@ -279,7 +271,7 @@ function StudioApp({
       setRecoveryPath(
         backend.mode === "desktop" && staleRecoveryRequired(error) ? recoveryPath : null,
       );
-      setCenterError(`恢复失败：${readableError(error)}`);
+      setCenterError(localizedErrorDescriptor(error));
     } finally {
       setOpening(false);
     }
@@ -336,6 +328,7 @@ function StudioApp({
 function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
   const [selection, setSelection] = useState<Awaited<ReturnType<typeof selectBackend>> | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const { format, t } = useI18n();
 
   useEffect(() => {
     let active = true;
@@ -357,14 +350,14 @@ function StudioBootstrap({ forceBackend }: { forceBackend?: ForcedBackend }) {
   if (error !== null) {
     return (
       <main className="studio-bootstrap-state">
-        <StatusNotice tone="error">{error.message}</StatusNotice>
+        <StatusNotice tone="error">{format(localizedErrorDescriptor(error))}</StatusNotice>
       </main>
     );
   }
   if (selection === null) {
     return (
       <main className="studio-bootstrap-state">
-        <StatusNotice>正在连接项目后端…</StatusNotice>
+        <StatusNotice>{t("app.backendConnecting")}</StatusNotice>
       </main>
     );
   }
