@@ -43,3 +43,8 @@ The newly added English inspector test failed before implementation because the 
 - The exact combined Task 4 Vitest command passed: 2 test files and 132 tests, exit 0 (28.26s). Existing jsdom canvas/Three warnings remained non-fatal.
 - `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` completed with exit 0.
 - `git diff --check` completed with exit 0; only line-ending warnings were emitted.
+
+## Closure fixes
+
+- Added typed `inspector.referenceX` and `inspector.referenceY` labels and consumed them at the reference inspector accessibility boundary.
+- Added direct PlanInspector valid reference-image/opening tests in both locales. Final exact combined gate: 2 files, 136 tests passed, exit 0 (28.63s).

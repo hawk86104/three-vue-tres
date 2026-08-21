@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import type { Opening, PlanReference, Wall } from "@aethertwin/core-model";
 import { describe, expect, it, vi } from "vitest";
 import { StudioI18nTestProvider } from "../../i18n/test-support";
 import { PlanInspector, type PlanInspectorProps } from "./plan-inspector";
@@ -39,6 +40,16 @@ function inspectorProps(context: PlanInspectorProps["context"] = { kind: "projec
     })),
     onError: vi.fn(),
   };
+}
+
+function selectionProps(kind: "plan-reference" | "opening"): PlanInspectorProps {
+  const props = inspectorProps(kind === "plan-reference" ? { kind, referenceId: "00000000-0000-4000-8000-000000000101" } : { kind, openingId: "00000000-0000-4000-8000-000000000102" });
+  const floor = props.snapshot.project.floors[0]!;
+  const layer = floor.layers[0]!;
+  const wall: Wall = { type: "wall", id: "00000000-0000-4000-8000-000000000100", name: "North wall", tags: [], floorId: floor.id, layerId: layer.id, locked: false, transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } }, centerLine: [{ x: 0, y: 0 }, { x: 1000, y: 0 }], thickness: 100 };
+  const reference: PlanReference = { id: "00000000-0000-4000-8000-000000000101", name: "Plan image", tags: [], floorId: floor.id, layerId: layer.id, assetId: "00000000-0000-4000-8000-000000000103", intrinsicSize: { width: 100, height: 100 }, transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } }, opacity: 1, locked: false, calibration: null };
+  const opening: Opening = { id: "00000000-0000-4000-8000-000000000102", name: "North window", tags: [], wallId: wall.id, kind: "window", distanceAlongWall: 100, width: 300, height: 400, sillHeight: 50 };
+  return { ...props, snapshot: { ...props.snapshot, project: { ...props.snapshot.project, entities: [...props.snapshot.project.entities, wall], planReferences: [reference], openings: [opening] } } };
 }
 
 describe("PlanInspector localization", () => {
@@ -95,5 +106,16 @@ describe("PlanInspector localization", () => {
     );
     expect(screen.getByText("Level 1")).toBeTruthy();
     expect((screen.getByLabelText("Floor name") as HTMLInputElement).value).toBe("一层");
+  });
+
+  it.each([
+    ["zh-CN", "plan-reference", "参考图", "参考图名称", "应用参考图"], ["en", "plan-reference", "Reference image", "Reference image name", "Apply reference image"],
+    ["zh-CN", "opening", "门窗", "门窗名称", "应用门窗"], ["en", "opening", "Opening", "Opening name", "Apply opening"],
+  ] as const)("renders valid %s %s selection controls", (locale, kind, heading, field, action) => {
+    render(<StudioI18nTestProvider locale={locale}><PlanInspector {...selectionProps(kind)} /></StudioI18nTestProvider>);
+    expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+    expect(screen.getByLabelText(field)).toBeTruthy();
+    expect(screen.getByRole("button", { name: action })).toBeTruthy();
+    cleanup();
   });
 });

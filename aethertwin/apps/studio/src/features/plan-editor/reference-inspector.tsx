@@ -173,14 +173,14 @@ export function ReferenceInspector({
         onChange={(event) => setOpacity(event.currentTarget.value)}
       />
       <Field
-        label="X (mm)"
+        label={t("inspector.referenceX")}
         value={x}
         inputMode="decimal"
         readOnly={propertiesReadOnly || publishing}
         onChange={(event) => setX(event.currentTarget.value)}
       />
       <Field
-        label="Y (mm)"
+        label={t("inspector.referenceY")}
         value={y}
         inputMode="decimal"
         readOnly={propertiesReadOnly || publishing}
