@@ -37,3 +37,9 @@ The newly added English inspector test failed before implementation because the 
 - Opening-kind option labels consume `OPENING_KIND_MESSAGE_IDS`; their `door`/`window` values remain stable.
 - Removed the definition-only media-kind map because no Task 4 inspector surface displays media kind; its later owner is the product-content/media workflow.
 - Replaced the raw unavailable-reference-mutation throw with a locale-safe error reported through the existing error boundary.
+
+## Final verification
+
+- The exact combined Task 4 Vitest command passed: 2 test files and 132 tests, exit 0 (28.26s). Existing jsdom canvas/Three warnings remained non-fatal.
+- `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` completed with exit 0.
+- `git diff --check` completed with exit 0; only line-ending warnings were emitted.

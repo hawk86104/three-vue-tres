@@ -2432,10 +2432,10 @@ describe("PlanEditor Task 12 plan-reference selection", () => {
     expect(within(inspector).getByRole("heading", {
       name: "参考图",
     })).toBeVisible();
-    expect(within(inspector).getByLabelText("\u5e73\u9762\u53c2\u8003\u540d\u79f0"))
+    expect(within(inspector).getByLabelText("参考图名称"))
       .toHaveValue(reference.name);
     expect(within(inspector).getByRole("button", {
-      name: "\u5220\u9664\u5e73\u9762\u53c2\u8003",
+      name: "删除参考图",
     })).toBeDisabled();
 
     await store.undo();
