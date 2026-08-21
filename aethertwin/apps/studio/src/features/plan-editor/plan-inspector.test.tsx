@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { createMemoryLocalePreference } from "../../i18n/locale-preference";
+import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
+import { DisplayNameProvider } from "../../i18n/display-name-provider";
 import type { Opening, PlanReference, Wall } from "@aethertwin/core-model";
 import { describe, expect, it, vi } from "vitest";
 import { StudioI18nTestProvider } from "../../i18n/test-support";
@@ -26,6 +30,7 @@ function inspectorProps(context: PlanInspectorProps["context"] = { kind: "projec
     onApplySceneEnvironmentPatch: vi.fn(async () => undefined),
     onApplyFloorPatch: vi.fn(async () => undefined),
     onApplyPlanEdit: vi.fn(async () => undefined),
+    onApplyPlanReferencePatch: vi.fn(async () => undefined),
     onApplyOpeningPatch: vi.fn(async () => undefined),
     onApplyBuildingStructurePatch: vi.fn(async () => undefined),
     onApplyProductContentPatch: vi.fn(async () => undefined),
@@ -50,6 +55,19 @@ function selectionProps(kind: "plan-reference" | "opening"): PlanInspectorProps 
   const reference: PlanReference = { id: "00000000-0000-4000-8000-000000000101", name: "Plan image", tags: [], floorId: floor.id, layerId: layer.id, assetId: "00000000-0000-4000-8000-000000000103", intrinsicSize: { width: 100, height: 100 }, transform: { translation: { x: 0, y: 0 }, rotation: 0, scale: { x: 1, y: 1 } }, opacity: 1, locked: false, calibration: null };
   const opening: Opening = { id: "00000000-0000-4000-8000-000000000102", name: "North window", tags: [], wallId: wall.id, kind: "window", distanceAlongWall: 100, width: 300, height: 400, sillHeight: 50 };
   return { ...props, snapshot: { ...props.snapshot, project: { ...props.snapshot.project, entities: [...props.snapshot.project.entities, wall], planReferences: [reference], openings: [opening] } } };
+}
+
+function LocaleSwitch({ children }: { readonly children: ReactNode }) {
+  const { setLocale } = useI18n();
+  return <><button type="button" onClick={() => setLocale("en")}>Switch locale</button>{children}</>;
+}
+
+function renderSwitchableInspector(props: PlanInspectorProps) {
+  return render(
+    <LocaleProvider preference={createMemoryLocalePreference("zh-CN")}>
+      <DisplayNameProvider><LocaleSwitch><PlanInspector {...props} /></LocaleSwitch></DisplayNameProvider>
+    </LocaleProvider>,
+  );
 }
 
 describe("PlanInspector localization", () => {
@@ -117,5 +135,37 @@ describe("PlanInspector localization", () => {
     expect(screen.getByLabelText(field)).toBeTruthy();
     expect(screen.getByRole("button", { name: action })).toBeTruthy();
     cleanup();
+  });
+
+  it("preserves a valid reference selection, unsaved form value, and raw reference patch through an in-place locale switch", async () => {
+    const props = selectionProps("plan-reference");
+    renderSwitchableInspector(props);
+    fireEvent.change(screen.getByLabelText("参考图名称"), { target: { value: "Draft reference" } });
+    fireEvent.click(screen.getByRole("button", { name: "应用参考图" }));
+    await waitFor(() => expect(props.onApplyPlanReferencePatch).toHaveBeenCalledOnce());
+    expect(props.context).toEqual({ kind: "plan-reference", referenceId: "00000000-0000-4000-8000-000000000101" });
+    fireEvent.click(screen.getByRole("button", { name: "Switch locale" }));
+    expect((screen.getByLabelText("Reference image name") as HTMLInputElement).value).toBe("Draft reference");
+    const [before, after] = (props.onApplyPlanReferencePatch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(before.id).toBe("00000000-0000-4000-8000-000000000101");
+    expect(after.name).toBe("Draft reference");
+    cleanup();
+  });
+
+  it("preserves a valid opening selection, unsaved kind, and raw opening patch through an in-place locale switch", async () => {
+    const props = selectionProps("opening");
+    renderSwitchableInspector(props);
+    fireEvent.change(screen.getByLabelText("门窗名称"), { target: { value: "Draft door" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "门窗类型" }), { target: { value: "door" } });
+    fireEvent.click(screen.getByRole("button", { name: "应用门窗" }));
+    await waitFor(() => expect(props.onApplyOpeningPatch).toHaveBeenCalledOnce());
+    expect(props.context).toEqual({ kind: "opening", openingId: "00000000-0000-4000-8000-000000000102" });
+    fireEvent.click(screen.getByRole("button", { name: "Switch locale" }));
+    expect((screen.getByLabelText("Opening name") as HTMLInputElement).value).toBe("Draft door");
+    expect((screen.getByRole("combobox", { name: "Opening type" }) as HTMLSelectElement).value).toBe("door");
+    const [before, after] = (props.onApplyOpeningPatch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(before.id).toBe("00000000-0000-4000-8000-000000000102");
+    expect(after.kind).toBe("door");
+    expect(after.width).toBe(300);
   });
 });

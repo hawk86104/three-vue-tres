@@ -48,3 +48,7 @@ The newly added English inspector test failed before implementation because the 
 
 - Added typed `inspector.referenceX` and `inspector.referenceY` labels and consumed them at the reference inspector accessibility boundary.
 - Added direct PlanInspector valid reference-image/opening tests in both locales. Final exact combined gate: 2 files, 136 tests passed, exit 0 (28.63s).
+
+## Test-only closure
+
+- Added PlanInspector-level in-place locale-switch tests for valid reference-image and opening selections. They retain the same context IDs and unsaved form state while asserting raw callback IDs, `door` kind, and numeric values. Focused test: 24 passed.
