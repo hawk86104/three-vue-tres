@@ -55,6 +55,7 @@ describe("EditorShell", () => {
             leftPanelLabel: "Project tree",
             canvasLabel: "2D plan editor",
             rightPanelLabel: "Inspector",
+            save: "Save project",
             close: "Close",
           },
           headerAccessory: <label>Interface language<select><option>English</option></select></label>,
@@ -63,6 +64,8 @@ describe("EditorShell", () => {
     );
 
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save project" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Close" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Saved");
     expect(screen.getByRole("navigation", { name: "Project tree" })).toBeVisible();

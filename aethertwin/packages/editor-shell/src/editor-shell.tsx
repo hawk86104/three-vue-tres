@@ -13,8 +13,8 @@ export interface EditorShellMessages {
   readonly leftPanelLabel: string;
   readonly canvasLabel: string;
   readonly rightPanelLabel: string;
-  readonly save?: string;
-  readonly close?: string;
+  readonly save: string;
+  readonly close: string;
 }
 
 export interface EditorShellProps {
@@ -82,11 +82,11 @@ export function EditorShell({
           </StatusNotice>
           <div className="aether-editor-shell__actions">
             <Button busy={isSaving} variant="primary" onClick={onSave}>
-              {messages.save ?? messages.saveStates.saved}
+              {messages.save}
             </Button>
             <Button disabled={!canUndo} variant="secondary" onClick={onUndo}>{messages.undo}</Button>
             <Button disabled={!canRedo} variant="secondary" onClick={onRedo}>{messages.redo}</Button>
-            <Button variant="ghost" onClick={onClose}>{messages.close ?? messages.back}</Button>
+            <Button variant="ghost" onClick={onClose}>{messages.close}</Button>
             {headerAccessory}
           </div>
         </div>

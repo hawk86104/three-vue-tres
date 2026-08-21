@@ -21,4 +21,17 @@ describe("PlanAccessibility localization", () => {
     expect(screen.getByText(/Authored display/u)).toBeVisible();
     expect(screen.getByText(/Product hotspot · Authored hot spot/u)).toBeVisible();
   });
+
+  it.each([
+    ["en", ["Room", "Space units"]],
+    ["zh-CN", ["房间", "空间单元"]],
+  ] as const)("uses every space-unit map key in %s accessibility text", (locale, labels) => {
+    const entities = ["room", "shop", "booth", "exhibition", "service", "restricted"].map((kind) => ({ id: `space-${kind}`, name: `Authored ${kind}`, type: "space-unit", kind, floorId: "floor-1", layerId: "layer-1", locked: false, transform: {} }));
+    const snapshot = { project: { profile: "showroom", floors: [{ id: "floor-1", layers: [{ id: "layer-1", visible: true, locked: false }] }], entities, planReferences: [], openings: [], routeNetworks: [] } } as never;
+    const sessionStore = { getState: () => ({ roomRecognition: null, activeTool: "select", setSelection: vi.fn() }) } as never;
+    const { container } = render(<StudioI18nTestProvider locale={locale}><PlanAccessibility snapshot={snapshot} activeFloorId="floor-1" selectedIds={new Set()} sessionStore={sessionStore} controller={{ createAt: vi.fn() } as never} /></StudioI18nTestProvider>);
+    expect(container).toHaveTextContent(labels[0]);
+    expect(container).toHaveTextContent(labels[1]);
+    expect(container).toHaveTextContent("Authored restricted");
+  });
 });

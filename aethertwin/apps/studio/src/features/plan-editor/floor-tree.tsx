@@ -10,7 +10,7 @@ import { Button, Field } from "@aethertwin/design-system";
 import type { FloorChange } from "@aethertwin/plan-engine";
 import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/locale-provider";
-import { ENTITY_TYPE_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { ENTITY_TYPE_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS, SPACE_UNIT_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 
 interface LayerTreeItemProps {
   readonly floor: Floor;
@@ -227,7 +227,9 @@ function LayerTreeItem({
                 }}
               >
                 <span>{entity.name}</span>
-                <small>{t(ENTITY_TYPE_MESSAGE_IDS[entity.type])}</small>
+                <small>{entity.type === "space-unit"
+                  ? t(SPACE_UNIT_KIND_MESSAGE_IDS[entity.kind])
+                  : t(ENTITY_TYPE_MESSAGE_IDS[entity.type])}</small>
                 {entity.locked ? <small>{t("floor.locked")}</small> : null}
               </button>
             </li>

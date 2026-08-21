@@ -44,3 +44,19 @@
 - `node --test tests/visible-actions.test.mjs`: PASS — 2 tests, 0 failures, exit 0.
 - Both required TypeScript commands: PASS — exit 0. `git diff --check`: PASS — exit 0; only CRLF conversion warnings.
 - Self-review confirmed only Task 3 files and this requested report are staged; protected dirty Cargo files, mode-showroom source, manifests, and lockfiles remain unstaged. Build/dev/preview/browser/debug/WebGL gates remain skipped by project rule.
+
+## Final controller verification fix
+
+### RED and implementation
+
+- Focused RED failed at both FloorTree and PlanAccessibility display boundaries because `space-unit` resolved through the generic entity type map rather than `SPACE_UNIT_KIND_MESSAGE_IDS`. The restored policy RED also caught overly narrow source parsing before its semantic assertions were made declaration-aware.
+- Both boundaries now narrow `space-unit` before generic entity lookup and render its stable kind through `SPACE_UNIT_KIND_MESSAGE_IDS`. Tests exercise all six keys in both English and Chinese, preserve authored names, and resolve every map value through both runtime catalogues.
+- `EditorShellMessages.save` and `.close` are required caller-owned values. Their former save-state/back fallbacks are removed; Chinese defaults and independently supplied English caller strings are exercised.
+- The stable action policy retains Task 3 action-ID/order/data-action assertions and restores semantic callback/boundary guards: foundational actions, PlanTool-to-session path, Player/Market exclusions, import/calibration/deferred exclusions, fixture and recognition callbacks, contextual/Preview routes, and forbidden later handlers. It does not rely on localized source literals.
+
+### Final verification
+
+- Focused added coverage: PASS — 4 files, 28 tests, 1.23s; policy: PASS — 8 tests, 0 failures.
+- Exact required Vitest command: PASS — 6 files, 154 tests, 30.17s, exit 0 (temporary-only output capture due the desktop output limit).
+- Both required TypeScript commands: PASS — exit 0. `git diff --check`: PASS — exit 0 with only CRLF conversion warnings.
+- Task 5–8-owned surfaces, renderer-status colon text, protected files/manifests/lockfiles, and cached/untracked review state were not changed. Build/dev/preview/browser/debug/WebGL remain skipped by project rule.

@@ -6,7 +6,7 @@ import type { InteractionController } from "./interaction-controller";
 
 import { useState, type FormEvent } from 'react';
 import { useI18n } from "../../i18n/locale-provider";
-import { ENTITY_TYPE_MESSAGE_IDS, FIXTURE_KIND_MESSAGE_IDS, OPENING_KIND_MESSAGE_IDS, POINT_OF_INTEREST_KIND_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { ENTITY_TYPE_MESSAGE_IDS, FIXTURE_KIND_MESSAGE_IDS, OPENING_KIND_MESSAGE_IDS, POINT_OF_INTEREST_KIND_MESSAGE_IDS, ROUTE_NODE_KIND_MESSAGE_IDS, SPACE_UNIT_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 import type { StudioTranslator } from "../../i18n/message-schema";
 
 export interface PlanAccessibilityProps {
@@ -156,7 +156,9 @@ export function PlanAccessibility({
           {entities.map((entity) => {
             const selected = selectedIds.has(entity.id);
             const locked = entity.locked || visibleLayers.get(entity.layerId) === true;
-            const semanticName = entity.type === "fixture"
+            const semanticName = entity.type === "space-unit"
+              ? t(SPACE_UNIT_KIND_MESSAGE_IDS[entity.kind])
+              : entity.type === "fixture"
               ? t(FIXTURE_KIND_MESSAGE_IDS[entity.kind])
               : entity.type === "poi"
                 ? t(POINT_OF_INTEREST_KIND_MESSAGE_IDS[entity.kind])
