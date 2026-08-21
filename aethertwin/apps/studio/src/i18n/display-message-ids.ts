@@ -1,6 +1,7 @@
 import type {
   Opening,
   FixtureKind,
+  MediaAssetKind,
   PointOfInterestKind,
   ProjectProfile,
   RouteNodeKind,
@@ -39,18 +40,18 @@ export const SHOWROOM_TOOL_ACTION_MESSAGE_IDS = {
 } as const satisfies Record<ShowroomToolActionId, StudioMessageId>;
 
 export const SPACE_UNIT_KIND_MESSAGE_IDS = {
-  room: "action.room", shop: "toolbar.market.units", booth: "toolbar.market.units",
-  exhibition: "toolbar.market.units", service: "toolbar.market.units", restricted: "toolbar.market.units",
+  room: "kind.spaceUnit.room", shop: "kind.spaceUnit.shop", booth: "kind.spaceUnit.booth",
+  exhibition: "kind.spaceUnit.exhibition", service: "kind.spaceUnit.service", restricted: "kind.spaceUnit.restricted",
 } as const satisfies Record<SpaceUnitKind, StudioMessageId>;
 
 export const ENTITY_TYPE_MESSAGE_IDS = {
-  boundary: "action.boundary", wall: "action.wall", zone: "action.zone",
-  "space-unit": "toolbar.market.units", fixture: "action.fixtureCatalogue",
-  poi: "action.poi", dimension: "action.dimension",
+  boundary: "kind.entity.boundary", wall: "kind.entity.wall", zone: "kind.entity.zone",
+  "space-unit": "kind.entity.spaceUnit", fixture: "kind.entity.fixture",
+  poi: "kind.entity.poi", dimension: "kind.entity.dimension",
 } as const satisfies Record<"boundary" | "wall" | "zone" | "space-unit" | "fixture" | "poi" | "dimension", StudioMessageId>;
 
 export const OPENING_KIND_MESSAGE_IDS = {
-  door: "action.door", window: "action.window",
+  door: "kind.opening.door", window: "kind.opening.window",
 } as const satisfies Record<Opening["kind"], StudioMessageId>;
 
 export const FIXTURE_KIND_MESSAGE_IDS = {
@@ -60,13 +61,18 @@ export const FIXTURE_KIND_MESSAGE_IDS = {
 } as const satisfies Record<FixtureKind, StudioMessageId>;
 
 export const POINT_OF_INTEREST_KIND_MESSAGE_IDS = {
-  entrance: "action.poi", exit: "action.poi", "service-desk": "action.poi", restroom: "action.poi",
-  "accessible-restroom": "action.poi", stage: "action.poi", food: "action.poi", "rest-area": "action.poi",
-  medical: "action.poi", "fire-safety": "action.poi", parking: "action.poi", charging: "action.poi",
-  storage: "action.poi", nursery: "action.poi", water: "action.poi", atm: "action.poi",
-  "closed-area": "action.poi", custom: "action.poi", "product-hotspot": "action.productHotspot",
+  entrance: "kind.poi.entrance", exit: "kind.poi.exit", "service-desk": "kind.poi.serviceDesk", restroom: "kind.poi.restroom",
+  "accessible-restroom": "kind.poi.accessibleRestroom", stage: "kind.poi.stage", food: "kind.poi.food", "rest-area": "kind.poi.restArea",
+  medical: "kind.poi.medical", "fire-safety": "kind.poi.fireSafety", parking: "kind.poi.parking", charging: "kind.poi.charging",
+  storage: "kind.poi.storage", nursery: "kind.poi.nursery", water: "kind.poi.water", atm: "kind.poi.atm",
+  "closed-area": "kind.poi.closedArea", custom: "kind.poi.custom", "product-hotspot": "kind.poi.productHotspot",
 } as const satisfies Record<PointOfInterestKind, StudioMessageId>;
 
+export const MEDIA_ASSET_KIND_MESSAGE_IDS = {
+  image: "kind.media.image",
+  video: "kind.media.video",
+} as const satisfies Readonly<Record<MediaAssetKind, StudioMessageId>>;
+
 export const ROUTE_NODE_KIND_MESSAGE_IDS = {
-  junction: "action.routeNode", entrance: "action.routeNode", "showroom-stop": "action.routeNode",
+  junction: "kind.routeNode.junction", entrance: "kind.routeNode.entrance", "showroom-stop": "kind.routeNode.showroomStop",
 } as const satisfies Record<RouteNodeKind, StudioMessageId>;

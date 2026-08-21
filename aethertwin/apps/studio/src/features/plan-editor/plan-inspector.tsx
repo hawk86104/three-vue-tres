@@ -37,6 +37,14 @@ import type {
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState, type Ref } from "react";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import {
+  ENTITY_TYPE_MESSAGE_IDS,
+  FIXTURE_KIND_MESSAGE_IDS,
+  POINT_OF_INTEREST_KIND_MESSAGE_IDS,
+  PROFILE_MESSAGE_IDS,
+  SPACE_UNIT_KIND_MESSAGE_IDS,
+} from "../../i18n/display-message-ids";
+import { useDisplayName } from "../../i18n/display-name-provider";
 import { useI18n } from "../../i18n/locale-provider";
 import { normalizeProjectName, validateProjectName, type ProjectNameValidationReason } from "../project-center/create-project-dialog";
 import type { InteractionController } from "./interaction-controller";
@@ -72,13 +80,18 @@ export type InspectorContext =
   | { readonly kind: "entity"; readonly entityId: string }
   | { readonly kind: "multi"; readonly entityIds: readonly string[] };
 
-const saveStateLabels: Record<SaveState, string> = {
-  dirty: "未保存",
-  saving: "保存中",
-  saved: "已保存",
-  error: "保存失败",
-  recovered: "已恢复",
-};
+const saveStateMessageIds = {
+  dirty: "editor.save.dirty",
+  saving: "editor.save.saving",
+  saved: "editor.save.saved",
+  error: "editor.save.error",
+  recovered: "editor.save.recovered",
+} as const satisfies Readonly<Record<SaveState, keyof typeof import("../../i18n/messages.zh-CN").zhCNMessages>>;
+
+const backendModeMessageIds = {
+  desktop: "backend.desktop",
+  sandbox: "backend.sandbox",
+} as const satisfies Readonly<Record<ProjectBackend["mode"], keyof typeof import("../../i18n/messages.zh-CN").zhCNMessages>>;
 
 function errorValue(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
@@ -167,7 +180,7 @@ function ProjectInspector({
   const [tagsHandledError, setTagsHandledError] = useState<Error | null>(null);
   const nameErrorId = `plan-inspector-name-error-${useId().replaceAll(":", "")}`;
   const tagsErrorId = `plan-inspector-tags-error-${useId().replaceAll(":", "")}`;
-  const { format } = useI18n();
+  const { format, t } = useI18n();
 
   useEffect(() => {
     setName(committedName);
@@ -247,28 +260,28 @@ function ProjectInspector({
   return (
     <div className="studio-inspector-stack">
       <div className="studio-inspector-form">
-      <h2>项目</h2>
+      <h2>{t("inspector.project")}</h2>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>项目档案</dt><dd>{snapshot.project.profile}</dd></div>
-        <div><dt>Schema</dt><dd>{snapshot.schemaVersion}</dd></div>
-        <div><dt>保存状态</dt><dd>{saveStateLabels[saveState]}</dd></div>
-        <div><dt>后端模式</dt><dd>{backendMode}</dd></div>
-        <div><dt>项目位置</dt><dd>{projectPath}</dd></div>
+        <div><dt>{t("inspector.profile")}</dt><dd>{t(PROFILE_MESSAGE_IDS[snapshot.project.profile])}</dd></div>
+        <div><dt>{t("inspector.schema")}</dt><dd>{snapshot.schemaVersion}</dd></div>
+        <div><dt>{t("inspector.saveState")}</dt><dd>{t(saveStateMessageIds[saveState])}</dd></div>
+        <div><dt>{t("inspector.backend")}</dt><dd>{t(backendModeMessageIds[backendMode])}</dd></div>
+        <div><dt>{t("inspector.projectPath")}</dt><dd>{projectPath}</dd></div>
       </dl>
       {renderedNameError === null ? null : (
         <StatusNotice id={nameErrorId} tone="error">
           <span>{renderedNameError}</span>
-          {nameLogRef === null ? null : <span>日志参考：{nameLogRef}</span>}
+          {nameLogRef === null ? null : <span>{t("error.diagnosticReference", { logRef: nameLogRef })}</span>}
         </StatusNotice>
       )}
       {tagsError === null ? null : (
         <StatusNotice id={tagsErrorId} tone="error">
           <span>{tagsError}</span>
-          {tagsLogRef === null ? null : <span>日志参考：{tagsLogRef}</span>}
+          {tagsLogRef === null ? null : <span>{t("error.diagnosticReference", { logRef: tagsLogRef })}</span>}
         </StatusNotice>
       )}
       <Field
-        label="项目名称"
+        label={t("inspector.projectName")}
         value={name}
         aria-describedby={renderedNameError === null ? undefined : nameErrorId}
         aria-invalid={renderedNameError === null ? undefined : true}
@@ -283,14 +296,14 @@ function ProjectInspector({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void commitName()}
       >
-        应用名称
+        {t("inspector.applyName")}
       </Button>
       <Field
-        label="项目标签"
+        label={t("inspector.projectTags")}
         value={tags}
         aria-describedby={tagsError === null ? undefined : tagsErrorId}
         aria-invalid={tagsError === null ? undefined : true}
-        helpText="使用英文逗号分隔标签"
+        helpText={t("inspector.tagsHelp")}
         onChange={(event) => {
           setTags(event.currentTarget.value);
           clearTagsError();
@@ -302,7 +315,7 @@ function ProjectInspector({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void commitTags()}
       >
-        应用标签
+        {t("inspector.applyTags")}
       </Button>
       </div>
       <EnvironmentInspector
@@ -325,6 +338,8 @@ function FloorInspector({
   order,
   onApplyFloorPatch,
 }: FloorInspectorProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const [name, setName] = useState(floor.name);
 
   useEffect(() => {
@@ -346,13 +361,13 @@ function FloorInspector({
 
   return (
     <div className="studio-inspector-form">
-      <h2>楼层</h2>
-      <p>{floor.name}</p>
+      <h2>{t("inspector.floor")}</h2>
+      <p>{displayName({ kind: "floor", id: floor.id, authoredName: floor.name })}</p>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>顺序</dt><dd>{order + 1}</dd></div>
+        <div><dt>{t("inspector.order")}</dt><dd>{order + 1}</dd></div>
       </dl>
       <Field
-        label="楼层名称"
+        label={t("inspector.floorName")}
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
         onBlur={() => void commitName()}
@@ -362,7 +377,7 @@ function FloorInspector({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void commitName()}
       >
-        应用楼层名称
+        {t("inspector.applyFloorName")}
       </Button>
     </div>
   );
@@ -381,6 +396,8 @@ function LayerInspector({
   order,
   onApplyFloorPatch,
 }: LayerInspectorProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const [name, setName] = useState(layer.name);
 
   useEffect(() => {
@@ -409,15 +426,15 @@ function LayerInspector({
 
   return (
     <div className="studio-inspector-form">
-      <h2>图层</h2>
-      <p>{layer.name}</p>
+      <h2>{t("inspector.layer")}</h2>
+      <p>{displayName({ kind: "layer", id: layer.id, authoredName: layer.name })}</p>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>顺序</dt><dd>{order + 1}</dd></div>
-        <div><dt>可见</dt><dd>{layer.visible ? "是" : "否"}</dd></div>
-        <div><dt>锁定</dt><dd>{layer.locked ? "是" : "否"}</dd></div>
+        <div><dt>{t("inspector.order")}</dt><dd>{order + 1}</dd></div>
+        <div><dt>{t("inspector.visible")}</dt><dd>{t(layer.visible ? "inspector.yes" : "inspector.no")}</dd></div>
+        <div><dt>{t("inspector.locked")}</dt><dd>{t(layer.locked ? "inspector.yes" : "inspector.no")}</dd></div>
       </dl>
       <Field
-        label="图层名称"
+        label={t("inspector.layerName")}
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
         onBlur={() => void commitName()}
@@ -427,7 +444,7 @@ function LayerInspector({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void commitName()}
       >
-        应用图层名称
+        {t("inspector.applyLayerName")}
       </Button>
       <label className="studio-plan-inspector__check">
         <input
@@ -440,7 +457,7 @@ function LayerInspector({
             });
           }}
         />
-        图层可见
+        {t("inspector.layerVisible")}
       </label>
       <label className="studio-plan-inspector__check">
         <input
@@ -453,7 +470,7 @@ function LayerInspector({
             });
           }}
         />
-        图层锁定
+        {t("inspector.layerLocked")}
       </label>
     </div>
   );
@@ -494,6 +511,8 @@ function EntityInspector({
   onApplyBuildingStructurePatch,
   onError,
 }: EntityInspectorProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const committedName = entity.name;
   const committedX = String(entity.transform.translation.x);
   const committedY = String(entity.transform.translation.y);
@@ -611,15 +630,15 @@ function EntityInspector({
     const normalizedRotation = rotation.trim();
     const nextRotation = normalizedRotation.length === 0 ? Number.NaN : Number(normalizedRotation);
     if (nextX === null) {
-      reportFieldIssue("x", "INVALID_LENGTH", "位置和角度必须是有限数字");
+      reportFieldIssue("x", "INVALID_LENGTH", t("inspector.invalidPosition"));
       return;
     }
     if (nextY === null) {
-      reportFieldIssue("y", "INVALID_LENGTH", "位置和角度必须是有限数字");
+      reportFieldIssue("y", "INVALID_LENGTH", t("inspector.invalidPosition"));
       return;
     }
     if (!Number.isFinite(nextRotation)) {
-      reportFieldIssue("rotation", "INVALID_ROTATION", "位置和角度必须是有限数字");
+      reportFieldIssue("rotation", "INVALID_ROTATION", t("inspector.invalidPosition"));
       return;
     }
 
@@ -640,11 +659,11 @@ function EntityInspector({
       const nextWidth = positiveLength(width);
       const nextDepth = positiveLength(depth);
       if (nextWidth === null) {
-        reportFieldIssue("width", "INVALID_LENGTH", "宽度和深度必须是正数");
+        reportFieldIssue("width", "INVALID_LENGTH", t("inspector.invalidSize"));
         return;
       }
       if (nextDepth === null) {
-        reportFieldIssue("depth", "INVALID_LENGTH", "宽度和深度必须是正数");
+        reportFieldIssue("depth", "INVALID_LENGTH", t("inspector.invalidSize"));
         return;
       }
       after = {
@@ -658,7 +677,7 @@ function EntityInspector({
           reportFieldIssue(
             "verticalHeight",
             "INVALID_LENGTH",
-            "垂直高度必须是正数",
+            t("inspector.invalidVerticalHeight"),
           );
           return;
         }
@@ -671,7 +690,7 @@ function EntityInspector({
           reportFieldIssue(
             "verticalHeight",
             "INVALID_LENGTH",
-            "垂直高度必须是正数",
+            t("inspector.invalidVerticalHeight"),
           );
           return;
         }
@@ -688,7 +707,7 @@ function EntityInspector({
     if (after.type === "wall") {
       const nextThickness = positiveLength(thickness);
       if (nextThickness === null) {
-        reportFieldIssue("thickness", "INVALID_LENGTH", "墙体厚度必须是正数");
+        reportFieldIssue("thickness", "INVALID_LENGTH", t("inspector.invalidWallThickness"));
         return;
       }
       after = {
@@ -706,7 +725,7 @@ function EntityInspector({
       } else {
         const nextRadius = positiveLength(normalizedRadius);
         if (nextRadius === null) {
-          reportFieldIssue("radius", "INVALID_LENGTH", "兴趣点半径必须是正数");
+          reportFieldIssue("radius", "INVALID_LENGTH", t("inspector.invalidPoiRadius"));
           return;
         }
         after = {
@@ -719,7 +738,7 @@ function EntityInspector({
     if (after.type === "dimension") {
       const nextOffset = signedLength(offset);
       if (nextOffset === null) {
-        reportFieldIssue("offset", "INVALID_LENGTH", "尺寸偏移必须是有限数字");
+        reportFieldIssue("offset", "INVALID_LENGTH", t("inspector.invalidDimensionOffset"));
         return;
       }
       after = {
@@ -818,11 +837,16 @@ function EntityInspector({
 
   return (
     <div className="studio-inspector-form">
-      <h2>对象</h2>
+      <h2>{t("inspector.entity")}</h2>
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>类型</dt><dd>{entity.type}</dd></div>
+        <div><dt>{t("inspector.entityName")}</dt><dd>{displayName({ kind: "entity", id: entity.id, authoredName: entity.name })}</dd></div>
+        <div><dt>{t("inspector.entityType")}</dt><dd>{t(ENTITY_TYPE_MESSAGE_IDS[entity.type])}</dd></div>
         {entity.type === "fixture" ? (
-          <div><dt>展具种类</dt><dd>{entity.kind}</dd></div>
+          <div><dt>{t("inspector.entityKind")}</dt><dd>{t(FIXTURE_KIND_MESSAGE_IDS[entity.kind])}</dd></div>
+        ) : entity.type === "space-unit" ? (
+          <div><dt>{t("inspector.entityKind")}</dt><dd>{t(SPACE_UNIT_KIND_MESSAGE_IDS[entity.kind])}</dd></div>
+        ) : entity.type === "poi" ? (
+          <div><dt>{t("inspector.entityKind")}</dt><dd>{t(POINT_OF_INTEREST_KIND_MESSAGE_IDS[entity.kind])}</dd></div>
         ) : null}
       </dl>
       {localError === null ? null : (
@@ -833,42 +857,42 @@ function EntityInspector({
         >{localError.issue.message}</StatusNotice>
       )}
       <Field
-        label="对象名称"
+        label={t("inspector.entityName")}
         value={name}
         disabled={propertiesDisabled}
         onChange={(event) => setName(event.currentTarget.value)}
       />
       <Field
-        label="对象 X (mm)"
+        label={t("inspector.x")}
         value={x}
         disabled={propertiesDisabled}
         {...fieldIssueProps("x")}
         onChange={(event) => setX(event.currentTarget.value)}
       />
       <Field
-        label="对象 Y (mm)"
+        label={t("inspector.y")}
         value={y}
         disabled={propertiesDisabled}
         {...fieldIssueProps("y")}
         onChange={(event) => setY(event.currentTarget.value)}
       />
       <Field
-        label="对象旋转 (°)"
+        label={t("inspector.rotation")}
         value={rotation}
         disabled={propertiesDisabled}
         {...fieldIssueProps("rotation")}
         onChange={(event) => setRotation(event.currentTarget.value)}
       />
       <label className="studio-plan-inspector__select">
-        图层
+        {t("inspector.entityLayer")}
         <select
           value={layerId}
-          aria-label="对象图层"
+          aria-label={t("inspector.entityLayerSelect")}
           disabled={propertiesDisabled}
           onChange={(event) => setLayerId(event.currentTarget.value)}
         >
           {floor.layers.map((layer) => (
-            <option key={layer.id} value={layer.id}>{layer.name}</option>
+            <option key={layer.id} value={layer.id}>{displayName({ kind: "layer", id: layer.id, authoredName: layer.name })}</option>
           ))}
         </select>
       </label>
@@ -879,10 +903,10 @@ function EntityInspector({
           disabled={!layerAllowsEdits}
           onChange={(event) => setLocked(event.currentTarget.checked)}
         />
-        对象锁定
+        {t("inspector.entityLocked")}
       </label>
       <Field
-        label="对象标签"
+        label={t("inspector.entityTags")}
         value={tags}
         disabled={propertiesDisabled}
         onChange={(event) => setTags(event.currentTarget.value)}
@@ -890,21 +914,21 @@ function EntityInspector({
       {entity.type === "fixture" ? (
         <>
           <Field
-            label="对象宽度 (mm)"
+            label={t("inspector.width")}
             value={width}
             disabled={propertiesDisabled}
             {...fieldIssueProps("width")}
             onChange={(event) => setWidth(event.currentTarget.value)}
           />
           <Field
-            label="对象深度 (mm)"
+            label={t("inspector.depth")}
             value={depth}
             disabled={propertiesDisabled}
             {...fieldIssueProps("depth")}
             onChange={(event) => setDepth(event.currentTarget.value)}
           />
           <Field
-            label="对象垂直高度 (mm)"
+            label={t("inspector.verticalHeight")}
             value={verticalHeight}
             disabled={propertiesDisabled}
             {...fieldIssueProps("verticalHeight")}
@@ -914,7 +938,7 @@ function EntityInspector({
       ) : null}
       {entity.type === "wall" ? (
         <Field
-          label="墙体厚度 (mm)"
+          label={t("inspector.wallThickness")}
           value={thickness}
           disabled={propertiesDisabled}
           {...fieldIssueProps("thickness")}
@@ -923,7 +947,7 @@ function EntityInspector({
       ) : null}
       {entity.type === "poi" ? (
         <Field
-          label="兴趣点半径 (mm)"
+          label={t("inspector.poiRadius")}
           value={radius}
           disabled={propertiesDisabled}
           {...fieldIssueProps("radius")}
@@ -932,7 +956,7 @@ function EntityInspector({
       ) : null}
       {entity.type === "dimension" ? (
         <Field
-          label="尺寸偏移 (mm)"
+          label={t("inspector.dimensionOffset")}
           value={offset}
           disabled={propertiesDisabled}
           {...fieldIssueProps("offset")}
@@ -944,7 +968,7 @@ function EntityInspector({
         disabled={!layerAllowsEdits || (entity.locked && locked)}
         onClick={() => void commit()}
       >
-        应用对象属性
+        {t("inspector.applyProperties")}
       </Button>
     </div>
   );
@@ -969,6 +993,7 @@ function MultiInspector({
   onApplyPlanEdit,
   onError,
 }: MultiInspectorProps) {
+  const { t } = useI18n();
   const byId = new Map(snapshot.project.entities.map((entity) => [entity.id, entity]));
   const entities = entityIds.flatMap((id) => {
     const entity = byId.get(id);
@@ -1007,10 +1032,10 @@ function MultiInspector({
 
   return (
     <div className="studio-inspector-form">
-      <h2>多选</h2>
-      <p>已选择 {entityIds.length} 个对象</p>
+      <h2>{t("inspector.multi")}</h2>
+      <p>{t("inspector.multiSelected", { count: entityIds.length })}</p>
       {!editable ? (
-        <StatusNotice tone="info">选择包含隐藏、锁定、跨楼层或缺失对象，无法批量修改。</StatusNotice>
+        <StatusNotice tone="info">{t("inspector.multiUnavailable")}</StatusNotice>
       ) : null}
       <div className="studio-plan-inspector__batch-actions">
         <Button
@@ -1018,14 +1043,14 @@ function MultiInspector({
           disabled={!editable}
           onClick={() => controller.copy()}
         >
-          复制
+          {t("inspector.copy")}
         </Button>
         <Button
           variant="secondary"
           disabled={!editable}
           onClick={() => void controller.paste()}
         >
-          粘贴
+          {t("inspector.paste")}
         </Button>
         <Button
           variant="secondary"
@@ -1036,7 +1061,7 @@ function MultiInspector({
             makeId,
           ))}
         >
-          线性阵列
+          {t("inspector.linearArray")}
         </Button>
         <Button
           variant="secondary"
@@ -1047,14 +1072,14 @@ function MultiInspector({
             makeId,
           ))}
         >
-          矩形阵列
+          {t("inspector.rectangularArray")}
         </Button>
         <Button
           variant="secondary"
           disabled={!editable || entities.length < 2}
           onClick={() => void apply(alignEntities(entities, "left"))}
         >
-          左对齐
+          {t("inspector.alignLeft")}
         </Button>
         <Button
           variant="secondary"
@@ -1065,7 +1090,7 @@ function MultiInspector({
             "centers",
           ))}
         >
-          水平等距
+          {t("inspector.distributeHorizontal")}
         </Button>
       </div>
     </div>
@@ -1130,6 +1155,7 @@ function EntityInspectorWithContent({
   resolveAsset,
   onError,
 }: EntityInspectorWithContentProps) {
+  const { t } = useI18n();
   const entityInspector = (
     <EntityInspector
       snapshot={snapshot}
@@ -1190,7 +1216,7 @@ function EntityInspectorWithContent({
       <div className="studio-inspector-stack">
         {entityInspector}
         <StatusNotice tone="error">
-          {"\u4ea7\u54c1\u70ed\u70b9\u7f3a\u5c11\u5185\u5bb9\u8bb0\u5f55"}
+          {t("inspector.productHotspotContentMissing")}
         </StatusNotice>
       </div>
     );
@@ -1338,6 +1364,7 @@ export function PlanInspector({
   resolveAsset,
   onError,
 }: PlanInspectorProps) {
+  const { t } = useI18n();
   if (context.kind === "project") {
     return (
       <ProjectInspector
@@ -1360,7 +1387,7 @@ export function PlanInspector({
     );
     const floor = snapshot.project.floors[order];
     return floor === undefined ? (
-      <StatusNotice tone="error">楼层不存在</StatusNotice>
+      <StatusNotice tone="error">{t("inspector.floorMissing")}</StatusNotice>
     ) : (
       <FloorInspector
         floor={floor}
@@ -1379,7 +1406,7 @@ export function PlanInspector({
     ) ?? -1;
     const layer = floor?.layers[order];
     return floor === undefined || layer === undefined ? (
-      <StatusNotice tone="error">图层不存在</StatusNotice>
+      <StatusNotice tone="error">{t("inspector.layerMissing")}</StatusNotice>
     ) : (
       <LayerInspector
         floor={floor}
@@ -1402,7 +1429,7 @@ export function PlanInspector({
       : floor?.layers.find(({ id }) => id === reference.layerId);
     if (reference === undefined || layer === undefined) {
       return (
-        <StatusNotice tone="error">{"\u5e73\u9762\u53c2\u8003\u4e0d\u5b58\u5728"}</StatusNotice>
+        <StatusNotice tone="error">{t("inspector.referenceMissing")}</StatusNotice>
       );
     }
     return (
@@ -1438,7 +1465,7 @@ export function PlanInspector({
       ? undefined
       : floor?.layers.find(({ id }) => id === wall.layerId);
     if (opening === undefined || wall === undefined || layer === undefined) {
-      return <StatusNotice tone="error">门窗不存在</StatusNotice>;
+      return <StatusNotice tone="error">{t("inspector.openingMissing")}</StatusNotice>;
     }
     return (
       <OpeningInspector
@@ -1461,7 +1488,7 @@ export function PlanInspector({
           (candidate) => candidate.id === entity.floorId,
         );
     return entity === undefined || floor === undefined ? (
-      <StatusNotice tone="error">对象不存在</StatusNotice>
+      <StatusNotice tone="error">{t("inspector.entityMissing")}</StatusNotice>
     ) : (
       <EntityInspectorWithContent
         productMediaImageButtonRef={productMediaImageButtonRef}
