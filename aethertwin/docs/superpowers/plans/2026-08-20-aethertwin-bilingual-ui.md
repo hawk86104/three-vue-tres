@@ -57,7 +57,7 @@ The catalogues must use natural product terminology rather than word-for-word tr
 | Cancel | 取消 | Cancel |
 | Close project | 关闭项目 | Close project |
 
-Write complete, conversational Chinese sentences. Prefer phrases such as “正在准备贴图…” and “无法导出：当前设备不支持 4K 分辨率。” over compressed labels or literal translations. English must remain concise and idiomatic.
+Write complete, conversational Chinese sentences. Prefer phrases such as “正在准备贴图…” and “无法导出：当前设备不支持超高清导出。” over compressed labels or literal translations. English must remain concise and idiomatic.
 
 ## Production Surface Inventory
 
@@ -352,6 +352,7 @@ Stage only the Task 1 files and commit:
 - Modify: apps/studio/src/i18n/messages.zh-CN.ts
 - Modify: apps/studio/src/i18n/messages.en.ts
 - Modify: apps/studio/src/app.tsx
+- Modify: apps/studio/src/app.css
 - Modify: apps/studio/src/app.test.tsx
 - Modify: apps/studio/src/web-demo/web-demo-app.tsx
 - Modify: apps/studio/src/web-demo/web-demo-app.test.tsx
@@ -449,6 +450,7 @@ Expected: all focused tests and typecheck pass; raw error text is absent from us
 **Files:**
 
 - Modify: packages/editor-shell/src/editor-shell.tsx
+- Modify: packages/editor-shell/src/editor-shell.css
 - Modify: packages/editor-shell/src/editor-shell.test.tsx
 - Modify: packages/editor-shell/src/index.ts
 - Modify: apps/studio/src/i18n/messages.zh-CN.ts
@@ -1020,7 +1022,7 @@ Record browser/version, OS, URL/mode, screenshots if authorized, observed warnin
 ## Definition of Done
 
 - Simplified Chinese is the default on every production interactive Studio surface.
-- English is selectable from the editor header and all in-scope copy switches without a reload.
+- English is selectable from the project-centre header, Web Demo loading/error states, and editor header; all in-scope copy switches without a reload.
 - Normal Studio remembers the choice; Web Demo and portable preview never persist it and reset to Chinese after refresh.
 - All production visible copy is catalogue-driven or narrowly allowlisted.
 - Known backend/export/asset error codes have safe bilingual copy and unknown/raw errors cannot leak.
