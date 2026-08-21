@@ -5,13 +5,19 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StudioRoot } from "./studio-root";
 
-vi.mock("./app", () => ({
-  App: () => <div data-testid="ordinary-app" />,
-}));
+vi.mock("./app", async () => {
+  const { useI18n } = await import("./i18n/locale-provider");
+  return {
+    App: () => <div data-testid="ordinary-app">{useI18n().locale}</div>,
+  };
+});
 
-vi.mock("./web-demo/web-demo-app", () => ({
-  WebDemoApp: () => <div data-testid="web-demo" />,
-}));
+vi.mock("./web-demo/web-demo-app", async () => {
+  const { useI18n } = await import("./i18n/locale-provider");
+  return {
+    WebDemoApp: () => <div data-testid="web-demo">{useI18n().locale}</div>,
+  };
+});
 
 afterEach(cleanup);
 
@@ -28,5 +34,21 @@ describe("StudioRoot", () => {
 
     expect(screen.getByTestId("ordinary-app")).toBeInTheDocument();
     expect(screen.queryByTestId("web-demo")).not.toBeInTheDocument();
+  });
+
+  it("uses persisted browser preference for normal Studio", () => {
+    window.localStorage.setItem("aethertwin.studio.locale.v1", "en");
+    render(<StudioRoot webDemo={false} />);
+
+    expect(screen.getByTestId("ordinary-app")).toHaveTextContent("en");
+  });
+
+  it("uses a fresh memory preference for Web Demo without touching browser storage", () => {
+    window.localStorage.setItem("aethertwin.studio.locale.v1", "en");
+    const getItem = vi.spyOn(window.localStorage, "getItem");
+    render(<StudioRoot webDemo />);
+
+    expect(screen.getByTestId("web-demo")).toHaveTextContent("zh-CN");
+    expect(getItem).not.toHaveBeenCalledWith("aethertwin.studio.locale.v1");
   });
 });
