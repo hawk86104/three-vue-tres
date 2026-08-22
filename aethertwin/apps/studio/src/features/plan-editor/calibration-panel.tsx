@@ -9,6 +9,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { StoreApi } from "zustand/vanilla";
+import { useDisplayName } from "../../i18n/display-name-provider";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
+import { useI18n } from "../../i18n/locale-provider";
 import type { CalibrationDraft, PlanEditorState } from "./editor-session";
 
 export interface CalibrationPanelProps {
@@ -46,15 +50,6 @@ function samePoint(left: Point2 | null, right: Point2 | null): boolean {
     : right !== null && left.x === right.x && left.y === right.y;
 }
 
-function errorMessage(value: unknown): string {
-  if (value instanceof Error) return value.message;
-  if (value !== null && typeof value === "object" && "message" in value) {
-    const message = value.message;
-    if (typeof message === "string") return message;
-  }
-  return String(value);
-}
-
 function metric(value: number): string {
   return Number.isInteger(value)
     ? String(value)
@@ -68,6 +63,8 @@ export function CalibrationPanel({
   onCancel,
   onReturnFocus,
 }: CalibrationPanelProps) {
+  const { t, format } = useI18n();
+  const displayName = useDisplayName();
   const subscribe = useCallback(
     (listener: () => void) => sessionStore.subscribe(listener),
     [sessionStore],
@@ -84,7 +81,7 @@ export function CalibrationPanel({
     fieldsFromPoint(draft?.sourcePointB ?? null),
   );
   const [distanceText, setDistanceText] = useState(draft?.distanceText ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<StudioMessageDescriptor | null>(null);
   const [publishing, setPublishing] = useState(false);
   const publishingRef = useRef(false);
   const previewReferenceRef = useRef<PlanReference | null>(null);
@@ -180,7 +177,7 @@ export function CalibrationPanel({
         distanceText,
         preview: null,
       });
-      setError("请输入两个有限校准点和大于零的实测距离（支持 mm、cm、m）。");
+      setError(message("calibration.invalidInput"));
       return;
     }
 
@@ -196,7 +193,7 @@ export function CalibrationPanel({
         distanceText,
         preview: null,
       });
-      setError(result.issue.message);
+      setError(message("calibration.invalidPreview"));
       return;
     }
 
@@ -231,7 +228,7 @@ export function CalibrationPanel({
       sessionStore.getState().cancelCalibration();
       onReturnFocus();
     } catch (value) {
-      setError(errorMessage(value));
+      setError(localizedErrorDescriptor(value));
     } finally {
       publishingRef.current = false;
       setPublishing(false);
@@ -270,42 +267,47 @@ export function CalibrationPanel({
   const proposedHeight = draft.preview === null
     ? null
     : draft.preview.bounds.max.y - draft.preview.bounds.min.y;
+  const referenceName = displayName({
+    kind: "plan-reference",
+    id: reference.id,
+    authoredName: reference.name,
+  });
 
   return (
     <aside
       className="studio-calibration-panel"
-      aria-label={`校准平面参考：${reference.name}`}
+      aria-label={t("calibration.panelLabel", { name: referenceName })}
       aria-busy={publishing}
     >
-      <h2>两点校准</h2>
-      <p>在画布上依次选择 A、B，或使用下列输入完成键盘校准。</p>
+      <h2>{t("calibration.heading")}</h2>
+      <p>{t("calibration.instructions")}</p>
       {error === null ? null : (
-        <StatusNotice tone="error">{error}</StatusNotice>
+        <StatusNotice tone="error">{format(error)}</StatusNotice>
       )}
       <div className="studio-calibration-panel__point-grid">
         <Field
-          label="校准点 A X (px)"
+          label={t("calibration.pointAX")}
           value={pointA.x}
           inputMode="decimal"
           disabled={publishing}
           onChange={(event) => changePoint("a", "x", event.currentTarget.value)}
         />
         <Field
-          label="校准点 A Y (px)"
+          label={t("calibration.pointAY")}
           value={pointA.y}
           inputMode="decimal"
           disabled={publishing}
           onChange={(event) => changePoint("a", "y", event.currentTarget.value)}
         />
         <Field
-          label="校准点 B X (px)"
+          label={t("calibration.pointBX")}
           value={pointB.x}
           inputMode="decimal"
           disabled={publishing}
           onChange={(event) => changePoint("b", "x", event.currentTarget.value)}
         />
         <Field
-          label="校准点 B Y (px)"
+          label={t("calibration.pointBY")}
           value={pointB.y}
           inputMode="decimal"
           disabled={publishing}
@@ -313,18 +315,18 @@ export function CalibrationPanel({
         />
       </div>
       <Field
-        label="实测距离"
+        label={t("calibration.distance")}
         value={distanceText}
         inputMode="decimal"
-        helpText="支持 mm、cm、m；未填写单位时按 mm。"
+        helpText={t("calibration.distanceHelp")}
         disabled={publishing}
         onChange={(event) => changeDistance(event.currentTarget.value)}
       />
       {draft.preview === null ? null : (
         <div className="studio-calibration-panel__preview" aria-live="polite">
-          <strong>{metric(draft.preview.millimetresPerPixel)} mm/px</strong>
-          <span>建议世界宽度：{metric(proposedWidth!)} mm</span>
-          <span>建议世界高度：{metric(proposedHeight!)} mm</span>
+          <strong>{t("calibration.previewScale", { value: metric(draft.preview.millimetresPerPixel) })}</strong>
+          <span>{t("calibration.proposedWidth", { value: metric(proposedWidth!) })}</span>
+          <span>{t("calibration.proposedHeight", { value: metric(proposedHeight!) })}</span>
         </div>
       )}
       <div className="studio-calibration-panel__actions">
@@ -333,20 +335,20 @@ export function CalibrationPanel({
           disabled={publishing}
           onClick={preview}
         >
-          预览校准
+          {t("calibration.preview")}
         </Button>
         <Button
           disabled={draft.preview === null || publishing}
           onClick={() => void confirm()}
         >
-          确认校准
+          {t("calibration.apply")}
         </Button>
         <Button
           variant="ghost"
           disabled={publishing}
           onClick={cancel}
         >
-          取消校准
+          {t("calibration.cancel")}
         </Button>
       </div>
     </aside>

@@ -12,6 +12,8 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useI18n } from "../../i18n/locale-provider";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
 import { ReferenceInspector } from "./reference-inspector";
 
 const layer: PlanLayer = {
@@ -59,17 +61,54 @@ function renderInspector(options: {
   }));
   const onError = vi.fn();
   render(
-    <ReferenceInspector
-      reference={options.selected ?? reference}
-      layer={options.selectedLayer ?? layer}
-      onApplyPlanReferencePatch={onApplyPlanReferencePatch}
-      onError={onError}
-    />,
+    <StudioI18nTestProvider>
+      <ReferenceInspector
+        reference={options.selected ?? reference}
+        layer={options.selectedLayer ?? layer}
+        onApplyPlanReferencePatch={onApplyPlanReferencePatch}
+        onError={onError}
+      />
+    </StudioI18nTestProvider>,
   );
   return { onApplyPlanReferencePatch, onError };
 }
 
 describe("ReferenceInspector", () => {
+  it("reformats reference transforms and validation after locale changes without mutating authored data", async () => {
+    const user = userEvent.setup();
+    const apply = vi.fn(async () => undefined);
+    function LocaleSwitch() {
+      const { setLocale } = useI18n();
+      return <button type="button" onClick={() => setLocale("en")}>Switch locale</button>;
+    }
+    function LocalizedInspector() {
+      return (
+        <StudioI18nTestProvider>
+          <LocaleSwitch />
+          <ReferenceInspector
+            reference={reference}
+            layer={layer}
+            onApplyPlanReferencePatch={apply}
+            onError={vi.fn()}
+          />
+        </StudioI18nTestProvider>
+      );
+    }
+    render(<LocalizedInspector />);
+
+    fireEvent.change(screen.getByLabelText("透明度"), { target: { value: "1.1" } });
+    await user.click(screen.getByRole("button", { name: "应用参考图" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("透明度必须在 0 到 1 之间");
+
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    expect(screen.getByRole("heading", { name: "Reference image" })).toBeVisible();
+    expect(screen.getByLabelText("Opacity")).toHaveValue("1.1");
+    expect(screen.getByRole("alert")).toHaveTextContent("Opacity must be between 0 and 1");
+    expect(screen.getByText(reference.name)).toBeVisible();
+    expect(reference.transform.translation).toEqual({ x: 100, y: -50 });
+    expect(apply).not.toHaveBeenCalled();
+  });
   it("publishes one exact patch for sanitized metadata and finite placement fields", async () => {
     const user = userEvent.setup();
     const { onApplyPlanReferencePatch } = renderInspector();

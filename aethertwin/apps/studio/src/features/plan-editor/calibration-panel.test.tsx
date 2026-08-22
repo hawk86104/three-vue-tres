@@ -23,6 +23,8 @@ import type {
 } from "@aethertwin/render-plan-2d";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoreApi } from "zustand/vanilla";
+import { useI18n } from "../../i18n/locale-provider";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
 import {
   createPlanEditorStore,
   type CalibrationDraft,
@@ -240,6 +242,43 @@ describe("Task 13 calibration session ownership and invalidation", () => {
 });
 
 describe("CalibrationPanel keyboard and preview contract", () => {
+  it("reformats calibration instructions, invalid distance, and actions after locale changes without restarting its draft", async () => {
+    const user = userEvent.setup();
+    const reference = referenceFixture();
+    const store = createPlanEditorStore({ activeFloorId: reference.floorId });
+    const session = beginCalibration(store, reference.id);
+    function LocaleSwitch() {
+      const { setLocale } = useI18n();
+      return <button type="button" onClick={() => setLocale("en")}>Switch locale</button>;
+    }
+    function LocalizedPanel() {
+      return (
+        <StudioI18nTestProvider>
+          <LocaleSwitch />
+          <CalibrationPanel
+            reference={reference}
+            sessionStore={store}
+            onConfirm={vi.fn(async () => undefined)}
+            onCancel={vi.fn()}
+            onReturnFocus={vi.fn()}
+          />
+        </StudioI18nTestProvider>
+      );
+    }
+    render(<LocalizedPanel />);
+
+    await user.click(screen.getByRole("button", { name: "预览校准" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("请输入两个有限校准点");
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    expect(screen.getByRole("heading", { name: "Two-point calibration" })).toBeVisible();
+    expect(screen.getByLabelText("Measured distance")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview calibration" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Apply calibration" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel calibration" })).toBeEnabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter two finite calibration points");
+    expect(session.getState().calibrationDraft?.referenceId).toBe(reference.id);
+  });
   function renderPanel(reference = referenceFixture()) {
     const store = createPlanEditorStore({ activeFloorId: reference.floorId });
     const session = beginCalibration(store, reference.id);

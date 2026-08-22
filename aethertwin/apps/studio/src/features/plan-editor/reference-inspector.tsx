@@ -3,6 +3,7 @@ import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import { parseLength } from "@aethertwin/plan-engine";
 import { useEffect, useRef, useState } from "react";
 import { useDisplayName } from "../../i18n/display-name-provider";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
 
 export interface ReferenceInspectorProps {
@@ -45,7 +46,7 @@ export function ReferenceInspector({
   onApplyPlanReferencePatch,
   onError,
 }: ReferenceInspectorProps) {
-  const { t } = useI18n();
+  const { t, format } = useI18n();
   const displayName = useDisplayName();
   const committedName = reference.name;
   const committedTags = reference.tags.join(", ");
@@ -59,7 +60,7 @@ export function ReferenceInspector({
   const [x, setX] = useState(committedX);
   const [y, setY] = useState(committedY);
   const [rotation, setRotation] = useState(committedRotation);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<StudioMessageDescriptor | null>(null);
   const publishingRef = useRef(false);
   const [publishing, setPublishing] = useState(false);
   const layerAllowsEdits = layer.visible && !layer.locked;
@@ -114,7 +115,7 @@ export function ReferenceInspector({
       || rotation.trim().length === 0
       || !Number.isFinite(nextRotationDegrees)
     ) {
-      setLocalError(t("inspector.invalidReference"));
+      setLocalError(message("inspector.invalidReference"));
       return;
     }
 
@@ -151,7 +152,7 @@ export function ReferenceInspector({
         <StatusNotice tone="info">{t("inspector.referenceLayerHidden")}</StatusNotice>
       ) : null}
       {localError === null ? null : (
-        <StatusNotice tone="error">{localError}</StatusNotice>
+        <StatusNotice tone="error">{format(localError)}</StatusNotice>
       )}
       <Field
         label={t("inspector.referenceName")}

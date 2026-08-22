@@ -1,33 +1,39 @@
 import type { PlanReference, ProjectSnapshot } from "@aethertwin/core-model";
 import { Button, StatusNotice } from "@aethertwin/design-system";
 import type { AssetImportProgress, ProjectStoreState } from "@aethertwin/project-store";
+import { useDisplayName } from "../../i18n/display-name-provider";
+import type { StudioTranslator } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
 
-const stageLabels: Readonly<Record<AssetImportProgress["stage"], string>> = {
-  capture: "\u6b63\u5728\u8bfb\u53d6\u6587\u4ef6",
-  validate: "\u6b63\u5728\u9a8c\u8bc1\u683c\u5f0f",
-  hash: "\u6b63\u5728\u8ba1\u7b97\u6307\u7eb9",
-  publish: "\u6b63\u5728\u53d1\u5e03\u8d44\u4ea7",
-  complete: "\u5bfc\u5165\u5b8c\u6210",
-};
-
-const issueLabels: Readonly<Record<ProjectStoreState["assetIssues"][number]["code"], string>> = {
-  ASSET_MISSING: "\u8d44\u4ea7\u5df2\u4e22\u5931",
-  ASSET_CORRUPT: "\u8d44\u4ea7\u5df2\u635f\u574f",
-  ASSET_CODEC_PREVIEW_UNAVAILABLE: "\u9884\u89c8\u4e0d\u53ef\u7528",
-};
-
-function mediaLabel(snapshot: ProjectSnapshot, reference: PlanReference): string {
-  const mediaType = snapshot.assets.find(({ id }) => id === reference.assetId)?.mediaType;
-  if (mediaType === "image/png") return "PNG";
-  if (mediaType === "image/jpeg") return "JPEG";
-  if (mediaType === "image/svg+xml") return "SVG";
-  return "Image";
+function stageLabel(stage: AssetImportProgress["stage"], t: StudioTranslator): string {
+  if (stage === "capture") return t("asset.importStage.capture");
+  if (stage === "validate") return t("asset.importStage.validate");
+  if (stage === "hash") return t("asset.importStage.hash");
+  if (stage === "publish") return t("asset.importStage.publish");
+  return t("asset.importStage.complete");
 }
 
-function formattedBytes(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  if (value < 1024) return `${value} B`;
-  return `${(value / 1024).toFixed(1)} KiB`;
+function issueLabel(
+  code: ProjectStoreState["assetIssues"][number]["code"],
+  t: StudioTranslator,
+): string {
+  if (code === "ASSET_MISSING") return t("asset.issueMissing");
+  if (code === "ASSET_CORRUPT") return t("asset.issueCorrupt");
+  return t("asset.issuePreviewUnavailable");
+}
+
+function mediaLabel(snapshot: ProjectSnapshot, reference: PlanReference, t: StudioTranslator): string {
+  const mediaType = snapshot.assets.find(({ id }) => id === reference.assetId)?.mediaType;
+  if (mediaType === "image/png") return t("asset.media.png");
+  if (mediaType === "image/jpeg") return t("asset.media.jpeg");
+  if (mediaType === "image/svg+xml") return t("asset.media.svg");
+  return t("asset.media.image");
+}
+
+function formattedBytes(value: number, t: StudioTranslator): string {
+  if (!Number.isFinite(value) || value <= 0) return t("asset.bytes", { value: "0" });
+  if (value < 1024) return t("asset.bytes", { value: String(value) });
+  return t("asset.kib", { value: (value / 1024).toFixed(1) });
 }
 
 export interface AssetLibraryProps {
@@ -53,51 +59,61 @@ export function AssetLibrary({
   onSelect,
   onReimport,
 }: AssetLibraryProps) {
+  const { t } = useI18n();
+  const displayName = useDisplayName();
   const issueByAssetId = new Map(assetIssues.map((issue) => [issue.assetId, issue]));
   const references = snapshot.project.planReferences;
 
   return (
-    <section className="studio-asset-library" role="region" aria-label={"\u8d44\u4ea7\u5e93"}>
+    <section className="studio-asset-library" role="region" aria-label={t("asset.library")}>
       <div className="studio-asset-library__heading">
         <div>
-          <h2>{"\u8d44\u4ea7\u5e93"}</h2>
-          <p>{"\u5e73\u9762\u53c2\u8003"}</p>
+          <h2>{t("asset.library")}</h2>
+          <p>{t("asset.subtitle")}</p>
         </div>
         <Button
           variant="secondary"
           disabled={importDisabled}
           onClick={(event) => onImport(event.currentTarget)}
         >
-          {"\u5bfc\u5165\u5e73\u9762\u56fe"}
+          {t("asset.import")}
         </Button>
       </div>
 
       {progress === null ? null : (
         <StatusNotice className="studio-asset-library__progress" tone="info">
-          <strong>{stageLabels[progress.stage]}</strong>
+          <strong>{stageLabel(progress.stage, t)}</strong>
           <progress
-            aria-label={"\u5bfc\u5165\u8fdb\u5ea6"}
+            aria-label={t("asset.importProgress")}
             max={Math.max(progress.totalBytes, 1)}
             value={Math.min(progress.completedBytes, Math.max(progress.totalBytes, 1))}
           />
           <span>
-            {formattedBytes(progress.completedBytes)} / {formattedBytes(progress.totalBytes)}
+            {t("asset.progressValue", {
+              completed: formattedBytes(progress.completedBytes, t),
+              total: formattedBytes(progress.totalBytes, t),
+            })}
           </span>
           <Button variant="ghost" onClick={onCancel}>
-            {"\u53d6\u6d88\u5bfc\u5165"}
+            {t("asset.cancelImport")}
           </Button>
         </StatusNotice>
       )}
 
       {references.length === 0 ? (
         <p className="studio-asset-library__empty">
-          {"\u5c1a\u672a\u5bfc\u5165\u5e73\u9762\u53c2\u8003"}
+          {t("asset.empty")}
         </p>
       ) : (
-        <ul className="studio-asset-library__list" aria-label={"\u5e73\u9762\u53c2\u8003"}>
+        <ul className="studio-asset-library__list" aria-label={t("asset.references")}>
           {references.map((reference) => {
             const issue = issueByAssetId.get(reference.assetId);
             const selected = selectedIds.has(reference.id);
+            const name = displayName({
+              kind: "plan-reference",
+              id: reference.id,
+              authoredName: reference.name,
+            });
             return (
               <li
                 key={reference.id}
@@ -110,33 +126,33 @@ export function AssetLibrary({
                   type="button"
                   className="studio-asset-library__select"
                   aria-pressed={selected}
-                  aria-label={`${"\u9009\u62e9\u53c2\u8003"} ${reference.name}`}
+                  aria-label={t("asset.selectReference", { name })}
                   onClick={() => onSelect(reference.id)}
                 >
-                  <strong>{reference.name}</strong>
-                  <span>{mediaLabel(snapshot, reference)}</span>
+                  <strong>{name}</strong>
+                  <span>{mediaLabel(snapshot, reference, t)}</span>
                 </button>
                 <dl className="studio-asset-library__metadata">
                   <div>
-                    <dt>{"\u6807\u5b9a"}</dt>
-                    <dd>{reference.calibration === null ? "\u672a\u6821\u51c6" : "\u5df2\u6821\u51c6"}</dd>
+                    <dt>{t("asset.calibration")}</dt>
+                    <dd>{reference.calibration === null ? t("asset.unscaled") : t("asset.calibrated")}</dd>
                   </div>
                   <div>
-                    <dt>{"\u9501\u5b9a"}</dt>
-                    <dd>{reference.locked ? "\u5df2\u9501\u5b9a" : "\u672a\u9501\u5b9a"}</dd>
+                    <dt>{t("asset.lock")}</dt>
+                    <dd>{reference.locked ? t("asset.locked") : t("asset.unlocked")}</dd>
                   </div>
                 </dl>
                 {issue === undefined ? null : (
                   <div className="studio-asset-library__issue" data-issue-code={issue.code}>
-                    <StatusNotice tone="error">{issueLabels[issue.code]}</StatusNotice>
+                    <StatusNotice tone="error">{issueLabel(issue.code, t)}</StatusNotice>
                     {(issue.code === "ASSET_MISSING" || issue.code === "ASSET_CORRUPT") ? (
                       <Button
                         variant="secondary"
                         disabled={importDisabled}
-                        aria-label={`${"\u91cd\u65b0\u5bfc\u5165"} ${reference.name}`}
+                        aria-label={t("asset.retryImport", { name })}
                         onClick={(event) => onReimport(reference, event.currentTarget)}
                       >
-                        {"\u91cd\u65b0\u5bfc\u5165"}
+                        {t("asset.retryImport", { name })}
                       </Button>
                     ) : null}
                   </div>

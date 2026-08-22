@@ -10,6 +10,11 @@ import {
 import { ProjectStore, SandboxProjectBackend } from "@aethertwin/project-store";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useI18n } from "../../i18n/locale-provider";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
+import { ProjectBackendError } from "../../backend/project-backend-error";
+import { formatMessageDescriptor } from "../../i18n/format-message";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlanEditorStore } from "./editor-session";
 import {
@@ -172,6 +177,7 @@ function renderImportEditor(
     readonly backendMode?: "desktop" | "sandbox";
     readonly picker?: PlanAssetPicker | null;
     readonly ids?: readonly string[];
+    readonly enableLocaleSwitch?: boolean;
   } = {},
 ) {
   const snapshot = store.getState().snapshot!;
@@ -185,12 +191,21 @@ function renderImportEditor(
     makeId,
     ...(Object.hasOwn(options, "picker") ? { assetPicker: options.picker } : {}),
   };
+  function LocaleSwitch() {
+    const { setLocale } = useI18n();
+    return options.enableLocaleSwitch ? (
+      <button type="button" onClick={() => setLocale("en")}>Switch locale</button>
+    ) : null;
+  }
   const result = render(
-    <PlanEditor
-      store={store}
-      backendMode={options.backendMode ?? "sandbox"}
-      dependencies={dependencies}
-    />,
+    <StudioI18nTestProvider>
+      <LocaleSwitch />
+      <PlanEditor
+        store={store}
+        backendMode={options.backendMode ?? "sandbox"}
+        dependencies={dependencies}
+      />
+    </StudioI18nTestProvider>,
   );
   return { ...result, sessionStore, makeId };
 }
@@ -401,6 +416,57 @@ describe("Task 11 sidebar tabs", () => {
 });
 
 describe("Task 11 Asset Library workflow", () => {
+  it("reformats an active import without restarting or cancelling the operation", async () => {
+    const { store } = await createProject();
+    const importPlanReference = vi.spyOn(store, "importPlanReference").mockImplementation(async (
+      request,
+      _reference,
+      onProgress,
+    ) => {
+      onProgress?.({
+        operationId: request.operationId,
+        stage: "hash",
+        completedBytes: 12,
+        totalBytes: 24,
+      });
+      return new Promise<PlanReference>(() => undefined);
+    });
+    const cancelAssetImport = vi.spyOn(store, "cancelAssetImport");
+    renderImportEditor(store, {
+      picker: { pick: vi.fn(async () => sandboxSource()) },
+      enableLocaleSwitch: true,
+    });
+    const user = userEvent.setup();
+
+    await user.click(toolbarImportButton());
+    expect(await screen.findByText("正在计算指纹")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    const library = screen.getByRole("region", { name: "Asset library" });
+    expect(library).toBeVisible();
+    expect(within(library).getByRole("button", { name: "Import floor plan" })).toBeDisabled();
+    expect(screen.getByText("Calculating fingerprint")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cancel import" })).toBeEnabled();
+    expect(importPlanReference).toHaveBeenCalledOnce();
+    expect(cancelAssetImport).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["zh-CN", "资源操作未能完成，请重试。"],
+    ["en", "The asset operation could not be completed. Try again."],
+  ] as const)("redacts ProjectBackendError paths in %s", (locale, expected) => {
+    const failure = new ProjectBackendError(
+      "ASSET_IO_FAILED",
+      `Could not import ${PRIVATE_SOURCE_PATH}`,
+      { path: PRIVATE_SOURCE_PATH },
+      "asset-safe-ref",
+    );
+
+    const rendered = formatMessageDescriptor(locale, localizedErrorDescriptor(failure));
+
+    expect(rendered).toBe(expected);
+    expect(rendered).not.toContain(PRIVATE_SOURCE_PATH);
+  });
   it("cancels the active operation UUID without surfacing cancellation as an error", async () => {
     const { store } = await createProject();
     const completion = deferred<PlanReference>();
