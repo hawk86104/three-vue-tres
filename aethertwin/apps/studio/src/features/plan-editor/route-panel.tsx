@@ -13,6 +13,7 @@ import type { PlanEditorState, RouteAuthoringScope } from "./editor-session";
 import { ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 import { message as messageDescriptor, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
+import { useDisplayName } from "../../i18n/display-name-provider";
 import { localizedErrorDescriptor } from "../../i18n/localized-error";
 
 export interface RoutePanelProps {
@@ -60,6 +61,7 @@ export function RoutePanel({
   onReturnFocus,
 }: RoutePanelProps) {
   const { format, t } = useI18n();
+  const displayName = useDisplayName();
   const subscribe = useMemo(() => (
     (listener: () => void) => sessionStore.subscribe(listener)
   ), [sessionStore]);
@@ -178,10 +180,10 @@ export function RoutePanel({
     }
   }
 
-  const routeFailureMessage = noRoute === null ? null : t("route.panel.noRoute", { from: "", to: "" });
+  const routeFailureMessage = noRoute === null ? null : t("route.panel.invalid");
 
   return (
-    <aside className="studio-route-panel" aria-label={t("route.panel.label", { name: network.name })} aria-busy={publishing}>
+    <aside className="studio-route-panel" aria-label={t("route.panel.label", { name: displayName({ kind: "route-network", id: network.id, authoredName: network.name }) })} aria-busy={publishing}>
       <h2>{t("route.panel.heading")}</h2>
       {message === null ? null : <StatusNotice tone="error">{format(message)}</StatusNotice>}
       {routeFailureMessage === null ? null : (

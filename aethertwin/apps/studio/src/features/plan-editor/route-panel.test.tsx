@@ -196,7 +196,7 @@ describe("RoutePanel guided-route stop authoring", () => {
     expect(screen.getByTestId("guided-route-preview")).toHaveTextContent("100 mm");
     await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("路线无法连通");
+    expect(screen.getByRole("alert")).toHaveTextContent("路线草稿已无法解析");
     expect(screen.getByRole("alert")).not.toHaveTextContent("Lighting gallery");
     expect(screen.getByRole("alert")).not.toHaveTextContent("Isolated gallery");
     expect(screen.getByRole("button", { name: "确认导览路线" })).toBeDisabled();

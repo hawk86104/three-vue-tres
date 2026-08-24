@@ -12,6 +12,7 @@ import type {
 } from "@aethertwin/project-store";
 import { useEffect, useState, type Ref } from "react";
 import { useI18n } from "../../i18n/locale-provider";
+import { useDisplayName } from "../../i18n/display-name-provider";
 import { type StudioMessageDescriptor } from "../../i18n/format-message";
 import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
@@ -61,6 +62,7 @@ function ContentPreview({
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
 }) {
   const { format, t } = useI18n();
+  const displayName = useDisplayName();
   const [source, setSource] = useState<ProjectAssetSource | null>(null);
   const [failed, setFailed] = useState(false);
   const unavailable = issue?.code === "ASSET_MISSING"
@@ -118,6 +120,7 @@ export function ContentInspector({
   importImageButtonRef,
 }: ContentInspectorProps) {
   const { format, t } = useI18n();
+  const displayName = useDisplayName();
   const committedName = content.name;
   const committedDescription = content.description;
   const committedTags = content.tags.join(", ");
@@ -138,9 +141,11 @@ export function ContentInspector({
 
   async function patch(after: ProductContent): Promise<void> {
     if (disabled || patchBusy) return;
+    setFailure(null);
     setPatchBusy(true);
     try {
       await onPatch(content, after);
+      setFailure(null);
     } catch (error) {
       setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
@@ -175,9 +180,11 @@ export function ContentInspector({
     initiator: HTMLElement,
   ): Promise<void> {
     if (disabled || assetOperationBusy || importBusy) return;
+    setFailure(null);
     setImportBusy(true);
     try {
       await onImport(role, initiator);
+      setFailure(null);
     } catch (error) {
       setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
@@ -187,9 +194,11 @@ export function ContentInspector({
 
   async function repair(item: MediaAsset, initiator: HTMLElement) {
     if (disabled || assetOperationBusy || repairingId !== null) return;
+    setFailure(null);
     setRepairingId(item.id);
     try {
       await onRepair(item, initiator);
+      setFailure(null);
     } catch (error) {
       setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
@@ -255,7 +264,7 @@ export function ContentInspector({
             || issue?.code === "ASSET_CORRUPT";
           return (
             <li key={item.id}>
-              <strong>{item.name}</strong>
+              <strong>{displayName({ kind: "media-asset", id: item.id, authoredName: item.name })}</strong>
               <ContentPreview
                 media={item}
                 issue={issue}

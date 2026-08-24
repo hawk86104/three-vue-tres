@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
+import { useDisplayName } from "../../i18n/display-name-provider";
 import { localizedErrorDescriptor } from "../../i18n/localized-error";
 
 export interface RouteInspectorProps {
@@ -44,6 +45,7 @@ export function RouteInspector({
   onError: _onError,
 }: RouteInspectorProps) {
   const { format, t } = useI18n();
+  const displayName = useDisplayName();
   const [name, setName] = useState(node.name);
   const [kind, setKind] = useState<RouteNodeKind>(node.kind);
   const [tags, setTags] = useState(node.tags.join(", "));
@@ -112,7 +114,7 @@ export function RouteInspector({
         <StatusNotice tone="error">{format(error)}</StatusNotice>
       )}
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>{t("route.node.network")}</dt><dd>{network.name}</dd></div>
+        <div><dt>{t("route.node.network")}</dt><dd>{displayName({ kind: "route-network", id: network.id, authoredName: network.name })}</dd></div>
         <div><dt>{t("route.node.id")}</dt><dd>{node.id}</dd></div>
         <div><dt>{t("route.node.coordinate")}</dt><dd>{t("route.node.x", { value: node.position.x })}</dd></div>
         <div><dt>{t("route.node.coordinate")}</dt><dd>{t("route.node.y", { value: node.position.y })}</dd></div>
