@@ -467,6 +467,35 @@ describe("Task 11 Asset Library workflow", () => {
     expect(rendered).toBe(expected);
     expect(rendered).not.toContain(PRIVATE_SOURCE_PATH);
   });
+
+  it("reformats a real plan-reference import ProjectBackendError after failure without leaking its path", async () => {
+    const { store } = await createProject();
+    vi.spyOn(store, "importPlanReference").mockRejectedValueOnce(new ProjectBackendError(
+      "ASSET_IO_FAILED",
+      `Could not import ${PRIVATE_SOURCE_PATH}`,
+      { path: PRIVATE_SOURCE_PATH },
+      "plan-import-safe-ref",
+    ));
+    renderImportEditor(store, {
+      picker: { pick: vi.fn(async () => sandboxSource()) },
+      enableLocaleSwitch: true,
+    });
+    const user = userEvent.setup();
+
+    await user.click(toolbarImportButton());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("资源操作未能完成，请重试。");
+    expect(alert).toHaveTextContent("诊断参考：plan-import-safe-ref");
+    expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
+
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    expect(alert).toHaveTextContent("The asset operation could not be completed. Try again.");
+    expect(alert).toHaveTextContent("Diagnostic reference: plan-import-safe-ref");
+    expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
+  });
+
   it("cancels the active operation UUID without surfacing cancellation as an error", async () => {
     const { store } = await createProject();
     const completion = deferred<PlanReference>();
@@ -527,6 +556,44 @@ describe("Task 11 Asset Library workflow", () => {
     await waitFor(() => expect(screen.queryByRole("button", {
       name: "\u53d6\u6d88\u5bfc\u5165",
     })).not.toBeInTheDocument());
+  });
+
+  it("reformats a real plan-reference cancellation ProjectBackendError after failure without leaking its path", async () => {
+    const { store } = await createProject();
+    const completion = deferred<PlanReference>();
+    vi.spyOn(store, "importPlanReference").mockImplementation(async () => completion.promise);
+    vi.spyOn(store, "cancelAssetImport").mockRejectedValueOnce(new ProjectBackendError(
+      "ASSET_IO_FAILED",
+      `Could not cancel ${PRIVATE_SOURCE_PATH}`,
+      { path: PRIVATE_SOURCE_PATH },
+      "plan-cancel-safe-ref",
+    ));
+    renderImportEditor(store, {
+      picker: { pick: vi.fn(async () => sandboxSource()) },
+      enableLocaleSwitch: true,
+    });
+    const user = userEvent.setup();
+
+    await user.click(toolbarImportButton());
+    await user.click(await screen.findByRole("button", { name: "取消导入" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("资源操作未能完成，请重试。");
+    expect(alert).toHaveTextContent("诊断参考：plan-cancel-safe-ref");
+    expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
+
+    await user.click(screen.getByRole("button", { name: "Switch locale" }));
+
+    expect(alert).toHaveTextContent("The asset operation could not be completed. Try again.");
+    expect(alert).toHaveTextContent("Diagnostic reference: plan-cancel-safe-ref");
+    expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
+
+    await act(async () => completion.reject(new ProjectBackendError(
+      "ASSET_IMPORT_CANCELLED",
+      `Import cancelled for ${PRIVATE_SOURCE_PATH}`,
+      { path: PRIVATE_SOURCE_PATH },
+      "plan-cancelled-ref",
+    )));
   });
 
   it("falls back to the Asset Library tab when successful reimport removes its button", async () => {

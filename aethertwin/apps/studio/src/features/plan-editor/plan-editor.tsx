@@ -102,8 +102,11 @@ import { FixtureCatalogue } from "./fixture-catalogue";
 import { RouteInspector } from "./route-inspector";
 import { RoutePanel } from "./route-panel";
 import { PROFILE_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { LanguageSwitcher } from "../../i18n/language-switcher";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 import { useI18n } from "../../i18n/locale-provider";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 
 export interface PlanWorkspaceContext {
   readonly snapshot: ProjectSnapshot;
@@ -165,12 +168,32 @@ function safeAssetImportError(
   return safe;
 }
 
-function ErrorNotice({ error }: { readonly error: Error }) {
-  const logRef = logReference(error);
+interface LocalizedErrorNotice {
+  readonly descriptor: StudioMessageDescriptor;
+  readonly logRef: string | null;
+}
+
+function localizedPlanReferenceFailure(value: unknown): LocalizedErrorNotice {
+  return {
+    descriptor: value instanceof ProjectBackendError
+      ? localizedErrorDescriptor(value)
+      : message("error.planReferenceImport"),
+    logRef: localizedErrorLogRef(value) ?? logReference(value),
+  };
+}
+
+function isLocalizedErrorNotice(value: Error | LocalizedErrorNotice): value is LocalizedErrorNotice {
+  return "descriptor" in value;
+}
+
+function ErrorNotice({ error }: { readonly error: Error | LocalizedErrorNotice }) {
+  const { format, t } = useI18n();
+  const localized = isLocalizedErrorNotice(error);
+  const logRef = localized ? error.logRef : logReference(error);
   return (
     <StatusNotice tone="error">
-      <span>{error.message}</span>
-      {logRef === null ? null : <span>日志参考：{logRef}</span>}
+      <span>{localized ? format(error.descriptor) : error.message}</span>
+      {logRef === null ? null : <span>{t("error.diagnosticReference", { logRef })}</span>}
     </StatusNotice>
   );
 }
@@ -448,7 +471,7 @@ export function PlanEditor({
 }: PlanEditorProps) {
   const { t } = useI18n();
   const state = useProjectState(store);
-  const [actionError, setActionError] = useState<Error | null>(null);
+  const [actionError, setActionError] = useState<Error | LocalizedErrorNotice | null>(null);
   const [roomPanelOpen, setRoomPanelOpen] = useState(false);
   const [roomRecognitionBusy, setRoomRecognitionBusy] = useState(false);
   const [handledStoreError, setHandledStoreError] = useState<Error | null>(null);
@@ -461,7 +484,7 @@ export function PlanEditor({
   const activeAssetOperation = useRef<{
     readonly operationId: string;
     readonly initiator: HTMLElement;
-    readonly failureMessage: string;
+    readonly failure: string | StudioMessageDescriptor;
   } | null>(null);
   const calibrationInitiator = useRef<HTMLButtonElement | null>(null);
   const routePanelTrigger = useRef<HTMLButtonElement | null>(null);
@@ -1015,7 +1038,7 @@ export function PlanEditor({
       activeAssetOperation.current = {
         operationId,
         initiator,
-        failureMessage: "\u5e73\u9762\u56fe\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002",
+        failure: message("error.assetOperation"),
       };
       sessionStore.getState().setSidePanel("assets");
       const totalBytes = source.kind === "sandbox-blob" ? source.blob.size : 0;
@@ -1062,7 +1085,9 @@ export function PlanEditor({
       sessionStore.getState().setSelection([imported.id]);
       setContext({ kind: "plan-reference", referenceId: imported.id });
     } catch (error) {
-      if (!isAssetImportCancellation(error)) setActionError(safeAssetImportError(error));
+      if (!isAssetImportCancellation(error)) {
+        setActionError(localizedPlanReferenceFailure(error));
+      }
     } finally {
       assetPickerPending.current = false;
       setAssetImportBusy(false);
@@ -1101,7 +1126,7 @@ export function PlanEditor({
 
       const operationId = makeId();
       ownedOperationId = operationId;
-      activeAssetOperation.current = { operationId, initiator, failureMessage };
+      activeAssetOperation.current = { operationId, initiator, failure: failureMessage };
       sessionStore.getState().setSidePanel("assets");
       const totalBytes = source.kind === "sandbox-blob" ? source.blob.size : 0;
       setImportProgress({
@@ -1335,7 +1360,9 @@ export function PlanEditor({
     try {
       await store.cancelAssetImport(active.operationId);
     } catch (error) {
-      setActionError(safeAssetImportError(error, active.failureMessage));
+      setActionError(typeof active.failure === "string"
+        ? safeAssetImportError(error, active.failure)
+        : localizedPlanReferenceFailure(error));
     }
   }
 

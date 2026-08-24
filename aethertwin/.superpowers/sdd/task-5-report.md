@@ -8,6 +8,7 @@
 - Localized calibration labels, instructions, validation, preview values, actions, and ARIA label.
 - Stored reference-inspector and calibration failures as `StudioMessageDescriptor` values, rendering with the current locale instead of persisting translated strings.
 - Mapped calibration confirmation failures through `localizedErrorDescriptor`, avoiding backend error message/path disclosure.
+- Review correction: real plan-reference import and cancellation failures now retain a typed safe descriptor and diagnostic reference in `PlanEditor` state. `ErrorNotice` formats that descriptor and its diagnostic label at render time, so an in-place locale change updates existing failure UI without exposing a backend path.
 
 ## TDD evidence
 
@@ -15,6 +16,7 @@
 2. Ran the required targeted test command before implementation. It failed in the three new tests because the components still rendered Chinese literals / preserved a translated validation string.
 3. Implemented the minimal typed-catalogue and component changes.
 4. Re-ran the same targeted command successfully: 3 files, 50 tests passed.
+5. Added real import and cancellation integration failures using secret-bearing `ProjectBackendError` values. The two new tests first failed because `PlanEditor` stored a Chinese preformatted `Error`, then passed after the descriptor-state correction.
 
 ## Verification
 
@@ -23,6 +25,12 @@
 - `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` — not run. The project execution guard rejected it because AGENTS.md requires explicit user authorization for build/debug-class verification commands; this task did not have such authorization at execution time.
 - No build, dev, preview, browser, debug, or WebGL command was run, per project rules.
 
+### Review correction verification
+
+- `pnpm.cmd vitest run apps/studio/src/features/plan-editor/asset-library.test.tsx apps/studio/src/features/plan-editor/reference-inspector.test.tsx apps/studio/src/features/plan-editor/calibration-panel.test.tsx apps/studio/src/features/plan-editor/plan-editor.test.tsx` — passed (4 files, 166 tests).
+- `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` — attempted again and blocked by the AGENTS.md authorization gate; not bypassed.
+- `git diff --check` — passed; Git emitted only line-ending conversion warnings.
+
 ## Notes
 
-The worktree contained unrelated pre-existing changes in Rust/package files and `.superpowers` artifacts. This task stages and commits only its eight Studio source/test/catalogue files plus this report.
+The worktree contained unrelated pre-existing changes in Rust/package files and `.superpowers` artifacts. The review correction stages only the plan editor, asset-library test, two catalogues, and this report.

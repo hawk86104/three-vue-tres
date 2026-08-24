@@ -11,6 +11,7 @@ export const zhCNMessages = {
   "error.invalidProjectName": () => "项目名称无效。",
   "error.projectRecovery": () => "项目恢复未完成，请确认项目未在其他窗口中使用后重试。",
   "error.assetOperation": () => "资源操作未能完成，请重试。",
+  "error.planReferenceImport": () => "平面图导入失败，请重试。",
   "error.exportOperation": () => "导出 PNG 未能完成，请重试。",
   "error.desktopUnavailable": () => "桌面服务暂时不可用，请重试。",
   "error.webSandboxDisabled": () => "演示沙盒不可用。",
