@@ -17,6 +17,8 @@ import { ContentInspector } from './content-inspector';
 import { ProjectBackendError } from '../../backend/project-backend-error';
 import { LocaleProvider, useI18n } from '../../i18n/locale-provider';
 import type { StudioLocale } from '../../i18n/message-schema';
+import { DisplayNameProvider, type StudioDisplayNameResolver } from '../../i18n/display-name-provider';
+import { message } from '../../i18n/format-message';
 
 type AssetIssue = ProjectStoreState['assetIssues'][number];
 
@@ -97,6 +99,7 @@ function renderInspector(options: {
     assetId: string,
   ) => Promise<ProjectAssetSource>;
   readonly locale?: StudioLocale;
+  readonly resolver?: StudioDisplayNameResolver;
 } = {}) {
   const onPatch = vi.fn(options.onPatch ?? (async () => undefined));
   const onImport = vi.fn(options.onImport ?? (async () => undefined));
@@ -118,6 +121,7 @@ function renderInspector(options: {
   const result = render(
     <LocaleProvider initialLocale={options.locale ?? 'zh-CN'} preference={{ read: () => 'zh-CN', write: () => undefined }}>
       <LocaleProbe />
+      <DisplayNameProvider resolver={options.resolver}>
       <ContentInspector
       content={options.value ?? content()}
       target={target}
@@ -128,6 +132,7 @@ function renderInspector(options: {
       onRepair={onRepair}
       resolveAsset={resolveAsset}
       />
+      </DisplayNameProvider>
     </LocaleProvider>,
   );
   return {
@@ -139,6 +144,21 @@ function renderInspector(options: {
 afterEach(() => cleanup());
 
 describe('M2.3 Task 11 ContentInspector', () => {
+  it('uses a canonical media resolver only for presentation without changing raw media or patch payloads', async () => {
+    const before = content([]);
+    const { onPatch } = renderInspector({
+      value: before,
+      media: [image],
+      resolver: (subject) => subject.kind === 'media-asset'
+        ? message('webDemo.displayName', { zh: '规范图片', en: 'Canonical image' })
+        : null,
+    });
+    const user = userEvent.setup();
+    expect(screen.getByText('规范图片')).toBeVisible();
+    expect(image.name).toBe('Hero image');
+    await user.click(screen.getByRole('button', { name: '移除 Hero image' }));
+    expect(onPatch).toHaveBeenCalledWith(before, { ...before, mediaAssetIds: [] });
+  });
   it('redacts failed imports before and after a live locale switch', async () => {
     const secret = 'C:\\secret\\media.png';
     const { setLocale } = renderInspector({
