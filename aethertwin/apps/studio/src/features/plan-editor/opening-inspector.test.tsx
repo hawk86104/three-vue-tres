@@ -221,4 +221,28 @@ describe("OpeningInspector", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("The asset operation could not be completed");
     expect(screen.queryByText("C:\\secret\\door.png")).not.toBeInTheDocument();
   });
+
+  it("rejects an unsafe diagnostic reference in both locales while keeping the safe failure", async () => {
+    const user = userEvent.setup();
+    const secret = "C:\\private\\opening-details.json";
+    render(
+      <LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}>
+        <SwitchToEnglish />
+        <OpeningInspector opening={opening} wall={wall} layer={layer} onError={vi.fn()}
+          onApplyOpeningPatch={async () => { throw new ProjectBackendError("ASSET_IO_FAILED", secret, { path: secret, details: "token=private" }, `secret=${secret}`); }} />
+      </LocaleProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("门窗名称"), { target: { value: "安全失败测试" } });
+    await user.click(screen.getByRole("button", { name: "应用门窗" }));
+    const chineseAlert = await screen.findByRole("alert");
+    expect(chineseAlert).toHaveTextContent("资源操作未能完成，请重试。");
+    expect(chineseAlert).not.toHaveTextContent(secret);
+    expect(chineseAlert).not.toHaveTextContent("secret=");
+    expect(chineseAlert).not.toHaveTextContent("token=private");
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    const englishAlert = screen.getByRole("alert");
+    expect(englishAlert).toHaveTextContent("The asset operation could not be completed. Try again.");
+    expect(englishAlert).not.toHaveTextContent(secret);
+    expect(englishAlert).not.toHaveTextContent("secret=");
+  });
 });
