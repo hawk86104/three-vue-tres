@@ -307,7 +307,7 @@ describe("PlanEditor M2.1 vertical integration", () => {
       target: { value: "750" },
     });
     await user.click(within(inspector).getByRole("button", {
-      name: "\u5e94\u7528\u5e73\u9762\u53c2\u8003",
+      name: "\u5e94\u7528\u53c2\u8003\u56fe",
     }));
     await waitFor(() => expect(
       store.getState().snapshot!.project.planReferences[0]!.transform.translation,
@@ -334,7 +334,7 @@ describe("PlanEditor M2.1 vertical integration", () => {
     ).toEqual({ x: 200, y: 200 }));
 
     await user.click(within(inspector).getByRole("checkbox", {
-      name: "\u9501\u5b9a\u5e73\u9762\u53c2\u8003",
+      name: "\u9501\u5b9a\u53c2\u8003\u56fe",
     }));
     await waitFor(() => expect(
       store.getState().snapshot!.project.planReferences[0]!.locked,
@@ -639,8 +639,8 @@ describe("PlanEditor M2.2 vertical integration", () => {
       .toEqual(legacyFixture);
     expect(commit.mock.calls).toHaveLength(commitCount);
 
-    await user.click(screen.getByRole("button", { name: "\u5c55\u5177\u76ee\u5f55" }));
-    const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
+    await user.click(screen.getByRole("button", { name: "\u9648\u8bbe\u76ee\u5f55" }));
+    const catalogue = screen.getByRole("region", { name: "\u9648\u8bbe\u76ee\u5f55" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
     expect(within(catalogue).queryByText(/generic|\u901a\u7528/i)).not.toBeInTheDocument();
   });
@@ -898,7 +898,7 @@ describe("PlanEditor M2.3 milestone vertical integration", () => {
     await user.click(stopSelection);
     expect([...sessionStore.getState().selectedIds]).toEqual([stopId]);
     expect(stopSelection).toHaveAttribute("aria-pressed", "true");
-    await user.click(screen.getByRole("button", { name: "\u9884\u89c8\u8def\u7ebf" }));
+    await user.click(screen.getByRole("button", { name: "\u9884\u89c8\u5bfc\u89c8\u8def\u7ebf" }));
     expect(await screen.findByTestId("guided-route-preview")).toHaveTextContent("2000 mm");
 
     await user.click(screen.getByRole("button", { name: "\u4fdd\u5b58" }));

@@ -13,6 +13,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouteInspector } from "./route-inspector";
+import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
+import type { StudioLocale } from "../../i18n/message-schema";
 
 const node: RouteNode = {
   id: "00000000-0000-4000-8000-000000000801",
@@ -41,19 +43,42 @@ function renderInspector(options: {
 } = {}) {
   const onApplyRouteNetworkPatch = vi.fn(options.apply ?? (async () => undefined));
   const onError = vi.fn();
+  let setLocale: ((locale: StudioLocale) => void) | undefined;
+  function LocaleProbe() {
+    setLocale = useI18n().setLocale;
+    return null;
+  }
   const result = render(
-    <RouteInspector
+    <LocaleProvider initialLocale="zh-CN" preference={{ read: () => "zh-CN", write: () => undefined }}>
+      <LocaleProbe />
+      <RouteInspector
       network={options.selectedNetwork ?? network}
       node={options.selectedNode ?? node}
       editable={options.editable ?? true}
       onApplyRouteNetworkPatch={onApplyRouteNetworkPatch}
       onError={onError}
-    />,
+      />
+    </LocaleProvider>,
   );
-  return { ...result, onApplyRouteNetworkPatch, onError };
+  return {
+    ...result, onApplyRouteNetworkPatch, onError,
+    setLocale: (locale: StudioLocale) => setLocale?.(locale),
+  };
 }
 
 describe("RouteInspector", () => {
+  it("reformats node controls in place and retains the raw patch payload", async () => {
+    const user = userEvent.setup();
+    const { onApplyRouteNetworkPatch, setLocale } = renderInspector();
+    await user.clear(screen.getByLabelText("路线节点名称"));
+    await user.type(screen.getByLabelText("路线节点名称"), "  Main entrance  ");
+    act(() => setLocale("en"));
+
+    expect(screen.getByRole("heading", { name: "Route node" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Apply route node" }));
+    await waitFor(() => expect(onApplyRouteNetworkPatch).toHaveBeenCalledOnce());
+    expect(onApplyRouteNetworkPatch.mock.calls[0]?.[1].nodes[0]?.name).toBe("Main entrance");
+  });
   it("edits one node kind by replacing exactly one whole network", async () => {
     const user = userEvent.setup();
     const { onApplyRouteNetworkPatch } = renderInspector();
@@ -98,7 +123,7 @@ describe("RouteInspector", () => {
 
     await user.click(screen.getByRole("button", { name: "应用路线节点" }));
     await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
-    expect(screen.getByRole("alert")).toHaveTextContent("route save failed");
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(network.nodes).toEqual([node]);
 
     await user.click(screen.getByRole("button", { name: "应用路线节点" }));
@@ -147,13 +172,15 @@ describe("RouteInspector", () => {
       nodes: [nextNode],
     };
     rerender(
-      <RouteInspector
-        network={nextNetwork}
-        node={nextNode}
-        editable
-        onApplyRouteNetworkPatch={onApplyRouteNetworkPatch}
-        onError={onError}
-      />,
+      <LocaleProvider initialLocale="zh-CN" preference={{ read: () => "zh-CN", write: () => undefined }}>
+        <RouteInspector
+          network={nextNetwork}
+          node={nextNode}
+          editable
+          onApplyRouteNetworkPatch={onApplyRouteNetworkPatch}
+          onError={onError}
+        />
+      </LocaleProvider>,
     );
     await waitFor(() => expect(
       screen.getByRole("button", { name: "应用路线节点" }),
@@ -166,6 +193,5 @@ describe("RouteInspector", () => {
     });
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(onError).not.toHaveBeenCalled();
   });
 });

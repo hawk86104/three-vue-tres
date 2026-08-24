@@ -11,6 +11,7 @@ import type {
   ProjectStoreState,
 } from "@aethertwin/project-store";
 import { useEffect, useState, type Ref } from "react";
+import { useI18n } from "../../i18n/locale-provider";
 
 export type ProductMediaRole = "content-image" | "content-video";
 type AssetIssue = ProjectStoreState["assetIssues"][number];
@@ -56,6 +57,7 @@ function ContentPreview({
   readonly issue: AssetIssue | undefined;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
 }) {
+  const { t } = useI18n();
   const [source, setSource] = useState<ProjectAssetSource | null>(null);
   const [failed, setFailed] = useState(false);
   const unavailable = issue?.code === "ASSET_MISSING"
@@ -83,15 +85,15 @@ function ContentPreview({
   }, [codecUnavailable, media.assetId, resolveAsset, unavailable]);
 
   if (codecUnavailable) {
-    return <p>{"\u5f53\u524d\u5e73\u53f0\u65e0\u6cd5\u9884\u89c8\u6b64\u89c6\u9891\u7f16\u7801"}</p>;
+    return <p>{t("content.codecUnavailable")}</p>;
   }
   if (unavailable || failed) {
-    return <p>{"\u8d44\u6e90\u9884\u89c8\u4e0d\u53ef\u7528"}</p>;
+    return <p>{t("content.previewUnavailable")}</p>;
   }
   if (source === null) {
-    return <p>{"\u6b63\u5728\u52a0\u8f7d\u9884\u89c8"}</p>;
+    return <p>{t("content.previewLoading")}</p>;
   }
-  const label = `${media.name} ${"\u9884\u89c8"}`;
+  const label = t("content.preview", { name: media.name });
   return media.kind === "image" ? (
     <img src={source.url} alt={label} />
   ) : (
@@ -112,6 +114,7 @@ export function ContentInspector({
   assetOperationBusy = false,
   importImageButtonRef,
 }: ContentInspectorProps) {
+  const { t } = useI18n();
   const committedName = content.name;
   const committedDescription = content.description;
   const committedTags = content.tags.join(", ");
@@ -187,15 +190,15 @@ export function ContentInspector({
 
   return (
     <section className="studio-content-inspector" aria-labelledby="studio-content-heading">
-      <h2 id="studio-content-heading">{"\u4ea7\u54c1\u5185\u5bb9"}</h2>
+      <h2 id="studio-content-heading">{t("content.heading")}</h2>
       <Field
-        label={"\u5185\u5bb9\u540d\u79f0"}
+        label={t("content.name")}
         value={name}
         disabled={disabled}
         onChange={(event) => setName(event.currentTarget.value)}
       />
       <label className="studio-content-inspector__description">
-        <span>{"\u5185\u5bb9\u63cf\u8ff0"}</span>
+        <span>{t("content.description")}</span>
         <textarea
           value={description}
           disabled={disabled}
@@ -203,10 +206,10 @@ export function ContentInspector({
         />
       </label>
       <Field
-        label={"\u5185\u5bb9\u6807\u7b7e"}
+        label={t("content.tags")}
         value={tags}
         disabled={disabled}
-        helpText={"\u4f7f\u7528\u82f1\u6587\u9017\u53f7\u5206\u9694\u6807\u7b7e"}
+        helpText={t("content.tagsHelp")}
         onChange={(event) => setTags(event.currentTarget.value)}
       />
       <Button
@@ -214,7 +217,7 @@ export function ContentInspector({
         disabled={disabled || patchBusy}
         onClick={() => void applyMetadata()}
       >
-        {"\u5e94\u7528\u5185\u5bb9"}
+        {t("content.apply")}
       </Button>
       <div className="studio-content-inspector__imports">
         <Button
@@ -223,17 +226,17 @@ export function ContentInspector({
           disabled={disabled || assetOperationBusy || importBusy}
           onClick={(event) => void runImport("content-image", event.currentTarget)}
         >
-          {"\u5bfc\u5165\u56fe\u7247"}
+          {t("content.importImage")}
         </Button>
         <Button
           variant="secondary"
           disabled={disabled || assetOperationBusy || importBusy}
           onClick={(event) => void runImport("content-video", event.currentTarget)}
         >
-          {"\u5bfc\u5165\u89c6\u9891"}
+          {t("content.importVideo")}
         </Button>
       </div>
-      <ul className="studio-content-inspector__media" aria-label={"\u4ea7\u54c1\u5a92\u4f53"}>
+      <ul className="studio-content-inspector__media" aria-label={t("content.media")}>
         {media.map((item, index) => {
           const issue = issueByAssetId.get(item.assetId);
           const repairable = issue?.code === "ASSET_MISSING"
@@ -249,36 +252,36 @@ export function ContentInspector({
               <div className="studio-content-inspector__media-actions">
                 <Button
                   variant="ghost"
-                  aria-label={`${"\u4e0a\u79fb"} ${item.name}`}
+                  aria-label={t("content.moveUp", { name: item.name })}
                   disabled={disabled || patchBusy || index === 0}
                   onClick={() => void move(item.id, "up")}
                 >
-                  {"\u4e0a\u79fb"}
+                  {t("content.moveUp", { name: item.name })}
                 </Button>
                 <Button
                   variant="ghost"
-                  aria-label={`${"\u4e0b\u79fb"} ${item.name}`}
+                  aria-label={t("content.moveDown", { name: item.name })}
                   disabled={disabled || patchBusy || index === media.length - 1}
                   onClick={() => void move(item.id, "down")}
                 >
-                  {"\u4e0b\u79fb"}
+                  {t("content.moveDown", { name: item.name })}
                 </Button>
                 <Button
                   variant="ghost"
-                  aria-label={`${"\u79fb\u9664"} ${item.name}`}
+                  aria-label={t("content.remove", { name: item.name })}
                   disabled={disabled || patchBusy}
                   onClick={() => void remove(item.id)}
                 >
-                  {"\u79fb\u9664\u5f15\u7528"}
+                  {t("content.removeReference")}
                 </Button>
                 {repairable ? (
                   <Button
                     variant="secondary"
-                    aria-label={`${"\u4fee\u590d"} ${item.name}`}
+                    aria-label={t("content.repair", { name: item.name })}
                     disabled={disabled || assetOperationBusy || repairingId !== null}
                     onClick={(event) => void repair(item, event.currentTarget)}
                   >
-                    {"\u4fee\u590d"}
+                    {t("content.repair", { name: item.name })}
                   </Button>
                 ) : null}
               </div>

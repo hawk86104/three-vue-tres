@@ -10,6 +10,10 @@ import {
 } from "react";
 import type { StoreApi } from "zustand/vanilla";
 import type { PlanEditorState, RouteAuthoringScope } from "./editor-session";
+import { ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { message as messageDescriptor, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
 
 export interface RoutePanelProps {
   readonly network: RouteNetwork;
@@ -31,10 +35,6 @@ function scope(state: PlanEditorState): RouteAuthoringScope {
 
 function adjacentDistinct(stopNodeIds: readonly string[]): boolean {
   return stopNodeIds.every((id, index) => index === 0 || id !== stopNodeIds[index - 1]);
-}
-
-function nodeKindLabel(kind: RouteNode["kind"]): string {
-  return kind === "entrance" ? "入口" : "展厅站点";
 }
 
 function routeCandidate(
@@ -59,13 +59,14 @@ export function RoutePanel({
   onConfirm,
   onReturnFocus,
 }: RoutePanelProps) {
+  const { format, t } = useI18n();
   const subscribe = useMemo(() => (
     (listener: () => void) => sessionStore.subscribe(listener)
   ), [sessionStore]);
   const getSnapshot = useMemo(() => () => sessionStore.getState(), [sessionStore]);
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const initializedRouteId = useRef<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<StudioMessageDescriptor | null>(null);
   const [publishing, setPublishing] = useState(false);
   const nodeById = useMemo(
     () => new Map(network.nodes.map((node) => [node.id, node] as const)),
@@ -117,7 +118,7 @@ export function RoutePanel({
   function addStop(nodeId: string): void {
     const next = [...stops, nodeId];
     if (!adjacentDistinct(next)) {
-      setMessage("不能连续重复同一站点。");
+      setMessage(messageDescriptor("route.panel.duplicate"));
       return;
     }
     setStops(next);
@@ -135,7 +136,7 @@ export function RoutePanel({
     if (moved === undefined) return;
     next.splice(destination, 0, moved);
     if (!adjacentDistinct(next)) {
-      setMessage("不能连续重复同一站点。");
+      setMessage(messageDescriptor("route.panel.duplicate"));
       return;
     }
     setStops(next);
@@ -151,13 +152,13 @@ export function RoutePanel({
       || currentStops.length < 2
       || !adjacentDistinct(currentStops)
     ) {
-      setMessage("路线草稿已失效，请重新打开导览路线编辑。");
+      setMessage(messageDescriptor("route.panel.stale"));
       return;
     }
     const currentCandidate = routeCandidate(route, network, currentStops);
     const currentResolution = resolveGuidedRoute(network, currentCandidate);
     if (!currentResolution.ok) {
-      setMessage("路线草稿已无法解析，请检查站点连接。");
+      setMessage(messageDescriptor("route.panel.invalid"));
       return;
     }
     setPublishing(true);
@@ -171,7 +172,7 @@ export function RoutePanel({
       await onConfirm(route, after);
       onReturnFocus();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage(localizedErrorDescriptor(error));
     } finally {
       setPublishing(false);
     }
@@ -180,13 +181,13 @@ export function RoutePanel({
   const routeFailureMessage = noRoute === null ? null : (() => {
     const from = nodeById.get(noRoute.fromStopId)?.name ?? noRoute.fromStopId;
     const to = nodeById.get(noRoute.toStopId)?.name ?? noRoute.toStopId;
-    return `NO_ROUTE：${from} → ${to}`;
+    return t("route.panel.noRoute", { from, to });
   })();
 
   return (
-    <aside className="studio-route-panel" aria-label={`导览路线：${network.name}`} aria-busy={publishing}>
-      <h2>导览路线</h2>
-      {message === null ? null : <StatusNotice tone="error">{message}</StatusNotice>}
+    <aside className="studio-route-panel" aria-label={t("route.panel.label", { name: network.name })} aria-busy={publishing}>
+      <h2>{t("route.panel.heading")}</h2>
+      {message === null ? null : <StatusNotice tone="error">{format(message)}</StatusNotice>}
       {routeFailureMessage === null ? null : (
         <StatusNotice tone="error">{routeFailureMessage}</StatusNotice>
       )}
@@ -195,17 +196,17 @@ export function RoutePanel({
           {resolution.value.totalDistance} mm
         </div>
       ) : null}
-      <section aria-label="可添加站点">
+      <section aria-label={t("route.panel.addable")}>
         {eligibleNodes.map((node) => (
           <Button
             key={node.id}
             type="button"
             variant="secondary"
             disabled={publishing}
-            aria-label={`添加站点：${node.name}`}
+            aria-label={t("route.panel.add", { name: node.name })}
             onClick={() => addStop(node.id)}
           >
-            {nodeKindLabel(node.kind)} · {node.name}
+            {t(ROUTE_NODE_KIND_MESSAGE_IDS[node.kind])} · {node.name}
           </Button>
         ))}
       </section>
@@ -220,29 +221,29 @@ export function RoutePanel({
                 type="button"
                 variant="ghost"
                 disabled={publishing || index === 0}
-                aria-label={`上移站点：${name}`}
+                aria-label={t("route.panel.moveUp", { name })}
                 onClick={() => moveStop(index, -1)}
-              >上移</Button>
+              >{t("content.moveUp", { name })}</Button>
               <Button
                 type="button"
                 variant="ghost"
                 disabled={publishing || index === stops.length - 1}
-                aria-label={`下移站点：${name}`}
+                aria-label={t("route.panel.moveDown", { name })}
                 onClick={() => moveStop(index, 1)}
-              >下移</Button>
+              >{t("content.moveDown", { name })}</Button>
               <Button
                 type="button"
                 variant="ghost"
                 disabled={publishing}
-                aria-label={`删除站点：${name}`}
+                aria-label={t("route.panel.remove", { name })}
                 onClick={() => removeStop(index)}
-              >删除</Button>
+              >{t("route.panel.remove", { name })}</Button>
             </li>
           );
         })}
       </ol>
       <Button type="button" disabled={!canConfirm} onClick={() => void confirm()}>
-        确认导览路线
+        {t("route.panel.confirm")}
       </Button>
     </aside>
   );

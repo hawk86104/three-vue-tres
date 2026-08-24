@@ -5,6 +5,10 @@ import type {
 } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import { useEffect, useRef, useState } from "react";
+import { ROUTE_NODE_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
 
 export interface RouteInspectorProps {
   readonly network: RouteNetwork;
@@ -23,10 +27,6 @@ const nodeKinds: readonly RouteNodeKind[] = [
   "showroom-stop",
 ];
 
-function errorValue(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
-}
-
 function parsedTags(value: string): readonly string[] {
   return [...new Set(
     value
@@ -43,10 +43,11 @@ export function RouteInspector({
   onApplyRouteNetworkPatch,
   onError,
 }: RouteInspectorProps) {
+  const { format, t } = useI18n();
   const [name, setName] = useState(node.name);
   const [kind, setKind] = useState<RouteNodeKind>(node.kind);
   const [tags, setTags] = useState(node.tags.join(", "));
-  const [error, setError] = useState<Error | null>(null);
+  const [error, setError] = useState<StudioMessageDescriptor | null>(null);
   const [busy, setBusy] = useState(false);
   const selectionIdentity = `${network.id}:${node.id}`;
   const selectionIdentityRef = useRef(selectionIdentity);
@@ -69,7 +70,7 @@ export function RouteInspector({
     submissionGeneration.current = generation;
     const normalizedName = name.trim();
     if (normalizedName.length === 0) {
-      setError(new Error("路线节点名称不能为空。"));
+      setError(message("route.node.invalidName"));
       return;
     }
     const nextNode: RouteNode = {
@@ -93,9 +94,8 @@ export function RouteInspector({
         selectionIdentityRef.current !== identityAtStart
         || submissionGeneration.current !== generation
       ) return;
-      const handled = errorValue(value);
-      setError(handled);
-      onError(handled);
+      setError(localizedErrorDescriptor(value));
+      onError(value);
     } finally {
       if (
         selectionIdentityRef.current === identityAtStart
@@ -108,18 +108,18 @@ export function RouteInspector({
 
   return (
     <div className="studio-inspector-form">
-      <h2>路线节点</h2>
+      <h2>{t("route.node.heading")}</h2>
       {error === null ? null : (
-        <StatusNotice tone="error">{error.message}</StatusNotice>
+        <StatusNotice tone="error">{format(error)}</StatusNotice>
       )}
       <dl className="studio-plan-inspector__metadata">
-        <div><dt>网络</dt><dd>{network.name}</dd></div>
-        <div><dt>节点 ID</dt><dd>{node.id}</dd></div>
-        <div><dt>坐标</dt><dd>X: {node.position.x} mm</dd></div>
-        <div><dt>坐标</dt><dd>Y: {node.position.y} mm</dd></div>
+        <div><dt>{t("route.node.network")}</dt><dd>{network.name}</dd></div>
+        <div><dt>{t("route.node.id")}</dt><dd>{node.id}</dd></div>
+        <div><dt>{t("route.node.coordinate")}</dt><dd>{t("route.node.x", { value: node.position.x })}</dd></div>
+        <div><dt>{t("route.node.coordinate")}</dt><dd>{t("route.node.y", { value: node.position.y })}</dd></div>
       </dl>
       <Field
-        label="路线节点名称"
+        label={t("route.node.name")}
         value={name}
         readOnly={!editable}
         onChange={(event) => {
@@ -128,7 +128,7 @@ export function RouteInspector({
         }}
       />
       <label className="aether-field">
-        <span className="aether-field__label">路线节点类型</span>
+        <span className="aether-field__label">{t("route.node.type")}</span>
         <select
           value={kind}
           disabled={!editable}
@@ -138,15 +138,15 @@ export function RouteInspector({
           }}
         >
           {nodeKinds.map((candidate) => (
-            <option key={candidate} value={candidate}>{candidate}</option>
+            <option key={candidate} value={candidate}>{t(ROUTE_NODE_KIND_MESSAGE_IDS[candidate])}</option>
           ))}
         </select>
       </label>
       <Field
-        label="路线节点标签"
+        label={t("route.node.tags")}
         value={tags}
         readOnly={!editable}
-        helpText="使用英文逗号分隔标签"
+        helpText={t("route.node.tagsHelp")}
         onChange={(event) => {
           setTags(event.currentTarget.value);
           setError(null);
@@ -157,7 +157,7 @@ export function RouteInspector({
         disabled={!editable || busy}
         onClick={() => void apply()}
       >
-        应用路线节点
+        {t("route.node.apply")}
       </Button>
     </div>
   );

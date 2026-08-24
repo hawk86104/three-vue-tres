@@ -1,6 +1,7 @@
 import type {
   Opening,
   FixtureKind,
+  MediaAssetKind,
   PointOfInterestKind,
   ProjectProfile,
   RouteNodeKind,
@@ -70,3 +71,8 @@ export const POINT_OF_INTEREST_KIND_MESSAGE_IDS = {
 export const ROUTE_NODE_KIND_MESSAGE_IDS = {
   junction: "kind.routeNode.junction", entrance: "kind.routeNode.entrance", "showroom-stop": "kind.routeNode.showroomStop",
 } as const satisfies Record<RouteNodeKind, StudioMessageId>;
+
+export const MEDIA_ASSET_KIND_MESSAGE_IDS = {
+  image: "kind.media.image",
+  video: "kind.media.video",
+} as const satisfies Record<MediaAssetKind, StudioMessageId>;

@@ -10,10 +10,12 @@ import type {
   ProjectAssetSource,
   ProjectStoreState,
 } from '@aethertwin/project-store';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentInspector } from './content-inspector';
+import { LocaleProvider, useI18n } from '../../i18n/locale-provider';
+import type { StudioLocale } from '../../i18n/message-schema';
 
 type AssetIssue = ProjectStoreState['assetIssues'][number];
 
@@ -93,6 +95,7 @@ function renderInspector(options: {
   readonly resolveAsset?: (
     assetId: string,
   ) => Promise<ProjectAssetSource>;
+  readonly locale?: StudioLocale;
 } = {}) {
   const onPatch = vi.fn(options.onPatch ?? (async () => undefined));
   const onImport = vi.fn(options.onImport ?? (async () => undefined));
@@ -106,8 +109,15 @@ function renderInspector(options: {
       : 'aethertwin-asset://asset/session/demo',
     mediaType: assetId === IMAGE_ASSET_ID ? 'image/png' : 'video/mp4',
   })));
+  let setLocale: ((locale: StudioLocale) => void) | undefined;
+  function LocaleProbe() {
+    setLocale = useI18n().setLocale;
+    return null;
+  }
   const result = render(
-    <ContentInspector
+    <LocaleProvider initialLocale={options.locale ?? 'zh-CN'} preference={{ read: () => 'zh-CN', write: () => undefined }}>
+      <LocaleProbe />
+      <ContentInspector
       content={options.value ?? content()}
       target={target}
       media={options.media ?? [image, video]}
@@ -116,14 +126,33 @@ function renderInspector(options: {
       onImport={onImport}
       onRepair={onRepair}
       resolveAsset={resolveAsset}
-    />,
+      />
+    </LocaleProvider>,
   );
-  return { ...result, onPatch, onImport, onRepair, resolveAsset };
+  return {
+    ...result, onPatch, onImport, onRepair, resolveAsset,
+    setLocale: (locale: StudioLocale) => setLocale?.(locale),
+  };
 }
 
 afterEach(() => cleanup());
 
 describe('M2.3 Task 11 ContentInspector', () => {
+  it('reformats media controls in place without changing authored media or import payloads', async () => {
+    const pending = deferred<void>();
+    const { onImport, setLocale } = renderInspector({ onImport: async () => pending.promise });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '导入图片' }));
+    expect(screen.getByRole('button', { name: '导入图片' })).toBeDisabled();
+    act(() => setLocale('en'));
+
+    expect(screen.getByRole('heading', { name: 'Product content' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Import image' })).toBeDisabled();
+    expect(screen.getByText('Hero image')).toBeVisible();
+    expect(onImport).toHaveBeenCalledWith('content-image', expect.any(HTMLElement));
+    pending.resolve();
+  });
   it('patches normalized name, description, and unique ordered tags once', async () => {
     const before = content([]);
     const { onPatch } = renderInspector({ value: before, media: [] });

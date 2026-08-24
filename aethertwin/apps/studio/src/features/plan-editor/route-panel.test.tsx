@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoreApi } from "zustand/vanilla";
 import { createPlanEditorStore, type PlanEditorState } from "./editor-session";
 import { RoutePanel } from "./route-panel";
+import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
+import type { StudioLocale } from "../../i18n/message-schema";
 
 /** Task 13 seam: session owns the transient draft; panel proposes one route. */
 interface RoutePanelSessionState extends PlanEditorState {
@@ -80,17 +82,28 @@ function renderPanel(route: GuidedRoute | null = null) {
   const sessionStore = routeSession();
   const onConfirm = vi.fn(async () => undefined);
   const onReturnFocus = vi.fn();
+  let setLocale: ((locale: StudioLocale) => void) | undefined;
+  function LocaleProbe() {
+    setLocale = useI18n().setLocale;
+    return null;
+  }
   render(
-    <RoutePanel
+    <LocaleProvider initialLocale="zh-CN" preference={{ read: () => "zh-CN", write: () => undefined }}>
+      <LocaleProbe />
+      <RoutePanel
       network={network}
       route={route}
       sessionStore={sessionStore}
       makeId={() => ids.route}
       onConfirm={onConfirm}
       onReturnFocus={onReturnFocus}
-    />,
+      />
+    </LocaleProvider>,
   );
-  return { sessionStore, onConfirm, onReturnFocus };
+  return {
+    sessionStore, onConfirm, onReturnFocus,
+    setLocale: (locale: StudioLocale) => setLocale?.(locale),
+  };
 }
 
 function stopIds(): string[] {
@@ -105,6 +118,17 @@ afterEach(() => {
 });
 
 describe("RoutePanel guided-route stop authoring", () => {
+  it("reformats route authoring in place without changing stop IDs", async () => {
+    const user = userEvent.setup();
+    const { sessionStore, setLocale } = renderPanel();
+    await user.click(screen.getByRole("button", { name: "添加站点：North entrance" }));
+    await user.click(screen.getByRole("button", { name: "添加站点：Lighting gallery" }));
+    act(() => setLocale("en"));
+
+    expect(screen.getByRole("heading", { name: "Guided route" })).toBeVisible();
+    expect(stopIds()).toEqual([ids.entrance, ids.showroom]);
+    expect([...sessionStore.getState().routeAuthoring.stopDraft]).toEqual([ids.entrance, ids.showroom]);
+  });
   it("adds, removes, and reorders only eligible entrance/showroom stops with native keyboard controls", async () => {
     const user = userEvent.setup();
     const { sessionStore } = renderPanel();
@@ -112,7 +136,7 @@ describe("RoutePanel guided-route stop authoring", () => {
     expect(screen.getByRole("button", { name: "添加站点：North entrance" }))
       .toHaveTextContent("入口");
     expect(screen.getByRole("button", { name: "添加站点：Lighting gallery" }))
-      .toHaveTextContent("展厅站点");
+      .toHaveTextContent("展厅停靠点");
     await user.click(screen.getByRole("button", { name: "添加站点：North entrance" }));
     await user.click(screen.getByRole("button", { name: "添加站点：Lighting gallery" }));
     await user.click(screen.getByRole("button", { name: "添加站点：Lounge" }));
@@ -172,7 +196,7 @@ describe("RoutePanel guided-route stop authoring", () => {
     expect(screen.getByTestId("guided-route-preview")).toHaveTextContent("100 mm");
     await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent("NO_ROUTE");
+    expect(screen.getByRole("alert")).toHaveTextContent("路线无法连通");
     expect(screen.getByRole("alert")).toHaveTextContent("Lighting gallery");
     expect(screen.getByRole("alert")).toHaveTextContent("Isolated gallery");
     expect(screen.getByRole("button", { name: "确认导览路线" })).toBeDisabled();
