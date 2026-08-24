@@ -1,5 +1,6 @@
 import { Button } from "@aethertwin/design-system";
 import { useEffect, useState, type KeyboardEvent } from "react";
+import { useI18n } from "../../i18n/locale-provider";
 import type { RoomRecognitionState } from "./editor-session";
 
 export interface RoomRecognitionPanelProps {
@@ -35,6 +36,7 @@ export function RoomRecognitionPanel({
   onReplaceSelectedRoom,
   onClose,
 }: RoomRecognitionPanelProps) {
+  const { t } = useI18n();
   const [toleranceText, setToleranceText] = useState(String(state.toleranceMm));
   useEffect(() => setToleranceText(String(state.toleranceMm)), [state.toleranceMm]);
   const parsedTolerance = Number(toleranceText);
@@ -62,21 +64,21 @@ export function RoomRecognitionPanel({
     <section
       className="studio-room-recognition"
       role="region"
-      aria-label="房间识别"
+      aria-label={t("recognition.panel")}
     >
       <header>
-        <strong>房间识别</strong>
-        <Button variant="ghost" onClick={onClose}>关闭房间识别</Button>
+        <strong>{t("recognition.panel")}</strong>
+        <Button variant="ghost" onClick={onClose}>{t("recognition.close")}</Button>
       </header>
       <label>
-        识别容差（毫米）
+        {t("recognition.tolerance")}
         <input
           type="number"
           min={0.1}
           max={100}
           step={0.1}
           value={toleranceText}
-          aria-label="识别容差（毫米）"
+          aria-label={t("recognition.tolerance")}
           onChange={(event) => {
             const value = event.currentTarget.value;
             setToleranceText(value);
@@ -92,40 +94,44 @@ export function RoomRecognitionPanel({
         />
       </label>
       {toleranceValid ? null : (
-        <p role="alert">容差必须在 0.1 到 100 毫米之间。</p>
+        <p role="alert">{t("recognition.invalidTolerance")}</p>
       )}
       <Button
         variant="secondary"
         disabled={!toleranceValid || busy}
         onClick={onRecognize}
       >
-        重新识别
+        {t("recognition.run")}
       </Button>
-      {state.stale ? <p>识别结果已过期，请重新识别。</p> : null}
+      {state.stale ? <p>{t("recognition.stale")}</p> : null}
       {state.persistenceError === undefined ? null : (
-        <p>保存失败：{state.persistenceError}</p>
+        <p>{t("recognition.persistenceFailed")}</p>
       )}
-      <ul aria-label="房间候选">
+      <ul aria-label={t("recognition.candidates")}>
         {state.candidates.map((candidate, index) => {
           const represented = representedKeys.has(candidate.key);
           return (
             <li key={candidate.key}>
               <button
                 type="button"
-                aria-label={`选择房间候选 ${index + 1}`}
+                aria-label={t("recognition.candidate", { index: index + 1 })}
                 aria-pressed={candidate.key === state.selectedCandidateKey}
                 onClick={() => onSelectCandidate(candidate.key)}
               >
-                候选 {index + 1} · {metric(candidate.area / 1_000_000)} m² ·{" "}
-                {metric(candidate.perimeter / 1_000)} m · {candidate.wallIds.length} 面墙 ·{" "}
-                {represented ? "已存在" : "待确认"}
+                {t("recognition.candidateSummary", {
+                  index: index + 1,
+                  area: metric(candidate.area / 1_000_000),
+                  perimeter: metric(candidate.perimeter / 1_000),
+                  walls: candidate.wallIds.length,
+                  state: represented ? t("recognition.represented") : t("recognition.pending"),
+                })}
               </button>
             </li>
           );
         })}
       </ul>
       {state.diagnostics.length === 0 ? null : (
-        <ul aria-label="识别诊断">
+        <ul aria-label={t("recognition.diagnostics")}>
           {state.diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}-${diagnostic.wallIds.join("-")}-${index}`}>
               {diagnostic.code} · {diagnostic.wallIds.join(", ")}
@@ -141,14 +147,14 @@ export function RoomRecognitionPanel({
           }
           onClick={onConfirmOne}
         >
-          确认当前候选
+          {t("recognition.confirmOne")}
         </Button>
         <Button
           variant="secondary"
           disabled={mutationsDisabled || unrepresentedCount === 0}
           onClick={onConfirmAll}
         >
-          确认全部候选
+          {t("recognition.confirmAll")}
         </Button>
         <Button
           variant="secondary"
@@ -157,7 +163,7 @@ export function RoomRecognitionPanel({
           }
           onClick={onReplaceSelectedRoom}
         >
-          用候选替换所选房间
+          {t("recognition.replace")}
         </Button>
       </footer>
     </section>

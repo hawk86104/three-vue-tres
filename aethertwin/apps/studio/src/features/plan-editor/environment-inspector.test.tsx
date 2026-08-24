@@ -12,6 +12,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "../../i18n/locale-provider";
 import {
   ProjectStore,
   SandboxProjectBackend,
@@ -48,7 +49,7 @@ const LABELS = {
 
 const stores: ProjectStore[] = [];
 
-async function renderEnvironmentProject(name: string) {
+async function renderEnvironmentProject(name: string, locale: "zh-CN" | "en" = "zh-CN") {
   const backend = new SandboxProjectBackend();
   const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
   stores.push(store);
@@ -57,18 +58,21 @@ async function renderEnvironmentProject(name: string) {
   const commitProject = backend.commit.bind(backend);
   const commit = vi.spyOn(backend, "commit");
   const view = render(
-    <PlanEditor
-      store={store}
-      backendMode="sandbox"
-      dependencies={{
-        assetPicker: null,
-        workspace: () => <div />,
-      }}
-    />,
+    <LocaleProvider preference={{ read: () => locale, write: () => undefined }}>
+      <PlanEditor
+        store={store}
+        backendMode="sandbox"
+        dependencies={{
+          assetPicker: null,
+          workspace: () => <div />,
+        }}
+      />
+    </LocaleProvider>,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByText(LABELS.section));
-  const section = screen.getByRole("group", { name: LABELS.section });
+  const sectionName = locale === "en" ? "Environment" : LABELS.section;
+  await user.click(screen.getByText(sectionName));
+  const section = screen.getByRole("group", { name: sectionName });
   return {
     backend,
     commit,
@@ -249,6 +253,15 @@ describe("Environment Inspector", () => {
       store.getState().snapshot!.project.sceneEnvironment.backgroundColor,
     ).toBe("#203040"));
     expect(screen.queryByText(failure.message)).not.toBeInTheDocument();
+  });
+
+  it("reformats environment controls in English without publishing a patch", async () => {
+    const { commit, section } = await renderEnvironmentProject("Environment English", "en");
+    expect(within(section).getByLabelText("Background color")).toBeVisible();
+    expect(within(section).getByLabelText("Key light direction X")).toBeVisible();
+    expect(within(section).getByRole("button", { name: "Reset" })).toBeVisible();
+    expect(within(section).getByRole("button", { name: "Apply environment" })).toBeVisible();
+    expect(commit).not.toHaveBeenCalled();
   });
 
 });

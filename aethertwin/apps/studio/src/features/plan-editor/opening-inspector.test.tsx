@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
 import { OpeningInspector } from "./opening-inspector";
 
 const layer: PlanLayer = {
@@ -79,6 +80,11 @@ function renderInspector(options: {
     />,
   );
   return { onApplyOpeningPatch, onError };
+}
+
+function SwitchToEnglish() {
+  const { setLocale } = useI18n();
+  return <button type="button" onClick={() => setLocale("en")}>switch</button>;
 }
 
 describe("OpeningInspector", () => {
@@ -163,5 +169,35 @@ describe("OpeningInspector", () => {
     expect(screen.getByRole("button", { name: "应用门窗" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "删除门窗" })).toBeDisabled();
     expect(onApplyOpeningPatch).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsaved Chinese opening edits through a live English switch and publishes raw values", async () => {
+    const user = userEvent.setup();
+    const onApplyOpeningPatch = vi.fn(async () => undefined);
+    render(
+      <LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}>
+        <SwitchToEnglish />
+        <OpeningInspector
+          opening={opening}
+          wall={wall}
+          layer={layer}
+          onApplyOpeningPatch={onApplyOpeningPatch}
+          onError={vi.fn()}
+        />
+      </LocaleProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("门窗名称"), { target: { value: "未提交的门" } });
+    fireEvent.change(screen.getByLabelText("宽度 (mm)"), { target: { value: "1 m" } });
+    await user.click(screen.getByRole("button", { name: "switch" }));
+
+    expect(screen.getByRole("heading", { name: "Opening" })).toBeVisible();
+    expect(screen.getByLabelText("Opening name")).toHaveValue("未提交的门");
+    expect(screen.getByLabelText("Width (mm)")).toHaveValue("1 m");
+    await user.click(screen.getByRole("button", { name: "Apply opening" }));
+
+    expect(onApplyOpeningPatch).toHaveBeenCalledWith(opening, expect.objectContaining({
+      name: "未提交的门", width: 1_000, kind: "window",
+    }));
   });
 });

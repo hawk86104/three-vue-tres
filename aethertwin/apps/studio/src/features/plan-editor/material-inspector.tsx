@@ -13,6 +13,8 @@ import type {
   ProjectStoreState,
 } from "@aethertwin/project-store";
 import { useEffect, useId, useRef, useState } from "react";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
 
 export type MaterialTarget = SpaceUnit | Zone | Wall | Fixture;
 type AssetIssue = ProjectStoreState["assetIssues"][number];
@@ -21,9 +23,6 @@ type MaterialTargetKind = MaterialAssignment["targetKind"];
 const DEFAULT_SELECTION = "__default__";
 const NEW_SELECTION = "__new__";
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-const INVALID_MATERIAL_MESSAGE =
-  "基础颜色必须是 #RRGGBB，粗糙度、金属度必须在 0 到 1，透明度必须大于 0 且不超过 1";
-
 const targetDefaults: Readonly<Record<
   MaterialTargetKind,
   Pick<MaterialDefinition, "baseColor" | "roughness" | "metalness" | "opacity">
@@ -92,6 +91,7 @@ export function MaterialInspector({
   onImportTexture,
   onError,
 }: MaterialInspectorProps) {
+  const { format, t } = useI18n();
   const targetKind = materialTargetKind(target);
   const assignment = snapshot.project.materialAssignments.find(
     (candidate) => (
@@ -129,7 +129,7 @@ export function MaterialInspector({
   );
   const [operationBusy, setOperationBusy] = useState(false);
   const operationBusyRef = useRef(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<StudioMessageDescriptor | null>(null);
   const localErrorId = `material-inspector-error-${useId().replaceAll(":", "")}`;
   function fieldIssueProps(invalid: boolean) {
     const visible = localError !== null && invalid;
@@ -267,7 +267,7 @@ export function MaterialInspector({
       || nextOpacity === null
       || nextOpacity === 0
     ) {
-      setLocalError(INVALID_MATERIAL_MESSAGE);
+      setLocalError(message("material.invalid"));
       return;
     }
     const after: MaterialDefinition = {
@@ -307,44 +307,44 @@ export function MaterialInspector({
     <details
       className="studio-material-inspector"
       role="group"
-      aria-label="材质"
+      aria-label={t("material.section")}
     >
-      <summary>材质</summary>
+      <summary>{t("material.section")}</summary>
       <div className="studio-material-inspector__body">
         <label className="studio-material-inspector__assignment">
-          <span>材质分配</span>
+          <span>{t("material.assignment")}</span>
           <select
-            aria-label="材质分配"
+            aria-label={t("material.assignment")}
             value={assignedMaterial?.id ?? DEFAULT_SELECTION}
             disabled={disabled || operationBusy}
             onChange={(event) => void changeAssignment(event.currentTarget.value)}
           >
-            <option value={DEFAULT_SELECTION}>默认材质</option>
+            <option value={DEFAULT_SELECTION}>{t("material.default")}</option>
             {snapshot.project.materials.map((material) => (
               <option key={material.id} value={material.id}>
                 {material.name}
               </option>
             ))}
-            <option value={NEW_SELECTION}>新建材质</option>
+            <option value={NEW_SELECTION}>{t("material.new")}</option>
           </select>
         </label>
         {assignment !== null && assignedMaterial === null ? (
-          <StatusNotice tone="error">材质分配引用了不存在的材质。</StatusNotice>
+          <StatusNotice tone="error">{t("material.missing")}</StatusNotice>
         ) : null}
         {assignedMaterial === null ? null : (
           <>
             <p className="studio-material-inspector__impact">
-              此材质影响 {sharedCount} 个对象
+              {t("material.impact", { count: sharedCount })}
             </p>
             <Field
-              label="基础颜色"
+              label={t("material.baseColor")}
               value={baseColor}
               disabled={disabled || operationBusy}
               {...fieldIssueProps(!COLOR_PATTERN.test(baseColor))}
               onChange={(event) => setBaseColor(event.currentTarget.value)}
             />
             <Field
-              label="粗糙度"
+              label={t("material.roughness")}
               type="number"
               min={0}
               max={1}
@@ -355,7 +355,7 @@ export function MaterialInspector({
               onChange={(event) => setRoughness(event.currentTarget.value)}
             />
             <Field
-              label="金属度"
+              label={t("material.metalness")}
               type="number"
               min={0}
               max={1}
@@ -366,7 +366,7 @@ export function MaterialInspector({
               onChange={(event) => setMetalness(event.currentTarget.value)}
             />
             <Field
-              label="透明度"
+              label={t("material.opacity")}
               type="number"
               min={0.01}
               max={1}
@@ -377,14 +377,14 @@ export function MaterialInspector({
               onChange={(event) => setOpacity(event.currentTarget.value)}
             />
             {localError === null ? null : (
-              <StatusNotice id={localErrorId} tone="error">{localError}</StatusNotice>
+              <StatusNotice id={localErrorId} tone="error">{format(localError)}</StatusNotice>
             )}
             <Button
               variant="secondary"
               disabled={disabled || operationBusy}
               onClick={() => void applyMaterial()}
             >
-              应用材质
+              {t("material.apply")}
             </Button>
             <div className="studio-material-inspector__texture-actions">
               <Button
@@ -397,10 +397,10 @@ export function MaterialInspector({
                 ))}
               >
                 {repairable
-                  ? "修复纹理"
+                  ? t("material.repairTexture")
                   : assignedMaterial.assetId === null
-                    ? "导入纹理"
-                    : "替换纹理"}
+                    ? t("material.importTexture")
+                    : t("material.replaceTexture")}
               </Button>
               {assignedMaterial.assetId === null ? null : (
                 <Button
@@ -408,7 +408,7 @@ export function MaterialInspector({
                   disabled={disabled || operationBusy}
                   onClick={() => void removeTexture()}
                 >
-                  移除纹理
+                  {t("material.removeTexture")}
                 </Button>
               )}
             </div>

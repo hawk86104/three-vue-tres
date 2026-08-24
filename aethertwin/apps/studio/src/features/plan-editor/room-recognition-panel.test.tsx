@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "../../i18n/locale-provider";
 import type { RoomRecognitionState } from "./editor-session";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 
@@ -57,6 +58,7 @@ function renderPanel(
     readonly representedKeys?: ReadonlySet<string>;
     readonly canReplaceSelectedRoom?: boolean;
     readonly busy?: boolean;
+    readonly locale?: "zh-CN" | "en";
   } = {},
 ) {
   const callbacks = {
@@ -68,15 +70,20 @@ function renderPanel(
     onReplaceSelectedRoom: vi.fn(),
     onClose: vi.fn(),
   };
-  const result = render(
+  const content = (
     <RoomRecognitionPanel
       state={options.state ?? recognitionState()}
       representedKeys={options.representedKeys ?? new Set(["candidate-a"])}
       canReplaceSelectedRoom={options.canReplaceSelectedRoom ?? false}
       busy={options.busy ?? false}
       {...callbacks}
-    />,
+    />
   );
+  const result = render(options.locale === undefined ? content : (
+    <LocaleProvider preference={{ read: () => options.locale!, write: () => undefined }}>
+      {content}
+    </LocaleProvider>
+  ));
   return { ...result, ...callbacks };
 }
 
@@ -171,10 +178,22 @@ describe("RoomRecognitionPanel", () => {
     });
 
     expect(screen.getByText("识别结果已过期，请重新识别。")).toBeVisible();
-    expect(screen.getByText("保存失败：checkpoint unavailable")).toBeVisible();
+    expect(screen.getByText("识别结果暂时无法保存，请重试。")).toBeVisible();
+    expect(screen.queryByText("checkpoint unavailable")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /选择房间候选/ })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "确认当前候选" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "确认全部候选" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "用候选替换所选房间" })).toBeDisabled();
+  });
+
+  it("reformats recognition results and safely redacts persistence diagnostics in English", () => {
+    renderPanel({
+      locale: "en",
+      state: recognitionState({ persistenceError: "C:\\secret\\checkpoint.sqlite" }),
+    });
+    expect(screen.getByRole("region", { name: "Room recognition" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Room candidates" })).toBeVisible();
+    expect(screen.getByText("Recognition results could not be saved. Try again.")).toBeVisible();
+    expect(screen.queryByText("checkpoint.sqlite")).not.toBeInTheDocument();
   });
 });

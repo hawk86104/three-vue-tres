@@ -2,22 +2,10 @@ import type { SceneEnvironment } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import type { SceneEnvironmentPatch } from "@aethertwin/project-store";
 import { useEffect, useId, useMemo, useState } from "react";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { useI18n } from "../../i18n/locale-provider";
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
-const LABELS = {
-  section: "\u73af\u5883",
-  backgroundColor: "\u80cc\u666f\u989c\u8272",
-  ambientColor: "\u73af\u5883\u5149\u989c\u8272",
-  ambientIntensity: "\u73af\u5883\u5149\u5f3a\u5ea6",
-  keyColor: "\u4e3b\u5149\u989c\u8272",
-  keyIntensity: "\u4e3b\u5149\u5f3a\u5ea6",
-  directionX: "\u4e3b\u5149\u65b9\u5411 X",
-  directionY: "\u4e3b\u5149\u65b9\u5411 Y",
-  directionZ: "\u4e3b\u5149\u65b9\u5411 Z",
-  shadowsEnabled: "\u542f\u7528\u9634\u5f71",
-  shadowSoftness: "\u9634\u5f71\u67d4\u548c\u5ea6",
-  apply: "\u5e94\u7528\u73af\u5883",
-} as const;
 
 interface EnvironmentDraft {
   readonly backgroundColor: string;
@@ -33,7 +21,7 @@ interface EnvironmentDraft {
 }
 
 type DraftField = Exclude<keyof EnvironmentDraft, "shadowsEnabled">;
-type DraftErrors = Partial<Record<DraftField, string>>;
+type DraftErrors = Partial<Record<DraftField, StudioMessageDescriptor>>;
 
 export interface EnvironmentInspectorProps {
   readonly environment: SceneEnvironment;
@@ -67,25 +55,25 @@ function validate(draft: EnvironmentDraft): {
 } {
   const errors: DraftErrors = {};
   if (!COLOR_PATTERN.test(draft.backgroundColor)) {
-    errors.backgroundColor = "\u80cc\u666f\u989c\u8272\u5fc5\u987b\u4f7f\u7528 #RRGGBB \u683c\u5f0f";
+    errors.backgroundColor = message("environment.invalidColor", { label: "background" });
   }
   if (!COLOR_PATTERN.test(draft.ambientColor)) {
-    errors.ambientColor = "\u73af\u5883\u5149\u989c\u8272\u5fc5\u987b\u4f7f\u7528 #RRGGBB \u683c\u5f0f";
+    errors.ambientColor = message("environment.invalidColor", { label: "ambient" });
   }
   if (!COLOR_PATTERN.test(draft.keyColor)) {
-    errors.keyColor = "\u4e3b\u5149\u989c\u8272\u5fc5\u987b\u4f7f\u7528 #RRGGBB \u683c\u5f0f";
+    errors.keyColor = message("environment.invalidColor", { label: "key light" });
   }
   const ambientIntensity = bounded(draft.ambientIntensity, 0, 4);
   const keyIntensity = bounded(draft.keyIntensity, 0, 8);
   const shadowSoftness = bounded(draft.shadowSoftness, 0, 1);
   if (ambientIntensity === null) {
-    errors.ambientIntensity = "\u73af\u5883\u5149\u5f3a\u5ea6\u5fc5\u987b\u5728 0 \u5230 4 \u4e4b\u95f4";
+    errors.ambientIntensity = message("environment.invalidRange", { label: "ambient intensity", minimum: 0, maximum: 4 });
   }
   if (keyIntensity === null) {
-    errors.keyIntensity = "\u4e3b\u5149\u5f3a\u5ea6\u5fc5\u987b\u5728 0 \u5230 8 \u4e4b\u95f4";
+    errors.keyIntensity = message("environment.invalidRange", { label: "key light intensity", minimum: 0, maximum: 8 });
   }
   if (shadowSoftness === null) {
-    errors.shadowSoftness = "\u9634\u5f71\u67d4\u548c\u5ea6\u5fc5\u987b\u5728 0 \u5230 1 \u4e4b\u95f4";
+    errors.shadowSoftness = message("environment.invalidRange", { label: "shadow softness", minimum: 0, maximum: 1 });
   }
   const directions = [draft.directionX, draft.directionY, draft.directionZ].map(
     (value) => bounded(value, -100, 100),
@@ -93,12 +81,12 @@ function validate(draft: EnvironmentDraft): {
   const directionFields = ["directionX", "directionY", "directionZ"] as const;
   directions.forEach((value, index) => {
     if (value === null) {
-      errors[directionFields[index]!] = "\u4e3b\u5149\u65b9\u5411\u6bcf\u4e2a\u5206\u91cf\u5fc5\u987b\u5728 -100 \u5230 100 \u4e4b\u95f4";
+      errors[directionFields[index]!] = message("environment.invalidRange", { label: "key light direction", minimum: -100, maximum: 100 });
     }
   });
   if (directions.every((value) => value === 0)) {
     for (const field of directionFields) {
-      errors[field] = "\u4e3b\u5149\u65b9\u5411\u4e0d\u80fd\u5168\u4e3a 0";
+      errors[field] = message("environment.invalidDirection");
     }
   }
   if (
@@ -131,6 +119,7 @@ export function EnvironmentInspector({
   onApplyPatch,
   onError,
 }: EnvironmentInspectorProps) {
+  const { format, t } = useI18n();
   const committedDraft = useMemo(
     () => ({
       backgroundColor: environment.backgroundColor,
@@ -207,23 +196,30 @@ export function EnvironmentInspector({
     }
   }
 
-  const messages = [...new Set(
-    Object.values(errors).filter((message): message is string => message !== undefined),
-  )];
+  function reset(): void {
+    setDraft(committedDraft);
+    setErrors({});
+  }
+
+  const messages = [...new Map(
+    Object.values(errors)
+      .filter((value): value is StudioMessageDescriptor => value !== undefined)
+      .map((value) => [JSON.stringify(value), format(value)]),
+  ).values()];
 
   return (
-    <details className="studio-environment-inspector" role="group" aria-label={LABELS.section}>
-      <summary>{LABELS.section}</summary>
+    <details className="studio-environment-inspector" role="group" aria-label={t("environment.section")}>
+      <summary>{t("environment.section")}</summary>
       <div className="studio-environment-inspector__body">
-        {renderField("backgroundColor", LABELS.backgroundColor)}
-        {renderField("ambientColor", LABELS.ambientColor)}
-        {renderField("ambientIntensity", LABELS.ambientIntensity, "decimal")}
-        {renderField("keyColor", LABELS.keyColor)}
-        {renderField("keyIntensity", LABELS.keyIntensity, "decimal")}
+        {renderField("backgroundColor", t("environment.backgroundColor"))}
+        {renderField("ambientColor", t("environment.ambientColor"))}
+        {renderField("ambientIntensity", t("environment.ambientIntensity"), "decimal")}
+        {renderField("keyColor", t("environment.keyColor"))}
+        {renderField("keyIntensity", t("environment.keyIntensity"), "decimal")}
         <div className="studio-environment-inspector__direction">
-          {renderField("directionX", LABELS.directionX, "decimal")}
-          {renderField("directionY", LABELS.directionY, "decimal")}
-          {renderField("directionZ", LABELS.directionZ, "decimal")}
+          {renderField("directionX", t("environment.directionX"), "decimal")}
+          {renderField("directionY", t("environment.directionY"), "decimal")}
+          {renderField("directionZ", t("environment.directionZ"), "decimal")}
         </div>
         <label className="studio-environment-inspector__toggle">
           <input
@@ -232,9 +228,9 @@ export function EnvironmentInspector({
             disabled={busy}
             onChange={(event) => update({ shadowsEnabled: event.currentTarget.checked })}
           />
-          <span>{LABELS.shadowsEnabled}</span>
+          <span>{t("environment.shadows")}</span>
         </label>
-        {renderField("shadowSoftness", LABELS.shadowSoftness, "decimal")}
+        {renderField("shadowSoftness", t("environment.shadowSoftness"), "decimal")}
         {messages.length === 0 ? null : (
           <StatusNotice id={errorId} tone="error">
             <ul className="studio-environment-inspector__errors">
@@ -242,8 +238,11 @@ export function EnvironmentInspector({
             </ul>
           </StatusNotice>
         )}
+        <Button variant="ghost" disabled={busy} onClick={reset}>
+          {t("environment.reset")}
+        </Button>
         <Button variant="secondary" disabled={busy} onClick={() => void apply()}>
-          {LABELS.apply}
+          {t("environment.apply")}
         </Button>
       </div>
     </details>

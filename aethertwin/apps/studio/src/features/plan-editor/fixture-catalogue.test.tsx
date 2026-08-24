@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "../../i18n/locale-provider";
 import { FixtureCatalogue } from "./fixture-catalogue";
 
 afterEach(cleanup);
@@ -17,7 +18,7 @@ describe("FixtureCatalogue", () => {
       />,
     );
 
-    const catalogue = screen.getByRole("region", { name: "展具目录" });
+    const catalogue = screen.getByRole("region", { name: "陈设目录" });
     const buttons = within(catalogue).getAllByRole("button");
     expect(buttons).toHaveLength(7);
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -48,6 +49,22 @@ describe("FixtureCatalogue", () => {
     await user.click(screen.getByRole("button", { name: /展示桌/ }));
 
     expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith("display-table");
+  });
+
+  it("reformats all fixture names and dimensions in English without changing the raw kind", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <LocaleProvider preference={{ read: () => "en", write: () => undefined }}>
+        <FixtureCatalogue selectedKind={null} onSelect={onSelect} />
+      </LocaleProvider>,
+    );
+
+    const catalogue = screen.getByRole("region", { name: "Fixture catalogue" });
+    expect(within(catalogue).getByRole("button", { name: /Display table/ }))
+      .toHaveTextContent("W 1500 mm · D 750 mm · H 900 mm");
+    await user.click(within(catalogue).getByRole("button", { name: /Display table/ }));
     expect(onSelect).toHaveBeenCalledWith("display-table");
   });
 });

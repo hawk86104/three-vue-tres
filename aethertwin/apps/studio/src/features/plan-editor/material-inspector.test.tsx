@@ -20,6 +20,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "../../i18n/locale-provider";
 import {
   MaterialInspector,
   materialTargetKind,
@@ -135,7 +136,7 @@ afterEach(cleanup);
 function renderInspector(
   snapshot: ProjectSnapshot,
   target: Fixture,
-  overrides: Partial<MaterialInspectorProps> = {},
+  overrides: Partial<MaterialInspectorProps> & { readonly locale?: "zh-CN" | "en" } = {},
 ) {
   const onApplyPatches = vi.fn<
     (patches: readonly AnySnapshotRecordsPatch[]) => Promise<void>
@@ -143,6 +144,7 @@ function renderInspector(
   const onImportTexture = vi.fn(async () => undefined);
   const onError = vi.fn();
   const ids = [NEW_MATERIAL_ID, NEW_ASSIGNMENT_ID];
+  const { locale, ...propOverrides } = overrides;
   const props: MaterialInspectorProps = {
     snapshot,
     target: snapshot.project.entities.find(({ id }) => id === target.id) as Fixture,
@@ -153,16 +155,21 @@ function renderInspector(
     onApplyPatches,
     onImportTexture,
     onError,
-    ...overrides,
+    ...propOverrides,
   };
-  const view = render(<MaterialInspector {...props} />);
+  const content = <MaterialInspector {...props} />;
+  const view = render(locale === undefined ? content : (
+    <LocaleProvider preference={{ read: () => locale, write: () => undefined }}>
+      {content}
+    </LocaleProvider>
+  ));
   return { ...view, props, onApplyPatches, onImportTexture, onError };
 }
 
-async function openMaterialSection(): Promise<HTMLElement> {
+async function openMaterialSection(label = "材质"): Promise<HTMLElement> {
   const user = userEvent.setup();
-  await user.click(screen.getByText("材质"));
-  return screen.getByRole("group", { name: "材质" });
+  await user.click(screen.getByText(label));
+  return screen.getByRole("group", { name: label });
 }
 
 describe("MaterialInspector", () => {
@@ -349,5 +356,21 @@ describe("MaterialInspector", () => {
         after: { ...textured, assetId: null },
       }],
     }]);
+  });
+
+  it("reformats material controls in English while retaining authored material names", async () => {
+    const target = fixture(FIXTURE_A_ID, "展示台");
+    const assigned = material(MATERIAL_A_ID, "Copper");
+    const view = renderInspector(
+      projectSnapshot([target], [assigned], [assignment(ASSIGNMENT_A_ID, target.id, assigned.id)]),
+      target,
+      { locale: "en" },
+    );
+    const section = await openMaterialSection("Material");
+    expect(within(section).getByRole("combobox", { name: "Material assignment" }))
+      .toHaveValue(MATERIAL_A_ID);
+    expect(within(section).getByRole("option", { name: "Copper" })).toBeVisible();
+    expect(within(section).getByRole("button", { name: "Apply material" })).toBeVisible();
+    expect(view.onApplyPatches).not.toHaveBeenCalled();
   });
 });

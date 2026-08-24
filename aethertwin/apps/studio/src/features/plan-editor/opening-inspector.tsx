@@ -4,6 +4,7 @@ import { parseLength } from "@aethertwin/plan-engine";
 import { useEffect, useRef, useState } from "react";
 import { OPENING_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 import { useDisplayName } from "../../i18n/display-name-provider";
+import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
 
 export interface OpeningInspectorProps {
@@ -47,7 +48,7 @@ export function OpeningInspector({
   onApplyOpeningPatch,
   onError,
 }: OpeningInspectorProps) {
-  const { t } = useI18n();
+  const { format, t } = useI18n();
   const displayName = useDisplayName();
   const committedName = opening.name;
   const committedKind = opening.kind;
@@ -61,7 +62,7 @@ export function OpeningInspector({
   const [height, setHeight] = useState(committedHeight);
   const [sillHeight, setSillHeight] = useState(committedSillHeight);
   const [distance, setDistance] = useState(committedDistance);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<StudioMessageDescriptor | null>(null);
   const publishingRef = useRef(false);
   const [publishing, setPublishing] = useState(false);
   const editable = layer.visible && !layer.locked && !wall.locked;
@@ -111,9 +112,7 @@ export function OpeningInspector({
       || nextSillHeight === null
       || nextDistance === null
     ) {
-      setLocalError(
-        t("inspector.invalidOpening"),
-      );
+      setLocalError(message("inspector.invalidOpening"));
       return;
     }
 
@@ -143,7 +142,7 @@ export function OpeningInspector({
         <StatusNotice tone="info">{t("inspector.openingUnavailable")}</StatusNotice>
       ) : null}
       {localError === null ? null : (
-        <StatusNotice tone="error">{localError}</StatusNotice>
+        <StatusNotice tone="error">{format(localError)}</StatusNotice>
       )}
       <Field
         label={t("inspector.openingName")}
