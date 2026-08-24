@@ -13,6 +13,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouteInspector } from "./route-inspector";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
 import type { StudioLocale } from "../../i18n/message-schema";
 
@@ -110,12 +111,18 @@ describe("RouteInspector", () => {
   });
 
   it("keeps the durable network exact when persistence fails and permits an exact retry", async () => {
-    const failure = new Error("route save failed");
+    const secret = "C:\\private\\route.json";
+    const failure = new ProjectBackendError(
+      "DATABASE_ERROR",
+      secret,
+      { secret, path: secret },
+      "unsafe log ref / route",
+    );
     const apply = vi.fn()
       .mockRejectedValueOnce(failure)
       .mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
-    const { onApplyRouteNetworkPatch, onError } = renderInspector({ apply });
+    const { onApplyRouteNetworkPatch, onError, setLocale } = renderInspector({ apply });
     await user.selectOptions(
       screen.getByRole("combobox", { name: "路线节点类型" }),
       "showroom-stop",
@@ -124,7 +131,11 @@ describe("RouteInspector", () => {
     await user.click(screen.getByRole("button", { name: "应用路线节点" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
     expect(onError).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
+    expect(screen.getByRole("alert")).toHaveTextContent("项目恢复未完成");
+    expect(document.body.textContent).not.toContain(secret);
+    act(() => setLocale("en"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Project recovery could not be completed");
+    expect(document.body.textContent).not.toContain("unsafe log ref / route");
     expect(network.nodes).toEqual([node]);
 
     await user.click(screen.getByRole("button", { name: "应用路线节点" }));

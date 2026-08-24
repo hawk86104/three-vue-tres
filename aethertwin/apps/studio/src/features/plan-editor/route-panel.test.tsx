@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StoreApi } from "zustand/vanilla";
 import { createPlanEditorStore, type PlanEditorState } from "./editor-session";
 import { RoutePanel } from "./route-panel";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
 import type { StudioLocale } from "../../i18n/message-schema";
 
@@ -78,9 +79,12 @@ function routeSession(): StoreApi<RoutePanelSessionState> {
   return store as unknown as StoreApi<RoutePanelSessionState>;
 }
 
-function renderPanel(route: GuidedRoute | null = null) {
+function renderPanel(
+  route: GuidedRoute | null = null,
+  confirm: (before: GuidedRoute | null, after: GuidedRoute) => Promise<void> = async () => undefined,
+) {
   const sessionStore = routeSession();
-  const onConfirm = vi.fn(async () => undefined);
+  const onConfirm = vi.fn(confirm);
   const onReturnFocus = vi.fn();
   let setLocale: ((locale: StudioLocale) => void) | undefined;
   function LocaleProbe() {
@@ -118,6 +122,21 @@ afterEach(() => {
 });
 
 describe("RoutePanel guided-route stop authoring", () => {
+  it("redacts failed confirmation before and after a live locale switch", async () => {
+    const secret = "C:\\private\\guided-route.json";
+    const user = userEvent.setup();
+    const { setLocale } = renderPanel(null, async () => {
+      throw new ProjectBackendError("DATABASE_ERROR", secret, { secret }, "unsafe route ref / x");
+    });
+    await user.click(screen.getByRole("button", { name: "添加站点：North entrance" }));
+    await user.click(screen.getByRole("button", { name: "添加站点：Lighting gallery" }));
+    await user.click(screen.getByRole("button", { name: "确认导览路线" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("项目恢复未完成");
+    expect(document.body.textContent).not.toContain(secret);
+    act(() => setLocale("en"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Project recovery could not be completed");
+    expect(document.body.textContent).not.toContain("unsafe route ref / x");
+  });
   it("reformats route authoring in place without changing stop IDs", async () => {
     const user = userEvent.setup();
     const { sessionStore, setLocale } = renderPanel();
