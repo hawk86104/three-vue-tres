@@ -15,6 +15,7 @@ import type {
 import { useEffect, useId, useRef, useState } from "react";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
 export type MaterialTarget = SpaceUnit | Zone | Wall | Fixture;
 type AssetIssue = ProjectStoreState["assetIssues"][number];
@@ -65,6 +66,11 @@ export interface MaterialInspectorProps {
   readonly onError: (error: unknown) => void;
 }
 
+interface SafeFailure {
+  readonly descriptor: StudioMessageDescriptor;
+  readonly logRef: string | null;
+}
+
 export function materialTargetKind(target: MaterialTarget): MaterialTargetKind {
   if (target.type === "space-unit" || target.type === "zone") {
     return "space-floor";
@@ -89,7 +95,7 @@ export function MaterialInspector({
   makeId,
   onApplyPatches,
   onImportTexture,
-  onError,
+  onError: _onError,
 }: MaterialInspectorProps) {
   const { format, t } = useI18n();
   const targetKind = materialTargetKind(target);
@@ -130,6 +136,7 @@ export function MaterialInspector({
   const [operationBusy, setOperationBusy] = useState(false);
   const operationBusyRef = useRef(false);
   const [localError, setLocalError] = useState<StudioMessageDescriptor | null>(null);
+  const [failure, setFailure] = useState<SafeFailure | null>(null);
   const localErrorId = `material-inspector-error-${useId().replaceAll(":", "")}`;
   function fieldIssueProps(invalid: boolean) {
     const visible = localError !== null && invalid;
@@ -147,6 +154,7 @@ export function MaterialInspector({
     setMetalness(String(assignedMaterial?.metalness ?? defaults.metalness));
     setOpacity(String(assignedMaterial?.opacity ?? defaults.opacity));
     setLocalError(null);
+    setFailure(null);
   }, [
     assignedMaterial?.baseColor,
     assignedMaterial?.id,
@@ -162,10 +170,14 @@ export function MaterialInspector({
     operationBusyRef.current = true;
     setOperationBusy(true);
     setLocalError(null);
+    setFailure(null);
     try {
       await operation();
     } catch (error) {
-      onError(error);
+      setFailure({
+        descriptor: localizedErrorDescriptor(error),
+        logRef: localizedErrorLogRef(error),
+      });
     } finally {
       operationBusyRef.current = false;
       setOperationBusy(false);
@@ -378,6 +390,12 @@ export function MaterialInspector({
             />
             {localError === null ? null : (
               <StatusNotice id={localErrorId} tone="error">{format(localError)}</StatusNotice>
+            )}
+            {failure === null ? null : (
+              <StatusNotice tone="error">
+                {format(failure.descriptor)}
+                {failure.logRef === null ? null : ` ${t("error.diagnosticReference", { logRef: failure.logRef })}`}
+              </StatusNotice>
             )}
             <Button
               variant="secondary"

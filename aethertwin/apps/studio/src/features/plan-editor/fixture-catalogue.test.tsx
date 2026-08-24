@@ -3,11 +3,25 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LocaleProvider } from "../../i18n/locale-provider";
+import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
 import { FixtureCatalogue } from "./fixture-catalogue";
 
 afterEach(cleanup);
+
+function SwitchToEnglish() {
+  const { setLocale } = useI18n();
+  return <button type="button" onClick={() => setLocale("en")}>switch</button>;
+}
+
+function FixtureHarness({ onSelect }: { readonly onSelect: (kind: "display-table") => void }) {
+  const [selected, setSelected] = useState<"display-table" | null>(null);
+  return <FixtureCatalogue selectedKind={selected} onSelect={(kind) => {
+    if (kind === "display-table") setSelected(kind);
+    if (kind === "display-table") onSelect(kind);
+  }} />;
+}
 
 describe("FixtureCatalogue", () => {
   it("renders exactly seven accessible showroom choices with exact W/D/H defaults", () => {
@@ -66,5 +80,16 @@ describe("FixtureCatalogue", () => {
       .toHaveTextContent("W 1500 mm · D 750 mm · H 900 mm");
     await user.click(within(catalogue).getByRole("button", { name: /Display table/ }));
     expect(onSelect).toHaveBeenCalledWith("display-table");
+  });
+
+  it("keeps the selected fixture through a live switch without another callback", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(<LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}><SwitchToEnglish /><FixtureHarness onSelect={onSelect} /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: /展示桌/ }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    expect(screen.getByRole("button", { name: /Display table/ })).toHaveAttribute("aria-pressed", "true");
+    expect(onSelect).toHaveBeenCalledOnce();
   });
 });

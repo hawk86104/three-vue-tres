@@ -11,6 +11,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 import { LocaleProvider, useI18n } from "../../i18n/locale-provider";
 import { OpeningInspector } from "./opening-inspector";
 
@@ -199,5 +200,25 @@ describe("OpeningInspector", () => {
     expect(onApplyOpeningPatch).toHaveBeenCalledWith(opening, expect.objectContaining({
       name: "未提交的门", width: 1_000, kind: "window",
     }));
+  });
+
+  it("redacts a real backend failure in both locales without forwarding the raw error", async () => {
+    const user = userEvent.setup();
+    const onError = vi.fn();
+    render(
+      <LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}>
+        <SwitchToEnglish />
+        <OpeningInspector opening={opening} wall={wall} layer={layer} onError={onError}
+          onApplyOpeningPatch={async () => { throw new ProjectBackendError("ASSET_IO_FAILED", "C:\\secret\\door.png", { path: "C:\\secret\\door.png" }, "opening-safe-ref"); }} />
+      </LocaleProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("门窗名称"), { target: { value: "重新命名" } });
+    await user.click(screen.getByRole("button", { name: "应用门窗" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("opening-safe-ref");
+    expect(screen.queryByText("C:\\secret\\door.png")).not.toBeInTheDocument();
+    expect(onError).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("The asset operation could not be completed");
+    expect(screen.queryByText("C:\\secret\\door.png")).not.toBeInTheDocument();
   });
 });

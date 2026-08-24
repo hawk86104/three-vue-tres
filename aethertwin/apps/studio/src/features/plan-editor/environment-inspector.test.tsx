@@ -12,12 +12,16 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SceneEnvironment } from "@aethertwin/core-model";
+import { ProjectBackendError } from "../../backend/project-backend-error";
 import { LocaleProvider } from "../../i18n/locale-provider";
+import { useI18n } from "../../i18n/locale-provider";
 import {
   ProjectStore,
   SandboxProjectBackend,
 } from "@aethertwin/project-store";
 import { PlanEditor } from "./plan-editor";
+import { EnvironmentInspector } from "./environment-inspector";
 
 vi.mock("@aethertwin/render-plan-2d", () => ({
   PixiPlanRenderer: class {
@@ -49,6 +53,11 @@ const LABELS = {
 
 const stores: ProjectStore[] = [];
 
+function SwitchToEnglish() {
+  const { setLocale } = useI18n();
+  return <button type="button" onClick={() => setLocale("en")}>switch</button>;
+}
+
 async function renderEnvironmentProject(name: string, locale: "zh-CN" | "en" = "zh-CN") {
   const backend = new SandboxProjectBackend();
   const store = new ProjectStore(backend, { autosaveDelayMs: 60_000 });
@@ -59,6 +68,7 @@ async function renderEnvironmentProject(name: string, locale: "zh-CN" | "en" = "
   const commit = vi.spyOn(backend, "commit");
   const view = render(
     <LocaleProvider preference={{ read: () => locale, write: () => undefined }}>
+      <SwitchToEnglish />
       <PlanEditor
         store={store}
         backendMode="sandbox"
@@ -237,14 +247,13 @@ describe("Environment Inspector", () => {
   it("clears a failed environment action when an unchanged draft succeeds on retry", async () => {
     const { commit, commitProject, section, store, user } =
       await renderEnvironmentProject("Environment retry");
-    const failure = new Error("environment commit failed");
+    const failure = new ProjectBackendError("ASSET_IO_FAILED", "C:\\secret\\environment.json", { path: "C:\\secret\\environment.json" }, "environment-safe-ref");
     commit.mockRejectedValueOnce(failure).mockImplementation(commitProject);
     fireEvent.change(field(section, LABELS.backgroundColor), {
       target: { value: "#203040" },
     });
 
     await user.click(within(section).getByRole("button", { name: LABELS.apply }));
-    expect(await screen.findByText(failure.message)).toBeVisible();
     expect(store.getState().snapshot!.project.sceneEnvironment.backgroundColor)
       .toBe("#101820");
 
@@ -252,7 +261,7 @@ describe("Environment Inspector", () => {
     await waitFor(() => expect(
       store.getState().snapshot!.project.sceneEnvironment.backgroundColor,
     ).toBe("#203040"));
-    expect(screen.queryByText(failure.message)).not.toBeInTheDocument();
+    expect(screen.queryByText("environment-safe-ref")).not.toBeInTheDocument();
   });
 
   it("reformats environment controls in English without publishing a patch", async () => {
@@ -262,6 +271,36 @@ describe("Environment Inspector", () => {
     expect(within(section).getByRole("button", { name: "Reset" })).toBeVisible();
     expect(within(section).getByRole("button", { name: "Apply environment" })).toBeVisible();
     expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("keeps unsaved environment edits through a live switch without committing", async () => {
+    const { commit, section, user } = await renderEnvironmentProject("Environment switch");
+    fireEvent.change(field(section, LABELS.backgroundColor), { target: { value: "#203040" } });
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    const english = screen.getByRole("group", { name: "Environment" });
+    expect(field(english, "Background color")).toHaveValue("#203040");
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("redacts a real environment backend failure in Chinese and after switching to English", async () => {
+    const user = userEvent.setup();
+    const environment: SceneEnvironment = {
+      backgroundColor: "#101820", ambient: { color: "#dce8f0", intensity: 0.55 },
+      key: { color: "#fff1dc", intensity: 1.1, direction: [4, 8, 5] },
+      shadowsEnabled: true, shadowSoftness: 0.5,
+    };
+    const onError = vi.fn();
+    render(<LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}><SwitchToEnglish /><EnvironmentInspector environment={environment} onError={onError}
+      onApplyPatch={async () => { throw new ProjectBackendError("ASSET_IO_FAILED", "C:\\secret\\environment.json", { path: "C:\\secret\\environment.json" }, "environment-safe-ref"); }} />
+    </LocaleProvider>);
+    await user.click(screen.getByText("环境"));
+    fireEvent.change(screen.getByLabelText("背景颜色"), { target: { value: "#203040" } });
+    await user.click(screen.getByRole("button", { name: "应用环境" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("environment-safe-ref");
+    expect(screen.queryByText("C:\\secret\\environment.json")).not.toBeInTheDocument();
+    expect(onError).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("The asset operation could not be completed");
   });
 
 });

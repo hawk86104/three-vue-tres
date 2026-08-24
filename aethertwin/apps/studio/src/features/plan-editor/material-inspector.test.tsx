@@ -21,6 +21,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../i18n/locale-provider";
+import { ProjectBackendError } from "../../backend/project-backend-error";
+import { useI18n } from "../../i18n/locale-provider";
 import {
   MaterialInspector,
   materialTargetKind,
@@ -164,6 +166,11 @@ function renderInspector(
     </LocaleProvider>
   ));
   return { ...view, props, onApplyPatches, onImportTexture, onError };
+}
+
+function SwitchToEnglish() {
+  const { setLocale } = useI18n();
+  return <button type="button" onClick={() => setLocale("en")}>switch</button>;
 }
 
 async function openMaterialSection(label = "材质"): Promise<HTMLElement> {
@@ -360,7 +367,7 @@ describe("MaterialInspector", () => {
 
   it("reformats material controls in English while retaining authored material names", async () => {
     const target = fixture(FIXTURE_A_ID, "展示台");
-    const assigned = material(MATERIAL_A_ID, "Copper");
+    const assigned = material(MATERIAL_A_ID, "Copper", { assetId: TEXTURE_ID });
     const view = renderInspector(
       projectSnapshot([target], [assigned], [assignment(ASSIGNMENT_A_ID, target.id, assigned.id)]),
       target,
@@ -372,5 +379,47 @@ describe("MaterialInspector", () => {
     expect(within(section).getByRole("option", { name: "Copper" })).toBeVisible();
     expect(within(section).getByRole("button", { name: "Apply material" })).toBeVisible();
     expect(view.onApplyPatches).not.toHaveBeenCalled();
+  });
+
+  it("redacts a real texture failure in Chinese and English", async () => {
+    const user = userEvent.setup();
+    const target = fixture(FIXTURE_A_ID, "Display");
+    const assigned = material(MATERIAL_A_ID, "Copper", { assetId: TEXTURE_ID });
+    const patch = assignment(ASSIGNMENT_A_ID, target.id, assigned.id);
+    const onError = vi.fn();
+    const props: MaterialInspectorProps = {
+      snapshot: projectSnapshot([target], [assigned], [patch]), target, disabled: false,
+      assetIssues: [], assetOperationBusy: false, makeId: () => NEW_MATERIAL_ID,
+      onApplyPatches: async () => undefined,
+      onImportTexture: async () => { throw new ProjectBackendError("ASSET_IO_FAILED", "C:\\secret\\texture.png", { path: "C:\\secret\\texture.png" }, "material-safe-ref"); },
+      onError,
+    };
+    render(<LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}><SwitchToEnglish /><MaterialInspector {...props} /></LocaleProvider>);
+    const section = await openMaterialSection();
+    await user.click(within(section).getByRole("button", { name: "替换纹理" }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent("material-safe-ref");
+    expect(screen.queryByText("C:\\secret\\texture.png")).not.toBeInTheDocument();
+    expect(onError).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    expect(within(screen.getByRole("group", { name: "Material" })).getByRole("alert")).toHaveTextContent("The asset operation could not be completed");
+  });
+
+  it("keeps an unsaved material field through a live switch without applying", async () => {
+    const user = userEvent.setup();
+    const target = fixture(FIXTURE_A_ID, "Display");
+    const assigned = material(MATERIAL_A_ID, "Copper");
+    const patch = assignment(ASSIGNMENT_A_ID, target.id, assigned.id);
+    const onApplyPatches = vi.fn(async () => undefined);
+    render(<LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}><SwitchToEnglish /><MaterialInspector
+      snapshot={projectSnapshot([target], [assigned], [patch])} target={target} disabled={false}
+      assetIssues={[]} assetOperationBusy={false} makeId={() => NEW_MATERIAL_ID}
+      onApplyPatches={onApplyPatches} onImportTexture={async () => undefined} onError={vi.fn()}
+    /></LocaleProvider>);
+    const section = await openMaterialSection();
+    fireEvent.change(within(section).getByLabelText("基础颜色"), { target: { value: "#abcdef" } });
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    const english = screen.getByRole("group", { name: "Material" });
+    expect(within(english).getByLabelText("Base color")).toHaveValue("#abcdef");
+    expect(onApplyPatches).not.toHaveBeenCalled();
   });
 });

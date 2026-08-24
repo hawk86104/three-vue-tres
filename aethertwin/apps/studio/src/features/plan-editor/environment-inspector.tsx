@@ -4,6 +4,7 @@ import type { SceneEnvironmentPatch } from "@aethertwin/project-store";
 import { useEffect, useId, useMemo, useState } from "react";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
@@ -21,7 +22,15 @@ interface EnvironmentDraft {
 }
 
 type DraftField = Exclude<keyof EnvironmentDraft, "shadowsEnabled">;
-type DraftErrors = Partial<Record<DraftField, StudioMessageDescriptor>>;
+type EnvironmentIssue =
+  | { readonly code: "color" }
+  | { readonly code: "range"; readonly minimum: number; readonly maximum: number }
+  | { readonly code: "direction" };
+type DraftErrors = Partial<Record<DraftField, EnvironmentIssue>>;
+interface SafeFailure {
+  readonly descriptor: StudioMessageDescriptor;
+  readonly logRef: string | null;
+}
 
 export interface EnvironmentInspectorProps {
   readonly environment: SceneEnvironment;
@@ -55,25 +64,25 @@ function validate(draft: EnvironmentDraft): {
 } {
   const errors: DraftErrors = {};
   if (!COLOR_PATTERN.test(draft.backgroundColor)) {
-    errors.backgroundColor = message("environment.invalidColor", { label: "background" });
+    errors.backgroundColor = { code: "color" };
   }
   if (!COLOR_PATTERN.test(draft.ambientColor)) {
-    errors.ambientColor = message("environment.invalidColor", { label: "ambient" });
+    errors.ambientColor = { code: "color" };
   }
   if (!COLOR_PATTERN.test(draft.keyColor)) {
-    errors.keyColor = message("environment.invalidColor", { label: "key light" });
+    errors.keyColor = { code: "color" };
   }
   const ambientIntensity = bounded(draft.ambientIntensity, 0, 4);
   const keyIntensity = bounded(draft.keyIntensity, 0, 8);
   const shadowSoftness = bounded(draft.shadowSoftness, 0, 1);
   if (ambientIntensity === null) {
-    errors.ambientIntensity = message("environment.invalidRange", { label: "ambient intensity", minimum: 0, maximum: 4 });
+    errors.ambientIntensity = { code: "range", minimum: 0, maximum: 4 };
   }
   if (keyIntensity === null) {
-    errors.keyIntensity = message("environment.invalidRange", { label: "key light intensity", minimum: 0, maximum: 8 });
+    errors.keyIntensity = { code: "range", minimum: 0, maximum: 8 };
   }
   if (shadowSoftness === null) {
-    errors.shadowSoftness = message("environment.invalidRange", { label: "shadow softness", minimum: 0, maximum: 1 });
+    errors.shadowSoftness = { code: "range", minimum: 0, maximum: 1 };
   }
   const directions = [draft.directionX, draft.directionY, draft.directionZ].map(
     (value) => bounded(value, -100, 100),
@@ -81,12 +90,12 @@ function validate(draft: EnvironmentDraft): {
   const directionFields = ["directionX", "directionY", "directionZ"] as const;
   directions.forEach((value, index) => {
     if (value === null) {
-      errors[directionFields[index]!] = message("environment.invalidRange", { label: "key light direction", minimum: -100, maximum: 100 });
+      errors[directionFields[index]!] = { code: "range", minimum: -100, maximum: 100 };
     }
   });
   if (directions.every((value) => value === 0)) {
     for (const field of directionFields) {
-      errors[field] = message("environment.invalidDirection");
+      errors[field] = { code: "direction" };
     }
   }
   if (
@@ -117,7 +126,7 @@ function validate(draft: EnvironmentDraft): {
 export function EnvironmentInspector({
   environment,
   onApplyPatch,
-  onError,
+  onError: _onError,
 }: EnvironmentInspectorProps) {
   const { format, t } = useI18n();
   const committedDraft = useMemo(
@@ -149,16 +158,19 @@ export function EnvironmentInspector({
   const [draft, setDraft] = useState(committedDraft);
   const [errors, setErrors] = useState<DraftErrors>({});
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<SafeFailure | null>(null);
   const errorId = "environment-inspector-error-" + useId().replaceAll(":", "");
 
   useEffect(() => {
     setDraft(committedDraft);
     setErrors({});
+    setFailure(null);
   }, [committedDraft]);
 
   function update(patch: Partial<EnvironmentDraft>): void {
     setDraft((current) => ({ ...current, ...patch }));
     setErrors({});
+    setFailure(null);
   }
 
   function issue(field: DraftField) {
@@ -187,10 +199,11 @@ export function EnvironmentInspector({
     setErrors(result.errors);
     if (result.after === null || equals(environment, result.after)) return;
     setBusy(true);
+    setFailure(null);
     try {
       await onApplyPatch({ before: environment, after: result.after });
     } catch (error) {
-      onError(error);
+      setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
       setBusy(false);
     }
@@ -199,13 +212,27 @@ export function EnvironmentInspector({
   function reset(): void {
     setDraft(committedDraft);
     setErrors({});
+    setFailure(null);
   }
 
-  const messages = [...new Map(
-    Object.values(errors)
-      .filter((value): value is StudioMessageDescriptor => value !== undefined)
-      .map((value) => [JSON.stringify(value), format(value)]),
-  ).values()];
+  function fieldLabel(field: DraftField): string {
+    const ids = {
+      backgroundColor: "environment.backgroundColor", ambientColor: "environment.ambientColor", ambientIntensity: "environment.ambientIntensity", keyColor: "environment.keyColor", keyIntensity: "environment.keyIntensity", directionX: "environment.directionX", directionY: "environment.directionY", directionZ: "environment.directionZ", shadowSoftness: "environment.shadowSoftness",
+    } as const;
+    return t(ids[field]);
+  }
+
+  function formatIssue(field: DraftField, issue: EnvironmentIssue): string {
+    if (issue.code === "color") return t("environment.invalidColor", { label: fieldLabel(field) });
+    if (issue.code === "range") return t("environment.invalidRange", { label: fieldLabel(field), minimum: issue.minimum, maximum: issue.maximum });
+    return t("environment.invalidDirection");
+  }
+
+  const messages = [...new Set(
+    (Object.entries(errors) as [DraftField, EnvironmentIssue][]).map(
+      ([field, issue]) => formatIssue(field, issue),
+    ),
+  )];
 
   return (
     <details className="studio-environment-inspector" role="group" aria-label={t("environment.section")}>
@@ -236,6 +263,12 @@ export function EnvironmentInspector({
             <ul className="studio-environment-inspector__errors">
               {messages.map((message) => <li key={message}>{message}</li>)}
             </ul>
+          </StatusNotice>
+        )}
+        {failure === null ? null : (
+          <StatusNotice tone="error">
+            {format(failure.descriptor)}
+            {failure.logRef === null ? null : ` ${t("error.diagnosticReference", { logRef: failure.logRef })}`}
           </StatusNotice>
         )}
         <Button variant="ghost" disabled={busy} onClick={reset}>

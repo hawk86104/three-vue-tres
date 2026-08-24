@@ -5,10 +5,16 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../i18n/locale-provider";
+import { useI18n } from "../../i18n/locale-provider";
 import type { RoomRecognitionState } from "./editor-session";
 import { RoomRecognitionPanel } from "./room-recognition-panel";
 
 afterEach(cleanup);
+
+function SwitchToEnglish() {
+  const { setLocale } = useI18n();
+  return <button type="button" onClick={() => setLocale("en")}>switch</button>;
+}
 
 function recognitionState(
   overrides: Partial<RoomRecognitionState> = {},
@@ -195,5 +201,18 @@ describe("RoomRecognitionPanel", () => {
     expect(screen.getByRole("list", { name: "Room candidates" })).toBeVisible();
     expect(screen.getByText("Recognition results could not be saved. Try again.")).toBeVisible();
     expect(screen.queryByText("checkpoint.sqlite")).not.toBeInTheDocument();
+  });
+
+  it("keeps recognition results selected through a live switch without callbacks", async () => {
+    const user = userEvent.setup();
+    const callbacks = {
+      onToleranceChange: vi.fn(), onRecognize: vi.fn(), onSelectCandidate: vi.fn(), onConfirmOne: vi.fn(), onConfirmAll: vi.fn(), onReplaceSelectedRoom: vi.fn(), onClose: vi.fn(),
+    };
+    render(<LocaleProvider preference={{ read: () => "zh-CN", write: () => undefined }}><SwitchToEnglish /><RoomRecognitionPanel state={recognitionState({ selectedCandidateKey: "candidate-b" })} representedKeys={new Set()} canReplaceSelectedRoom={false} busy={false} {...callbacks} /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "switch" }));
+    expect(screen.getByRole("list", { name: "Room candidates" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Select room candidate 2" })).toHaveAttribute("aria-pressed", "true");
+    expect(callbacks.onSelectCandidate).not.toHaveBeenCalled();
+    expect(callbacks.onRecognize).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import { OPENING_KIND_MESSAGE_IDS } from "../../i18n/display-message-ids";
 import { useDisplayName } from "../../i18n/display-name-provider";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
 export interface OpeningInspectorProps {
   readonly opening: Opening;
@@ -16,6 +17,11 @@ export interface OpeningInspectorProps {
     after: Opening | null,
   ) => Promise<void>;
   readonly onError: (error: unknown) => void;
+}
+
+interface SafeFailure {
+  readonly descriptor: StudioMessageDescriptor;
+  readonly logRef: string | null;
 }
 
 function signedLength(value: string): number | null {
@@ -46,7 +52,7 @@ export function OpeningInspector({
   wall,
   layer,
   onApplyOpeningPatch,
-  onError,
+  onError: _onError,
 }: OpeningInspectorProps) {
   const { format, t } = useI18n();
   const displayName = useDisplayName();
@@ -63,6 +69,7 @@ export function OpeningInspector({
   const [sillHeight, setSillHeight] = useState(committedSillHeight);
   const [distance, setDistance] = useState(committedDistance);
   const [localError, setLocalError] = useState<StudioMessageDescriptor | null>(null);
+  const [failure, setFailure] = useState<SafeFailure | null>(null);
   const publishingRef = useRef(false);
   const [publishing, setPublishing] = useState(false);
   const editable = layer.visible && !layer.locked && !wall.locked;
@@ -75,6 +82,7 @@ export function OpeningInspector({
     setSillHeight(committedSillHeight);
     setDistance(committedDistance);
     setLocalError(null);
+    setFailure(null);
   }, [
     opening.id,
     committedName,
@@ -90,10 +98,14 @@ export function OpeningInspector({
     publishingRef.current = true;
     setPublishing(true);
     setLocalError(null);
+    setFailure(null);
     try {
       await onApplyOpeningPatch(opening, after);
     } catch (error) {
-      onError(error);
+      setFailure({
+        descriptor: localizedErrorDescriptor(error),
+        logRef: localizedErrorLogRef(error),
+      });
     } finally {
       publishingRef.current = false;
       setPublishing(false);
@@ -143,6 +155,12 @@ export function OpeningInspector({
       ) : null}
       {localError === null ? null : (
         <StatusNotice tone="error">{format(localError)}</StatusNotice>
+      )}
+      {failure === null ? null : (
+        <StatusNotice tone="error">
+          {format(failure.descriptor)}
+          {failure.logRef === null ? null : ` ${t("error.diagnosticReference", { logRef: failure.logRef })}`}
+        </StatusNotice>
       )}
       <Field
         label={t("inspector.openingName")}
