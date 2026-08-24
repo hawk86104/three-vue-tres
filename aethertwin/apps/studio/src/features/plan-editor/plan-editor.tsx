@@ -147,11 +147,13 @@ function errorValue(value: unknown): Error {
   return new Error(String(value));
 }
 
+const SAFE_LOG_REFERENCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+
 function logReference(value: unknown): string | null {
   if (value === null || typeof value !== "object" || !("logRef" in value)) {
     return null;
   }
-  return typeof value.logRef === "string" && value.logRef.length > 0
+  return typeof value.logRef === "string" && SAFE_LOG_REFERENCE_PATTERN.test(value.logRef)
     ? value.logRef
     : null;
 }
@@ -162,7 +164,7 @@ function safeAssetImportError(
 ): Error {
   const safe = new Error(message);
   const logRef = logReference(value);
-  if (logRef !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(logRef)) {
+  if (logRef !== null) {
     Object.assign(safe, { logRef });
   }
   return safe;
@@ -178,7 +180,9 @@ function localizedPlanReferenceFailure(value: unknown): LocalizedErrorNotice {
     descriptor: value instanceof ProjectBackendError
       ? localizedErrorDescriptor(value)
       : message("error.planReferenceImport"),
-    logRef: localizedErrorLogRef(value) ?? logReference(value),
+    logRef: value instanceof ProjectBackendError
+      ? localizedErrorLogRef(value)
+      : logReference(value),
   };
 }
 

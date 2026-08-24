@@ -31,6 +31,14 @@
 - `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` — attempted again and blocked by the AGENTS.md authorization gate; not bypassed.
 - `git diff --check` — passed; Git emitted only line-ending conversion warnings.
 
+### Second review correction verification
+
+- TDD: changed the real import and cancel `ProjectBackendError` integration paths to carry `log-secret=E:\\private\\plans\\sensitive-floor.png`. The focused asset-library run failed first (2 failures) because the raw diagnostic reference was rendered.
+- `PlanEditor` now accepts diagnostic references only when they match the same stable identifier allow-list. Backend failures use only `localizedErrorLogRef`; no raw fallback remains. The integration assertions confirm the secret-bearing log reference, its path, and its secret are absent before and after an in-place English locale switch, while the English descriptor is presented.
+- `pnpm.cmd vitest run apps/studio/src/features/plan-editor/asset-library.test.tsx apps/studio/src/features/plan-editor/reference-inspector.test.tsx apps/studio/src/features/plan-editor/calibration-panel.test.tsx apps/studio/src/features/plan-editor/plan-editor.test.tsx` — passed (4 files, 166 tests).
+- `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` — attempted at the reviewer's request but rejected by the AGENTS.md authorization gate; not bypassed.
+- `git diff --check` — passed; Git emitted only line-ending conversion warnings.
+
 ## Notes
 
-The worktree contained unrelated pre-existing changes in Rust/package files and `.superpowers` artifacts. The review correction stages only the plan editor, asset-library test, two catalogues, and this report.
+The worktree contained unrelated pre-existing changes in Rust/package files and `.superpowers` artifacts. The second review correction stages only the plan editor, asset-library test, and this report.

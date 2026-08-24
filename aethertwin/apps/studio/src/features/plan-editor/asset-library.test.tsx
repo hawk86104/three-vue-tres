@@ -51,6 +51,7 @@ const PRODUCT_FIXTURE_ID = "00000000-0000-4000-8000-000000000201";
 const PRODUCT_CONTENT_ID = "00000000-0000-4000-8000-000000000202";
 const PRODUCT_MEDIA_ID = "00000000-0000-4000-8000-000000000203";
 const PRIVATE_SOURCE_PATH = "E:\\private\\plans\\sensitive-floor.png";
+const PRIVATE_LOG_REF = `log-secret=${PRIVATE_SOURCE_PATH}`;
 const stores: ProjectStore[] = [];
 
 beforeEach(() => {
@@ -474,7 +475,7 @@ describe("Task 11 Asset Library workflow", () => {
       "ASSET_IO_FAILED",
       `Could not import ${PRIVATE_SOURCE_PATH}`,
       { path: PRIVATE_SOURCE_PATH },
-      "plan-import-safe-ref",
+      PRIVATE_LOG_REF,
     ));
     renderImportEditor(store, {
       picker: { pick: vi.fn(async () => sandboxSource()) },
@@ -486,13 +487,17 @@ describe("Task 11 Asset Library workflow", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("资源操作未能完成，请重试。");
-    expect(alert).toHaveTextContent("诊断参考：plan-import-safe-ref");
+    expect(alert).not.toHaveTextContent("诊断参考");
+    expect(alert).not.toHaveTextContent(PRIVATE_LOG_REF);
+    expect(alert).not.toHaveTextContent("log-secret");
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
 
     await user.click(screen.getByRole("button", { name: "Switch locale" }));
 
     expect(alert).toHaveTextContent("The asset operation could not be completed. Try again.");
-    expect(alert).toHaveTextContent("Diagnostic reference: plan-import-safe-ref");
+    expect(alert).not.toHaveTextContent("Diagnostic reference");
+    expect(alert).not.toHaveTextContent(PRIVATE_LOG_REF);
+    expect(alert).not.toHaveTextContent("log-secret");
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
   });
 
@@ -566,7 +571,7 @@ describe("Task 11 Asset Library workflow", () => {
       "ASSET_IO_FAILED",
       `Could not cancel ${PRIVATE_SOURCE_PATH}`,
       { path: PRIVATE_SOURCE_PATH },
-      "plan-cancel-safe-ref",
+      PRIVATE_LOG_REF,
     ));
     renderImportEditor(store, {
       picker: { pick: vi.fn(async () => sandboxSource()) },
@@ -579,13 +584,17 @@ describe("Task 11 Asset Library workflow", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("资源操作未能完成，请重试。");
-    expect(alert).toHaveTextContent("诊断参考：plan-cancel-safe-ref");
+    expect(alert).not.toHaveTextContent("诊断参考");
+    expect(alert).not.toHaveTextContent(PRIVATE_LOG_REF);
+    expect(alert).not.toHaveTextContent("log-secret");
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
 
     await user.click(screen.getByRole("button", { name: "Switch locale" }));
 
     expect(alert).toHaveTextContent("The asset operation could not be completed. Try again.");
-    expect(alert).toHaveTextContent("Diagnostic reference: plan-cancel-safe-ref");
+    expect(alert).not.toHaveTextContent("Diagnostic reference");
+    expect(alert).not.toHaveTextContent(PRIVATE_LOG_REF);
+    expect(alert).not.toHaveTextContent("log-secret");
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
 
     await act(async () => completion.reject(new ProjectBackendError(
