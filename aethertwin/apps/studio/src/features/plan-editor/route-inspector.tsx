@@ -41,7 +41,7 @@ export function RouteInspector({
   node,
   editable,
   onApplyRouteNetworkPatch,
-  onError,
+  onError: _onError,
 }: RouteInspectorProps) {
   const { format, t } = useI18n();
   const [name, setName] = useState(node.name);
@@ -95,7 +95,6 @@ export function RouteInspector({
         || submissionGeneration.current !== generation
       ) return;
       setError(localizedErrorDescriptor(value));
-      onError(value);
     } finally {
       if (
         selectionIdentityRef.current === identityAtStart

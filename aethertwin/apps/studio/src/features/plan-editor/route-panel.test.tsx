@@ -197,8 +197,8 @@ describe("RoutePanel guided-route stop authoring", () => {
     await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("路线无法连通");
-    expect(screen.getByRole("alert")).toHaveTextContent("Lighting gallery");
-    expect(screen.getByRole("alert")).toHaveTextContent("Isolated gallery");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Lighting gallery");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Isolated gallery");
     expect(screen.getByRole("button", { name: "确认导览路线" })).toBeDisabled();
     expect([...sessionStore.getState().selectedIds]).toEqual(selectionBefore);
     expect(onConfirm).not.toHaveBeenCalled();

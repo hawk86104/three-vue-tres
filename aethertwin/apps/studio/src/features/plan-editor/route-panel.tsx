@@ -178,11 +178,7 @@ export function RoutePanel({
     }
   }
 
-  const routeFailureMessage = noRoute === null ? null : (() => {
-    const from = nodeById.get(noRoute.fromStopId)?.name ?? noRoute.fromStopId;
-    const to = nodeById.get(noRoute.toStopId)?.name ?? noRoute.toStopId;
-    return t("route.panel.noRoute", { from, to });
-  })();
+  const routeFailureMessage = noRoute === null ? null : t("route.panel.noRoute", { from: "", to: "" });
 
   return (
     <aside className="studio-route-panel" aria-label={t("route.panel.label", { name: network.name })} aria-busy={publishing}>

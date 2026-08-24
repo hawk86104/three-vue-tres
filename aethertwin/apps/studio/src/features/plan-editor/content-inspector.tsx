@@ -4,7 +4,7 @@ import type {
   PointOfInterest,
   ProductContent,
 } from "@aethertwin/core-model";
-import { Button, Field } from "@aethertwin/design-system";
+import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import { reorderProductMedia } from "@aethertwin/plan-engine";
 import type {
   ProjectAssetSource,
@@ -12,9 +12,12 @@ import type {
 } from "@aethertwin/project-store";
 import { useEffect, useState, type Ref } from "react";
 import { useI18n } from "../../i18n/locale-provider";
+import { type StudioMessageDescriptor } from "../../i18n/format-message";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
 export type ProductMediaRole = "content-image" | "content-video";
 type AssetIssue = ProjectStoreState["assetIssues"][number];
+interface SafeFailure { readonly descriptor: StudioMessageDescriptor; readonly logRef: string | null }
 
 export interface ContentInspectorProps {
   readonly content: ProductContent;
@@ -57,7 +60,7 @@ function ContentPreview({
   readonly issue: AssetIssue | undefined;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
 }) {
-  const { t } = useI18n();
+  const { format, t } = useI18n();
   const [source, setSource] = useState<ProjectAssetSource | null>(null);
   const [failed, setFailed] = useState(false);
   const unavailable = issue?.code === "ASSET_MISSING"
@@ -114,7 +117,7 @@ export function ContentInspector({
   assetOperationBusy = false,
   importImageButtonRef,
 }: ContentInspectorProps) {
-  const { t } = useI18n();
+  const { format, t } = useI18n();
   const committedName = content.name;
   const committedDescription = content.description;
   const committedTags = content.tags.join(", ");
@@ -124,11 +127,13 @@ export function ContentInspector({
   const [patchBusy, setPatchBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [repairingId, setRepairingId] = useState<string | null>(null);
+  const [failure, setFailure] = useState<SafeFailure | null>(null);
 
   useEffect(() => {
     setName(committedName);
     setDescription(committedDescription);
     setTags(committedTags);
+    setFailure(null);
   }, [content.id, committedDescription, committedName, committedTags, target.id]);
 
   async function patch(after: ProductContent): Promise<void> {
@@ -136,6 +141,8 @@ export function ContentInspector({
     setPatchBusy(true);
     try {
       await onPatch(content, after);
+    } catch (error) {
+      setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
       setPatchBusy(false);
     }
@@ -171,6 +178,8 @@ export function ContentInspector({
     setImportBusy(true);
     try {
       await onImport(role, initiator);
+    } catch (error) {
+      setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
       setImportBusy(false);
     }
@@ -181,6 +190,8 @@ export function ContentInspector({
     setRepairingId(item.id);
     try {
       await onRepair(item, initiator);
+    } catch (error) {
+      setFailure({ descriptor: localizedErrorDescriptor(error), logRef: localizedErrorLogRef(error) });
     } finally {
       setRepairingId(null);
     }
@@ -191,6 +202,7 @@ export function ContentInspector({
   return (
     <section className="studio-content-inspector" aria-labelledby="studio-content-heading">
       <h2 id="studio-content-heading">{t("content.heading")}</h2>
+      {failure === null ? null : <StatusNotice tone="error">{format(failure.descriptor)}{failure.logRef === null ? null : <> {t("error.diagnosticReference", { logRef: failure.logRef })}</>}</StatusNotice>}
       <Field
         label={t("content.name")}
         value={name}

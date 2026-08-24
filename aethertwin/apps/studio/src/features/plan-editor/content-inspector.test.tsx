@@ -14,6 +14,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContentInspector } from './content-inspector';
+import { ProjectBackendError } from '../../backend/project-backend-error';
 import { LocaleProvider, useI18n } from '../../i18n/locale-provider';
 import type { StudioLocale } from '../../i18n/message-schema';
 
@@ -138,6 +139,21 @@ function renderInspector(options: {
 afterEach(() => cleanup());
 
 describe('M2.3 Task 11 ContentInspector', () => {
+  it('redacts failed imports before and after a live locale switch', async () => {
+    const secret = 'C:\\secret\\media.png';
+    const { setLocale } = renderInspector({
+      onImport: async () => {
+        throw new ProjectBackendError('ASSET_IO_FAILED', secret, { secret }, 'unsafe ref / path');
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '导入图片' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('资源操作未能完成');
+    expect(document.body.textContent).not.toContain(secret);
+    act(() => setLocale('en'));
+    expect(screen.getByRole('alert')).toHaveTextContent('asset operation could not be completed');
+    expect(document.body.textContent).not.toContain('unsafe ref / path');
+  });
   it('reformats media controls in place without changing authored media or import payloads', async () => {
     const pending = deferred<void>();
     const { onImport, setLocale } = renderInspector({ onImport: async () => pending.promise });

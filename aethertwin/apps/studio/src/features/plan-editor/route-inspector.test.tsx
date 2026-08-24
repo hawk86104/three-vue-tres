@@ -122,7 +122,8 @@ describe("RouteInspector", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "应用路线节点" }));
-    await waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
+    expect(onError).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(network.nodes).toEqual([node]);
 
