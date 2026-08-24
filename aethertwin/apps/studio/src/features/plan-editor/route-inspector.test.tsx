@@ -94,7 +94,7 @@ describe("RouteInspector", () => {
     fireEvent.change(screen.getByLabelText("路线节点标签"), {
       target: { value: "entry, public, entry" },
     });
-    await user.click(screen.getByRole("button", { name: "应用路线节点" }));
+    await user.click(screen.getByRole("button", { name: "Apply route node" }));
 
     await waitFor(() => expect(onApplyRouteNetworkPatch).toHaveBeenCalledOnce());
     expect(onApplyRouteNetworkPatch).toHaveBeenCalledWith(network, {
