@@ -156,7 +156,7 @@ describe('M2.3 Task 11 ContentInspector', () => {
     const user = userEvent.setup();
     expect(screen.getByText('规范图片')).toBeVisible();
     expect(image.name).toBe('Hero image');
-    await user.click(screen.getByRole('button', { name: '移除 Hero image' }));
+    await user.click(screen.getByRole('button', { name: '移除 规范图片' }));
     expect(onPatch).toHaveBeenCalledWith(before, { ...before, mediaAssetIds: [] });
   });
   it('redacts failed imports before and after a live locale switch', async () => {

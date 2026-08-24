@@ -54,10 +54,12 @@ function parsedTags(value: string): readonly string[] {
 
 function ContentPreview({
   media,
+  mediaDisplayName,
   issue,
   resolveAsset,
 }: {
   readonly media: MediaAsset;
+  readonly mediaDisplayName: string;
   readonly issue: AssetIssue | undefined;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
 }) {
@@ -98,7 +100,7 @@ function ContentPreview({
   if (source === null) {
     return <p>{t("content.previewLoading")}</p>;
   }
-  const label = t("content.preview", { name: media.name });
+  const label = t("content.preview", { name: mediaDisplayName });
   return media.kind === "image" ? (
     <img src={source.url} alt={label} />
   ) : (
@@ -259,37 +261,43 @@ export function ContentInspector({
       </div>
       <ul className="studio-content-inspector__media" aria-label={t("content.media")}>
         {media.map((item, index) => {
+          const mediaDisplayName = displayName({
+            kind: "media-asset",
+            id: item.id,
+            authoredName: item.name,
+          });
           const issue = issueByAssetId.get(item.assetId);
           const repairable = issue?.code === "ASSET_MISSING"
             || issue?.code === "ASSET_CORRUPT";
           return (
             <li key={item.id}>
-              <strong>{displayName({ kind: "media-asset", id: item.id, authoredName: item.name })}</strong>
+              <strong>{mediaDisplayName}</strong>
               <ContentPreview
                 media={item}
+                mediaDisplayName={mediaDisplayName}
                 issue={issue}
                 resolveAsset={resolveAsset}
               />
               <div className="studio-content-inspector__media-actions">
                 <Button
                   variant="ghost"
-                  aria-label={t("content.moveUp", { name: item.name })}
+                  aria-label={t("content.moveUp", { name: mediaDisplayName })}
                   disabled={disabled || patchBusy || index === 0}
                   onClick={() => void move(item.id, "up")}
                 >
-                  {t("content.moveUp", { name: item.name })}
+                  {t("content.moveUp", { name: mediaDisplayName })}
                 </Button>
                 <Button
                   variant="ghost"
-                  aria-label={t("content.moveDown", { name: item.name })}
+                  aria-label={t("content.moveDown", { name: mediaDisplayName })}
                   disabled={disabled || patchBusy || index === media.length - 1}
                   onClick={() => void move(item.id, "down")}
                 >
-                  {t("content.moveDown", { name: item.name })}
+                  {t("content.moveDown", { name: mediaDisplayName })}
                 </Button>
                 <Button
                   variant="ghost"
-                  aria-label={t("content.remove", { name: item.name })}
+                  aria-label={t("content.remove", { name: mediaDisplayName })}
                   disabled={disabled || patchBusy}
                   onClick={() => void remove(item.id)}
                 >
@@ -298,11 +306,11 @@ export function ContentInspector({
                 {repairable ? (
                   <Button
                     variant="secondary"
-                    aria-label={t("content.repair", { name: item.name })}
+                    aria-label={t("content.repair", { name: mediaDisplayName })}
                     disabled={disabled || assetOperationBusy || repairingId !== null}
                     onClick={(event) => void repair(item, event.currentTarget)}
                   >
-                    {t("content.repair", { name: item.name })}
+                    {t("content.repair", { name: mediaDisplayName })}
                   </Button>
                 ) : null}
               </div>
