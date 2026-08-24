@@ -121,7 +121,7 @@ function renderInspector(options: {
   const result = render(
     <LocaleProvider initialLocale={options.locale ?? 'zh-CN'} preference={{ read: () => 'zh-CN', write: () => undefined }}>
       <LocaleProbe />
-      <DisplayNameProvider resolver={options.resolver}>
+      <DisplayNameProvider resolver={options.resolver ?? (() => null)}>
       <ContentInspector
       content={options.value ?? content()}
       target={target}
