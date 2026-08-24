@@ -63,8 +63,7 @@ function ContentPreview({
   readonly issue: AssetIssue | undefined;
   readonly resolveAsset: (assetId: string) => Promise<ProjectAssetSource>;
 }) {
-  const { format, t } = useI18n();
-  const displayName = useDisplayName();
+  const { t } = useI18n();
   const [source, setSource] = useState<ProjectAssetSource | null>(null);
   const [failed, setFailed] = useState(false);
   const unavailable = issue?.code === "ASSET_MISSING"
