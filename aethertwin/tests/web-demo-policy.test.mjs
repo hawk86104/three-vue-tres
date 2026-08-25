@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, globSync, readFileSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import test from "node:test";
 
 const studioPackage = JSON.parse(readFileSync("apps/studio/package.json", "utf8"));
@@ -43,6 +44,35 @@ const webDemoOnlyRuntimeSource = webDemoRuntimeFiles
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
 const studioRootSource = readFileSync("apps/studio/src/studio-root.tsx", "utf8");
+
+function resolveLocalModule(importer, specifier) {
+  const base = join(dirname(importer), specifier);
+  const candidates = extname(base).length > 0
+    ? [base]
+    : [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")];
+  return candidates.find(existsSync) ?? null;
+}
+
+function reachableLocalRuntimeFiles(entries) {
+  const pending = [...entries];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const file = pending.pop();
+    if (file === undefined || visited.has(file)) continue;
+    visited.add(file);
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(/(?:from\s*|import\s*\()["'](\.[^"']+)["']/gu)) {
+      const dependency = resolveLocalModule(file, match[1]);
+      if (dependency !== null) pending.push(dependency);
+    }
+  }
+  return [...visited].map((file) => file.replaceAll("\\", "/")).sort();
+}
+
+const reachableWebDemoRuntimeFiles = reachableLocalRuntimeFiles([
+  "apps/studio/src/studio-root.tsx",
+  "apps/studio/src/web-demo/web-demo-app.tsx",
+]);
 
 test("the Web Demo has exactly two dedicated scripts", () => {
   const scripts = Object.entries(studioPackage.scripts).filter(
@@ -103,6 +133,17 @@ test("Web Demo runtime sources remain local-only and browser-persistence-free", 
     /ProjectExportBackend|TauriProjectBackend|begin_project_export|write_project_export_chunk/u,
   );
   assert.doesNotMatch(webDemoRuntimeSource, /\binvoke\s*\(/u);
+});
+
+test("Web Demo policy traces reachable locale and editor runtime dependencies", () => {
+  for (const required of [
+    "apps/studio/src/i18n/locale-provider.tsx",
+    "apps/studio/src/i18n/locale-preference.ts",
+    "apps/studio/src/i18n/language-switcher.tsx",
+    "apps/studio/src/features/plan-editor/plan-editor.tsx",
+  ]) {
+    assert.ok(reachableWebDemoRuntimeFiles.includes(required), `missing reachable ${required}`);
+  }
 });
 
 test("strict-CSP Web Demo installs Pixi static polyfills before renderer imports", () => {

@@ -18,9 +18,12 @@ const VISIBLE_ATTRIBUTE_NAMES = new Set([
   "button",
   "option",
 ]);
-const EXACT_ALLOWED_LITERALS = new Set(["AetherTwin", "PNG", "UUID", "WebGL", "2D", "3D"]);
-const DIMENSION_TOKEN = /^\d{3,5}\s×\s\d{3,5}$/u;
-const SHORTCUT_TOKEN = /^(?:Ctrl|Alt|Shift|Cmd|⌘)(?:\s*\+\s*(?:Ctrl|Alt|Shift|Cmd|⌘|[A-Z0-9]))+$/u;
+const TECHNICAL_TOKENS = new Set([
+  "AetherTwin", "PNG", "UUID", "WebGL", "2D", "3D",
+  "mm", "cm", "m", "m²", "mm ·", "m² ·",
+  "1920 × 1080", "3840 × 2160",
+  "Ctrl + Z", "Ctrl + Y", "Ctrl + Shift + Z",
+]);
 
 function sourceFiles(root) {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -29,18 +32,14 @@ function sourceFiles(root) {
     if (!/\.(?:ts|tsx)$/u.test(entry.name)) return [];
     if (/\.(?:test|spec)\.(?:ts|tsx)$/u.test(entry.name)) return [];
     if (entry.name.includes("test-support")) return [];
-    if (path.split(sep).includes("dev") || /(?:^|[-_])(?:dev|gallery)(?:[-_.]|$)/u.test(entry.name)) return [];
+    if (path.split(sep).includes("dev")) return [];
     if (path.includes(`${sep}i18n${sep}messages.`)) return [];
     return [path];
   });
 }
 
-function isAllowedLiteral(value) {
-  return EXACT_ALLOWED_LITERALS.has(value) || DIMENSION_TOKEN.test(value) || SHORTCUT_TOKEN.test(value);
-}
-
-function isNonCopyFragment(value) {
-  return /^[\s·:：%×]+$/u.test(value) || /^(?:mm\s*[·:]?|m²\s*[·:]?)$/u.test(value);
+function isTechnicalToken(value) {
+  return TECHNICAL_TOKENS.has(value);
 }
 
 function literalText(node) {
@@ -53,7 +52,7 @@ function nodeLocation(filePath, sourceFile, node) {
 }
 
 function visibleTextViolation(violations, filePath, sourceFile, node, value, kind) {
-  if (value.length > 0 && !isAllowedLiteral(value) && !isNonCopyFragment(value)) {
+  if (/[\p{L}\p{N}]/u.test(value) && !isTechnicalToken(value)) {
     violations.push(`${nodeLocation(filePath, sourceFile, node)} ${kind}: ${JSON.stringify(value)}`);
   }
 }
@@ -67,24 +66,6 @@ function catalogueMessageIds() {
   return ids;
 }
 
-function isRenderedErrorValue(node) {
-  let current = node;
-  while (current.parent !== undefined) {
-    const child = current;
-    current = current.parent;
-    if (ts.isConditionalExpression(current) && current.condition === child) return false;
-    if (ts.isCallExpression(current)) return false;
-    if (ts.isJsxExpression(current)) {
-      if (ts.isJsxAttribute(current.parent)) {
-        return VISIBLE_ATTRIBUTE_NAMES.has(current.parent.name.getText());
-      }
-      return true;
-    }
-    if (ts.isFunctionLike(current) || ts.isVariableDeclaration(current)) return false;
-  }
-  return false;
-}
-
 function isExplicitDeveloperGalleryNode(filePath, sourceFile, node) {
   if (!filePath.endsWith(`${sep}app.tsx`) || !sourceFile.text.includes("DevSceneGallery")) return false;
   const galleryStart = sourceFile.text.indexOf('pathname === "/dev/scene-gallery"');
@@ -92,15 +73,90 @@ function isExplicitDeveloperGalleryNode(filePath, sourceFile, node) {
   return galleryStart >= 0 && galleryEnd >= 0 && node.getStart(sourceFile) >= galleryStart && node.getStart(sourceFile) < galleryEnd;
 }
 
-export function findLocalizationViolations() {
+function isErrorProperty(node) {
+  return ts.isPropertyAccessExpression(node)
+    && ["message", "code", "details"].includes(node.name.text)
+    && ts.isIdentifier(node.expression)
+    && /(?:error|issue|failure|exception)/iu.test(node.expression.text);
+}
+
+function collectRawErrorAliases(sourceFile) {
+  const aliases = new Set();
+  const visit = (node) => {
+    if (ts.isCatchClause(node) && node.variableDeclaration !== undefined && ts.isIdentifier(node.variableDeclaration.name)) {
+      aliases.add(node.variableDeclaration.name.text);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
+      const isNewError = ts.isNewExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === "Error";
+      if (isNewError || isErrorProperty(node.initializer) || (ts.isIdentifier(node.initializer) && aliases.has(node.initializer.text))) aliases.add(node.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return aliases;
+}
+
+function collectShowroomDescriptorParameters(sourceFile) {
+  const collections = new Set();
+  const parameters = new Set();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.moduleSpecifier.text.includes("mode-showroom")) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings !== undefined && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) collections.add(element.name.text);
+    }
+  }
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "map" && ts.isIdentifier(node.expression.expression) && collections.has(node.expression.expression.text)) {
+      const callback = node.arguments[0];
+      if (callback !== undefined && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) {
+        const parameter = callback.parameters[0];
+        if (parameter !== undefined && ts.isIdentifier(parameter.name)) parameters.add(parameter.name.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return parameters;
+}
+
+function isRawErrorExpression(node, aliases) {
+  if (isErrorProperty(node)) return node.name.text;
+  if (ts.isIdentifier(node) && aliases.has(node.text)) return "message";
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ["String", "format"].includes(node.expression.text)) {
+    return node.arguments.map((argument) => isRawErrorExpression(argument, aliases)).find(Boolean) ?? null;
+  }
+  return null;
+}
+
+function isRawErrorPropExpression(node, aliases) {
+  return isRawErrorExpression(node, aliases)
+    ?? (ts.isIdentifier(node) && aliases.has(node.text) ? "object" : null);
+}
+
+function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, showroomParameters) {
+  if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
+    visibleTextViolation(violations, filePath, sourceFile, expression, expression.text.trim(), "visible JSX literal");
+  }
+  if (ts.isTemplateExpression(expression)) {
+    visibleTextViolation(violations, filePath, sourceFile, expression, expression.getText(sourceFile).replaceAll("`", "").trim(), "visible JSX template");
+  }
+  const rawError = isRawErrorExpression(expression, rawErrorAliases);
+  if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, expression)} raw error ${rawError}`);
+  if (ts.isPropertyAccessExpression(expression) && expression.name.text === "label" && ts.isIdentifier(expression.expression) && showroomParameters.has(expression.expression.text)) {
+    violations.push(`${nodeLocation(filePath, sourceFile, expression)} mode-showroom descriptor.label`);
+  }
+}
+
+export function findLocalizationViolations(sources = undefined) {
   const violations = [];
   const messageIds = catalogueMessageIds();
-  for (const filePath of SOURCE_ROOTS.flatMap(sourceFiles)) {
-    const sourceFile = ts.createSourceFile(filePath, readFileSync(filePath, "utf8"), ts.ScriptTarget.Latest, true);
-    const importsModeShowroom = sourceFile.statements.some(
-      (statement) => ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) && statement.moduleSpecifier.text.includes("mode-showroom"),
-    );
-    const visit = (node, inJsx = false) => {
+  const scannedSources = sources ?? SOURCE_ROOTS.flatMap(sourceFiles).map((filePath) => ({ filePath, source: readFileSync(filePath, "utf8") }));
+  for (const { filePath, source } of scannedSources) {
+    const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
+    const rawErrorAliases = collectRawErrorAliases(sourceFile);
+    const showroomParameters = collectShowroomDescriptorParameters(sourceFile);
+    const visit = (node) => {
       if (ts.isJsxText(node)) {
         if (!isExplicitDeveloperGalleryNode(filePath, sourceFile, node)) {
           visibleTextViolation(violations, filePath, sourceFile, node, node.getText(sourceFile).trim(), "visible JSX text");
@@ -110,8 +166,16 @@ export function findLocalizationViolations() {
         const value = node.initializer && ts.isStringLiteral(node.initializer) ? node.initializer.text.trim() : null;
         if (value !== null) visibleTextViolation(violations, filePath, sourceFile, node, value, `visible ${node.name.getText(sourceFile)}`);
       }
-      if (inJsx && ts.isStringLiteral(node) && ts.isJsxExpression(node.parent)) {
-        visibleTextViolation(violations, filePath, sourceFile, node, node.text.trim(), "visible JSX literal");
+      if (ts.isJsxExpression(node) && node.expression !== undefined) {
+        if (!ts.isJsxAttribute(node.parent)) {
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, showroomParameters);
+        } else if (VISIBLE_ATTRIBUTE_NAMES.has(node.parent.name.getText(sourceFile))) {
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, showroomParameters);
+        }
+      }
+      if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === "error" && node.initializer !== undefined && ts.isJsxExpression(node.initializer) && node.initializer.expression !== undefined) {
+        const rawError = isRawErrorPropExpression(node.initializer.expression, rawErrorAliases);
+        if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, node)} raw error prop ${rawError}`);
       }
       if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && VISIBLE_ATTRIBUTE_NAMES.has(node.name.text)) {
         const value = literalText(node.initializer);
@@ -119,21 +183,51 @@ export function findLocalizationViolations() {
           visibleTextViolation(violations, filePath, sourceFile, node, value, `visible config ${node.name.text}`);
         }
       }
-      if (importsModeShowroom && ts.isPropertyAccessExpression(node) && node.name.text === "label" && ts.isIdentifier(node.expression) && /descriptor/u.test(node.expression.text)) {
-        violations.push(`${nodeLocation(filePath, sourceFile, node)} mode-showroom descriptor.label`);
-      }
-      if (ts.isPropertyAccessExpression(node) && ["message", "code", "details"].includes(node.name.text) && isRenderedErrorValue(node)) {
-        violations.push(`${nodeLocation(filePath, sourceFile, node)} raw error ${node.name.text}`);
-      }
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.getText(sourceFile) === "JSON.stringify" && node.arguments.some((argument) => /\berror\b/u.test(argument.getText(sourceFile))) && isRenderedErrorValue(node)) {
-        violations.push(`${nodeLocation(filePath, sourceFile, node)} JSON.stringify(error)`);
-      }
-      ts.forEachChild(node, (child) => visit(child, inJsx || ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)));
+      ts.forEachChild(node, visit);
     };
     visit(sourceFile);
   }
   return violations;
 }
+
+test("policy catches indirect visible copy and raw error flows while accepting formatted catalogue output", () => {
+  const violations = findLocalizationViolations([{
+    filePath: "apps/studio/src/policy-fixture.tsx",
+    source: `
+      import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
+      const error = new Error("secret");
+      const rawMessage = error.message;
+      export function Fixture({ format, message, t }) {
+        return <>
+          <p>{\`Untranslated template\`}</p>
+          <p>{rawMessage}</p>
+          <p>{String(error.message)}</p>
+          <p>{format(error.code)}</p>
+          <Notice error={error} />
+          {SHOWROOM_TOOL_GROUPS.map((group) => <p>{group.label}</p>)}
+          <p>{format(message("error.generic"))}</p>
+          <p>{t("editor.back")}</p>
+        </>;
+      }
+    `,
+  }]);
+
+  assert.ok(violations.some((violation) => violation.includes("Untranslated template")));
+  assert.ok(violations.some((violation) => violation.includes("raw error message")));
+  assert.ok(violations.some((violation) => violation.includes("raw error code")));
+  assert.ok(violations.some((violation) => violation.includes("raw error prop")));
+  assert.ok(violations.some((violation) => violation.includes("mode-showroom descriptor.label")));
+  assert.equal(violations.some((violation) => violation.includes("error.generic")), false);
+  assert.equal(violations.some((violation) => violation.includes("editor.back")), false);
+});
+
+test("policy scans similarly named production sources while excluding only explicit developer galleries", () => {
+  const violations = findLocalizationViolations([{
+    filePath: "apps/studio/src/gallery-toolbar.tsx",
+    source: "export const GalleryToolbar = () => <button>Untranslated production control</button>;",
+  }]);
+  assert.ok(violations.some((violation) => violation.includes("Untranslated production control")));
+});
 
 test("all production-visible Studio copy is localized and error-safe", () => {
   const violations = findLocalizationViolations();
