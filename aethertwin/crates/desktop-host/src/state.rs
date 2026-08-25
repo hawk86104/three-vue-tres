@@ -864,8 +864,16 @@ impl AppService {
             .map_err(|_| HostError::SessionStateUnavailable)?
             .project_path()
             .to_path_buf();
-        let target = project_path.join(&recorded);
-        if !target.is_file() {
+        let project_root =
+            std::fs::canonicalize(project_path).map_err(|_| HostError::ExportNotFound)?;
+        let candidate = project_root.join(&recorded);
+        let metadata =
+            std::fs::symlink_metadata(&candidate).map_err(|_| HostError::ExportNotFound)?;
+        if !metadata.file_type().is_file() {
+            return Err(HostError::ExportNotFound);
+        }
+        let target = std::fs::canonicalize(candidate).map_err(|_| HostError::ExportNotFound)?;
+        if !target.starts_with(&project_root) {
             return Err(HostError::ExportNotFound);
         }
         launch_export_result(&target, reveal)
