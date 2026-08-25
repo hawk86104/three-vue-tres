@@ -73,11 +73,11 @@ function isExplicitDeveloperGalleryNode(filePath, sourceFile, node) {
   return galleryStart >= 0 && galleryEnd >= 0 && node.getStart(sourceFile) >= galleryStart && node.getStart(sourceFile) < galleryEnd;
 }
 
-function isErrorProperty(node) {
+function isErrorProperty(node, aliases) {
   return ts.isPropertyAccessExpression(node)
     && ["message", "code", "details"].includes(node.name.text)
     && ts.isIdentifier(node.expression)
-    && /(?:error|issue|failure|exception)/iu.test(node.expression.text);
+    && (aliases?.has(node.expression.text) === true || /(?:error|failure|exception)/iu.test(node.expression.text));
 }
 
 function collectRawErrorAliases(sourceFile) {
@@ -88,7 +88,7 @@ function collectRawErrorAliases(sourceFile) {
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
       const isNewError = ts.isNewExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === "Error";
-      if (isNewError || isErrorProperty(node.initializer) || (ts.isIdentifier(node.initializer) && aliases.has(node.initializer.text))) aliases.add(node.name.text);
+      if (isNewError || isErrorProperty(node.initializer, aliases) || (ts.isIdentifier(node.initializer) && aliases.has(node.initializer.text))) aliases.add(node.name.text);
     }
     ts.forEachChild(node, visit);
   };
@@ -107,6 +107,9 @@ function collectShowroomDescriptorParameters(sourceFile) {
     }
   }
   const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && ts.isIdentifier(node.initializer) && collections.has(node.initializer.text)) {
+      collections.add(node.name.text);
+    }
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "map" && ts.isIdentifier(node.expression.expression) && collections.has(node.expression.expression.text)) {
       const callback = node.arguments[0];
       if (callback !== undefined && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))) {
@@ -121,10 +124,18 @@ function collectShowroomDescriptorParameters(sourceFile) {
 }
 
 function isRawErrorExpression(node, aliases) {
-  if (isErrorProperty(node)) return node.name.text;
-  if (ts.isIdentifier(node) && aliases.has(node.text)) return "message";
-  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && ["String", "format"].includes(node.expression.text)) {
-    return node.arguments.map((argument) => isRawErrorExpression(argument, aliases)).find(Boolean) ?? null;
+  if (isErrorProperty(node, aliases)) return node.name.text;
+  if (ts.isIdentifier(node) && aliases.has(node.text)) return "object";
+  if (ts.isCallExpression(node)) {
+    if (ts.isIdentifier(node.expression) && node.expression.text === "format" && node.arguments.length === 1) {
+      const [descriptor] = node.arguments;
+      if (ts.isCallExpression(descriptor) && ts.isIdentifier(descriptor.expression) && descriptor.expression.text === "localizedErrorDescriptor") return null;
+    }
+    const rawArgument = node.arguments.map((argument) => isRawErrorExpression(argument, aliases)).find(Boolean) ?? null;
+    if (rawArgument === null) return null;
+    return ts.isPropertyAccessExpression(node.expression) && node.expression.expression.getText() === "JSON" && node.expression.name.text === "stringify"
+      ? "JSON.stringify(error)"
+      : rawArgument;
   }
   return null;
 }
@@ -142,7 +153,7 @@ function scanVisibleExpression(violations, filePath, sourceFile, expression, raw
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.getText(sourceFile).replaceAll("`", "").trim(), "visible JSX template");
   }
   const rawError = isRawErrorExpression(expression, rawErrorAliases);
-  if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, expression)} raw error ${rawError}`);
+  if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, expression)} ${rawError === "JSON.stringify(error)" ? rawError : `raw error ${rawError}`}`);
   if (ts.isPropertyAccessExpression(expression) && expression.name.text === "label" && ts.isIdentifier(expression.expression) && showroomParameters.has(expression.expression.text)) {
     violations.push(`${nodeLocation(filePath, sourceFile, expression)} mode-showroom descriptor.label`);
   }
@@ -197,14 +208,17 @@ test("policy catches indirect visible copy and raw error flows while accepting f
       import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
       const error = new Error("secret");
       const rawMessage = error.message;
+      const groups = SHOWROOM_TOOL_GROUPS;
       export function Fixture({ format, message, t }) {
         return <>
           <p>{\`Untranslated template\`}</p>
           <p>{rawMessage}</p>
           <p>{String(error.message)}</p>
           <p>{format(error.code)}</p>
+          <p>{JSON.stringify(error)}</p>
+          <p>{present(error.message)}</p>
           <Notice error={error} />
-          {SHOWROOM_TOOL_GROUPS.map((group) => <p>{group.label}</p>)}
+          {groups.map((group) => <p>{group.label}</p>)}
           <p>{format(message("error.generic"))}</p>
           <p>{t("editor.back")}</p>
         </>;
@@ -215,6 +229,7 @@ test("policy catches indirect visible copy and raw error flows while accepting f
   assert.ok(violations.some((violation) => violation.includes("Untranslated template")));
   assert.ok(violations.some((violation) => violation.includes("raw error message")));
   assert.ok(violations.some((violation) => violation.includes("raw error code")));
+  assert.ok(violations.some((violation) => violation.includes("JSON.stringify(error)")));
   assert.ok(violations.some((violation) => violation.includes("raw error prop")));
   assert.ok(violations.some((violation) => violation.includes("mode-showroom descriptor.label")));
   assert.equal(violations.some((violation) => violation.includes("error.generic")), false);

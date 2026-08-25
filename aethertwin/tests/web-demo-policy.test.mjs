@@ -39,10 +39,6 @@ const webDemoRuntimeFiles = globSync(
 const webDemoRuntimeSource = webDemoRuntimeFiles
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
-const webDemoOnlyRuntimeSource = webDemoRuntimeFiles
-  .filter((file) => file.includes("/web-demo/"))
-  .map((file) => readFileSync(file, "utf8"))
-  .join("\n");
 const studioRootSource = readFileSync("apps/studio/src/studio-root.tsx", "utf8");
 
 function resolveLocalModule(importer, specifier) {
@@ -73,6 +69,22 @@ const reachableWebDemoRuntimeFiles = reachableLocalRuntimeFiles([
   "apps/studio/src/studio-root.tsx",
   "apps/studio/src/web-demo/web-demo-app.tsx",
 ]);
+
+const normalStudioLocaleStorageBranch = /try\s*\{\s*return createBrowserLocalePreference\(window\.localStorage\);\s*\}\s*catch\s*\{\s*return createMemoryLocalePreference\(\);\s*\}/u;
+const normalStudioProjectStorageBranch = /try\s*\{\s*return new ProtectedStorage\(window\.localStorage\);\s*\}\s*catch\s*\{\s*return new SessionStorage\(\);\s*\}/u;
+const prohibitedPersistenceApi = /localStorage|sessionStorage|indexedDB|document\.cookie|\bcaches\b|serviceWorker|navigator\.serviceWorker/gu;
+
+function reachableWebDemoPersistenceViolations() {
+  return reachableWebDemoRuntimeFiles.flatMap((file) => {
+    const source = readFileSync(file, "utf8");
+    const webDemoSource = file === "apps/studio/src/studio-root.tsx"
+      ? source.replace(normalStudioLocaleStorageBranch, "")
+      : file === "apps/studio/src/app.tsx"
+        ? source.replace(normalStudioProjectStorageBranch, "")
+        : source;
+    return [...webDemoSource.matchAll(prohibitedPersistenceApi)].map((match) => `${file}: ${match[0]}`);
+  });
+}
 
 test("the Web Demo has exactly two dedicated scripts", () => {
   const scripts = Object.entries(studioPackage.scripts).filter(
@@ -125,8 +137,7 @@ test("Web Demo runtime sources remain local-only and browser-persistence-free", 
   assert.ok(webDemoRuntimeFiles.includes("apps/studio/src/studio-root.tsx"));
   assert.doesNotMatch(webDemoRuntimeSource, /(?:https?|wss?):\/\//iu);
   assert.doesNotMatch(webDemoRuntimeSource, /\bcdn\b|telemetry/iu);
-  assert.doesNotMatch(webDemoOnlyRuntimeSource, /localStorage|sessionStorage|indexedDB|document\.cookie|caches/iu);
-  assert.doesNotMatch(webDemoOnlyRuntimeSource, /serviceWorker|navigator\.serviceWorker/iu);
+  assert.deepEqual(reachableWebDemoPersistenceViolations(), []);
   assert.match(studioRootSource, /if \(webDemo \|\| typeof window === "undefined"\) \{\s+return createMemoryLocalePreference\(\);/u);
   assert.doesNotMatch(
     webDemoRuntimeSource,
