@@ -28,6 +28,7 @@ import type { StoreApi } from "zustand/vanilla";
 import type { CalibrationDraft, PlanEditorState } from "./editor-session";
 import type { InteractionController } from "./interaction-controller";
 import { PlanAccessibility } from "./plan-accessibility";
+import { useI18n } from "../../i18n/locale-provider";
 
 export interface PlanCanvasProps {
   readonly assetSourceEpoch?: number;
@@ -254,6 +255,7 @@ export function PlanCanvas({
   onError,
   onStartCalibration,
 }: PlanCanvasProps) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const activeRendererRef = useRef<ActiveRenderer | null>(null);
   const onErrorRef = useRef(onError);
@@ -483,7 +485,7 @@ export function PlanCanvas({
       ref={hostRef}
       className="studio-plan-canvas"
       role="region"
-      aria-label="二维平面画布"
+      aria-label={t("canvas.plan.label")}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onBlur={handleBlur}

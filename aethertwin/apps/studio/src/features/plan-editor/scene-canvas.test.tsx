@@ -14,7 +14,7 @@ import type {
   SceneRendererDependencies,
   SceneRendererFactory,
 } from "@aethertwin/render-scene-3d";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SceneCanvas,
@@ -23,6 +23,8 @@ import {
 } from "./scene-canvas";
 import { createPlanEditorTestHarness } from "./plan-editor.test-support";
 import { deferred, FakeSceneRenderer } from "./scene-canvas.test-support";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
 
 interface ResizeEntry {
   readonly contentRect: { readonly width: number; readonly height: number };
@@ -117,6 +119,32 @@ afterEach(() => {
 });
 
 describe("SceneCanvas synchronized lifecycle", () => {
+  it("changes scene and export-lock labels live without replacing the renderer handle", async () => {
+    const renderer = new FakeSceneRenderer();
+    const fixture = createFixture(renderer);
+    const view = render(
+      <StudioI18nTestProvider>
+        <LanguageSwitcher />
+        <SceneCanvas {...fixture.props} interactionLocked />
+      </StudioI18nTestProvider>,
+    );
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await waitFor(() => expect(fixture.exportHandleChanges.at(-1)?.port)
+      .toBe(renderer.exportPort));
+    expect(screen.getByRole("region", { name: "三维场景" })).toBeVisible();
+    expect(view.container.querySelector(".studio-scene-input-lock"))
+      .toHaveAttribute("data-lock-label", "导出期间已锁定 3D 场景交互");
+
+    fireEvent.change(screen.getByLabelText("界面语言"), { target: { value: "en" } });
+
+    expect(screen.getByRole("region", { name: "3D scene" })).toBeVisible();
+    expect(view.container.querySelector(".studio-scene-input-lock"))
+      .toHaveAttribute("data-lock-label", "3D scene interaction is locked while exporting");
+    expect(renderer.initCount).toBe(1);
+    expect(fixture.exportHandleChanges.at(-1)?.port).toBe(renderer.exportPort);
+  });
+
   it("publishes only the ready current export port and clears it before destroy", async () => {
     const renderer = new FakeSceneRenderer();
     const fixture = createFixture(renderer);

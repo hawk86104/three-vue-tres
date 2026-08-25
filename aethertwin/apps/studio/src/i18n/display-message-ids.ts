@@ -12,6 +12,8 @@ import type {
   ShowroomToolGroupId,
 } from "@aethertwin/mode-showroom";
 import type { StudioMessageId } from "./message-schema";
+import type { ProjectExportPreset, ProjectExportProgress } from "@aethertwin/exporter";
+import type { SceneRendererStatus } from "@aethertwin/render-scene-3d";
 
 export const PROFILE_MESSAGE_IDS = {
   showroom: "profile.showroom",
@@ -76,3 +78,38 @@ export const MEDIA_ASSET_KIND_MESSAGE_IDS = {
   image: "kind.media.image",
   video: "kind.media.video",
 } as const satisfies Record<MediaAssetKind, StudioMessageId>;
+
+export const EXPORT_PRESET_MESSAGE_IDS = {
+  "full-hd": "export.preset.fullHd",
+  "ultra-hd": "export.preset.ultraHd",
+} as const satisfies Record<ProjectExportPreset, StudioMessageId>;
+
+export const EXPORT_PHASE_MESSAGE_IDS = {
+  "preparing-textures": "export.phase.preparingTextures",
+  rendering: "export.phase.rendering",
+  uploading: "export.phase.uploading",
+  "encoding-publishing": "export.phase.encodingPublishing",
+} as const satisfies Record<ProjectExportProgress["phase"], StudioMessageId>;
+
+export const SCENE_RENDERER_STATUS_MESSAGE_IDS = {
+  idle: "scene.status.initializing",
+  initializing: "scene.status.initializing",
+  ready: "scene.status.ready",
+  recovering: "scene.status.recovering",
+  failed: "scene.status.failed",
+  disabled: "scene.status.disabled",
+  destroyed: "scene.status.disabled",
+} as const satisfies Record<SceneRendererStatus, StudioMessageId>;
+
+export const EXPORT_DISABLED_REASON_MESSAGE_IDS = {
+  profile: "export.disabled.profile",
+  desktop: "export.disabled.desktop",
+  view: "export.disabled.view",
+  renderer: "export.disabled.renderer",
+  capture: "export.disabled.capture",
+  active: "export.disabled.active",
+  "texture-limits": "export.disabled.textureLimits",
+} as const satisfies Record<
+  "profile" | "desktop" | "view" | "renderer" | "capture" | "active" | "texture-limits",
+  StudioMessageId
+>;

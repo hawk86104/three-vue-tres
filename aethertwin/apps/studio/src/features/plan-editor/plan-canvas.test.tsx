@@ -22,6 +22,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanCanvas } from "./plan-canvas";
 import type { PlanDraft, PlanEditorState } from "./editor-session";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
 import {
   createPlanCanvasProps,
   createPlanEditorTestHarness,
@@ -98,6 +100,27 @@ afterEach(() => {
 });
 
 describe("PlanCanvas lifecycle", () => {
+  it("changes the canvas label live without replacing the renderer or selection", async () => {
+    const harness = createPlanEditorTestHarness();
+    const renderer = new FakePlanRenderer();
+    act(() => harness.store.getState().setSelection([harness.fixture.id]));
+    const props = createPlanCanvasProps(harness, renderer);
+    const view = render(
+      <StudioI18nTestProvider>
+        <LanguageSwitcher />
+        <PlanCanvas {...props} />
+      </StudioI18nTestProvider>,
+    );
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    expect(screen.getByRole("region", { name: "二维平面画布" })).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("界面语言"), { target: { value: "en" } });
+
+    expect(screen.getByRole("region", { name: "2D plan canvas" })).toBeVisible();
+    expect(renderer.initCount).toBe(1);
+    expect([...harness.store.getState().selectedIds]).toEqual([harness.fixture.id]);
+  });
+
   it("initializes once, publishes the latest renderer input, and destroys once", async () => {
     const harness = createPlanEditorTestHarness();
     const renderer = new FakePlanRenderer();
@@ -509,10 +532,10 @@ describe("PlanCanvas accessible parity", () => {
 
     expect(screen.getByRole("button", { name: "选择对象：Fixture" })).toBeVisible();
     expect(screen.getByText(
-      "fixture · 展具种类 generic · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Fixture · 已选择 · 可编辑",
+      "通用陈设 · 陈设种类 通用陈设 · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Fixture · 已选择 · 可编辑",
     )).toBeVisible();
     expect(screen.getByText(
-      "fixture · 展具种类 generic · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Locked Fixture · 未选择 · 已锁定",
+      "通用陈设 · 陈设种类 通用陈设 · 宽度 100 mm · 深度 100 mm · 垂直高度 未设置 · Locked Fixture · 未选择 · 已锁定",
     )).toBeVisible();
     expect(screen.queryByText(/Hidden Fixture/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Other Floor Fixture/)).not.toBeInTheDocument();
@@ -816,15 +839,15 @@ describe('PlanCanvas Task 10 product-hotspot accessible parity', function () {
 
     await user.click(screen.getByRole('button', { name: /Featured product/ }));
     expect([...harness.store.getState().selectedIds]).toEqual([hotspot.id]);
-    expect(screen.getByText(/product-hotspot.*Featured product.*已选择/)).toBeVisible();
+    expect(screen.getByText(/互动热点.*Featured product.*已选择/)).toBeVisible();
 
-    const x = screen.getByLabelText('产品热点 X 坐标 (mm)');
-    const y = screen.getByLabelText('产品热点 Y 坐标 (mm)');
+    const x = screen.getByLabelText('互动热点 X 坐标 (mm)');
+    const y = screen.getByLabelText('互动热点 Y 坐标 (mm)');
     await user.clear(x);
     await user.type(x, '1250');
     await user.clear(y);
     await user.type(y, '-750');
-    const create = screen.getByRole('button', { name: '在坐标创建产品热点' });
+    const create = screen.getByRole('button', { name: '在坐标创建互动热点' });
     create.focus();
     await user.keyboard('{Enter}');
 

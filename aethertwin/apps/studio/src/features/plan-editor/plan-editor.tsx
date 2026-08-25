@@ -93,6 +93,7 @@ import {
 } from "./scene-canvas";
 import {
   ExportPanel,
+  type ExportDisabledReason,
   type StudioExportScope,
   type StudioExportState,
 } from "./export-panel";
@@ -101,8 +102,13 @@ import { RoomRecognitionPanel } from "./room-recognition-panel";
 import { FixtureCatalogue } from "./fixture-catalogue";
 import { RouteInspector } from "./route-inspector";
 import { RoutePanel } from "./route-panel";
-import { PROFILE_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import {
+  EXPORT_DISABLED_REASON_MESSAGE_IDS,
+  PROFILE_MESSAGE_IDS,
+  SCENE_RENDERER_STATUS_MESSAGE_IDS,
+} from "../../i18n/display-message-ids";
 import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import type { StudioMessageId } from "../../i18n/message-schema";
 import { LanguageSwitcher } from "../../i18n/language-switcher";
 import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 import { useI18n } from "../../i18n/locale-provider";
@@ -312,38 +318,41 @@ function referenceName(source: PlanAssetSource): string {
     : "\u5e73\u9762\u53c2\u8003";
 }
 
-const openingIssueLabels = {
-  OPENING_WALL_NOT_FOUND: "支撑墙不存在",
-  OPENING_WALL_GEOMETRY_INVALID: "墙体几何无效",
-  OPENING_SPAN_CROSSES_JOINT: "跨越墙体转角",
-  OPENING_ENDPOINT_CLEARANCE: "距墙端过近",
-  OPENING_OVERLAP: "与其他门窗重叠",
-  OPENING_HEIGHT_EXCEEDED: "超出墙体高度",
-  OPENING_DOOR_SILL_NONZERO: "门的窗台高度必须为 0",
-  OPENING_TARGET_LOCKED: "支撑墙已锁定",
-} as const;
+const OPENING_ISSUE_MESSAGE_IDS = {
+  OPENING_WALL_NOT_FOUND: "canvas.opening.issue.wallMissing",
+  OPENING_WALL_GEOMETRY_INVALID: "canvas.opening.issue.geometryInvalid",
+  OPENING_SPAN_CROSSES_JOINT: "canvas.opening.issue.crossesJoint",
+  OPENING_ENDPOINT_CLEARANCE: "canvas.opening.issue.endpointClearance",
+  OPENING_OVERLAP: "canvas.opening.issue.overlap",
+  OPENING_HEIGHT_EXCEEDED: "canvas.opening.issue.heightExceeded",
+  OPENING_DOOR_SILL_NONZERO: "canvas.opening.issue.doorSill",
+  OPENING_TARGET_LOCKED: "canvas.opening.issue.targetLocked",
+} as const satisfies Record<string, StudioMessageId>;
 
 function OpeningPreview({ preview }: { readonly preview: OpeningPreviewState }) {
+  const { t } = useI18n();
   const issue = preview.candidate.issue;
   return (
     <section
       className="studio-opening-preview"
       role="status"
-      aria-label="门窗放置预览"
+      aria-label={t("canvas.opening.preview")}
       data-valid={preview.candidate.valid ? "true" : "false"}
       {...(issue === undefined ? {} : { "data-issue-code": issue.code })}
     >
-      <strong>{preview.tool === "door" ? "门" : "窗"}</strong>
-      <span>{`${preview.width} × ${preview.height} mm`}</span>
-      <span>{`窗台高度 ${preview.sillHeight} mm`}</span>
-      <span>{`沿墙距离 ${preview.candidate.distanceAlongWall} mm`}</span>
+      <strong>{t(preview.tool === "door" ? "kind.opening.door" : "kind.opening.window")}</strong>
+      <span>{t("canvas.opening.widthHeight", { width: preview.width, height: preview.height })}</span>
+      <span>{t("canvas.opening.sillHeight", { value: preview.sillHeight })}</span>
+      <span>{t("canvas.opening.distance", { value: preview.candidate.distanceAlongWall })}</span>
       <span>
         {preview.candidate.valid
-          ? "有效"
-          : `无效：${issue === undefined ? "未知几何问题" : openingIssueLabels[issue.code]}`}
+          ? t("canvas.opening.valid")
+          : <>{t("canvas.opening.invalid")}：{t(issue === undefined
+            ? "canvas.opening.unknownIssue"
+            : OPENING_ISSUE_MESSAGE_IDS[issue.code])}</>}
       </span>
       {preview.persistenceError === undefined ? null : (
-        <span>{`保存失败：${preview.persistenceError}`}</span>
+        <span>{t("canvas.opening.saveFailed")}</span>
       )}
     </section>
   );
@@ -439,29 +448,42 @@ function exportDisabledReason(input: {
   readonly rendererStatus: SceneRendererStatus;
   readonly handleCurrent: boolean;
   readonly active: boolean;
-}): string | null {
+}): Exclude<ExportDisabledReason, "texture-limits"> | null {
   if (input.profile !== "showroom") {
-    return "Export is available only for Showroom projects.";
+    return "profile";
   }
-  if (!input.backendAvailable) return "PNG export requires the desktop app.";
-  if (input.viewMode === "2d") return "Switch to 3D or Split to export.";
-  if (input.rendererStatus !== "ready") return "3D preview is not ready.";
-  if (!input.handleCurrent) return "3D export capture is not current.";
-  if (input.active) return "Another export is already running.";
+  if (!input.backendAvailable) return "desktop";
+  if (input.viewMode === "2d") return "view";
+  if (input.rendererStatus !== "ready") return "renderer";
+  if (!input.handleCurrent) return "capture";
+  if (input.active) return "active";
   return null;
 }
 
 function safeProjectExportFailure(error: unknown): {
   readonly code: string;
-  readonly message: string;
+  readonly logRef?: string | null;
 } {
   if (error instanceof ProjectExportError) {
-    return { code: error.code, message: error.message };
+    return { code: error.code };
+  }
+  if (error instanceof ProjectBackendError) {
+    return { code: error.code, logRef: localizedErrorLogRef(error) };
   }
   return {
     code: "EXPORT_FRAME_INVALID",
-    message: "The export could not be completed.",
   };
+}
+
+function safeExportNotice(error: unknown): LocalizedErrorNotice {
+  return {
+    descriptor: localizedErrorDescriptor(error),
+    logRef: localizedErrorLogRef(error),
+  };
+}
+
+function safeActionError(error: unknown): Error | LocalizedErrorNotice {
+  return error instanceof ProjectBackendError ? safeExportNotice(error) : errorValue(error);
 }
 
 export function PlanEditor({
@@ -505,7 +527,7 @@ export function PlanEditor({
   const [sceneExportHandle, setSceneExportHandle] = useState<SceneCanvasExportHandle | null>(null);
   const [exportState, setExportState] = useState<StudioExportState | null>(null);
   const [exportPreview, setExportPreview] = useState<{
-    readonly ultraHdDisabledReason: string | null;
+    readonly ultraHdDisabledReason: ExportDisabledReason | null;
     readonly textureIssueAssetIds: readonly string[];
   } | null>(null);
   const projectSessionGeneration = useRef(0);
@@ -561,7 +583,7 @@ export function PlanEditor({
       applyPlanReferencePatch: (before, after) => store.applyPlanReferencePatch(before, after),
       applySnapshotRecordPatches: (patches) => store.applySnapshotRecordPatches(patches),
       applyBuildingStructurePatch: (patch) => store.applyBuildingStructurePatch(patch),
-      onError: (error) => setActionError(errorValue(error)),
+      onError: (error) => setActionError(safeActionError(error)),
     })
   ));
   const sessionState = useSessionState(sessionStore);
@@ -610,7 +632,7 @@ export function PlanEditor({
       const nextFloorId = state.snapshot?.project.floors[0]?.id ?? "";
       const operation = activeExportRef.current;
       void (async () => {
-        let cancellationError: Error | null = null;
+        let cancellationError: LocalizedErrorNotice | null = null;
         try {
           if (operation !== null) {
             await operation.cancel();
@@ -620,8 +642,7 @@ export function PlanEditor({
             mountedRef.current
             && projectSessionGeneration.current === replacementGeneration
           ) {
-            const failure = safeProjectExportFailure(error);
-            cancellationError = new Error(failure.code + ": " + failure.message);
+            cancellationError = safeExportNotice(error);
           }
         } finally {
           if (operation !== null && activeExportRef.current === operation) {
@@ -743,7 +764,7 @@ export function PlanEditor({
     try {
       await action();
     } catch (error) {
-      setActionError(errorValue(error));
+      setActionError(safeActionError(error));
     }
   }
 
@@ -776,7 +797,7 @@ export function PlanEditor({
       await store.close();
       onBack();
     } catch (error) {
-      setActionError(errorValue(error));
+      setActionError(safeActionError(error));
     }
   }
 
@@ -797,7 +818,7 @@ export function PlanEditor({
       await store.close();
       onBack();
     } catch (error) {
-      setActionError(errorValue(error));
+      setActionError(safeActionError(error));
     }
   }
 
@@ -1586,7 +1607,7 @@ export function PlanEditor({
   });
   const exportAction: ExportActionState = {
     disabled: exportReason !== null,
-    reason: exportReason,
+    reason: exportReason === null ? null : t(EXPORT_DISABLED_REASON_MESSAGE_IDS[exportReason]),
     active: exportActive,
   };
 
@@ -1632,7 +1653,7 @@ export function PlanEditor({
     try {
       capture = handle.port.capture();
     } catch (error) {
-      setActionError(new Error(safeProjectExportFailure(error).message));
+      setActionError(safeExportNotice(error));
       return;
     }
     const scope: StudioExportScope = Object.freeze({
@@ -1651,10 +1672,10 @@ export function PlanEditor({
       )),
     )].sort();
     const limits = capture.limits;
-    const ultraHdDisabledReason =
+    const ultraHdDisabledReason: ExportDisabledReason | null =
       limits.maxTextureSize >= 3840 && limits.maxRenderbufferSize >= 3840
         ? null
-        : `Ultra HD requires 3840px GPU limits; current texture limit is ${limits.maxTextureSize}px and renderbuffer limit is ${limits.maxRenderbufferSize}px.`;
+        : "texture-limits";
 
     exportPanelGenerationRef.current += 1;
     exportInitiatorRef.current = initiator;
@@ -1762,8 +1783,7 @@ export function PlanEditor({
   function requestCloseExportPanel(): void {
     void closeExportPanel().catch((error: unknown) => {
       if (!mountedRef.current) return;
-      const failure = safeProjectExportFailure(error);
-      setActionError(new Error(`${failure.code}: ${failure.message}`));
+      setActionError(safeExportNotice(error));
     });
   }
 
@@ -1870,7 +1890,9 @@ export function PlanEditor({
           activeTool={sessionState.activeTool}
           viewMode={sessionState.viewMode}
           rendererStatus={sessionState.rendererStatus}
-          rendererError={sessionState.rendererError}
+          rendererError={sessionState.rendererError === null
+            ? null
+            : t(SCENE_RENDERER_STATUS_MESSAGE_IDS[sessionState.rendererStatus])}
           onRendererRetry={() => {
             if (!sessionStore.getState().requestSceneRendererRetry()) return;
             queueMicrotask(() => {
@@ -1988,7 +2010,7 @@ export function PlanEditor({
               tone="error"
               data-issue-code={sessionState.draft.issue.code}
             >
-              门窗拖动无效：{openingIssueLabels[sessionState.draft.issue.code]}（{sessionState.draft.issue.openingId}）
+              {t("canvas.opening.dragInvalid")}{t(OPENING_ISSUE_MESSAGE_IDS[sessionState.draft.issue.code])}
             </StatusNotice>
           )}
           {activeCalibrationReference === null ? null : (
@@ -2033,7 +2055,7 @@ export function PlanEditor({
                     sessionStore={sessionStore}
                     controller={controller}
                     guidedRouteDraftActive={routePanelOpen}
-                    onError={(error) => setActionError(errorValue(error))}
+                    onError={(error) => setActionError(safeActionError(error))}
                     onStartCalibration={startCalibration}
                   />
                 </div>
@@ -2064,7 +2086,7 @@ export function PlanEditor({
                     }}
                     exportPanelOpen={exportState !== null}
                     interactionLocked={exportActive}
-                    onError={(error) => setActionError(errorValue(error))}
+                    onError={(error) => setActionError(safeActionError(error))}
                     {...(dependencies?.sceneRendererFactory === undefined
                       ? {}
                       : { rendererFactory: dependencies.sceneRendererFactory })}
@@ -2150,7 +2172,7 @@ export function PlanEditor({
           }}
           onImportMaterialTexture={runMaterialTextureImport}
           resolveAsset={resolveProjectAsset}
-          onError={(error) => setActionError(errorValue(error))}
+          onError={(error) => setActionError(safeActionError(error))}
           />
         ) : (
           <RouteInspector
@@ -2188,7 +2210,7 @@ export function PlanEditor({
                 changes: [{ id: before.id, before, after }],
               }]);
             }}
-            onError={(error) => setActionError(errorValue(error))}
+            onError={(error) => setActionError(safeActionError(error))}
           />
         )
       }

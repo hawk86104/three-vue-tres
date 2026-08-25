@@ -7,6 +7,7 @@ import type {
 } from "@aethertwin/exporter";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { StudioI18nTestProvider } from "../../i18n/test-support";
 import {
   ExportPanel,
   type ExportPanelProps,
@@ -27,16 +28,55 @@ function renderPanel(overrides: Partial<ExportPanelProps> = {}) {
     onExportAgain: vi.fn(),
     ...overrides,
   };
-  return { ...render(<ExportPanel {...props} />), props };
+  return {
+    ...render(
+      <StudioI18nTestProvider locale="en">
+        <ExportPanel {...props} />
+      </StudioI18nTestProvider>,
+    ),
+    props,
+  };
 }
 
 afterEach(cleanup);
 
 describe("ExportPanel", () => {
+  it("uses the current locale for export labels without changing its stable preset", () => {
+    const props: ExportPanelProps = {
+      state: idleState,
+      ultraHdDisabledReason: null,
+      textureIssueAssetIds: [],
+      onPresetChange: vi.fn(),
+      onStart: vi.fn(),
+      onCancel: vi.fn(),
+      onClose: vi.fn(),
+      onExportAgain: vi.fn(),
+    };
+    const view = render(
+      <StudioI18nTestProvider>
+        <ExportPanel {...props} />
+      </StudioI18nTestProvider>,
+    );
+
+    expect(screen.getByRole("complementary", { name: "导出 PNG" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "导出 PNG" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "PNG 分辨率" }))
+      .toHaveValue("full-hd");
+
+    view.unmount();
+    render(
+      <StudioI18nTestProvider locale="en">
+        <ExportPanel {...props} />
+      </StudioI18nTestProvider>,
+    );
+    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "PNG resolution" }))
+      .toHaveValue("full-hd");
+  });
+
   it("offers exactly the two closed presets and explains why 4K is unavailable", () => {
     const { props } = renderPanel({
-      ultraHdDisabledReason:
-        "Ultra HD requires maxTextureSize 3840 and maxRenderbufferSize 3840; current limits are 2048 and 4096.",
+      ultraHdDisabledReason: "texture-limits",
     });
     const select = screen.getByRole("combobox", { name: "PNG resolution" });
     const options = within(select).getAllByRole("option");
@@ -46,11 +86,11 @@ describe("ExportPanel", () => {
       "full-hd",
       "ultra-hd",
     ]);
-    expect(options[0]).toHaveTextContent("Full HD - 1920 x 1080");
-    expect(options[1]).toHaveTextContent("Ultra HD - 3840 x 2160");
+    expect(options[0]).toHaveTextContent("Full HD (1920 × 1080)");
+    expect(options[1]).toHaveTextContent("Ultra HD (3840 × 2160)");
     expect(options[1]).toBeDisabled();
-    expect(screen.getByText(/maxTextureSize 3840/)).toBeVisible();
-    expect(screen.getByText(/current limits are 2048 and 4096/)).toBeVisible();
+    expect(screen.getByText("Current graphics capabilities do not support Ultra HD export."))
+      .toBeVisible();
 
     fireEvent.change(select, { target: { value: "ultra-hd" } });
     expect(props.onPresetChange).not.toHaveBeenCalled();
@@ -83,7 +123,7 @@ describe("ExportPanel", () => {
     expect(screen.getByRole("combobox", { name: "PNG resolution" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Export PNG" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel export" }));
     expect(props.onCancel).toHaveBeenCalledOnce();
     expect(props.onStart).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
@@ -106,16 +146,16 @@ describe("ExportPanel", () => {
     const panel = screen.getByRole("complementary", { name: "Export PNG" });
 
     expect(panel).toHaveTextContent("exports/showroom-3840x2160.png");
-    expect(panel).toHaveTextContent("3840 x 2160");
+    expect(panel).toHaveTextContent("3840 × 2160");
     expect(panel).toHaveTextContent("12345678");
     expect(panel).toHaveTextContent("a".repeat(64));
     expect(within(panel).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Export Again",
+      "Export again",
       "Close",
     ]);
     expect(panel).not.toHaveTextContent(/(?:[A-Za-z]:\\|Open Folder|Save As|share|clipboard)/i);
 
-    fireEvent.click(within(panel).getByRole("button", { name: "Export Again" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Export again" }));
     fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
     expect(props.onExportAgain).toHaveBeenCalledOnce();
     expect(props.onClose).toHaveBeenCalledOnce();
@@ -127,21 +167,21 @@ describe("ExportPanel", () => {
         kind: "failed",
         preset: "full-hd",
         code: "EXPORT_RENDER_FAILED",
-        message: "The export could not be rendered.",
       },
     });
     const panel = screen.getByRole("complementary", { name: "Export PNG" });
 
-    expect(panel).toHaveTextContent("EXPORT_RENDER_FAILED");
-    expect(panel).toHaveTextContent("The export could not be rendered.");
+    expect(panel).toHaveTextContent("The operation could not be completed. Try again.");
+    expect(panel.querySelector("[data-error-code='EXPORT_RENDER_FAILED']"))
+      .toBeInTheDocument();
     expect(within(panel).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Export Again",
+      "Export again",
       "Close",
     ]);
     expect(within(panel).queryByRole("button", { name: "Export PNG" }))
       .not.toBeInTheDocument();
 
-    fireEvent.click(within(panel).getByRole("button", { name: "Export Again" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "Export again" }));
     fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
     expect(props.onExportAgain).toHaveBeenCalledOnce();
     expect(props.onClose).toHaveBeenCalledOnce();

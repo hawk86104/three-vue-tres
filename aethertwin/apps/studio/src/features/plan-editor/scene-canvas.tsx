@@ -30,6 +30,7 @@ import type {
   PlanEditorState,
   SceneRendererScope,
 } from "./editor-session";
+import { useI18n } from "../../i18n/locale-provider";
 
 const DEFAULT_SCENE_CAMERA: SceneCameraState = Object.freeze({
   position: Object.freeze({ x: 8, y: 6, z: 8 }),
@@ -154,6 +155,7 @@ export function SceneCanvas({
   exportPanelOpen,
   interactionLocked,
 }: SceneCanvasProps) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const activeRendererRef = useRef<ActiveSceneRenderer | null>(null);
   const lastAppliedInputRef = useRef<SceneRendererInput | null>(null);
@@ -448,13 +450,14 @@ export function SceneCanvas({
       ref={hostRef}
       className="studio-scene-canvas"
       role="region"
-      aria-label="三维场景"
+      aria-label={t("canvas.scene.label")}
       tabIndex={0}
     />
       {interactionLocked ? (
         <div
           className="studio-scene-input-lock"
           aria-hidden="true"
+          data-lock-label={t("scene.inputLocked")}
         />
       ) : null}
     </div>

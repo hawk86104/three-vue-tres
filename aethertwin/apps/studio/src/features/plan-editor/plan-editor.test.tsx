@@ -143,6 +143,11 @@ function exportBackendStub(): ProjectExportBackend {
   };
 }
 
+function exportPanelStartButton(): HTMLButtonElement {
+  return within(screen.getByRole("complementary", { name: "导出 PNG" }))
+    .getByRole("button", { name: "导出 PNG" });
+}
+
 async function sandboxProject(
   name = "Old",
   options: ConstructorParameters<typeof ProjectStore>[1] = { autosaveDelayMs: 60_000 },
@@ -828,7 +833,7 @@ describe("PlanEditor Task 10 shell", () => {
     const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
 
     await user.click(screen.getByRole("button", { name: "\u9648\u8bbe\u76ee\u5f55" }));
-    const catalogue = screen.getByRole("region", { name: "\u5c55\u5177\u76ee\u5f55" });
+    const catalogue = screen.getByRole("region", { name: "陈设目录" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
 
     await user.click(within(catalogue).getByRole("button", { name: /\u5c55\u793a\u67dc/ }));
@@ -892,7 +897,7 @@ describe("PlanEditor Task 10 shell", () => {
     );
 
     expect(screen.getByRole("button", { name: "导出 PNG" }))
-      .toHaveAccessibleDescription("PNG export requires the desktop app.");
+      .toHaveAccessibleDescription("导出 PNG 仅桌面版可用。");
 
     rendered.rerender(
       <PlanEditor
@@ -902,16 +907,135 @@ describe("PlanEditor Task 10 shell", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "导出 PNG" }))
-      .toHaveAccessibleDescription("Switch to 3D or Split to export.");
+      .toHaveAccessibleDescription("请切换到 3D 或分屏后导出。");
 
     const scope = sessionStore.getState().beginSceneRenderer();
     act(() => sessionStore.getState().setViewMode("3d"));
     expect(screen.getByRole("button", { name: "导出 PNG" }))
-      .toHaveAccessibleDescription("3D preview is not ready.");
+      .toHaveAccessibleDescription("3D 预览尚未就绪。");
 
     act(() => sessionStore.getState().setSceneRendererStatus(scope, "ready", null));
     expect(screen.getByRole("button", { name: "导出 PNG" }))
-      .toHaveAccessibleDescription("3D export capture is not current.");
+      .toHaveAccessibleDescription("3D 导出画面已失效，请重试。");
+  });
+
+  it("keeps an active export stable across a locale change and redacts a real backend failure", async () => {
+    const user = userEvent.setup();
+    const textureWait = deferred();
+    let rejectBegin!: (error: unknown) => void;
+    const beginGate = new Promise<never>((_resolve, reject) => {
+      rejectBegin = reject;
+    });
+    const renderer = new FakeSceneRenderer();
+    const captureRef: { current?: SceneExportCapture } = {};
+    const captureSpy = vi.spyOn(renderer.exportPort, "capture")
+      .mockImplementation(() => captureRef.current!);
+    const waitForTextures = vi.spyOn(renderer.exportPort, "waitForTextures")
+      .mockReturnValue(textureWait.promise);
+    const exportBackend = exportBackendStub();
+    vi.mocked(exportBackend.begin).mockReturnValue(beginGate);
+    const operations: Array<ProjectExportOperation | null> = [];
+    const fixture = renderPlanEditorFixture({ profile: "showroom" });
+    fixture.unmount();
+    render(
+      <LocaleProvider preference={createMemoryLocalePreference()}>
+        <PlanEditor
+          store={fixture.projectStore}
+          backendMode="sandbox"
+          exportBackend={exportBackend}
+          onExportOperationChange={(operation) => operations.push(operation)}
+          dependencies={{
+            sessionStore: fixture.sessionStore,
+            controller: fixture.controller,
+            makeId: fixture.makeId,
+            sceneRendererFactory: () => renderer,
+          }}
+        />
+      </LocaleProvider>,
+    );
+    captureRef.current = {
+      provenance: {
+        projectId: fixture.snapshot.project.id,
+        snapshotSequence: fixture.snapshot.sequence,
+        activeFloorId: fixture.floorA.id,
+      },
+      requiredTextureAssetIds: [],
+      limits: { maxTextureSize: 4096, maxRenderbufferSize: 4096, maxSamples: 4 },
+    } as unknown as SceneExportCapture;
+
+    await user.click(screen.getByRole("button", { name: "3D" }));
+    await waitFor(() => expect(renderer.initCount).toBe(1));
+    act(() => renderer.emitStatus("ready"));
+    await user.click(screen.getByRole("button", { name: "导出 PNG" }));
+    await user.click(exportPanelStartButton());
+    await waitFor(() => expect(waitForTextures).toHaveBeenCalledOnce());
+    const capturesBeforeLocaleChange = captureSpy.mock.calls.length;
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "界面语言" }), "en");
+    const panel = screen.getByRole("complementary", { name: "Export PNG" });
+    expect(within(panel).getByRole("status")).toHaveTextContent("Preparing textures");
+    expect(captureSpy).toHaveBeenCalledTimes(capturesBeforeLocaleChange);
+    expect(waitForTextures).toHaveBeenCalledOnce();
+    expect(exportBackend.begin).not.toHaveBeenCalled();
+    expect(exportBackend.cancel).not.toHaveBeenCalled();
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).not.toBeNull();
+
+    textureWait.resolve();
+    await waitFor(() => expect(exportBackend.begin).toHaveBeenCalledWith("sandbox://fixture", {
+      preset: "full-hd",
+      provenance: captureRef.current!.provenance,
+    }));
+    const secret = "C:\\private\\export-secret.png";
+    const unsafeLogRef = "unsafe/export-secret";
+    rejectBegin(new ProjectBackendError(
+      "EXPORT_PUBLISH_FAILED",
+      `native failure: ${secret}`,
+      { path: secret, token: "do-not-display" },
+      unsafeLogRef,
+    ));
+
+    await waitFor(() => expect(panel).toHaveTextContent("Export PNG could not be completed. Try again."));
+    expect(panel).not.toHaveTextContent(secret);
+    expect(panel).not.toHaveTextContent(unsafeLogRef);
+    expect(panel).not.toHaveTextContent("do-not-display");
+    expect(panel.querySelector("[data-error-code='EXPORT_PUBLISH_FAILED']")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Interface language" }), "zh-CN");
+    expect(screen.getByRole("complementary", { name: "导出 PNG" }))
+      .toHaveTextContent("导出 PNG 未能完成，请重试。");
+    expect(document.body).not.toHaveTextContent(secret);
+    expect(document.body).not.toHaveTextContent(unsafeLogRef);
+  });
+
+  it("redacts a real backend action failure before and after a locale change", async () => {
+    const user = userEvent.setup();
+    const { store } = await sandboxProject("Safe save");
+    const secret = "C:\\private\\save-secret.json";
+    const unsafeLogRef = "unsafe/save-secret";
+    vi.spyOn(store, "save").mockRejectedValueOnce(new ProjectBackendError(
+      "FILESYSTEM_ERROR",
+      `native save failure: ${secret}`,
+      { path: secret, token: "do-not-display" },
+      unsafeLogRef,
+    ));
+    render(
+      <LocaleProvider preference={createMemoryLocalePreference()}>
+        <PlanEditor store={store} />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("项目恢复未完成");
+    expect(alert).not.toHaveTextContent(secret);
+    expect(alert).not.toHaveTextContent(unsafeLogRef);
+    expect(alert).not.toHaveTextContent("do-not-display");
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "界面语言" }), "en");
+    expect(alert).toHaveTextContent("Project recovery could not be completed");
+    expect(document.body).not.toHaveTextContent(secret);
+    expect(document.body).not.toHaveTextContent(unsafeLogRef);
   });
 
   it("opens Export only after a current ready 3D capture is published", async () => {
@@ -953,10 +1077,10 @@ describe("PlanEditor Task 10 shell", () => {
     await user.click(exportButton);
 
     expect(captureSpy).toHaveBeenCalledOnce();
-    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "导出 PNG" })).toBeVisible();
     act(() => renderer.emitStatus("recovering"));
     await waitFor(() => {
-      expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
         .not.toBeInTheDocument();
     });
     act(() => renderer.emitStatus("ready"));
@@ -964,10 +1088,10 @@ describe("PlanEditor Task 10 shell", () => {
     expect(document.querySelector(".studio-scene-viewport"))
       .toHaveClass("studio-scene-viewport--export");
 
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
 
-    expect(within(screen.getByRole("complementary", { name: "Export PNG" }))
-      .getByRole("status")).toHaveTextContent("Preparing textures");
+    expect(within(screen.getByRole("complementary", { name: "导出 PNG" }))
+      .getByRole("status")).toHaveTextContent("正在准备纹理");
     expect(waitForTextures).toHaveBeenCalledOnce();
     expect(exportBackend.begin).not.toHaveBeenCalled();
   });
@@ -1019,7 +1143,7 @@ describe("PlanEditor Task 10 shell", () => {
     const exportButton = screen.getByRole("button", { name: "导出 PNG" });
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
     await waitFor(() => expect(render).toHaveBeenCalledOnce());
     expect(screen.getByRole("button", { name: "2D" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "3D" })).toBeDisabled();
@@ -1028,12 +1152,12 @@ describe("PlanEditor Task 10 shell", () => {
 
     await user.keyboard("{Escape}");
     expect(exportBackend.cancel).toHaveBeenCalledOnce();
-    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "导出 PNG" })).toBeVisible();
     expect(exportButton).not.toHaveFocus();
 
     cancelGate.resolve();
     await waitFor(() => {
-      expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+      expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
         .not.toBeInTheDocument();
     });
     expect(exportButton).toHaveFocus();
@@ -1088,7 +1212,7 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
     await user.click(screen.getByRole("button", { name: "导出 PNG" }));
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
 
@@ -1096,17 +1220,17 @@ describe("PlanEditor Task 10 shell", () => {
 
     await waitFor(() => expect(exportBackend.cancel).toHaveBeenCalledOnce());
     expect(fixture.sessionStore.getState().sessionGeneration).toBe(initialGeneration);
-    expect(screen.getByRole("complementary", { name: "Export PNG" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "导出 PNG" })).toBeVisible();
 
     await act(async () => { cancelGate.resolve(); });
 
     await waitFor(() => {
       expect(fixture.sessionStore.getState().sessionGeneration).toBe(initialGeneration + 1);
     });
-    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+    expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
       .not.toBeInTheDocument();
     await act(async () => { renderGate.resolve(); });
-    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+    expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
       .not.toBeInTheDocument();
     expect(document.activeElement).not.toHaveAccessibleName("Export");
   });
@@ -1160,7 +1284,7 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
     await user.click(screen.getByRole("button", { name: "导出 PNG" }));
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     const initialGeneration = fixture.sessionStore.getState().sessionGeneration;
 
@@ -1171,16 +1295,16 @@ describe("PlanEditor Task 10 shell", () => {
       expect(fixture.sessionStore.getState().sessionGeneration)
         .toBe(initialGeneration + 1);
     });
-    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+    expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
       .not.toBeInTheDocument();
     await waitFor(() => {
       const errorMessages = [...document.querySelectorAll(
         ".aether-status-notice--error",
       )].map((notice) => notice.textContent);
-      expect(errorMessages).toEqual(["EXPORT_FRAME_INVALID: The export could not be completed."]);
+      expect(errorMessages).toEqual(["操作未能完成，请重试。"]);
     });
     await act(async () => { renderGate.resolve(); });
-    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+    expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
       .not.toBeInTheDocument();
   });
   it("cancels an active export when the editor unmounts", async () => {
@@ -1233,7 +1357,7 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
     await user.click(screen.getByRole("button", { name: "导出 PNG" }));
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
     await waitFor(() => expect(renderer.exportPort.render).toHaveBeenCalledOnce());
     await waitFor(() => expect(publishedOperations.at(-1)).not.toBeNull());
     const publishedOperation = publishedOperations.at(-1);
@@ -1302,7 +1426,7 @@ describe("PlanEditor Task 10 shell", () => {
       expect(screen.getByRole("button", { name: "导出 PNG" })).toBeEnabled();
     });
     await user.click(screen.getByRole("button", { name: "导出 PNG" }));
-    await user.click(screen.getByRole("button", { name: "Export PNG" }));
+    await user.click(exportPanelStartButton());
     await waitFor(() => expect(render).toHaveBeenCalledOnce());
 
     await user.click(screen.getByRole("button", { name: /\u5173\u95ed/ }));
@@ -1358,7 +1482,7 @@ describe("PlanEditor Task 10 shell", () => {
     expect(threeD).toBeDisabled();
     expect(split).toBeDisabled();
     const status = screen.getByRole("status", { name: "3D 预览状态" });
-    expect(status).toHaveTextContent("WebGL unavailable");
+    expect(status).toHaveTextContent("3D 场景不可用");
     expect(threeD).toHaveAttribute("aria-describedby", status.id);
     expect(split).toHaveAttribute("aria-describedby", status.id);
     await waitFor(() => expect(twoD).toHaveFocus());
@@ -1376,7 +1500,7 @@ describe("PlanEditor Task 10 shell", () => {
       );
     });
     expect(screen.getByRole("status", { name: "3D 预览状态" }))
-      .toHaveTextContent("GPU disabled");
+      .toHaveTextContent("3D 场景已停用");
     expect(threeD).toBeDisabled();
     expect(split).toBeDisabled();
     await waitFor(() => expect(twoD).toHaveFocus());
@@ -2498,7 +2622,7 @@ describe("PlanEditor Task 8 opening creation UI", () => {
     expect(screen.queryByRole("button", { name: "窗" })).not.toBeInTheDocument();
   });
 
-  it("shows all dimensions, along-wall distance, validity, first issue, and persistence error", () => {
+  it("localizes opening placement feedback and never exposes its raw persistence detail", async () => {
     const { sessionStore } = renderPlanEditorFixture({ profile: "showroom" });
     const sessionId = sessionStore.getState().sessionId;
 
@@ -2515,8 +2639,33 @@ describe("PlanEditor Task 8 opening creation UI", () => {
     expect(preview).toHaveTextContent("900 × 2100 mm");
     expect(preview).toHaveTextContent("窗台高度 0 mm");
     expect(preview).toHaveTextContent("沿墙距离 500 mm");
-    expect(preview).toHaveTextContent("无效：距墙端过近");
-    expect(preview).toHaveTextContent("保存失败：checkpoint unavailable");
+    expect(preview).toHaveTextContent("无效");
+    expect(preview).toHaveTextContent("距墙端过近");
+    expect(preview).toHaveTextContent("无法保存门窗放置，请重试。");
+    expect(preview).not.toHaveTextContent("checkpoint unavailable");
+
+    cleanup();
+    const { store } = await sandboxProject("Opening feedback locale");
+    const floorId = store.getState().snapshot!.project.floors[0]!.id;
+    const localizedSession = createPlanEditorStore({ activeFloorId: floorId });
+    render(
+      <LocaleProvider preference={createMemoryLocalePreference("en")}>
+        <PlanEditor store={store} dependencies={{ sessionStore: localizedSession, assetPicker: null }} />
+      </LocaleProvider>,
+    );
+    act(() => {
+      localizedSession.getState().setActiveTool("door");
+      localizedSession.getState().setOpeningPreview(openingPreview(
+        localizedSession.getState().sessionId,
+        { persistenceError: "C:\\secret\\placement.json" },
+      ));
+    });
+    const english = screen.getByRole("status", { name: "Opening placement preview" });
+    expect(english).toHaveTextContent("Door");
+    expect(english).toHaveTextContent("Invalid");
+    expect(english).toHaveTextContent("Too close to the wall end");
+    expect(english).toHaveTextContent("The opening placement could not be saved. Try again.");
+    expect(english).not.toHaveTextContent("C:\\secret\\placement.json");
   });
 
   it("replaces the transient session and clears its opening preview when the project changes", async () => {
@@ -3012,7 +3161,7 @@ describe("PlanEditor Task 12 room recognition", () => {
 
     applyPlanEdit.mockRejectedValueOnce(new Error("checkpoint unavailable"));
     await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
-    expect(await screen.findByText("\u4fdd\u5b58\u5931\u8d25\uff1acheckpoint unavailable")).toBeVisible();
+    expect(await screen.findByText("识别结果暂时无法保存，请重试。")).toBeVisible();
     expect(sessionStore.getState().roomRecognition?.candidates).toHaveLength(1);
 
     applyPlanEdit.mockClear();
@@ -3030,7 +3179,8 @@ describe("PlanEditor Task 12 room recognition", () => {
       });
     });
     await user.click(screen.getByRole("button", { name: "\u786e\u8ba4\u5f53\u524d\u5019\u9009" }));
-    expect(await screen.findByText(/NO_EDITABLE_CREATION_LAYER/)).toBeVisible();
+    expect(await screen.findByText("识别结果暂时无法保存，请重试。")).toBeVisible();
+    expect(screen.queryByText(/NO_EDITABLE_CREATION_LAYER/)).not.toBeInTheDocument();
     expect(applyPlanEdit).not.toHaveBeenCalled();
     expect(sessionStore.getState().roomRecognition?.candidates).toHaveLength(1);
   });
@@ -3327,7 +3477,7 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
     expect(genericRow).toHaveTextContent("垂直高度 未设置");
 
     await user.click(screen.getByRole("button", { name: "陈设目录" }));
-    const catalogue = screen.getByRole("region", { name: "展具目录" });
+    const catalogue = screen.getByRole("region", { name: "陈设目录" });
     expect(within(catalogue).getAllByRole("button")).toHaveLength(7);
     expect(within(catalogue).queryByText(/generic|通用/i)).not.toBeInTheDocument();
   });
@@ -3612,7 +3762,8 @@ describe("PlanEditor M2.3 Task 13 guided-route integration", () => {
     expect(preview).toBeEnabled();
     await user.click(preview);
     await user.click(screen.getByRole("button", { name: "添加站点：Isolated gallery" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("NO_ROUTE");
+    expect(screen.getByRole("alert")).toHaveTextContent("路线草稿已无法解析，请检查站点连接。");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("NO_ROUTE");
     expect(store.getState().snapshot!.project.guidedRoutes).toEqual([saved]);
     expect([...sessionStore.getState().selectedIds]).toEqual([connected.id]);
     expect(screen.getByRole("button", { name: "确认导览路线" })).toBeDisabled();

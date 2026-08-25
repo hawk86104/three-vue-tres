@@ -5,6 +5,10 @@ import type {
   ProjectExportResult,
 } from "@aethertwin/exporter";
 import { useEffect } from "react";
+import { EXPORT_PHASE_MESSAGE_IDS, EXPORT_PRESET_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { EXPORT_DISABLED_REASON_MESSAGE_IDS } from "../../i18n/display-message-ids";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
+import { useI18n } from "../../i18n/locale-provider";
 
 export type StudioExportScope = Readonly<{
   sessionId: string;
@@ -26,7 +30,7 @@ export type StudioExportState =
       kind: "failed";
       preset: ProjectExportPreset;
       code: string;
-      message: string;
+      logRef?: string | null;
     }>
   | Readonly<{
       kind: "succeeded";
@@ -34,9 +38,11 @@ export type StudioExportState =
       result: ProjectExportResult;
     }>;
 
+export type ExportDisabledReason = keyof typeof EXPORT_DISABLED_REASON_MESSAGE_IDS;
+
 export type ExportPanelProps = Readonly<{
   state: StudioExportState;
-  ultraHdDisabledReason: string | null;
+  ultraHdDisabledReason: ExportDisabledReason | null;
   textureIssueAssetIds: readonly string[];
   onPresetChange: (preset: ProjectExportPreset) => void;
   onStart: () => void;
@@ -45,17 +51,31 @@ export type ExportPanelProps = Readonly<{
   onExportAgain: () => void;
 }>;
 
-function progressText(progress: ProjectExportProgress): string {
+function progressText(
+  progress: ProjectExportProgress,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
   switch (progress.phase) {
     case "preparing-textures":
-      return "Preparing textures";
+      return t(EXPORT_PHASE_MESSAGE_IDS[progress.phase]);
     case "rendering":
-      return "Rendering";
+      return t(EXPORT_PHASE_MESSAGE_IDS[progress.phase]);
     case "uploading":
-      return `Uploading ${progress.sentBytes ?? 0} / ${progress.totalBytes ?? 0} bytes`;
+      return t(EXPORT_PHASE_MESSAGE_IDS[progress.phase], {
+        sent: progress.sentBytes ?? 0,
+        total: progress.totalBytes ?? 0,
+      });
     case "encoding-publishing":
-      return "Encoding and publishing";
+      return t(EXPORT_PHASE_MESSAGE_IDS[progress.phase]);
   }
+}
+
+function safeLogRef(value: string | null | undefined): string | null {
+  return value !== null
+    && value !== undefined
+    && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)
+    ? value
+    : null;
 }
 
 export function ExportPanel({
@@ -68,6 +88,7 @@ export function ExportPanel({
   onClose,
   onExportAgain,
 }: ExportPanelProps) {
+  const { t } = useI18n();
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
@@ -85,37 +106,39 @@ export function ExportPanel({
   const hasTextureIssues = sortedTextureIssueAssetIds.length > 0;
 
   return (
-    <aside className="studio-export-panel" aria-label="Export PNG">
+    <aside className="studio-export-panel" aria-label={t("export.panel.label")}>
       {isSucceeded ? (
         <>
-          <p>{state.result.relativePath}</p>
-          <p>{`${state.result.width} x ${state.result.height}`}</p>
-          <p>{state.result.byteSize}</p>
-          <p>{state.result.sha256}</p>
+          <p>{t("export.result.path")}: {state.result.relativePath}</p>
+          <p>{t("export.result.dimensions", { width: state.result.width, height: state.result.height })}</p>
+          <p>{t("export.result.bytes", { value: state.result.byteSize })}</p>
+          <p>{t("export.result.checksum")}: {state.result.sha256}</p>
           <button type="button" onClick={onExportAgain}>
-            Export Again
+            {t("export.again")}
           </button>
           <button type="button" onClick={onClose}>
-            Close
+            {t("export.close")}
           </button>
         </>
       ) : isFailed ? (
         <>
-          <p>{state.code}</p>
-          <p>{state.message}</p>
+          <p data-error-code={state.code}>{t(localizedErrorDescriptor({ code: state.code }).id)}</p>
+          {safeLogRef(state.logRef) === null ? null : (
+            <p>{t("error.diagnosticReference", { logRef: safeLogRef(state.logRef)! })}</p>
+          )}
           <button type="button" onClick={onExportAgain}>
-            Export Again
+            {t("export.again")}
           </button>
           <button type="button" onClick={onClose}>
-            Close
+            {t("export.close")}
           </button>
         </>
       ) : (
         <>
           <label>
-            PNG resolution
+            {t("export.resolution")}
             <select
-              aria-label="PNG resolution"
+              aria-label={t("export.resolution")}
               disabled={isRunning}
               value={state.preset}
               onChange={(event) => {
@@ -124,13 +147,13 @@ export function ExportPanel({
                 onPresetChange(preset);
               }}
             >
-              <option value="full-hd">Full HD - 1920 x 1080</option>
+              <option value="full-hd">{t(EXPORT_PRESET_MESSAGE_IDS["full-hd"])}</option>
               <option value="ultra-hd" disabled={ultraHdDisabledReason !== null}>
-                Ultra HD - 3840 x 2160
+                {t(EXPORT_PRESET_MESSAGE_IDS["ultra-hd"])}
               </option>
             </select>
           </label>
-          {ultraHdDisabledReason !== null ? <p>{ultraHdDisabledReason}</p> : null}
+          {ultraHdDisabledReason !== null ? <p>{t(EXPORT_DISABLED_REASON_MESSAGE_IDS[ultraHdDisabledReason])}</p> : null}
           {hasTextureIssues ? (
             <ul>
               {sortedTextureIssueAssetIds.map((assetId) => (
@@ -140,18 +163,18 @@ export function ExportPanel({
           ) : null}
           {isRunning ? (
             <>
-              <p role="status">{progressText(state.progress)}</p>
+              <p role="status">{progressText(state.progress, t)}</p>
               <button type="button" onClick={onCancel}>
-                Cancel
+                {t("export.cancel")}
               </button>
             </>
           ) : (
             <>
               <button type="button" disabled={hasTextureIssues} onClick={onStart}>
-                Export PNG
+                {t("export.panel.label")}
               </button>
               <button type="button" onClick={onClose}>
-                Close
+                {t("export.close")}
               </button>
             </>
           )}
