@@ -6,6 +6,7 @@ import {
   type ProjectExportBackend,
   type ProjectExportOperation,
   type ProjectExportPreset,
+  type ProjectExportResult,
 } from "@aethertwin/exporter";
 import type {
   AssetImportProgress,
@@ -128,7 +129,11 @@ export interface PlanEditorDependencies {
   readonly makeId?: () => string;
   readonly workspace?: (context: PlanWorkspaceContext) => ReactNode;
   readonly sceneRendererFactory?: SceneRendererFactory;
-readonly assetPicker?: PlanAssetPicker | null;
+  readonly assetPicker?: PlanAssetPicker | null;
+  readonly exportResultActions?: Readonly<{
+    open: (result: ProjectExportResult) => void | Promise<void>;
+    reveal: (result: ProjectExportResult) => void | Promise<void>;
+  }>;
   readonly recognizeRooms?: (
     input: Parameters<typeof recognizeClosedRooms>[0],
   ) => RoomRecognitionResult | Promise<RoomRecognitionResult>;
@@ -503,6 +508,9 @@ export function PlanEditor({
   const [handledStoreError, setHandledStoreError] = useState<Error | null>(null);
   const mode: ProjectBackend["mode"] = backendMode
     ?? (state.projectPath?.startsWith("sandbox://") ? "sandbox" : "desktop");
+  const exportResultActions = mode === "desktop"
+    ? dependencies?.exportResultActions
+    : undefined;
   const [importProgress, setImportProgress] = useState<AssetImportProgress | null>(null);
   const [assetImportBusy, setAssetImportBusy] = useState(false);
   const [routePanelOpen, setRoutePanelOpen] = useState(false);
@@ -1759,6 +1767,12 @@ export function PlanEditor({
     });
   }
 
+  function invokeExportResultAction(action: () => void | Promise<void>): void {
+    void Promise.resolve().then(action).catch((error: unknown) => {
+      if (mountedRef.current) setActionError(safeExportNotice(error));
+    });
+  }
+
   async function closeExportPanel(): Promise<void> {
     const panelGeneration = exportPanelGenerationRef.current + 1;
     exportPanelGenerationRef.current = panelGeneration;
@@ -1961,6 +1975,16 @@ export function PlanEditor({
               onExportAgain={() => {
                 setExportState({ kind: "idle", preset: exportState.preset });
               }}
+              {...(exportResultActions === undefined ? {} : {
+                resultActions: {
+                  onOpenResult: (result: ProjectExportResult) => {
+                    invokeExportResultAction(() => exportResultActions.open(result));
+                  },
+                  onRevealResult: (result: ProjectExportResult) => {
+                    invokeExportResultAction(() => exportResultActions.reveal(result));
+                  },
+                },
+              })}
             />
           )}
           {snapshot.project.profile === "showroom"

@@ -7,6 +7,7 @@ import type {
 } from "@aethertwin/exporter";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LanguageSwitcher } from "../../i18n/language-switcher";
 import { StudioI18nTestProvider } from "../../i18n/test-support";
 import {
   ExportPanel,
@@ -129,7 +130,7 @@ describe("ExportPanel", () => {
     expect(props.onClose).not.toHaveBeenCalled();
   });
 
-  it("renders only safe relative result fields and the two supported actions", () => {
+  it("renders only safe relative result fields and desktop-gated result actions", () => {
     const state: StudioExportState = {
       kind: "succeeded",
       preset: "ultra-hd",
@@ -150,10 +151,14 @@ describe("ExportPanel", () => {
     expect(panel).toHaveTextContent("12345678");
     expect(panel).toHaveTextContent("a".repeat(64));
     expect(within(panel).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Open exported file",
+      "Show in folder",
       "Export again",
       "Close",
     ]);
-    expect(panel).not.toHaveTextContent(/(?:[A-Za-z]:\\|Open Folder|Save As|share|clipboard)/i);
+    expect(within(panel).getByRole("button", { name: "Open exported file" })).toBeDisabled();
+    expect(within(panel).getByRole("button", { name: "Show in folder" })).toBeDisabled();
+    expect(panel).not.toHaveTextContent(/(?:[A-Za-z]:\\|Save As|share|clipboard)/i);
 
     fireEvent.click(within(panel).getByRole("button", { name: "Export again" }));
     fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
@@ -185,6 +190,62 @@ describe("ExportPanel", () => {
     fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
     expect(props.onExportAgain).toHaveBeenCalledOnce();
     expect(props.onClose).toHaveBeenCalledOnce();
+  });
+
+  it("localizes successful desktop result actions live and disables them when unavailable", () => {
+    const state: StudioExportState = {
+      kind: "succeeded",
+      preset: "full-hd",
+      result: {
+        preset: "full-hd",
+        relativePath: "exports/showroom-1920x1080.png",
+        width: 1920,
+        height: 1080,
+        byteSize: 4321,
+        sha256: "b".repeat(64),
+      },
+    };
+    const onOpenResult = vi.fn();
+    const onRevealResult = vi.fn();
+    const props: ExportPanelProps = {
+      state,
+      ultraHdDisabledReason: null,
+      textureIssueAssetIds: [],
+      onPresetChange: vi.fn(),
+      onStart: vi.fn(),
+      onCancel: vi.fn(),
+      onClose: vi.fn(),
+      onExportAgain: vi.fn(),
+      resultActions: { onOpenResult, onRevealResult },
+    };
+    const view = render(
+      <StudioI18nTestProvider>
+        <LanguageSwitcher />
+        <ExportPanel {...props} />
+      </StudioI18nTestProvider>,
+    );
+
+    const panel = screen.getByRole("complementary", { name: "导出 PNG" });
+    expect(within(panel).getByRole("button", { name: "打开导出文件" })).toBeEnabled();
+    expect(within(panel).getByRole("button", { name: "在文件夹中显示" })).toBeEnabled();
+    fireEvent.click(within(panel).getByRole("button", { name: "打开导出文件" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "在文件夹中显示" }));
+    expect(onOpenResult).toHaveBeenCalledOnce();
+    expect(onRevealResult).toHaveBeenCalledOnce();
+
+    fireEvent.change(screen.getByLabelText("界面语言"), { target: { value: "en" } });
+    const englishPanel = screen.getByRole("complementary", { name: "Export PNG" });
+    expect(within(englishPanel).getByRole("button", { name: "Open exported file" })).toBeEnabled();
+    expect(within(englishPanel).getByRole("button", { name: "Show in folder" })).toBeEnabled();
+    expect(englishPanel).toHaveTextContent("exports/showroom-1920x1080.png");
+    expect(englishPanel).toHaveTextContent("b".repeat(64));
+
+    view.unmount();
+    renderPanel({ state });
+    expect(screen.getByRole("button", { name: "Open exported file" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Show in folder" })).toBeDisabled();
+    expect(screen.getByText("Export file actions are available only in the desktop app."))
+      .toBeVisible();
   });
 
   it("sorts blocking texture IDs and never starts while they are present", () => {

@@ -40,6 +40,11 @@ export type StudioExportState =
 
 export type ExportDisabledReason = keyof typeof EXPORT_DISABLED_REASON_MESSAGE_IDS;
 
+export type ExportResultActions = Readonly<{
+  onOpenResult: (result: ProjectExportResult) => void;
+  onRevealResult: (result: ProjectExportResult) => void;
+}>;
+
 export type ExportPanelProps = Readonly<{
   state: StudioExportState;
   ultraHdDisabledReason: ExportDisabledReason | null;
@@ -49,6 +54,7 @@ export type ExportPanelProps = Readonly<{
   onCancel: () => void;
   onClose: () => void;
   onExportAgain: () => void;
+  resultActions?: ExportResultActions;
 }>;
 
 function progressText(
@@ -87,6 +93,7 @@ export function ExportPanel({
   onCancel,
   onClose,
   onExportAgain,
+  resultActions,
 }: ExportPanelProps) {
   const { t } = useI18n();
   useEffect(() => {
@@ -113,6 +120,21 @@ export function ExportPanel({
           <p>{t("export.result.dimensions", { width: state.result.width, height: state.result.height })}</p>
           <p>{t("export.result.bytes", { value: state.result.byteSize })}</p>
           <p>{t("export.result.checksum")}: {state.result.sha256}</p>
+          <button
+            type="button"
+            disabled={resultActions === undefined}
+            onClick={() => resultActions?.onOpenResult(state.result)}
+          >
+            {t("export.open")}
+          </button>
+          <button
+            type="button"
+            disabled={resultActions === undefined}
+            onClick={() => resultActions?.onRevealResult(state.result)}
+          >
+            {t("export.reveal")}
+          </button>
+          {resultActions === undefined ? <p>{t("export.resultActionsUnavailable")}</p> : null}
           <button type="button" onClick={onExportAgain}>
             {t("export.again")}
           </button>
