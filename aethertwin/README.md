@@ -78,8 +78,6 @@ with the installed Edge and Chrome versions, not a signed release,
 cross-device visual certification, or performance certification. No screenshot
 was captured.
 
-## Ownership and dependency direction
-
 ## Studio interface language
 
 Studio starts in Simplified Chinese and exposes a visible language selector in
@@ -106,6 +104,8 @@ both TypeScript checks; lint; and `git diff --check`. Build, dev server,
 browser, Playwright, screenshot, WebGL, and packaged-runtime acceptance remain
 separately approved operations. Bilingual browser/build acceptance has not run
 as part of this source closure.
+
+## Ownership and dependency direction
 
 ```text
 Studio React application

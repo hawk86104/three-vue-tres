@@ -88,12 +88,24 @@ function collectRawErrorAliases(sourceFile) {
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
       const isNewError = ts.isNewExpression(node.initializer) && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === "Error";
-      if (isNewError || isErrorProperty(node.initializer, aliases) || (ts.isIdentifier(node.initializer) && aliases.has(node.initializer.text))) aliases.add(node.name.text);
+      if (isNewError || (ts.isIdentifier(node.initializer) && aliases.has(node.initializer.text))) aliases.add(node.name.text);
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
   return aliases;
+}
+
+function collectSimpleInitializers(sourceFile) {
+  const initializers = new Map();
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined) {
+      initializers.set(node.name.text, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return initializers;
 }
 
 function collectShowroomDescriptorParameters(sourceFile) {
@@ -123,15 +135,32 @@ function collectShowroomDescriptorParameters(sourceFile) {
   return parameters;
 }
 
-function isRawErrorExpression(node, aliases) {
+function isRawErrorExpression(node, aliases, initializers, visited = new Set()) {
   if (isErrorProperty(node, aliases)) return node.name.text;
-  if (ts.isIdentifier(node) && aliases.has(node.text)) return "object";
+  if (ts.isIdentifier(node)) {
+    if (aliases.has(node.text)) return "object";
+    const initializer = initializers.get(node.text);
+    if (initializer !== undefined && !visited.has(node.text)) {
+      const nextVisited = new Set(visited);
+      nextVisited.add(node.text);
+      return isRawErrorExpression(initializer, aliases, initializers, nextVisited);
+    }
+  }
+  if (ts.isParenthesizedExpression(node)) return isRawErrorExpression(node.expression, aliases, initializers, visited);
+  if (ts.isConditionalExpression(node)) {
+    return isRawErrorExpression(node.whenTrue, aliases, initializers, visited)
+      ?? isRawErrorExpression(node.whenFalse, aliases, initializers, visited);
+  }
+  if (ts.isBinaryExpression(node)) {
+    return isRawErrorExpression(node.left, aliases, initializers, visited)
+      ?? isRawErrorExpression(node.right, aliases, initializers, visited);
+  }
   if (ts.isCallExpression(node)) {
     if (ts.isIdentifier(node.expression) && node.expression.text === "format" && node.arguments.length === 1) {
       const [descriptor] = node.arguments;
       if (ts.isCallExpression(descriptor) && ts.isIdentifier(descriptor.expression) && descriptor.expression.text === "localizedErrorDescriptor") return null;
     }
-    const rawArgument = node.arguments.map((argument) => isRawErrorExpression(argument, aliases)).find(Boolean) ?? null;
+    const rawArgument = node.arguments.map((argument) => isRawErrorExpression(argument, aliases, initializers, visited)).find(Boolean) ?? null;
     if (rawArgument === null) return null;
     return ts.isPropertyAccessExpression(node.expression) && node.expression.expression.getText() === "JSON" && node.expression.name.text === "stringify"
       ? "JSON.stringify(error)"
@@ -140,19 +169,19 @@ function isRawErrorExpression(node, aliases) {
   return null;
 }
 
-function isRawErrorPropExpression(node, aliases) {
-  return isRawErrorExpression(node, aliases)
+function isRawErrorPropExpression(node, aliases, initializers) {
+  return isRawErrorExpression(node, aliases, initializers)
     ?? (ts.isIdentifier(node) && aliases.has(node.text) ? "object" : null);
 }
 
-function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, showroomParameters) {
+function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, simpleInitializers, showroomParameters) {
   if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.text.trim(), "visible JSX literal");
   }
   if (ts.isTemplateExpression(expression)) {
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.getText(sourceFile).replaceAll("`", "").trim(), "visible JSX template");
   }
-  const rawError = isRawErrorExpression(expression, rawErrorAliases);
+  const rawError = isRawErrorExpression(expression, rawErrorAliases, simpleInitializers);
   if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, expression)} ${rawError === "JSON.stringify(error)" ? rawError : `raw error ${rawError}`}`);
   if (ts.isPropertyAccessExpression(expression) && expression.name.text === "label" && ts.isIdentifier(expression.expression) && showroomParameters.has(expression.expression.text)) {
     violations.push(`${nodeLocation(filePath, sourceFile, expression)} mode-showroom descriptor.label`);
@@ -166,6 +195,7 @@ export function findLocalizationViolations(sources = undefined) {
   for (const { filePath, source } of scannedSources) {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
     const rawErrorAliases = collectRawErrorAliases(sourceFile);
+    const simpleInitializers = collectSimpleInitializers(sourceFile);
     const showroomParameters = collectShowroomDescriptorParameters(sourceFile);
     const visit = (node) => {
       if (ts.isJsxText(node)) {
@@ -179,13 +209,13 @@ export function findLocalizationViolations(sources = undefined) {
       }
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         if (!ts.isJsxAttribute(node.parent)) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, showroomParameters);
         } else if (VISIBLE_ATTRIBUTE_NAMES.has(node.parent.name.getText(sourceFile))) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, showroomParameters);
         }
       }
       if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === "error" && node.initializer !== undefined && ts.isJsxExpression(node.initializer) && node.initializer.expression !== undefined) {
-        const rawError = isRawErrorPropExpression(node.initializer.expression, rawErrorAliases);
+        const rawError = isRawErrorPropExpression(node.initializer.expression, rawErrorAliases, simpleInitializers);
         if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, node)} raw error prop ${rawError}`);
       }
       if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && VISIBLE_ATTRIBUTE_NAMES.has(node.name.text)) {
@@ -208,11 +238,19 @@ test("policy catches indirect visible copy and raw error flows while accepting f
       import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
       const error = new Error("secret");
       const rawMessage = error.message;
+      const copy = error.message;
+      const conditionalCopy = ready ? error.message : "safe";
+      const parenthesizedCopy = (error.message);
+      const binaryCopy = "Failure: " + error.message;
       const groups = SHOWROOM_TOOL_GROUPS;
       export function Fixture({ format, message, t }) {
         return <>
           <p>{\`Untranslated template\`}</p>
           <p>{rawMessage}</p>
+          <p>{copy}</p>
+          <p>{conditionalCopy}</p>
+          <p>{parenthesizedCopy}</p>
+          <p>{binaryCopy}</p>
           <p>{String(error.message)}</p>
           <p>{format(error.code)}</p>
           <p>{JSON.stringify(error)}</p>
@@ -228,6 +266,7 @@ test("policy catches indirect visible copy and raw error flows while accepting f
 
   assert.ok(violations.some((violation) => violation.includes("Untranslated template")));
   assert.ok(violations.some((violation) => violation.includes("raw error message")));
+  assert.ok(violations.filter((violation) => violation.includes("raw error message")).length >= 7);
   assert.ok(violations.some((violation) => violation.includes("raw error code")));
   assert.ok(violations.some((violation) => violation.includes("JSON.stringify(error)")));
   assert.ok(violations.some((violation) => violation.includes("raw error prop")));

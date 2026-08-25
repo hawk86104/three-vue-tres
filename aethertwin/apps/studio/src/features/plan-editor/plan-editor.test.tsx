@@ -487,7 +487,8 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(tagsField).toHaveAttribute("aria-invalid", "true");
     expect(describedText(nameField)).toContain("项目名称不能使用 Windows 保留设备名");
     expect(describedText(nameField)).not.toContain("tag commit failed");
-    expect(describedText(tagsField)).toContain("tag commit failed");
+    expect(describedText(tagsField)).toContain("操作未能完成，请重试。");
+    expect(describedText(tagsField)).not.toContain("tag commit failed");
     expect(describedText(tagsField)).not.toContain("项目名称不能使用 Windows 保留设备名");
   });
 
@@ -515,20 +516,20 @@ describe("PlanEditor M0 behavior contract", () => {
   it.each([
     [
       "different messages",
-      "项目名称提交失败",
-      "项目标签提交失败",
+      "name-secret C:\\private\\name.twinproj token-name-123",
+      "tags-secret C:\\private\\tags.twinproj token-tags-456",
       "native-name-different",
       "native-tags-different",
     ],
     [
       "the same message",
-      "项目提交失败",
-      "项目提交失败",
+      "same-secret C:\\private\\shared.twinproj token-shared-789",
+      "same-secret C:\\private\\shared.twinproj token-shared-789",
       "native-name-same-message",
       "native-tags-same-message",
     ],
   ] as const)(
-    "preserves each field's own native log reference across consecutive failures with %s",
+    "keeps each field's own trusted reference while redacting consecutive native failures with %s",
     async (_case, nameMessage, tagsMessage, nameLogRef, tagsLogRef) => {
       const { backend, store } = await sandboxProject("连续错误展厅");
       const commit = vi.spyOn(backend, "commit");
@@ -565,12 +566,19 @@ describe("PlanEditor M0 behavior contract", () => {
       const tagsDescription = describedText(tagsField);
       expect(nameField).toHaveAttribute("aria-invalid", "true");
       expect(tagsField).toHaveAttribute("aria-invalid", "true");
-      expect(nameDescription).toContain(nameMessage);
+      expect(nameDescription).toContain("操作未能完成，请重试。");
       expect(nameDescription).toContain(nameLogRef);
       expect(nameDescription).not.toContain(tagsLogRef);
-      expect(tagsDescription).toContain(tagsMessage);
+      expect(nameDescription).not.toContain(nameMessage);
+      expect(nameDescription).not.toContain("private");
+      expect(nameDescription).not.toContain("token-");
+      expect(tagsDescription).toContain("操作未能完成，请重试。");
       expect(tagsDescription).toContain(tagsLogRef);
       expect(tagsDescription).not.toContain(nameLogRef);
+      expect(tagsDescription).not.toContain(tagsMessage);
+      expect(tagsDescription).not.toContain("private");
+      expect(tagsDescription).not.toContain("token-");
+      expect(store.getState().saveState).toBe("error");
     },
   );
 
@@ -615,14 +623,15 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
   });
 
-  it("renders an actionable native error with its log reference and a working Back action", async () => {
+  it("renders a safe field error with a trusted reference and a working Back action", async () => {
     const { backend, store } = await sandboxProject("错误展厅");
     const onBack = vi.fn();
-    backend.failNextCommit = Object.assign(new Error("项目正在由另一个会话使用"), {
-      code: "PROJECT_LOCKED",
-      details: { retryable: true, recoveryRequired: false },
-      logRef: "native-project-locked",
-    });
+    backend.failNextCommit = new ProjectBackendError(
+      "PROJECT_LOCKED",
+      "项目正在由另一个会话使用",
+      { retryable: true, recoveryRequired: false },
+      "native-project-locked",
+    );
     render(<PlanEditor store={store} onBack={onBack} />);
 
     fireEvent.change(screen.getByLabelText("项目名称"), {
@@ -630,9 +639,11 @@ describe("PlanEditor M0 behavior contract", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "应用名称" }));
 
-    const message = await screen.findByText("项目正在由另一个会话使用");
+    const inspector = screen.getByRole("complementary", { name: "检查器" });
+    const message = await within(inspector).findByText("该项目正在其他窗口中使用，请关闭后重试。");
     const alert = message.closest<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
+    expect(alert).not.toHaveTextContent("项目正在由另一个会话使用");
     expect(alert).toHaveTextContent("native-project-locked");
     await userEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(onBack).toHaveBeenCalledOnce();
@@ -654,17 +665,18 @@ describe("PlanEditor M0 behavior contract", () => {
     fireEvent.change(nameField, { target: { value: "第一次修改" } });
     fireEvent.click(within(inspector).getByRole("button", { name: "应用名称" }));
 
-    const localMessage = await within(inspector).findByText("项目名称提交失败");
+    const localMessage = await within(inspector).findByText("操作未能完成，请重试。");
     const localAlert = localMessage.closest<HTMLElement>('[role="alert"]');
     expect(localAlert).not.toBeNull();
-    expect(localAlert).toHaveTextContent("native-inspector-handoff");
+    expect(localAlert).not.toHaveTextContent("项目名称提交失败");
+    expect(localAlert).not.toHaveTextContent("native-inspector-handoff");
     expect(nameField).toHaveAttribute("aria-invalid", "true");
     expect(store.getState().error).toBe(commitFailure);
 
     fireEvent.change(nameField, { target: { value: "第二次修改" } });
 
     await waitFor(() => expect(nameField).not.toHaveAttribute("aria-invalid"));
-    expect(within(inspector).queryByText("项目名称提交失败")).not.toBeInTheDocument();
+    expect(within(inspector).queryByText("操作未能完成，请重试。")).not.toBeInTheDocument();
     expect(commit).toHaveBeenCalledOnce();
     expect(store.getState().error).toBe(commitFailure);
 

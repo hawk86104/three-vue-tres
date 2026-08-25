@@ -7,8 +7,10 @@ Date: 2026-08-25
 - Simplified Chinese is the default. English is available from the visible
   project-centre, Web Demo loading/error, and editor-header selectors.
 - Normal Studio persists the selection with
-  `aethertwin.studio.locale.v1`; missing, malformed, unreadable, and failed
-  writes safely fall back to Simplified Chinese.
+  `aethertwin.studio.locale.v1`; a missing, malformed, unreadable value, or a
+  storage read exception starts in Simplified Chinese. If a write fails, the
+  current document keeps the selected locale; a later refresh reads the stored
+  value if available, otherwise it uses the Simplified-Chinese default.
 - Web Demo and portable preview use memory-only locale state. They neither read
   nor write browser persistence and reset to Simplified Chinese on refresh or a
   new session.
@@ -37,6 +39,23 @@ is not implemented without the optional canvas package; the asset-library test
 reports multiple Three.js instances; and Git reports existing LF-to-CRLF working
 copy notices. These are source-test/environment notices, not browser, GPU, or
 visual evidence.
+
+## Review-fix closure
+
+Independent review found that project-name and project-tag save notices still
+kept raw backend messages and accepted any non-empty diagnostic reference.
+Their local state now retains only a localized descriptor and the existing
+validated `ProjectBackendError` reference. Secret-bearing, distinct
+`COMMIT_FAILED` name/tag failures prove that each field retains its own
+`aria-invalid`, description, action count, save state, and trusted reference
+without rendering message, details, or path content.
+
+The localization policy now traces visible error sources through simple
+initializers, parenthesized expressions, conditional branches, and binary
+concatenation. Adversarial fixtures cover each route. Review also strengthened
+room diagnostics so both list items must stay generic and code-free, corrected
+the locale read/write distinction above, and restored the README heading's
+section ownership.
 
 During final-gate closure, stale test contracts that expected raw internal
 errors/codes were migrated to assert the approved safe fallback while retaining

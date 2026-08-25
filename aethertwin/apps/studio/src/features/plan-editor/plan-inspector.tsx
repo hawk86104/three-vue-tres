@@ -37,7 +37,7 @@ import type {
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState, type Ref } from "react";
 import { message, type StudioMessageDescriptor, type StudioMessageId } from "../../i18n/format-message";
-import { localizedErrorDescriptor } from "../../i18n/localized-error";
+import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 import {
   ENTITY_TYPE_MESSAGE_IDS,
   FIXTURE_KIND_MESSAGE_IDS,
@@ -98,13 +98,16 @@ function errorValue(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
-function logReference(value: unknown): string | null {
-  if (value === null || typeof value !== "object" || !("logRef" in value)) {
-    return null;
-  }
-  return typeof value.logRef === "string" && value.logRef.length > 0
-    ? value.logRef
-    : null;
+interface InspectorFieldError {
+  readonly descriptor: StudioMessageDescriptor;
+  readonly logRef: string | null;
+}
+
+function inspectorFieldError(value: unknown): InspectorFieldError {
+  return {
+    descriptor: localizedErrorDescriptor(value),
+    logRef: localizedErrorLogRef(value),
+  };
 }
 
 function parsedTags(value: string): readonly string[] {
@@ -174,9 +177,9 @@ function ProjectInspector({
   const committedTags = snapshot.project.tags.join(", ");
   const [name, setName] = useState(committedName);
   const [tags, setTags] = useState(committedTags);
-  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<InspectorFieldError | null>(null);
   const [nameValidationError, setNameValidationError] = useState<ProjectNameValidationReason | null>(null);
-  const [tagsError, setTagsError] = useState<string | null>(null);
+  const [tagsError, setTagsError] = useState<InspectorFieldError | null>(null);
   const [nameHandledError, setNameHandledError] = useState<Error | null>(null);
   const [tagsHandledError, setTagsHandledError] = useState<Error | null>(null);
   const nameErrorId = `plan-inspector-name-error-${useId().replaceAll(":", "")}`;
@@ -227,7 +230,7 @@ function ProjectInspector({
       const handled = errorValue(error);
       setNameValidationError(null);
       onHandledStoreError(handled);
-      setNameError(handled.message);
+      setNameError(inspectorFieldError(error));
       setNameHandledError(handled);
     }
   }
@@ -247,15 +250,15 @@ function ProjectInspector({
     } catch (error) {
       const handled = errorValue(error);
       onHandledStoreError(handled);
-      setTagsError(handled.message);
+      setTagsError(inspectorFieldError(error));
       setTagsHandledError(handled);
     }
   }
 
-  const nameLogRef = logReference(nameHandledError);
-  const tagsLogRef = logReference(tagsHandledError);
+  const nameLogRef = nameError?.logRef ?? null;
+  const tagsLogRef = tagsError?.logRef ?? null;
   const renderedNameError = nameValidationError === null
-    ? nameError
+    ? nameError === null ? null : format(nameError.descriptor)
     : format(projectNameValidationDescriptors[nameValidationError]);
 
   return (
@@ -277,7 +280,7 @@ function ProjectInspector({
       )}
       {tagsError === null ? null : (
         <StatusNotice id={tagsErrorId} tone="error">
-          <span>{tagsError}</span>
+          <span>{format(tagsError.descriptor)}</span>
           {tagsLogRef === null ? null : <span>{t("error.diagnosticReference", { logRef: tagsLogRef })}</span>}
         </StatusNotice>
       )}

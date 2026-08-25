@@ -115,10 +115,14 @@ describe("RoomRecognitionPanel", () => {
     expect(within(list).getAllByRole("listitem")[1]).toHaveTextContent(
       "候选 2 · 1 m² · 4 m · 4 面墙 · 待确认",
     );
-    const diagnostics = within(panel).getAllByRole("list", { name: "识别诊断" })[0];
-    expect(diagnostics).toHaveTextContent("有一项识别结果无法使用。");
-    expect(diagnostics).not.toHaveTextContent("DANGLING_EDGE");
-    expect(diagnostics).not.toHaveTextContent("ZERO_LENGTH_SEGMENT");
+    const diagnostics = within(panel).getAllByRole("list", { name: "识别诊断" })[0]!;
+    const diagnosticItems = within(diagnostics).getAllByRole("listitem");
+    expect(diagnosticItems).toHaveLength(2);
+    for (const item of diagnosticItems) {
+      expect(item).toHaveTextContent("有一项识别结果无法使用。");
+      expect(item).not.toHaveTextContent("DANGLING_EDGE");
+      expect(item).not.toHaveTextContent("ZERO_LENGTH_SEGMENT");
+    }
   });
 
   it("validates the 0.1 through 100 millimetre range before recognition", async () => {

@@ -883,14 +883,15 @@ describe("project center", () => {
     const inspector = document.querySelector<HTMLElement>('aside[aria-label="检查器"]');
     expect(inspector).not.toBeNull();
     const inspectorQueries = within(inspector!);
-    expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("rename failed");
+    expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
+    expect(inspectorQueries.getByRole("alert")).not.toHaveTextContent("rename failed");
     const failedNameField = inspectorQueries.getByLabelText("项目名称");
     expect(failedNameField).toHaveValue("失败重命名");
     expect(failedNameField).toHaveAttribute("aria-invalid", "true");
     const descriptionIds = failedNameField.getAttribute("aria-describedby")?.split(" ") ?? [];
     expect(
       descriptionIds.some(
-        (id) => document.getElementById(id)?.textContent === "rename failed",
+        (id) => document.getElementById(id)?.textContent === "操作未能完成，请重试。",
       ),
     ).toBe(true);
     expect(checkpoint).not.toHaveBeenCalled();
@@ -1009,13 +1010,14 @@ describe("project center", () => {
     fireEvent.change(tagsField, { target: { value: "featured" } });
     fireEvent.blur(tagsField);
 
-    expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("tag commit failed");
+    expect(await inspectorQueries.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
+    expect(inspectorQueries.getByRole("alert")).not.toHaveTextContent("tag commit failed");
     expect(tagsField).toHaveAttribute("aria-invalid", "true");
     expect(nameField).not.toHaveAttribute("aria-invalid");
     const tagDescriptionIds = tagsField.getAttribute("aria-describedby")?.split(" ") ?? [];
     expect(
       tagDescriptionIds.some(
-        (id) => document.getElementById(id)?.textContent === "tag commit failed",
+        (id) => document.getElementById(id)?.textContent === "操作未能完成，请重试。",
       ),
     ).toBe(true);
     expect(
