@@ -52,7 +52,6 @@ export function OpeningInspector({
   wall,
   layer,
   onApplyOpeningPatch,
-  onError: _onError,
 }: OpeningInspectorProps) {
   const { format, t } = useI18n();
   const displayName = useDisplayName();

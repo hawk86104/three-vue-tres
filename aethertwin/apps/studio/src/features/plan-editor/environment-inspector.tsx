@@ -2,7 +2,7 @@ import type { SceneEnvironment } from "@aethertwin/core-model";
 import { Button, Field, StatusNotice } from "@aethertwin/design-system";
 import type { SceneEnvironmentPatch } from "@aethertwin/project-store";
 import { useEffect, useId, useMemo, useState } from "react";
-import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { type StudioMessageDescriptor } from "../../i18n/format-message";
 import { useI18n } from "../../i18n/locale-provider";
 import { localizedErrorDescriptor, localizedErrorLogRef } from "../../i18n/localized-error";
 
@@ -126,7 +126,6 @@ function validate(draft: EnvironmentDraft): {
 export function EnvironmentInspector({
   environment,
   onApplyPatch,
-  onError: _onError,
 }: EnvironmentInspectorProps) {
   const { format, t } = useI18n();
   const committedDraft = useMemo(

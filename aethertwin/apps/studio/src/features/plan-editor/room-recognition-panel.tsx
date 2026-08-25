@@ -134,7 +134,7 @@ export function RoomRecognitionPanel({
         <ul aria-label={t("recognition.diagnostics")}>
           {state.diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}-${diagnostic.wallIds.join("-")}-${index}`}>
-              {diagnostic.code} · {diagnostic.wallIds.join(", ")}
+              {t("recognition.diagnostic")}
             </li>
           ))}
         </ul>

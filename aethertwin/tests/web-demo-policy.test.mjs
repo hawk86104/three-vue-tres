@@ -38,6 +38,11 @@ const webDemoRuntimeFiles = globSync(
 const webDemoRuntimeSource = webDemoRuntimeFiles
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
+const webDemoOnlyRuntimeSource = webDemoRuntimeFiles
+  .filter((file) => file.includes("/web-demo/"))
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
+const studioRootSource = readFileSync("apps/studio/src/studio-root.tsx", "utf8");
 
 test("the Web Demo has exactly two dedicated scripts", () => {
   const scripts = Object.entries(studioPackage.scripts).filter(
@@ -90,8 +95,9 @@ test("Web Demo runtime sources remain local-only and browser-persistence-free", 
   assert.ok(webDemoRuntimeFiles.includes("apps/studio/src/studio-root.tsx"));
   assert.doesNotMatch(webDemoRuntimeSource, /(?:https?|wss?):\/\//iu);
   assert.doesNotMatch(webDemoRuntimeSource, /\bcdn\b|telemetry/iu);
-  assert.doesNotMatch(webDemoRuntimeSource, /localStorage|indexedDB/iu);
-  assert.doesNotMatch(webDemoRuntimeSource, /serviceWorker|navigator\.serviceWorker/iu);
+  assert.doesNotMatch(webDemoOnlyRuntimeSource, /localStorage|sessionStorage|indexedDB|document\.cookie|caches/iu);
+  assert.doesNotMatch(webDemoOnlyRuntimeSource, /serviceWorker|navigator\.serviceWorker/iu);
+  assert.match(studioRootSource, /if \(webDemo \|\| typeof window === "undefined"\) \{\s+return createMemoryLocalePreference\(\);/u);
   assert.doesNotMatch(
     webDemoRuntimeSource,
     /ProjectExportBackend|TauriProjectBackend|begin_project_export|write_project_export_chunk/u,

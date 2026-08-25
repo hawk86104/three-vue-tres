@@ -24,7 +24,7 @@ describe("FloorTree localization", () => {
     ["en", ["Room", "Space units"]],
     ["zh-CN", ["房间", "空间单元"]],
   ] as const)("uses the space-unit kind map in %s tree labels", (locale, labels) => {
-    const entities = ["room", "shop", "booth", "exhibition", "service", "restricted"].map((kind, index) => ({ id: `space-${kind}`, name: `Authored ${kind}`, type: "space-unit", kind, floorId: "floor-1", layerId: "layer-1", locked: false, transform: {} }));
+    const entities = ["room", "shop", "booth", "exhibition", "service", "restricted"].map((kind) => ({ id: `space-${kind}`, name: `Authored ${kind}`, type: "space-unit", kind, floorId: "floor-1", layerId: "layer-1", locked: false, transform: {} }));
     const snapshot = { project: { name: "North Gallery", floors: [{ id: "floor-1", name: "Level Uno", layers: [{ id: "layer-1", name: "Sketch α", visible: true, locked: false }] }], entities, planReferences: [], routeNetworks: [] } } as never;
     const { container } = render(<StudioI18nTestProvider locale={locale}><FloorTree snapshot={snapshot} activeFloorId="floor-1" selectedIds={new Set()} onFloorSelect={vi.fn()} onLayerSelect={vi.fn()} onEntitySelect={vi.fn()} onApplyFloorPatch={vi.fn()} /></StudioI18nTestProvider>);
     expect(container).toHaveTextContent(labels[0]);

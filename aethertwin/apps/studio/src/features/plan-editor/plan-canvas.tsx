@@ -205,6 +205,7 @@ function CalibrationOverlay({
   readonly reference: PlanReference;
   readonly state: PlanEditorState;
 }) {
+  const { t } = useI18n();
   const displayReference = draft.preview?.after ?? reference;
   const pointA = overlayPoint(displayReference, draft.sourcePointA, state);
   const pointB = overlayPoint(displayReference, draft.sourcePointB, state);
@@ -230,13 +231,13 @@ function CalibrationOverlay({
       {pointA === null ? null : (
         <g data-testid="calibration-point-a">
           <circle cx={pointA.x} cy={pointA.y} r="6" />
-          <text x={pointA.x + 9} y={pointA.y - 9}>A</text>
+          <text x={pointA.x + 9} y={pointA.y - 9}>{t("calibration.canvasPointA")}</text>
         </g>
       )}
       {pointB === null ? null : (
         <g data-testid="calibration-point-b">
           <circle cx={pointB.x} cy={pointB.y} r="6" />
-          <text x={pointB.x + 9} y={pointB.y - 9}>B</text>
+          <text x={pointB.x + 9} y={pointB.y - 9}>{t("calibration.canvasPointB")}</text>
         </g>
       )}
     </svg>

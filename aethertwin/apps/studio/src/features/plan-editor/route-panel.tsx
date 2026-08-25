@@ -1,4 +1,4 @@
-import type { GuidedRoute, RouteNetwork, RouteNode } from "@aethertwin/core-model";
+import type { GuidedRoute, RouteNetwork } from "@aethertwin/core-model";
 import { resolveGuidedRoute } from "@aethertwin/route-engine";
 import { Button, StatusNotice } from "@aethertwin/design-system";
 import {

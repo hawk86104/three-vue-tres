@@ -207,7 +207,7 @@ function ErrorNotice({ error }: { readonly error: Error | LocalizedErrorNotice }
   const logRef = localized ? error.logRef : logReference(error);
   return (
     <StatusNotice tone="error">
-      <span>{localized ? format(error.descriptor) : error.message}</span>
+      <span>{localized ? format(error.descriptor) : t("error.generic")}</span>
       {logRef === null ? null : <span>{t("error.diagnosticReference", { logRef })}</span>}
     </StatusNotice>
   );
@@ -835,7 +835,7 @@ export function PlanEditor({
     return (
       <main className="studio-project-error">
         <ErrorNotice error={state.error} />
-        <Button variant="ghost" onClick={onBack}>返回</Button>
+        <Button variant="ghost" onClick={onBack}>{t("editor.back")}</Button>
       </main>
     );
   }

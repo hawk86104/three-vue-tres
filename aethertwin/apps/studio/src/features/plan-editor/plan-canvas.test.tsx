@@ -105,7 +105,7 @@ describe("PlanCanvas lifecycle", () => {
     const renderer = new FakePlanRenderer();
     act(() => harness.store.getState().setSelection([harness.fixture.id]));
     const props = createPlanCanvasProps(harness, renderer);
-    const view = render(
+    render(
       <StudioI18nTestProvider>
         <LanguageSwitcher />
         <PlanCanvas {...props} />

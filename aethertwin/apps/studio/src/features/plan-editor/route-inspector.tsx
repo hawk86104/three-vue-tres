@@ -42,7 +42,6 @@ export function RouteInspector({
   node,
   editable,
   onApplyRouteNetworkPatch,
-  onError: _onError,
 }: RouteInspectorProps) {
   const { format, t } = useI18n();
   const displayName = useDisplayName();

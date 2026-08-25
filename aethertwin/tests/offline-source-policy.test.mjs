@@ -155,7 +155,7 @@ test("offline scanning includes the M2.1 asset boundaries", () => {
   }
 });
 
-test("desktop M2.5 keeps exactly twelve invokes, a custom protocol, and two permissions", () => {
+test("desktop M2.5 keeps the approved export-result invokes, a custom protocol, and two permissions", () => {
   const host = readFileSync("crates/desktop-host/src/lib.rs", "utf8");
   const main = readFileSync("crates/desktop-host/src/main.rs", "utf8");
   const capability = JSON.parse(
@@ -177,6 +177,8 @@ test("desktop M2.5 keeps exactly twelve invokes, a custom protocol, and two perm
     "write_project_export_chunk",
     "finish_project_export",
     "cancel_project_export",
+    "open_project_export_result",
+    "reveal_project_export_result",
   ]);
   assert.match(host, /pub fn with_asset_protocol/);
   assert.match(main, /with_asset_protocol/);

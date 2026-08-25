@@ -52,10 +52,8 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-const EMPTY_NAME_ERROR = "请输入项目名称";
 const RESERVED_NAME_ERROR = "项目名称不能使用 Windows 保留设备名";
 const TRAILING_NAME_ERROR = "项目名称不能以点或空格结尾";
-const LONG_NAME_ERROR = "项目名称不能超过 80 个字符";
 
 describe("project name validation", () => {
   it("returns stable ids rather than localized validation strings", () => {
@@ -403,7 +401,7 @@ describe("project center", () => {
     expect(await screen.findByRole("heading", { name: "桌面展厅" })).toBeVisible();
     expect(
       screen.getByRole("complementary", { name: "检查器" }),
-    ).toHaveTextContent(/desktop/i);
+    ).toHaveTextContent(/桌面版/u);
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(await screen.findByText("本地项目 · 持久保存")).toBeVisible();
@@ -803,7 +801,7 @@ describe("project center", () => {
 
     expect(await screen.findByRole("heading", { name: "夏日市集" })).toBeVisible();
     expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
-    expect(within(screen.getByRole("banner")).getByText("market")).toBeVisible();
+    expect(within(screen.getByRole("banner")).getByText("市集")).toBeVisible();
     expect(within(screen.getByRole("navigation", { name: "项目树" })).getByText("一层")).toBeVisible();
     expect(within(screen.getByRole("complementary", { name: "检查器" })).getByText("sandbox://00000000-0000-4000-8000-000000000001")).toBeVisible();
     expect(screen.queryByText(/BIM|IoT|3DGS|点云|三维场景/)).not.toBeInTheDocument();
@@ -843,7 +841,7 @@ describe("project center", () => {
     await userEvent.click(open);
 
     expect(await screen.findByRole("heading", { name: "可重开市集" })).toBeVisible();
-    expect(within(screen.getByRole("banner")).getByText("market")).toBeVisible();
+    expect(within(screen.getByRole("banner")).getByText("市集")).toBeVisible();
   });
 
   it("refreshes the recent project identity from the renamed snapshot before close", async () => {

@@ -95,7 +95,6 @@ export function MaterialInspector({
   makeId,
   onApplyPatches,
   onImportTexture,
-  onError: _onError,
 }: MaterialInspectorProps) {
   const { format, t } = useI18n();
   const targetKind = materialTargetKind(target);

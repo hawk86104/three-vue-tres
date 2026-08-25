@@ -36,7 +36,8 @@ import type {
   SceneEnvironmentPatch,
 } from "@aethertwin/project-store";
 import { useEffect, useId, useState, type Ref } from "react";
-import { message, type StudioMessageDescriptor } from "../../i18n/format-message";
+import { message, type StudioMessageDescriptor, type StudioMessageId } from "../../i18n/format-message";
+import { localizedErrorDescriptor } from "../../i18n/localized-error";
 import {
   ENTITY_TYPE_MESSAGE_IDS,
   FIXTURE_KIND_MESSAGE_IDS,
@@ -86,12 +87,12 @@ const saveStateMessageIds = {
   saved: "editor.save.saved",
   error: "editor.save.error",
   recovered: "editor.save.recovered",
-} as const satisfies Readonly<Record<SaveState, keyof typeof import("../../i18n/messages.zh-CN").zhCNMessages>>;
+} as const satisfies Readonly<Record<SaveState, StudioMessageId>>;
 
 const backendModeMessageIds = {
   desktop: "backend.desktop",
   sandbox: "backend.sandbox",
-} as const satisfies Readonly<Record<ProjectBackend["mode"], keyof typeof import("../../i18n/messages.zh-CN").zhCNMessages>>;
+} as const satisfies Readonly<Record<ProjectBackend["mode"], StudioMessageId>>;
 
 function errorValue(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
@@ -854,7 +855,7 @@ function EntityInspector({
           id={localErrorId}
           tone="error"
           data-issue-code={localError.issue.code}
-        >{localError.issue.message}</StatusNotice>
+        >{t(localizedErrorDescriptor({ code: localError.issue.code }).id)}</StatusNotice>
       )}
       <Field
         label={t("inspector.entityName")}
