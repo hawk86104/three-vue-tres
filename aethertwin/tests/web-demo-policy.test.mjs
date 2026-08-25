@@ -40,13 +40,28 @@ const webDemoRuntimeSource = webDemoRuntimeFiles
   .map((file) => readFileSync(file, "utf8"))
   .join("\n");
 const studioRootSource = readFileSync("apps/studio/src/studio-root.tsx", "utf8");
+const workspacePackages = new Map(globSync("packages/*/package.json").map((manifestPath) => {
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  return [manifest.name, { root: dirname(manifestPath), exports: manifest.exports }];
+}));
 
-function resolveLocalModule(importer, specifier) {
-  const base = join(dirname(importer), specifier);
+function resolveSourceModule(base) {
   const candidates = extname(base).length > 0
     ? [base]
     : [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts"), join(base, "index.tsx")];
   return candidates.find(existsSync) ?? null;
+}
+
+function resolveLocalModule(importer, specifier) {
+  if (specifier.startsWith(".")) return resolveSourceModule(join(dirname(importer), specifier));
+  if (!specifier.startsWith("@aethertwin/")) return null;
+  const segments = specifier.split("/");
+  const packageName = segments.slice(0, 2).join("/");
+  const workspacePackage = workspacePackages.get(packageName);
+  if (workspacePackage === undefined) return null;
+  const exportKey = segments.length === 2 ? "." : `./${segments.slice(2).join("/")}`;
+  const target = workspacePackage.exports[exportKey];
+  return typeof target === "string" ? resolveSourceModule(join(workspacePackage.root, target)) : null;
 }
 
 function reachableLocalRuntimeFiles(entries) {
@@ -57,7 +72,7 @@ function reachableLocalRuntimeFiles(entries) {
     if (file === undefined || visited.has(file)) continue;
     visited.add(file);
     const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(/(?:from\s*|import\s*\()["'](\.[^"']+)["']/gu)) {
+    for (const match of source.matchAll(/(?:from\s*|import\s*\()["'](\.[^"']+|@aethertwin\/[^"']+)["']/gu)) {
       const dependency = resolveLocalModule(file, match[1]);
       if (dependency !== null) pending.push(dependency);
     }
@@ -74,9 +89,9 @@ const normalStudioLocaleStorageBranch = /try\s*\{\s*return createBrowserLocalePr
 const normalStudioProjectStorageBranch = /try\s*\{\s*return new ProtectedStorage\(window\.localStorage\);\s*\}\s*catch\s*\{\s*return new SessionStorage\(\);\s*\}/u;
 const prohibitedPersistenceApi = /localStorage|sessionStorage|indexedDB|document\.cookie|\bcaches\b|serviceWorker|navigator\.serviceWorker/gu;
 
-function reachableWebDemoPersistenceViolations() {
+function reachableWebDemoPersistenceViolations(sourceOverrides = new Map()) {
   return reachableWebDemoRuntimeFiles.flatMap((file) => {
-    const source = readFileSync(file, "utf8");
+    const source = sourceOverrides.get(file) ?? readFileSync(file, "utf8");
     const webDemoSource = file === "apps/studio/src/studio-root.tsx"
       ? source.replace(normalStudioLocaleStorageBranch, "")
       : file === "apps/studio/src/app.tsx"
@@ -155,6 +170,24 @@ test("Web Demo policy traces reachable locale and editor runtime dependencies", 
   ]) {
     assert.ok(reachableWebDemoRuntimeFiles.includes(required), `missing reachable ${required}`);
   }
+});
+
+test("Web Demo policy traces imported workspace packages but never external dependencies", () => {
+  for (const required of [
+    "packages/editor-shell/src/index.ts",
+    "packages/project-store/src/index.ts",
+    "packages/render-plan-2d/src/index.ts",
+    "packages/render-scene-3d/src/index.ts",
+  ]) {
+    assert.ok(reachableWebDemoRuntimeFiles.includes(required), `missing reachable ${required}`);
+  }
+  assert.deepEqual(
+    reachableWebDemoPersistenceViolations(new Map([
+      ["packages/editor-shell/src/index.ts", "window.localStorage.getItem(\"locale\");"],
+    ])),
+    ["packages/editor-shell/src/index.ts: localStorage"],
+  );
+  assert.ok(reachableWebDemoRuntimeFiles.every((file) => !file.includes("/node_modules/")));
 });
 
 test("strict-CSP Web Demo installs Pixi static polyfills before renderer imports", () => {
