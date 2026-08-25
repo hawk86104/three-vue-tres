@@ -34,6 +34,14 @@ describe("localized safe errors", () => {
     );
   });
 
+  it("maps export-result action failures to the established export-safe descriptor", () => {
+    const error = { code: "EXPORT_RESULT_ACTION_FAILED", message: secret };
+
+    expect(localizedErrorDescriptor(error).id).toBe("error.exportOperation");
+    expect(formatMessageDescriptor("zh-CN", localizedErrorDescriptor(error))).not.toContain(secret);
+    expect(formatMessageDescriptor("en", localizedErrorDescriptor(error))).not.toContain(secret);
+  });
+
   it("uses a generic fallback and preserves only a separately rendered log reference", () => {
     const error = new ProjectBackendError("UNKNOWN_NATIVE_FAILURE", secret, null, "log-7e2d");
     const descriptor = localizedErrorDescriptor(error);
