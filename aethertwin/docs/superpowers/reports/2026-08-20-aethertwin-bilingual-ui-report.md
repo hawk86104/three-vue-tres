@@ -27,7 +27,7 @@ Date: 2026-08-25
 
 All commands ran from `aethertwin/` in this exact order and exited 0:
 
-1. `node --test tests/localization-policy.test.mjs tests/visible-actions.test.mjs tests/web-demo-policy.test.mjs tests/offline-source-policy.test.mjs` — 36/36 passed.
+1. `node --test tests/localization-policy.test.mjs tests/visible-actions.test.mjs tests/web-demo-policy.test.mjs tests/offline-source-policy.test.mjs` — 37/37 passed.
 2. The Task 10 focused `pnpm.cmd vitest run` command over 32 specified files — 32/32 files and 586/586 tests passed.
 3. `pnpm.cmd exec tsc -p packages/editor-shell/tsconfig.json --noEmit` — passed.
 4. `pnpm.cmd exec tsc -p apps/studio/tsconfig.json --noEmit` — passed.
@@ -60,11 +60,14 @@ section ownership.
 The final Important follow-up found that visible static copy could bypass the
 scanner through a `const` alias. A RED fixture proves the exact
 `const copy = "Untranslated"; <button>{copy}</button>` escape, plus static
-parenthesized, conditional, and concatenated branches. The scanner now follows
-only const literal/template provenance through those static expression shapes;
-it does not follow arbitrary dynamic or user-data identifiers, and the raw
-error-flow scanner remains separate. The complete source gate below was rerun
-after this repair.
+parenthesized, conditional, and concatenated branches. A final scope review
+then found the first resolver used a file-global name map, which could confuse
+same-name declarations. Static visible JSX now resolves the nearest lexical
+binding only: const literal/template provenance is followed through those
+static expression shapes, while parameters, dynamic bindings, and arbitrary
+user-data identifiers stop resolution. RED fixtures cover a parameter shadow
+and sibling/nested dynamic/static declarations. The raw error-flow scanner
+remains separate. The complete source gate below was rerun after this repair.
 
 During final-gate closure, stale test contracts that expected raw internal
 errors/codes were migrated to assert the approved safe fallback while retaining

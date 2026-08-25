@@ -108,49 +108,88 @@ function collectSimpleInitializers(sourceFile) {
   return initializers;
 }
 
-function collectConstInitializers(sourceFile) {
-  const initializers = new Map();
-  const visit = (node) => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
-      initializers.set(node.name.text, node.initializer);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return initializers;
+function bindPattern(scope, name, initializer) {
+  if (ts.isIdentifier(name)) {
+    scope.bindings.set(name.text, initializer === undefined ? null : { declaration: name.parent, initializer });
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) bindPattern(scope, element.name);
+  }
 }
 
-function staticTemplateValues(node, constInitializers, visited) {
+function isLexicalScope(node) {
+  return ts.isBlock(node)
+    || ts.isCaseBlock(node)
+    || ts.isCatchClause(node)
+    || ts.isForStatement(node)
+    || ts.isForInStatement(node)
+    || ts.isForOfStatement(node);
+}
+
+function createConstInitializerResolver(sourceFile) {
+  const nodeScopes = new WeakMap();
+  const rootScope = { parent: null, bindings: new Map() };
+  const createScope = (parent) => ({ parent, bindings: new Map() });
+  const visit = (node, parentScope) => {
+    let scope = parentScope;
+    if (node !== sourceFile && ts.isFunctionLike(node)) {
+      scope = createScope(parentScope);
+      for (const parameter of node.parameters) bindPattern(scope, parameter.name);
+    } else if (node !== sourceFile && isLexicalScope(node)) {
+      scope = createScope(parentScope);
+      if (ts.isCatchClause(node) && node.variableDeclaration !== undefined) {
+        bindPattern(scope, node.variableDeclaration.name);
+      }
+    }
+    nodeScopes.set(node, scope);
+    if (ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
+      bindPattern(scope, node.name, node.initializer);
+    }
+    ts.forEachChild(node, (child) => visit(child, scope));
+  };
+  visit(sourceFile, rootScope);
+  return (identifier) => {
+    let scope = nodeScopes.get(identifier) ?? rootScope;
+    while (scope !== null) {
+      if (scope.bindings.has(identifier.text)) return scope.bindings.get(identifier.text);
+      scope = scope.parent;
+    }
+    return null;
+  };
+}
+
+function staticTemplateValues(node, resolveConstInitializer, visited) {
   let values = [node.head.text];
   for (const span of node.templateSpans) {
-    const substitutions = staticVisibleStrings(span.expression, constInitializers, visited);
+    const substitutions = staticVisibleStrings(span.expression, resolveConstInitializer, visited);
     if (substitutions.length === 0) return [];
     values = values.flatMap((prefix) => substitutions.map((value) => `${prefix}${value}${span.literal.text}`));
   }
   return values;
 }
 
-function staticVisibleStrings(node, constInitializers, visited = new Set()) {
+function staticVisibleStrings(node, resolveConstInitializer, visited = new Set()) {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
-  if (ts.isTemplateExpression(node)) return staticTemplateValues(node, constInitializers, visited);
-  if (ts.isParenthesizedExpression(node)) return staticVisibleStrings(node.expression, constInitializers, visited);
+  if (ts.isTemplateExpression(node)) return staticTemplateValues(node, resolveConstInitializer, visited);
+  if (ts.isParenthesizedExpression(node)) return staticVisibleStrings(node.expression, resolveConstInitializer, visited);
   if (ts.isConditionalExpression(node)) {
     return [
-      ...staticVisibleStrings(node.whenTrue, constInitializers, visited),
-      ...staticVisibleStrings(node.whenFalse, constInitializers, visited),
+      ...staticVisibleStrings(node.whenTrue, resolveConstInitializer, visited),
+      ...staticVisibleStrings(node.whenFalse, resolveConstInitializer, visited),
     ];
   }
   if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-    const left = staticVisibleStrings(node.left, constInitializers, visited);
-    const right = staticVisibleStrings(node.right, constInitializers, visited);
+    const left = staticVisibleStrings(node.left, resolveConstInitializer, visited);
+    const right = staticVisibleStrings(node.right, resolveConstInitializer, visited);
     return left.flatMap((prefix) => right.map((suffix) => `${prefix}${suffix}`));
   }
   if (ts.isIdentifier(node)) {
-    const initializer = constInitializers.get(node.text);
-    if (initializer !== undefined && !visited.has(node.text)) {
+    const binding = resolveConstInitializer(node);
+    if (binding !== null && !visited.has(binding.declaration)) {
       const nextVisited = new Set(visited);
-      nextVisited.add(node.text);
-      return staticVisibleStrings(initializer, constInitializers, nextVisited);
+      nextVisited.add(binding.declaration);
+      return staticVisibleStrings(binding.initializer, resolveConstInitializer, nextVisited);
     }
   }
   return [];
@@ -222,7 +261,7 @@ function isRawErrorPropExpression(node, aliases, initializers) {
     ?? (ts.isIdentifier(node) && aliases.has(node.text) ? "object" : null);
 }
 
-function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters) {
+function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, simpleInitializers, resolveConstInitializer, showroomParameters) {
   if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.text.trim(), "visible JSX literal");
   }
@@ -230,7 +269,7 @@ function scanVisibleExpression(violations, filePath, sourceFile, expression, raw
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.getText(sourceFile).replaceAll("`", "").trim(), "visible JSX template");
   }
   if (ts.isIdentifier(expression) || ts.isParenthesizedExpression(expression) || ts.isConditionalExpression(expression) || ts.isBinaryExpression(expression)) {
-    for (const value of staticVisibleStrings(expression, constInitializers)) {
+    for (const value of staticVisibleStrings(expression, resolveConstInitializer)) {
       visibleTextViolation(violations, filePath, sourceFile, expression, value.trim(), "visible JSX static");
     }
   }
@@ -249,7 +288,7 @@ export function findLocalizationViolations(sources = undefined) {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
     const rawErrorAliases = collectRawErrorAliases(sourceFile);
     const simpleInitializers = collectSimpleInitializers(sourceFile);
-    const constInitializers = collectConstInitializers(sourceFile);
+    const resolveConstInitializer = createConstInitializerResolver(sourceFile);
     const showroomParameters = collectShowroomDescriptorParameters(sourceFile);
     const visit = (node) => {
       if (ts.isJsxText(node)) {
@@ -263,9 +302,9 @@ export function findLocalizationViolations(sources = undefined) {
       }
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         if (!ts.isJsxAttribute(node.parent)) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, resolveConstInitializer, showroomParameters);
         } else if (VISIBLE_ATTRIBUTE_NAMES.has(node.parent.name.getText(sourceFile))) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, resolveConstInitializer, showroomParameters);
         }
       }
       if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === "error" && node.initializer !== undefined && ts.isJsxExpression(node.initializer) && node.initializer.expression !== undefined) {
@@ -340,6 +379,38 @@ test("policy catches indirect visible copy and raw error flows while accepting f
   assert.ok(violations.some((violation) => violation.includes("mode-showroom descriptor.label")));
   assert.equal(violations.some((violation) => violation.includes("error.generic")), false);
   assert.equal(violations.some((violation) => violation.includes("editor.back")), false);
+});
+
+test("policy resolves static visible aliases by lexical binding instead of file-global names", () => {
+  const violations = findLocalizationViolations([{
+    filePath: "apps/studio/src/policy-scope-fixture.tsx",
+    source: `
+      const copy = "Outer static copy";
+      export function Fixture({ dynamicCopy }) {
+        function ParameterShadow(copy) {
+          return <button>{copy}</button>;
+        }
+        function StaticSibling() {
+          const copy = "Nested static copy";
+          return <button>{copy}</button>;
+        }
+        function DynamicSibling() {
+          const copy = dynamicCopy;
+          return <button>{copy}</button>;
+        }
+        return <>
+          <button>{copy}</button>
+          <ParameterShadow copy={dynamicCopy} />
+          <StaticSibling />
+          <DynamicSibling />
+        </>;
+      }
+    `,
+  }]);
+
+  assert.ok(violations.some((violation) => violation.includes("Outer static copy")));
+  assert.ok(violations.some((violation) => violation.includes("Nested static copy")));
+  assert.equal(violations.some((violation) => violation.includes("dynamicCopy")), false);
 });
 
 test("policy scans similarly named production sources while excluding only explicit developer galleries", () => {
