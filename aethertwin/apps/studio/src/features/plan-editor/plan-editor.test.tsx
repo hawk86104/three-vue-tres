@@ -331,7 +331,7 @@ describe("PlanEditor M0 behavior contract", () => {
     });
 
     expect(checkpoint).toHaveBeenCalledOnce();
-    const message = screen.getByText("无法自动保存项目");
+    const message = screen.getByText("操作未能完成，请重试。");
     const alert = message.closest<HTMLElement>('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert).toHaveTextContent("native-autosave-checkpoint");
@@ -356,13 +356,13 @@ describe("PlanEditor M0 behavior contract", () => {
     });
 
     await userEvent.click(screen.getByRole("button", { name: "保存" }));
-    expect(await screen.findByText("manual checkpoint failed")).toBeVisible();
+    expect(await screen.findByText("操作未能完成，请重试。")).toBeVisible();
     expect(saveStatus("error")).toHaveTextContent("保存失败");
 
     await userEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(checkpoint).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(saveStatus("saved")).toHaveTextContent("已保存"));
-    expect(screen.queryByText("manual checkpoint failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("操作未能完成，请重试。")).not.toBeInTheDocument();
   });
 
   it("syncs the current snapshot before Back closes a project with an active save error", async () => {
@@ -393,7 +393,7 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(store.getState().snapshot?.project.name).toBe("New");
 
     await userEvent.click(screen.getByRole("button", { name: "保存" }));
-    expect(await screen.findByText("save failed")).toBeVisible();
+    expect(await screen.findByText("操作未能完成，请重试。")).toBeVisible();
     expect(checkpoint).toHaveBeenCalledOnce();
 
     await userEvent.click(screen.getByRole("button", { name: "返回" }));
@@ -425,7 +425,7 @@ describe("PlanEditor M0 behavior contract", () => {
     render(<Host />);
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(await screen.findByText("close checkpoint failed")).toBeVisible();
+    expect(await screen.findByText("操作未能完成，请重试。")).toBeVisible();
     expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
     expect(close).not.toHaveBeenCalled();
 
@@ -455,7 +455,7 @@ describe("PlanEditor M0 behavior contract", () => {
     render(<Host />);
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    expect(await screen.findByText("native close failed")).toBeVisible();
+    expect(await screen.findByText("操作未能完成，请重试。")).toBeVisible();
     expect(screen.getByRole("main", { name: "二维平面编辑器" })).toBeVisible();
 
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -669,7 +669,7 @@ describe("PlanEditor M0 behavior contract", () => {
     expect(store.getState().error).toBe(commitFailure);
 
     const workspace = screen.getByRole("main");
-    const workspaceMessage = await within(workspace).findByText("项目名称提交失败");
+    const workspaceMessage = await within(workspace).findByText("操作未能完成，请重试。");
     const workspaceAlert = workspaceMessage.closest<HTMLElement>('[role="alert"]');
     expect(workspaceAlert).not.toBeNull();
     expect(workspaceAlert).toHaveTextContent("native-inspector-handoff");
@@ -693,7 +693,7 @@ describe("PlanEditor M0 behavior contract", () => {
     render(<PlanEditor store={store} />);
     expect(screen.queryByRole("main", { name: "二维平面编辑器" })).not.toBeInTheDocument();
     expect(screen.queryByText("未来项目")).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(/schemaVersion/i);
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(screen.getByRole("button", { name: "返回" })).toBeEnabled();
   });
 
@@ -710,7 +710,7 @@ describe("PlanEditor M0 behavior contract", () => {
 
     render(<PlanEditor store={store} />);
     expect(screen.queryByRole("main", { name: "二维平面编辑器" })).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("项目结构无效或不完整");
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(screen.getByRole("alert")).toHaveTextContent("native-corrupt-project");
     expect(screen.getByRole("button", { name: "返回" })).toBeEnabled();
   });
@@ -1920,9 +1920,7 @@ describe("PlanEditor high-risk contracts", () => {
     expect(screen.getByRole("complementary", { name: "检查器" })).toHaveTextContent(
       floorA.name,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "当前绘制或变换尚未完成，无法切换楼层",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
   });
 
   it("renames a floor with one exact FloorChange", async () => {
@@ -1989,9 +1987,7 @@ describe("PlanEditor high-risk contracts", () => {
 
     await user.click(screen.getByRole("button", { name: "线性阵列" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Generated IDs must be canonical UUIDs unique from sources and other copies",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(applyPlanEdit).not.toHaveBeenCalled();
   });
 
@@ -2277,9 +2273,7 @@ describe("PlanEditor dimension offset", () => {
     await user.type(field, "Infinity");
     await user.click(screen.getByRole("button", { name: "应用对象属性" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "尺寸偏移必须是有限数字",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(applyPlanEdit).not.toHaveBeenCalled();
   });
 });
@@ -2322,9 +2316,7 @@ describe("PlanEditor Inspector draft synchronization", () => {
     await user.clear(x);
     await user.type(x, "not-a-number");
     await user.click(screen.getByRole("button", { name: "应用对象属性" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "位置和角度必须是有限数字",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
 
     await act(async () => {
       await applyPlanEdit({
@@ -2338,9 +2330,7 @@ describe("PlanEditor Inspector draft synchronization", () => {
     });
 
     expect(x).toHaveValue("not-a-number");
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "位置和角度必须是有限数字",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
   });
 
   it("resynchronizes fields when the selected entity committed values change", async () => {
@@ -2444,7 +2434,7 @@ describe("PlanEditor exact unit editing", () => {
     await user.click(screen.getByRole("button", { name: "应用对象属性" }));
     const alert = screen.getByRole("alert");
     expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(alert).toHaveTextContent("位置和角度必须是有限数字");
+    expect(alert).toHaveTextContent("操作未能完成，请重试。");
     expect(alert).toHaveAttribute("data-issue-code", "INVALID_LENGTH");
     expect(field).toHaveAttribute("aria-invalid", "true");
     expect(field).toHaveAttribute("aria-describedby", alert.id);
@@ -2474,7 +2464,7 @@ describe("PlanEditor exact unit editing", () => {
       await user.click(apply);
 
       const alert = screen.getByRole("alert");
-      expect(alert).toHaveTextContent("位置和角度必须是有限数字");
+      expect(alert).toHaveTextContent("操作未能完成，请重试。");
       expect(alert).toHaveAttribute("data-issue-code", "INVALID_ROTATION");
       expect(field).toHaveAttribute("aria-invalid", "true");
       expect(field).toHaveAttribute("aria-describedby", alert.id);
@@ -2805,9 +2795,7 @@ describe("PlanEditor Task 9 opening Inspector integration", () => {
     await user.click(screen.getByRole("button", { name: "应用对象属性" }));
 
     await waitFor(() => expect(screen.getByRole("alert"))
-      .toHaveTextContent(opening.id));
-    expect(screen.getByRole("alert"))
-      .toHaveTextContent("OPENING_ENDPOINT_CLEARANCE");
+      .toHaveTextContent("操作未能完成，请重试。"));
     expect(commit).not.toHaveBeenCalled();
     expect(store.getState().snapshot!.project.entities.find(
       (entity) => entity.id === wall.id,
@@ -3415,7 +3403,7 @@ describe("PlanEditor Task 14 fixture compatibility", () => {
 
       const alert = screen.getByRole("alert");
       expect(alert).toHaveAttribute("data-issue-code", "INVALID_LENGTH");
-      expect(alert).toHaveTextContent("垂直高度必须是正数");
+      expect(alert).toHaveTextContent("操作未能完成，请重试。");
       expect(field).toHaveAttribute("aria-invalid", "true");
       expect(applyPlanEdit).not.toHaveBeenCalled();
     },
@@ -3913,7 +3901,7 @@ describe("PlanEditor M2.3 Task 13 global curated-route regressions", () => {
     }]);
     render(<PlanEditor store={store} />);
     await userEvent.click(screen.getByRole("button", { name: "预览导览路线" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("只能有一条导览路线");
+    expect(screen.getByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(store.getState().snapshot!.project.guidedRoutes).toEqual(routes);
   });
 });

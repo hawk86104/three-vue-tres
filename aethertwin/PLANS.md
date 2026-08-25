@@ -2,6 +2,23 @@
 
 This file records the current executable boundary. Detailed historical task evidence lives in the ignored `.superpowers/sdd/progress.md`; approved milestone plans remain under `docs/superpowers/plans/`.
 
+## Bilingual Studio UI
+
+- [x] Simplified Chinese is the default; English is available through the
+  project-centre, Web Demo, and editor language controls.
+- [x] Normal Studio uses `aethertwin.studio.locale.v1` with Simplified Chinese
+  fallback; Web Demo and portable preview are memory-only and reset on refresh.
+- [x] Translation is presentation-only: names, IDs, paths, payloads, durable
+  records, and workflows remain unchanged.
+- [x] Known stable error codes have safe bilingual descriptions; unknown errors
+  use the generic fallback without raw error details.
+- [x] Source-only closure evidence is in
+  `docs/superpowers/reports/2026-08-20-aethertwin-bilingual-ui-report.md`.
+
+Browser/build acceptance for this rollout is intentionally pending a new,
+explicit approval naming the environment. Do not infer that approval from the
+source-level test results.
+
 ## Completed milestones and task groups
 
 - [x] M0 foundation

@@ -52,4 +52,12 @@ describe("localized safe errors", () => {
     expect(localizedErrorLogRef({ logRef: secret })).toBeNull();
     expect(localizedErrorLogRef(Object.assign(new Error(secret), { logRef: "spoofed-log" }))).toBeNull();
   });
+
+  it("treats synthetic commit failures as unknown and redacts their details", () => {
+    const error = { code: "COMMIT_FAILED", message: secret, details: { path: secret } };
+
+    expect(localizedErrorDescriptor(error).id).toBe("error.generic");
+    expect(formatMessageDescriptor("zh-CN", localizedErrorDescriptor(error))).not.toContain(secret);
+    expect(formatMessageDescriptor("en", localizedErrorDescriptor(error))).not.toContain(secret);
+  });
 });

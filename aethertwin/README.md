@@ -80,6 +80,33 @@ was captured.
 
 ## Ownership and dependency direction
 
+## Studio interface language
+
+Studio starts in Simplified Chinese and exposes a visible language selector in
+the project centre, Web Demo loading/error states, and editor header. English
+is an alternative presentation language; changing it updates visible copy in
+place without translating authored project names, stable IDs, paths, command
+payloads, or stored data.
+
+Normal Studio remembers the selection in local storage under
+`aethertwin.studio.locale.v1`. A missing, malformed, or inaccessible value
+falls back to Simplified Chinese. The Web Demo and Windows portable preview use
+an in-memory preference only: they do not use browser persistence and return to
+Simplified Chinese after refresh or a new session.
+
+User-facing failures are rendered from known stable error-code mappings; an
+unknown error receives a safe generic message. Raw error messages, paths,
+details, stacks, and untrusted diagnostic references are not presentation
+copy. Developer galleries, test fixtures, internal logs, and the portable-host
+console are intentionally outside this translation scope.
+
+The bilingual source gate consists of the localization, visible-action, Web
+Demo, and offline policy tests; the focused Studio/editor-shell Vitest suite;
+both TypeScript checks; lint; and `git diff --check`. Build, dev server,
+browser, Playwright, screenshot, WebGL, and packaged-runtime acceptance remain
+separately approved operations. Bilingual browser/build acceptance has not run
+as part of this source closure.
+
 ```text
 Studio React application
   -> core-model + design-system + editor-shell

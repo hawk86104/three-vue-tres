@@ -30,6 +30,27 @@ The active branch remains `codex/aethertwin-m2` with local `master` as its basel
 
 Do not rebase, merge, reset, or change the baseline during this handoff. Final integration of the divergent local and remote histories is a human decision.
 
+## Bilingual Studio UI source closure
+
+Studio defaults to Simplified Chinese, with English selectable through the
+visible language control. Normal Studio stores the selection at
+`aethertwin.studio.locale.v1`; absent, malformed, or inaccessible storage falls
+back to Simplified Chinese. Web Demo and portable preview retain locale only in
+memory and reset to Simplified Chinese on refresh or a fresh session.
+
+Localization is presentation-only. Author-provided names, IDs, paths, command
+payloads, persisted project data, and operation lifecycle state remain stable.
+Known stable errors map to safe bilingual copy and unknown errors use the
+generic fallback; raw error text, paths, details, stacks, and untrusted
+diagnostic references are not displayed. Developer galleries, tests, internal
+logs, and the portable-host console are excluded.
+
+The bilingual rollout's source-only gate is recorded in
+`docs/superpowers/reports/2026-08-20-aethertwin-bilingual-ui-report.md`.
+It does not constitute browser, visual, GPU, build, dev-server, Playwright,
+screenshot, or portable-runtime acceptance. Obtain fresh explicit approval
+that names the intended environment before running any such acceptance.
+
 ## 3. Locked contracts
 
 - Project schema remains v3; M2.4 adds no SQLite storage migration.

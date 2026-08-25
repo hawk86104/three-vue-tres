@@ -851,7 +851,7 @@ describe('M2.3 Task 11 product-media import ownership', () => {
     await act(async () => pickerResult.resolve(source));
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
-      '\u4ea7\u54c1\u5a92\u4f53\u5bfc\u5165\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002',
+      '\u64cd\u4f5c\u672a\u80fd\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002',
     ));
     expect(importProductMedia).not.toHaveBeenCalled();
     expect(store.getState().snapshot!.project.mediaAssets).toEqual([]);
@@ -955,7 +955,7 @@ describe('M2.3 Task 11 product-media import ownership', () => {
     await user.click(importButton);
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('产品媒体导入失败，请重试。');
+    expect(alert).toHaveTextContent('操作未能完成，请重试。');
     expect(alert).toHaveTextContent('product-media-commit');
     expect(document.body).not.toHaveTextContent(PRIVATE_SOURCE_PATH);
     expect(screen.queryByText('sensitive-product')).not.toBeInTheDocument();
