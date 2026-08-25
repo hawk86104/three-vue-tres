@@ -77,6 +77,14 @@ pub struct FinishProjectExportRequestDto {
     pub export_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExportResultActionRequestDto {
+    pub session_id: String,
+    pub export_id: String,
+    pub relative_path: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BeginProjectExportResultDto {
@@ -118,6 +126,27 @@ impl FinishProjectExportRequestDto {
         Ok((
             canonical_uuid(&self.session_id)?,
             canonical_uuid(&self.export_id)?,
+        ))
+    }
+}
+
+impl ExportResultActionRequestDto {
+    pub fn into_native(self) -> Result<(Uuid, Uuid, String), HostError> {
+        if self.relative_path.is_empty()
+            || self.relative_path.len() > 512
+            || self.relative_path.contains('\\')
+            || self.relative_path.contains('\0')
+            || self
+                .relative_path
+                .split('/')
+                .any(|part| part == "." || part == "..")
+        {
+            return Err(HostError::IpcInvalidRequest);
+        }
+        Ok((
+            canonical_uuid(&self.session_id)?,
+            canonical_uuid(&self.export_id)?,
+            self.relative_path,
         ))
     }
 }
@@ -796,6 +825,36 @@ mod import_debug_tests {
             assert!(!debug.contains(source_path));
             assert!(!debug.contains("debug-must-not-leak"));
             assert!(!debug.contains("source_path"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod export_result_action_tests {
+    use super::*;
+
+    #[test]
+    fn result_actions_accept_only_canonical_ids_and_safe_relative_paths() {
+        let request = ExportResultActionRequestDto {
+            session_id: "10000000-0000-4000-8000-000000000001".into(),
+            export_id: "50000000-0000-4000-8000-000000000001".into(),
+            relative_path: "exports/result.png".into(),
+        };
+        assert!(request.clone().into_native().is_ok());
+        for relative_path in [
+            "../result.png",
+            "exports\\result.png",
+            "exports/./result.png",
+            "",
+        ] {
+            assert!(
+                ExportResultActionRequestDto {
+                    relative_path: relative_path.into(),
+                    ..request.clone()
+                }
+                .into_native()
+                .is_err()
+            );
         }
     }
 }

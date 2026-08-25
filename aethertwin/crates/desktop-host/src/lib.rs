@@ -15,8 +15,9 @@ mod state;
 pub use dto::{
     BeginProjectExportRequestDto, BeginProjectExportResultDto, CancelProjectAssetImportDto,
     CheckpointProjectDto, CloseProjectDto, CommitProjectDto, CreateProjectDto,
-    FinishProjectExportRequestDto, ImportProgressDto, ImportProjectAssetDto, ImportResultDto,
-    OpenProjectDto, ProjectExportPresetDto, ProjectExportResultDto, RecoverProjectDto,
+    ExportResultActionRequestDto, FinishProjectExportRequestDto, ImportProgressDto,
+    ImportProjectAssetDto, ImportResultDto, OpenProjectDto, ProjectExportPresetDto,
+    ProjectExportResultDto, RecoverProjectDto,
 };
 pub use error::{HostError, NativeErrorDto, NativeLogSink, SanitizedLogRecord};
 pub use export_boundary::{ParsedProjectExportChunk, parse_project_export_chunk};
@@ -39,6 +40,8 @@ pub fn with_invoke_handler<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tau
         commands::begin_project_export,
         commands::write_project_export_chunk,
         commands::finish_project_export,
-        commands::cancel_project_export
+        commands::cancel_project_export,
+        commands::open_project_export_result,
+        commands::reveal_project_export_result
     ])
 }

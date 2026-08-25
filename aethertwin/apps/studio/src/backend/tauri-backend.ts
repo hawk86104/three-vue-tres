@@ -660,6 +660,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
   private readonly pendingCleanup = new Map<string, string | null>();
   private readonly activeExports =
     new Map<string, ReadonlyMap<string, ProjectExportDimensions>>();
+  private readonly completedExports = new Map<string, ReadonlyMap<string, string>>();
   private operationTail: Promise<void> = Promise.resolve();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
@@ -923,7 +924,11 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
         throw error;
       }
       this.forgetActiveExport(projectPath, exportId);
-      return parseProjectExportResult(response, expectedDimensions);
+      const result = parseProjectExportResult(response, expectedDimensions);
+      const completed = new Map(this.completedExports.get(projectPath));
+      completed.set(exportId, result.relativePath);
+      this.completedExports.set(projectPath, completed);
+      return result;
     });
   }
 
@@ -950,6 +955,14 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
 
   closeProject(projectPath: string): Promise<void> {
     return this.enqueue(() => this.closeProjectNow(projectPath));
+  }
+
+  openExportResult(projectPath: string, relativePath: string): Promise<void> {
+    return this.invokeExportResultAction(projectPath, relativePath, "open_project_export_result");
+  }
+
+  revealExportResult(projectPath: string, relativePath: string): Promise<void> {
+    return this.invokeExportResultAction(projectPath, relativePath, "reveal_project_export_result");
   }
 
   dispose(): Promise<void> {
@@ -1017,6 +1030,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
       await invokeNative<void>("close_project", { sessionId: activeSessionId });
       this.sessions.delete(projectPath);
       this.activeExports.delete(projectPath);
+      this.completedExports.delete(projectPath);
     }
     for (const sessionId of pendingSessionIds) {
       await invokeNative<void>("close_project", { sessionId });
@@ -1038,6 +1052,7 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
         for (const [projectPath, activeSessionId] of this.sessions) {
           if (activeSessionId === sessionId) {
             this.activeExports.delete(projectPath);
+            this.completedExports.delete(projectPath);
             this.sessions.delete(projectPath);
           }
         }
@@ -1071,6 +1086,16 @@ export class TauriProjectBackend implements ProjectBackend, ProjectExportBackend
     } else {
       this.activeExports.set(projectPath, remaining);
     }
+  }
+
+  private invokeExportResultAction(projectPath: string, relativePath: string, command: "open_project_export_result" | "reveal_project_export_result"): Promise<void> {
+    return this.enqueue(async () => {
+      const sessionId = this.requireSession(projectPath);
+      const exportId = [...(this.completedExports.get(projectPath) ?? new Map())]
+        .find(([, recorded]) => recorded === relativePath)?.[0];
+      if (exportId === undefined) throw new Error("Unknown completed project export result");
+      await invokeNative<void>(command, { sessionId, exportId, relativePath });
+    });
   }
 
   private async cancelSessionExports(sessionId: string): Promise<void> {

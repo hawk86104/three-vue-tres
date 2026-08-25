@@ -1,9 +1,10 @@
 use crate::{
     AppService, BeginProjectExportRequestDto, BeginProjectExportResultDto,
     CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto, CommitProjectDto,
-    CreateProjectDto, FinishProjectExportRequestDto, ImportProgressDto, ImportProjectAssetDto,
-    ImportResultDto, NativeErrorDto, OpenProjectDto, OpenedProjectDto, ProjectExportResultDto,
-    RecoverProjectDto, parse_project_export_chunk, state::ProgressSink,
+    CreateProjectDto, ExportResultActionRequestDto, FinishProjectExportRequestDto,
+    ImportProgressDto, ImportProjectAssetDto, ImportResultDto, NativeErrorDto, OpenProjectDto,
+    OpenedProjectDto, ProjectExportResultDto, RecoverProjectDto, parse_project_export_chunk,
+    state::ProgressSink,
 };
 use project_io::CheckpointResult;
 use serde_json::Value;
@@ -142,6 +143,8 @@ const BEGIN_PROJECT_EXPORT: &str = "begin_project_export";
 const WRITE_PROJECT_EXPORT_CHUNK: &str = "write_project_export_chunk";
 const FINISH_PROJECT_EXPORT: &str = "finish_project_export";
 const CANCEL_PROJECT_EXPORT: &str = "cancel_project_export";
+const OPEN_PROJECT_EXPORT_RESULT: &str = "open_project_export_result";
+const REVEAL_PROJECT_EXPORT_RESULT: &str = "reveal_project_export_result";
 
 #[tauri::command]
 pub fn begin_project_export(
@@ -189,4 +192,28 @@ pub fn cancel_project_export(
     state
         .cancel_project_export(request)
         .map_err(|error| state.render_error(CANCEL_PROJECT_EXPORT, error))
+}
+
+#[tauri::command]
+pub fn open_project_export_result(
+    state: tauri::State<'_, AppService>,
+    payload: Option<Value>,
+) -> Result<(), NativeErrorDto> {
+    let request: ExportResultActionRequestDto =
+        state.decode_payload(OPEN_PROJECT_EXPORT_RESULT, payload)?;
+    state
+        .export_result_action(request, false)
+        .map_err(|error| state.render_error(OPEN_PROJECT_EXPORT_RESULT, error))
+}
+
+#[tauri::command]
+pub fn reveal_project_export_result(
+    state: tauri::State<'_, AppService>,
+    payload: Option<Value>,
+) -> Result<(), NativeErrorDto> {
+    let request: ExportResultActionRequestDto =
+        state.decode_payload(REVEAL_PROJECT_EXPORT_RESULT, payload)?;
+    state
+        .export_result_action(request, true)
+        .map_err(|error| state.render_error(REVEAL_PROJECT_EXPORT_RESULT, error))
 }

@@ -51,6 +51,9 @@ export interface ProjectBackend {
   commit(projectPath: string, batch: CommitBatch<ProjectSnapshot>): Promise<void>;
   checkpoint(projectPath: string, snapshot: ProjectSnapshot): Promise<CheckpointResult>;
   closeProject(projectPath: string): Promise<void>;
+  /** Desktop-only capabilities. They are deliberately absent from sandbox backends. */
+  openExportResult?(projectPath: string, relativePath: string): Promise<void>;
+  revealExportResult?(projectPath: string, relativePath: string): Promise<void>;
 }
 
 export type {

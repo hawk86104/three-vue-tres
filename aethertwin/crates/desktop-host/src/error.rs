@@ -12,6 +12,7 @@ pub enum HostError {
     ExportAlreadyActive,
     ExportNotFound,
     ExportSessionMismatch,
+    ExportResultActionFailed,
     SessionNotFound,
     HostStateUnavailable,
     SessionStateUnavailable,
@@ -107,6 +108,11 @@ pub(crate) fn present(error: HostError) -> ErrorPresentation {
         HostError::ExportSessionMismatch => export_error(
             "EXPORT_SESSION_MISMATCH",
             "The export operation belongs to another project session",
+        ),
+        HostError::ExportResultActionFailed => safe(
+            "EXPORT_RESULT_ACTION_FAILED",
+            "The exported result could not be opened",
+            json!({ "retryable": true }),
         ),
         HostError::SessionNotFound => safe(
             "SESSION_NOT_FOUND",
@@ -211,6 +217,7 @@ pub(crate) const fn host_error_code(source: &HostError) -> &'static str {
         HostError::ExportAlreadyActive => "EXPORT_ALREADY_ACTIVE",
         HostError::ExportNotFound => "EXPORT_NOT_FOUND",
         HostError::ExportSessionMismatch => "EXPORT_SESSION_MISMATCH",
+        HostError::ExportResultActionFailed => "EXPORT_RESULT_ACTION_FAILED",
         HostError::SessionNotFound => "SESSION_NOT_FOUND",
         HostError::HostStateUnavailable => "HOST_STATE_UNAVAILABLE",
         HostError::SessionStateUnavailable => "SESSION_STATE_UNAVAILABLE",

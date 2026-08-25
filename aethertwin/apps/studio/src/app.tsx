@@ -283,6 +283,14 @@ function StudioApp({
         store={store}
         backendMode={backend.mode}
         exportBackend={exportBackend}
+        {...(backend.mode === "desktop" && backend.openExportResult !== undefined && backend.revealExportResult !== undefined ? {
+          dependencies: {
+            exportResultActions: {
+              open: (result: { readonly relativePath: string }) => backend.openExportResult!(state.projectPath!, result.relativePath),
+              reveal: (result: { readonly relativePath: string }) => backend.revealExportResult!(state.projectPath!, result.relativePath),
+            },
+          },
+        } : {})}
         onBeforeClose={recordCurrentProject}
         onExportOperationChange={(operation) => {
           activeExportOperation.current = operation;

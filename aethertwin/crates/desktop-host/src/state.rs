@@ -4,7 +4,7 @@ use crate::{
     dto::{
         CancelProjectAssetImportDto, CheckpointProjectDto, CloseProjectDto, CommitProjectDto,
         CreateProjectDto, ImportProgressDto, ImportProjectAssetDto, ImportResultDto,
-        NativeImportProjectAsset, OpenProjectDto, RecoverProjectDto,
+        NativeImportProjectAsset, OpenProjectDto, ProjectExportResultDto, RecoverProjectDto,
     },
     error::{NativeLogSink, SanitizedLogRecord, StderrLogSink, present},
     export_registry::ActiveProjectExportHandle,
@@ -252,6 +252,7 @@ pub struct AppService {
     pub(crate) project_exports: Mutex<HashMap<Uuid, ActiveProjectExportHandle>>,
     pub(crate) project_exports_changed: Condvar,
     pub(crate) last_cancelled_exports: Mutex<HashMap<Uuid, Uuid>>,
+    pub(crate) completed_project_exports: Mutex<HashMap<Uuid, HashMap<Uuid, String>>>,
     pub(crate) asset_resolver: AssetResolver,
     session_shutdown_complete: AtomicBool,
     log_sink: Arc<dyn NativeLogSink>,
@@ -274,6 +275,7 @@ impl AppService {
             project_exports: Mutex::new(HashMap::new()),
             project_exports_changed: Condvar::new(),
             last_cancelled_exports: Mutex::new(HashMap::new()),
+            completed_project_exports: Mutex::new(HashMap::new()),
             asset_resolver: AssetResolver::default(),
             log_sink,
         }
@@ -634,6 +636,10 @@ impl AppService {
         session_id: Uuid,
         session: &SessionHandle,
     ) -> Result<(), HostError> {
+        self.completed_project_exports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?
+            .remove(&session_id);
         if self.remove_if_same(session_id, session)? {
             self.asset_resolver.invalidate_session(session_id);
         } else {
@@ -814,6 +820,75 @@ impl AppService {
         result: Result<T, HostError>,
     ) -> Result<T, crate::NativeErrorDto> {
         result.map_err(|error| self.render_error(operation, error))
+    }
+
+    pub(crate) fn remember_completed_project_export(
+        &self,
+        session_id: Uuid,
+        export_id: Uuid,
+        result: &ProjectExportResultDto,
+    ) -> Result<(), HostError> {
+        self.completed_project_exports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?
+            .entry(session_id)
+            .or_default()
+            .insert(export_id, result.relative_path.clone());
+        Ok(())
+    }
+
+    pub(crate) fn export_result_action(
+        &self,
+        request: crate::dto::ExportResultActionRequestDto,
+        reveal: bool,
+    ) -> Result<(), HostError> {
+        let (session_id, export_id, relative_path) = request.into_native()?;
+        let _lease = self.session_operation_lease()?;
+        let session = self.lookup_session(session_id)?;
+        if !self.owns_session(session_id, &session)? {
+            return Err(HostError::SessionNotFound);
+        }
+        let recorded = self
+            .completed_project_exports
+            .lock()
+            .map_err(|_| HostError::HostStateUnavailable)?
+            .get(&session_id)
+            .and_then(|exports| exports.get(&export_id))
+            .cloned()
+            .ok_or(HostError::ExportNotFound)?;
+        if recorded != relative_path {
+            return Err(HostError::IpcInvalidRequest);
+        }
+        let project_path = session
+            .lock()
+            .map_err(|_| HostError::SessionStateUnavailable)?
+            .project_path()
+            .to_path_buf();
+        let target = project_path.join(&recorded);
+        if !target.is_file() {
+            return Err(HostError::ExportNotFound);
+        }
+        launch_export_result(&target, reveal)
+    }
+}
+
+fn launch_export_result(target: &std::path::Path, reveal: bool) -> Result<(), HostError> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = std::process::Command::new("explorer.exe");
+        if reveal {
+            command.arg("/select,");
+        }
+        command.arg(target);
+        command
+            .spawn()
+            .map(|_| ())
+            .map_err(|_| HostError::ExportResultActionFailed)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (target, reveal);
+        Err(HostError::ExportResultActionFailed)
     }
 }
 

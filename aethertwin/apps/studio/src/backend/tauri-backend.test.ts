@@ -1575,6 +1575,33 @@ describe("TauriProjectBackend project export adapter", () => {
     ]);
   });
 
+  it("only opens or reveals a result completed in the active desktop session", async () => {
+    const { backend, opened } = await openedExportBackend();
+    const provenance = {
+      projectId: opened.snapshot.project.id,
+      snapshotSequence: opened.snapshot.sequence,
+      activeFloorId: opened.snapshot.project.floors[0]!.id,
+    };
+    invoke.mockResolvedValueOnce(beginResult).mockResolvedValueOnce(finishResult);
+    await backend.begin(PROJECT_A, { provenance, preset: "full-hd" });
+    await backend.finish(PROJECT_A, EXPORT_ID);
+    invoke.mockClear();
+
+    await backend.openExportResult(PROJECT_A, finishResult.relativePath);
+    await backend.revealExportResult(PROJECT_A, finishResult.relativePath);
+    await expect(backend.openExportResult(PROJECT_A, "../outside.png"))
+      .rejects.toThrow("Unknown completed project export result");
+
+    expect(invoke.mock.calls).toEqual([
+      ["open_project_export_result", { payload: {
+        sessionId: SESSION_A, exportId: EXPORT_ID, relativePath: finishResult.relativePath,
+      } }],
+      ["reveal_project_export_result", { payload: {
+        sessionId: SESSION_A, exportId: EXPORT_ID, relativePath: finishResult.relativePath,
+      } }],
+    ]);
+  });
+
   it("does not send a queued cancel after finish wins the terminal race", async () => {
     const { backend, opened } = await openedExportBackend();
     const finishGate = deferred<typeof finishResult>();

@@ -122,6 +122,34 @@ describe("App backend capability injection", () => {
     resolveCancellation();
     await waitFor(() => expect(observations.disposedStores).toContain(currentStore));
   });
+
+  it("injects export-result actions only for a desktop backend with both audited capabilities", async () => {
+    const openExportResult = vi.fn();
+    const revealExportResult = vi.fn();
+    const projectBackend = Object.assign(new SandboxProjectBackend(), {
+      mode: "desktop" as const,
+      openExportResult,
+      revealExportResult,
+    }) as unknown as ProjectBackend;
+
+    render(<App backend={projectBackend} exportBackend={exportBackendStub()} />);
+    fireEvent.click(screen.getByRole("button", { name: "start" }));
+    fireEvent.click(screen.getByRole("button", { name: "create" }));
+    await screen.findByTestId("plan-editor");
+
+    const dependencies = observations.planEditorProps.at(-1)?.dependencies as {
+      exportResultActions?: { open: (result: { relativePath: string }) => Promise<void>; reveal: (result: { relativePath: string }) => Promise<void> };
+    };
+    expect(dependencies.exportResultActions).toBeDefined();
+    await dependencies.exportResultActions!.open({ relativePath: "exports/result.png" });
+    await dependencies.exportResultActions!.reveal({ relativePath: "exports/result.png" });
+    expect(openExportResult).toHaveBeenCalledWith(
+      "sandbox://00000000-0000-4000-8000-000000000001", "exports/result.png",
+    );
+    expect(revealExportResult).toHaveBeenCalledWith(
+      "sandbox://00000000-0000-4000-8000-000000000001", "exports/result.png",
+    );
+  });
 });
 
 function exportBackendStub(): ProjectExportBackend {

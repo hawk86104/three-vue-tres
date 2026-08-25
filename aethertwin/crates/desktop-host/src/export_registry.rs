@@ -268,7 +268,10 @@ impl AppService {
         if !self.remove_project_export_if_same(session_id, &handle)? {
             return Err(HostError::HostStateUnavailable);
         }
-        result.map(ProjectExportResultDto::from)
+        let result = result?;
+        let response = ProjectExportResultDto::from(result);
+        self.remember_completed_project_export(session_id, export_id, &response)?;
+        Ok(response)
     }
 
     pub(crate) fn cancel_project_export(
