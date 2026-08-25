@@ -108,6 +108,54 @@ function collectSimpleInitializers(sourceFile) {
   return initializers;
 }
 
+function collectConstInitializers(sourceFile) {
+  const initializers = new Map();
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer !== undefined && ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
+      initializers.set(node.name.text, node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return initializers;
+}
+
+function staticTemplateValues(node, constInitializers, visited) {
+  let values = [node.head.text];
+  for (const span of node.templateSpans) {
+    const substitutions = staticVisibleStrings(span.expression, constInitializers, visited);
+    if (substitutions.length === 0) return [];
+    values = values.flatMap((prefix) => substitutions.map((value) => `${prefix}${value}${span.literal.text}`));
+  }
+  return values;
+}
+
+function staticVisibleStrings(node, constInitializers, visited = new Set()) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isTemplateExpression(node)) return staticTemplateValues(node, constInitializers, visited);
+  if (ts.isParenthesizedExpression(node)) return staticVisibleStrings(node.expression, constInitializers, visited);
+  if (ts.isConditionalExpression(node)) {
+    return [
+      ...staticVisibleStrings(node.whenTrue, constInitializers, visited),
+      ...staticVisibleStrings(node.whenFalse, constInitializers, visited),
+    ];
+  }
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = staticVisibleStrings(node.left, constInitializers, visited);
+    const right = staticVisibleStrings(node.right, constInitializers, visited);
+    return left.flatMap((prefix) => right.map((suffix) => `${prefix}${suffix}`));
+  }
+  if (ts.isIdentifier(node)) {
+    const initializer = constInitializers.get(node.text);
+    if (initializer !== undefined && !visited.has(node.text)) {
+      const nextVisited = new Set(visited);
+      nextVisited.add(node.text);
+      return staticVisibleStrings(initializer, constInitializers, nextVisited);
+    }
+  }
+  return [];
+}
+
 function collectShowroomDescriptorParameters(sourceFile) {
   const collections = new Set();
   const parameters = new Set();
@@ -174,12 +222,17 @@ function isRawErrorPropExpression(node, aliases, initializers) {
     ?? (ts.isIdentifier(node) && aliases.has(node.text) ? "object" : null);
 }
 
-function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, simpleInitializers, showroomParameters) {
+function scanVisibleExpression(violations, filePath, sourceFile, expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters) {
   if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) {
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.text.trim(), "visible JSX literal");
   }
   if (ts.isTemplateExpression(expression)) {
     visibleTextViolation(violations, filePath, sourceFile, expression, expression.getText(sourceFile).replaceAll("`", "").trim(), "visible JSX template");
+  }
+  if (ts.isIdentifier(expression) || ts.isParenthesizedExpression(expression) || ts.isConditionalExpression(expression) || ts.isBinaryExpression(expression)) {
+    for (const value of staticVisibleStrings(expression, constInitializers)) {
+      visibleTextViolation(violations, filePath, sourceFile, expression, value.trim(), "visible JSX static");
+    }
   }
   const rawError = isRawErrorExpression(expression, rawErrorAliases, simpleInitializers);
   if (rawError !== null) violations.push(`${nodeLocation(filePath, sourceFile, expression)} ${rawError === "JSON.stringify(error)" ? rawError : `raw error ${rawError}`}`);
@@ -196,6 +249,7 @@ export function findLocalizationViolations(sources = undefined) {
     const sourceFile = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true);
     const rawErrorAliases = collectRawErrorAliases(sourceFile);
     const simpleInitializers = collectSimpleInitializers(sourceFile);
+    const constInitializers = collectConstInitializers(sourceFile);
     const showroomParameters = collectShowroomDescriptorParameters(sourceFile);
     const visit = (node) => {
       if (ts.isJsxText(node)) {
@@ -209,9 +263,9 @@ export function findLocalizationViolations(sources = undefined) {
       }
       if (ts.isJsxExpression(node) && node.expression !== undefined) {
         if (!ts.isJsxAttribute(node.parent)) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters);
         } else if (VISIBLE_ATTRIBUTE_NAMES.has(node.parent.name.getText(sourceFile))) {
-          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, showroomParameters);
+          scanVisibleExpression(violations, filePath, sourceFile, node.expression, rawErrorAliases, simpleInitializers, constInitializers, showroomParameters);
         }
       }
       if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === "error" && node.initializer !== undefined && ts.isJsxExpression(node.initializer) && node.initializer.expression !== undefined) {
@@ -238,19 +292,27 @@ test("policy catches indirect visible copy and raw error flows while accepting f
       import { SHOWROOM_TOOL_GROUPS } from "@aethertwin/mode-showroom";
       const error = new Error("secret");
       const rawMessage = error.message;
-      const copy = error.message;
+      const rawCopy = error.message;
       const conditionalCopy = ready ? error.message : "safe";
       const parenthesizedCopy = (error.message);
       const binaryCopy = "Failure: " + error.message;
+      const copy = "Untranslated";
+      const staticParenthesized = ("Untranslated parenthesized");
+      const staticConditional = ready ? "Untranslated true branch" : "Untranslated false branch";
+      const staticBinary = "Untranslated " + "binary";
       const groups = SHOWROOM_TOOL_GROUPS;
       export function Fixture({ format, message, t }) {
         return <>
           <p>{\`Untranslated template\`}</p>
           <p>{rawMessage}</p>
-          <p>{copy}</p>
+          <p>{rawCopy}</p>
           <p>{conditionalCopy}</p>
           <p>{parenthesizedCopy}</p>
           <p>{binaryCopy}</p>
+          <button>{copy}</button>
+          <p>{staticParenthesized}</p>
+          <p>{staticConditional}</p>
+          <p>{staticBinary}</p>
           <p>{String(error.message)}</p>
           <p>{format(error.code)}</p>
           <p>{JSON.stringify(error)}</p>
@@ -265,6 +327,11 @@ test("policy catches indirect visible copy and raw error flows while accepting f
   }]);
 
   assert.ok(violations.some((violation) => violation.includes("Untranslated template")));
+  assert.ok(violations.some((violation) => violation.includes('"Untranslated"')));
+  assert.ok(violations.some((violation) => violation.includes("Untranslated parenthesized")));
+  assert.ok(violations.some((violation) => violation.includes("Untranslated true branch")));
+  assert.ok(violations.some((violation) => violation.includes("Untranslated false branch")));
+  assert.ok(violations.some((violation) => violation.includes("Untranslated binary")));
   assert.ok(violations.some((violation) => violation.includes("raw error message")));
   assert.ok(violations.filter((violation) => violation.includes("raw error message")).length >= 7);
   assert.ok(violations.some((violation) => violation.includes("raw error code")));

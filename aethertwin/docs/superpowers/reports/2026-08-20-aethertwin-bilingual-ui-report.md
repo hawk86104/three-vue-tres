@@ -57,6 +57,15 @@ room diagnostics so both list items must stay generic and code-free, corrected
 the locale read/write distinction above, and restored the README heading's
 section ownership.
 
+The final Important follow-up found that visible static copy could bypass the
+scanner through a `const` alias. A RED fixture proves the exact
+`const copy = "Untranslated"; <button>{copy}</button>` escape, plus static
+parenthesized, conditional, and concatenated branches. The scanner now follows
+only const literal/template provenance through those static expression shapes;
+it does not follow arbitrary dynamic or user-data identifiers, and the raw
+error-flow scanner remains separate. The complete source gate below was rerun
+after this repair.
+
 During final-gate closure, stale test contracts that expected raw internal
 errors/codes were migrated to assert the approved safe fallback while retaining
 their action-count, callback, state, ID, and payload assertions. The synthetic
