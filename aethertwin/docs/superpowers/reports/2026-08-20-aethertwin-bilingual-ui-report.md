@@ -64,10 +64,13 @@ parenthesized, conditional, and concatenated branches. A final scope review
 then found the first resolver used a file-global name map, which could confuse
 same-name declarations. Static visible JSX now resolves the nearest lexical
 binding only: const literal/template provenance is followed through those
-static expression shapes, while parameters, dynamic bindings, and arbitrary
-user-data identifiers stop resolution. RED fixtures cover a parameter shadow
-and sibling/nested dynamic/static declarations. The raw error-flow scanner
-remains separate. The complete source gate below was rerun after this repair.
+static expression shapes, while every other lexical value binding is a
+non-followable shadow barrier. This includes parameters, `let`, `var`,
+function, class/enum, catch, and import bindings, plus arbitrary dynamic or
+user-data identifiers. RED fixtures cover parameter, `let`, `var`, function,
+class, import, and sibling/nested dynamic/static shadows. The raw error-flow
+scanner remains separate. The complete source gate below was rerun after this
+repair.
 
 During final-gate closure, stale test contracts that expected raw internal
 errors/codes were migrated to assert the approved safe fallback while retaining

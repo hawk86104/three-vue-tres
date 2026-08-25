@@ -118,6 +118,12 @@ function bindPattern(scope, name, initializer) {
   }
 }
 
+function nearestFunctionScope(scope) {
+  let candidate = scope;
+  while (candidate.kind !== "function" && candidate.kind !== "root") candidate = candidate.parent;
+  return candidate;
+}
+
 function isLexicalScope(node) {
   return ts.isBlock(node)
     || ts.isCaseBlock(node)
@@ -129,22 +135,31 @@ function isLexicalScope(node) {
 
 function createConstInitializerResolver(sourceFile) {
   const nodeScopes = new WeakMap();
-  const rootScope = { parent: null, bindings: new Map() };
-  const createScope = (parent) => ({ parent, bindings: new Map() });
+  const rootScope = { kind: "root", parent: null, bindings: new Map() };
+  const createScope = (parent, kind) => ({ kind, parent, bindings: new Map() });
   const visit = (node, parentScope) => {
     let scope = parentScope;
+    if (ts.isFunctionDeclaration(node) && node.name !== undefined) bindPattern(parentScope, node.name);
+    if ((ts.isClassDeclaration(node) || ts.isEnumDeclaration(node)) && node.name !== undefined) bindPattern(parentScope, node.name);
+    if (ts.isImportClause(node) && node.name !== undefined) bindPattern(parentScope, node.name);
+    if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) bindPattern(parentScope, node.name);
     if (node !== sourceFile && ts.isFunctionLike(node)) {
-      scope = createScope(parentScope);
+      scope = createScope(parentScope, "function");
       for (const parameter of node.parameters) bindPattern(scope, parameter.name);
+      if (ts.isFunctionExpression(node) && node.name !== undefined) bindPattern(scope, node.name);
     } else if (node !== sourceFile && isLexicalScope(node)) {
-      scope = createScope(parentScope);
+      scope = createScope(parentScope, "block");
       if (ts.isCatchClause(node) && node.variableDeclaration !== undefined) {
         bindPattern(scope, node.variableDeclaration.name);
       }
     }
     nodeScopes.set(node, scope);
-    if (ts.isVariableDeclaration(node) && node.initializer !== undefined && ts.isVariableDeclarationList(node.parent) && (node.parent.flags & ts.NodeFlags.Const) !== 0) {
-      bindPattern(scope, node.name, node.initializer);
+    if (ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent)) {
+      const isConst = (node.parent.flags & ts.NodeFlags.Const) !== 0;
+      const targetScope = isConst || (node.parent.flags & ts.NodeFlags.Let) !== 0
+        ? scope
+        : nearestFunctionScope(scope);
+      bindPattern(targetScope, node.name, isConst && ts.isIdentifier(node.name) ? node.initializer : undefined);
     }
     ts.forEachChild(node, (child) => visit(child, scope));
   };
@@ -385,6 +400,7 @@ test("policy resolves static visible aliases by lexical binding instead of file-
   const violations = findLocalizationViolations([{
     filePath: "apps/studio/src/policy-scope-fixture.tsx",
     source: `
+      import { copy as importedCopy } from "policy-fixture";
       const copy = "Outer static copy";
       export function Fixture({ dynamicCopy }) {
         function ParameterShadow(copy) {
@@ -398,11 +414,32 @@ test("policy resolves static visible aliases by lexical binding instead of file-
           const copy = dynamicCopy;
           return <button>{copy}</button>;
         }
+        function LetShadow() {
+          let copy = dynamicCopy;
+          return <button>{copy}</button>;
+        }
+        function VarShadow() {
+          var copy = dynamicCopy;
+          return <button>{copy}</button>;
+        }
+        function FunctionShadow() {
+          function copy() { return dynamicCopy; }
+          return <button>{copy}</button>;
+        }
+        function ClassShadow() {
+          class copy {}
+          return <button>{copy}</button>;
+        }
         return <>
           <button>{copy}</button>
+          <button>{importedCopy}</button>
           <ParameterShadow copy={dynamicCopy} />
           <StaticSibling />
           <DynamicSibling />
+          <LetShadow />
+          <VarShadow />
+          <FunctionShadow />
+          <ClassShadow />
         </>;
       }
     `,
@@ -410,6 +447,7 @@ test("policy resolves static visible aliases by lexical binding instead of file-
 
   assert.ok(violations.some((violation) => violation.includes("Outer static copy")));
   assert.ok(violations.some((violation) => violation.includes("Nested static copy")));
+  assert.equal(violations.filter((violation) => violation.includes("Outer static copy")).length, 1);
   assert.equal(violations.some((violation) => violation.includes("dynamicCopy")), false);
 });
 
