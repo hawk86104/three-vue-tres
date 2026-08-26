@@ -15,9 +15,11 @@ This file records the current executable boundary. Detailed historical task evid
 - [x] Source-only closure evidence is in
   `docs/superpowers/reports/2026-08-20-aethertwin-bilingual-ui-report.md`.
 
-Browser/build acceptance for this rollout is intentionally pending a new,
-explicit approval naming the environment. Do not infer that approval from the
-source-level test results.
+The separately approved 2026-08-26 portable run completed bilingual
+browser/runtime acceptance in installed Edge and Chrome. It verified the
+Simplified Chinese default, live English switch, refresh reset, 2D/3D/split
+copy, disabled Export explanation, and localized WebGL fallback/retry state.
+This does not extend support to Firefox, macOS, ARM64, or other machines.
 
 ## Completed milestones and task groups
 
@@ -104,7 +106,7 @@ Task 18 and M2.4 are accepted and closed. Task 17 evidence remains separately re
 - [x] Task 19 - truthful documentation/policy evidence assembly (45/45 GREEN; independent review Pass / Approved / Ready Yes)
 - [x] Task 20 - full non-build gate, final review, closure documents, and closure commit
 
-Tasks 0-20 are complete. M2.5 is accepted and M2 is closed while preserving schema v3, exactly twelve native commands, exactly two desktop capabilities, both protected manifest hashes, offline sources, Showroom-only export, Market 2D-only, and the unresolved `57 2` branch-integration guard.
+Tasks 0-20 are complete. M2.5 is accepted and M2 is closed while preserving schema v3, exactly twelve native commands, exactly two desktop capabilities, both protected manifest hashes, offline sources, Showroom-only export, and Market 2D-only. The maintainable baseline branch now reconciles the accepted AetherTwin history with refreshed `origin/master` without rewriting either history.
 
 ## M2.5 Task 20 closure gate
 
@@ -116,7 +118,8 @@ Tasks 0-20 are complete. M2.5 is accepted and M2 is closed while preserving sche
 - [x] Rustfmt and four-crate all-targets Cargo check: exit 0.
 - [x] Rust tests: 302 passed; 2 approved privileged-Windows tests ignored.
 - [x] Final review: Spec Compliance Pass; Code Quality Approved; Critical/Important/Minor None; Ready Yes.
-- [x] Schema v3, 12 commands, 2 capabilities, protected hashes, Demo digest, and `57 2` human-integration guard verified.
+- [x] Schema v3, 12 commands, 2 capabilities, protected hashes, and Demo digest verified.
+- [x] The 193-commit AetherTwin continuation is preserved on `codex/aethertwin-baseline-20260826` together with an explicit merge of `origin/master` at `e3e79cba`.
 
 M2.5 adds no Player, Market 3D/export, publish, MP4, `.twinpack`, GLTF, arbitrary lights/shaders, 3D geometry editing, remote runtime asset, or Sandbox export surface.
 
@@ -137,36 +140,59 @@ Task 5's complete non-build source gate passed after attributable lint, policy, 
 
 Task 6 ran under explicit approval. The final build exited 0 with 3,215 modules and relative assets; the strict localhost server bound `127.0.0.1:4173`; and headed Chromium passed the canonical 2D/3D/split, shared-state, disabled-Export, Back/refresh, offline-request, empty-storage, and WebGL fallback checks. One context loss automatically reconstructed 3D; the second left a complete interactive 2D pane. Final gates passed lint, 14/15 workspace typechecks, Node 53/53, and Vitest 82 files / 1,547 tests. Zero browser console errors remained. No screenshot was captured, and no cross-device visual-correctness or performance result is claimed.
 
-The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and `packages/mode-showroom/src/index.ts` remain protected, excluded, and unstaged. The unresolved `57 2` branch-integration guard remains a human decision.
+The pre-existing working-tree entries `crates/asset-io/Cargo.toml`, `crates/desktop-host/Cargo.toml`, and `packages/mode-showroom/src/index.ts` remain protected, excluded, and unstaged. The baseline PR must use a merge commit and remain pending human review; local `master` is not moved in advance.
 
 ## Windows portable preview
 
 - [x] Task 1 - standard-library loopback host, source gates, and independent review
 - [x] Task 2 - fixed Windows x64 assembler, package policy, and independent review
 - [x] Task 3 - truthful handoff, complete source-only gates, commit, and review
-- [x] Task 4 - explicitly approved package build, EXE/ZIP, runtime acceptance, and cleanup
+- [x] Task 4 - explicitly approved initial package build, EXE/ZIP, runtime acceptance, and cleanup
+- [x] 2026-08-26 baseline - regenerated package, bilingual Edge/Chrome acceptance, WebGL fail-closed repair, integrity, and shutdown
 
 Tasks 1-3 source closure remains anchored by host commit `74b59244`, assembler
 hardening `d37644f6`, source handoff `fe229e03`, and clean review repair
-`a4a2dc92`. Task 4 then ran under fresh explicit approval on 2026-08-20.
+`a4a2dc92`. The current internal preview baseline is:
 
-The exact command `pnpm.cmd package:web-demo:win-x64` built the accepted ZIP
-from source commit `6ec8d499425f7578902fc18799839a00ee9e4bd9`; its SHA-256 was
-`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
-The six fixed root entries, 26 payload hashes, relative HTML references, and an
-ordinary-file extraction under a Chinese-and-space path all verified. Under a
-restricted PATH the EXE used no Node.js or pnpm child process, preferred 4173,
-fell back to another loopback port when occupied, and stopped both listeners on
-process shutdown.
+- artifact: `AetherTwin-Preview-win-x64.zip`;
+- version: `0.1.0`;
+- size: `2,595,766` bytes;
+- SHA-256: `CCC76399566C1056C949D7312333A554A6C791088BEBA6185BD214120D59BADF`;
+- source: `988b16dfc548823b333be4401b9940a410043834`;
+- accepted: `2026-08-26`;
+- status: internal, unsigned, Windows x64 preview baseline;
+- annotated source tag: `aethertwin-preview-v0.1.0-internal.20260826`.
 
-Automated installed Edge and Chrome sessions passed canonical 2D/3D/fixed
-split, shared selection, Back/refresh/restart reset, desktop-only disabled
-Export, empty storage, loopback/Blob/data-only requests, WebGL2, and 2D survival
-after forced context loss. Runtime findings in Windows `.cmd` spawning, Pixi's
-strict-CSP shader path, and Blob fetch CSP were repaired in `4d3e84ff`,
-`cf1c8bc6`, and `6ec8d499`. Final source gates passed lint, 14/15 workspace
-typechecks, Node 73/74 with one privileged-symlink skip, Vitest 82/82 files and
-1,547/1,547 tests, Rust fmt/check and 18/18 host tests, and diff check. Generated
-artifacts and extraction paths were safely removed after verification. No
-screenshot, signing, cross-device visual certification, or performance result
-is claimed.
+The exact command remains `pnpm.cmd package:web-demo:win-x64`. The ignored ZIP
+is retained at `artifacts/AetherTwin-Preview-win-x64.zip`; it is not committed
+or published. Verification covered 27 archive entries, `BUILD_INFO.json`, all
+26 payload hashes, relative HTML references, and extraction under a
+Chinese-and-space path. Under restricted PATH the EXE used no Node.js or pnpm
+child process, preferred 4173, fell back to 57448 when occupied, and released
+both listeners on shutdown.
+
+Installed Edge and Chrome passed the Chinese default, live English switch,
+canonical 2D/3D/fixed split, shared selection, Back/refresh/restart reset,
+desktop-only disabled Export, empty storage, loopback/Blob-only requests, and
+normal WebGL2. Source `988b16df` also makes initial WebGL creation fail closed:
+with WebGL2 deliberately unavailable, the app returned to complete interactive
+2D, disabled 3D/split, showed localized unavailable/retry copy, and remained
+stable across retry. Context-creation console errors were expected only during
+that injected failure.
+
+Final source gates passed lint, 14/15 workspace typechecks, Node policy 80/81
+with one Windows symlink-privilege skip, Vitest 94/94 files and 1,720/1,720
+tests, Rust fmt/check, all 18 host tests, and diff check. Temporary staging,
+extraction, browser caches, and processes were cleaned; only the ignored ZIP
+was retained. No screenshot, signing, installer, public release, Firefox,
+macOS, ARM64, cross-device visual certification, or performance result is
+claimed.
+
+## Next executable milestones
+
+- M3 Market workflow is next and requires a separately approved specification
+  for regions, booths, vendor import, POIs, routing, search, accessibility, and
+  guide-map export.
+- M4 Player/media remains deferred.
+- M5 validation, accessibility hardening, interaction polish, and measured
+  performance work remains deferred; no performance claim exists today.

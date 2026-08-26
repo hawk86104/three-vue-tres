@@ -1,15 +1,17 @@
 # AetherTwin engineering handoff
 
-Updated: 2026-08-20
+Updated: 2026-08-26
 Product workspace: `aethertwin/`
-Active branch: `codex/aethertwin-m2`
+Active branch: `codex/aethertwin-baseline-20260826`
 Local Web Demo source baseline: `5f49ace12d7226a9a3eace727b90f87c6aa73f13` (the Task 5 closure commit hash is intentionally not invented before commit)
-Portable preview accepted package source: `6ec8d499425f7578902fc18799839a00ee9e4bd9` (generated package cleaned after acceptance)
+Portable preview internal baseline source: `988b16dfc548823b333be4401b9940a410043834` (retained ignored ZIP)
 
 ## 1. Current outcome
 
 M0 through M2.5 are accepted and M2 is closed. The dedicated Local Web Demo source implementation and Task 5 source gate are complete, and Task 6 localhost/browser/WebGL runtime acceptance passed under explicit approval.
-The Windows portable preview completed its separately approved package, Edge/Chrome runtime, integrity, shutdown, and cleanup acceptance on 2026-08-20.
+The retained Windows portable preview completed its separately approved package,
+bilingual Edge/Chrome runtime, WebGL fail-closed, integrity, and shutdown
+acceptance on 2026-08-26.
 
 Showroom defaults to 2D, supports synchronized 3D plus fixed 50/50 split, and exports project-bound PNG through two fixed presets. Market remains 2D-only with no Export action. Player remains deferred.
 
@@ -26,9 +28,22 @@ The ignored execution ledger `.superpowers/sdd/progress.md` is the authoritative
 
 ## 2. Branch, baseline, and integration guard
 
-The active branch remains `codex/aethertwin-m2` with local `master` as its baseline. Current `git rev-list --left-right --count master...origin/master` is `57 2`: local `master` and `origin/master` remain unresolved and diverged.
+The original M2.5 closure checkpoint recorded `57 2` and carried the explicit
+guard: do not rebase, merge, or reset either history without a human integration
+decision. That approval was granted for this baseline operation. After the
+required remote refresh, the actual pre-integration divergence was `57 16`.
 
-Do not rebase, merge, reset, or change the baseline during this handoff. Final integration of the divergent local and remote histories is a human decision.
+The maintainable integration branch `codex/aethertwin-baseline-20260826`
+starts from the accepted AetherTwin source `988b16df` and contains an explicit
+non-fast-forward merge of `origin/master` at `e3e79cba`. Before that merge,
+local `master` was 57 commits ahead and 16 behind the refreshed remote, while
+`codex/aethertwin-m2` was exactly 193 commits ahead of local `master`. The
+integration branch preserves both histories without rebase, squash,
+cherry-pick, or force-push.
+
+Local `master` and `origin/master` intentionally remain unmoved until the
+baseline PR is reviewed. Merge that PR with a merge commit only; after approval,
+refresh and fast-forward local `master` to the resulting `origin/master`.
 
 ## Bilingual Studio UI source closure
 
@@ -47,9 +62,11 @@ logs, and the portable-host console are excluded.
 
 The bilingual rollout's source-only gate is recorded in
 `docs/superpowers/reports/2026-08-20-aethertwin-bilingual-ui-report.md`.
-It does not constitute browser, visual, GPU, build, dev-server, Playwright,
-screenshot, or portable-runtime acceptance. Obtain fresh explicit approval
-that names the intended environment before running any such acceptance.
+The separately approved 2026-08-26 portable run then verified Simplified
+Chinese by default, live English switching, refresh reset, editor 2D/3D/split
+copy, disabled Export copy, and the WebGL fallback state in installed Edge and
+Chrome. It is bounded evidence for this machine and artifact, not a Firefox,
+macOS, ARM64, screenshot, cross-device visual, or performance result.
 
 ## 3. Locked contracts
 
@@ -80,7 +97,11 @@ Materials resolve deterministically for space floors, walls, and fixtures. Missi
 
 Renderer records use stable keys and incremental reconciliation. New records attach before old records retire. Async texture completions are generation guarded. Geometry, materials, textures, and temporary targets are released exactly once by the renderer resource registry; ProjectStore source leases are released only through the ProjectStore source port, while the dedicated Web Demo backend owns its seeded asset Blob URLs.
 
-A WebGL failure leaves 2D intact. Context loss gets one automatic recovery attempt. A further failure moves the renderer to `disabled`; explicit retry starts a fresh recovery round.
+An initial WebGL creation failure now fails closed before partial 3D
+publication: Studio returns to a complete 2D view, disables 3D/split, and
+exposes a localized explicit retry. Context loss gets one automatic recovery
+attempt. A further failure moves the renderer to `disabled`; explicit retry
+starts a fresh recovery round.
 
 M2.4 exposes the immutable camera/offscreen `SceneExportPort` for M2.5. It does not expose an Export control or create export artifacts.
 
@@ -149,7 +170,7 @@ The first lint run exited 1 on one Web Demo test type-only import. The first Nod
 
 Independent Task 5 source review identified four Important and two Minor findings. Duplicate seed paths, duplicate manifest consumption, strict port binding, Blob URL ownership wording, HANDOFF ordering, and the recorded commit scope were corrected; the three behavioral repairs each had a focused failing RED followed by GREEN. Clean re-review returned Critical/Important/Minor 0, Spec Compliance Pass, Code Quality Approved, Ready Yes.
 
-Task 6 then ran under explicit runtime approval. The dedicated build exited 0 after transforming 3,215 modules and emitted relative assets. Vite bound the strict address `http://127.0.0.1:4173`; the controlled server is intentionally still running for the requested preview. Headed Chromium verified the canonical inventory, 2D/3D/fixed split, shared selection and floor, disabled desktop-only Export, fresh Back/refresh behavior, WebGL2, one automatic context reconstruction, and second-loss fallback to a complete interactive 2D pane. All 181 recorded requests were loopback or same-origin Blob URLs; localStorage, sessionStorage, and cookies were empty. The final browser console contained zero errors. No screenshot was captured and no cross-device visual-correctness or performance claim is made.
+Task 6 then ran under explicit runtime approval. The dedicated build exited 0 after transforming 3,215 modules and emitted relative assets. Vite bound the strict address `http://127.0.0.1:4173`. Headed Chromium verified the canonical inventory, 2D/3D/fixed split, shared selection and floor, disabled desktop-only Export, fresh Back/refresh behavior, WebGL2, one automatic context reconstruction, and second-loss fallback to a complete interactive 2D pane. All 181 recorded requests were loopback or same-origin Blob URLs; localStorage, sessionStorage, and cookies were empty. The final browser console contained zero errors, and the controlled server was shut down after acceptance. No screenshot was captured and no cross-device visual-correctness or performance claim is made.
 
 Runtime findings were repaired with focused RED/GREEN coverage: canonical assets bypass Vite inlining, Pixi receives explicit SVG parser metadata, deterministic 2x2 raster fixtures upload to WebGL, R3F recovery waits for the retired nested root, the supported shadow mode is used, and the shell provides a local favicon. Final gates passed lint, typecheck for 14/15 workspace projects, Node 53/53, Vitest 82/82 files and 1,547/1,547 tests, the final build, and diff checks.
 
@@ -158,41 +179,53 @@ Runtime findings were repaired with focused RED/GREEN coverage: canonical assets
 
 Tasks 1-3 remain anchored by host commit `74b59244`, assembler hardening
 `d37644f6`, source handoff `fe229e03`, and clean review repair `a4a2dc92`.
-Task 4 then ran under fresh explicit approval on 2026-08-20. Runtime repairs
-were committed as `4d3e84ff` (Windows `.cmd` launch), `cf1c8bc6` (Pixi strict
-CSP), and `6ec8d499` (owned Blob fetches under CSP).
+The earlier Task 4 package acceptance on 2026-08-20 was followed by bilingual
+UI acceptance and the fail-closed WebGL repair. The current retained baseline
+was accepted on 2026-08-26 at source `988b16df`.
 
 The exact entry point remains `pnpm.cmd package:web-demo:win-x64`; it is not an
-install, test, postinstall, or ordinary build hook. The accepted internal,
-unsigned Windows 10/11 x64 artifact was built from
-`6ec8d499425f7578902fc18799839a00ee9e4bd9` and had ZIP SHA-256
-`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
-Its six fixed root entries, all 26 payload checksums, all relative HTML
+install, test, postinstall, or ordinary build hook. The fixed baseline metadata
+is:
+
+- artifact: `AetherTwin-Preview-win-x64.zip`;
+- version: `0.1.0`;
+- size: `2,595,766` bytes;
+- SHA-256: `CCC76399566C1056C949D7312333A554A6C791088BEBA6185BD214120D59BADF`;
+- source: `988b16dfc548823b333be4401b9940a410043834`;
+- accepted: `2026-08-26`;
+- status: internal, unsigned, Windows x64 preview baseline;
+- annotated source tag: `aethertwin-preview-v0.1.0-internal.20260826`.
+
+The ignored ZIP is retained at `artifacts/AetherTwin-Preview-win-x64.zip` and
+is not committed or publicly released. Its six fixed root entries, 27 total
+archive entries, all 26 payload checksums, `BUILD_INFO.json`, all relative HTML
 references, and ordinary-file containment verified after extraction to a path
 containing Chinese characters and spaces.
 
 With PATH limited to Windows system tools, the EXE had no Node.js or pnpm child
-process. It bound `127.0.0.1:4173` when free and `127.0.0.1:50073` during the
-controlled occupied-port run. Automated sessions with the installed Edge and
-Chrome binaries verified canonical 2D, synchronized 3D, fixed split, shared
-selection, Back/refresh/restart reset, disabled desktop-only Export, WebGL2,
-and an intact 2D pane after forced context loss. Recorded requests were only
-loopback or owned Blob/data URLs; localStorage, sessionStorage, cookies,
-IndexedDB, Cache Storage, and service-worker registrations were empty. Stopping
-each verified host process closed its listener.
+process. It bound `127.0.0.1:4173` when free and `127.0.0.1:57448` during the
+controlled occupied-port run. Automated sessions with installed Edge and
+Chrome verified Simplified Chinese by default, live English switching,
+canonical 2D, synchronized 3D, fixed split, shared selection,
+Back/refresh/restart reset, disabled desktop-only Export, and WebGL2. Recorded
+requests were only loopback or owned Blob URLs; browser storage remained empty.
+Stopping the console ended the host and released both tested listeners.
 
-Final source bytes passed lint, 14/15 workspace typechecks, Node 73/74 with one
-privileged-Windows symlink skip, Vitest 82/82 files and 1,547/1,547 tests,
-Rust fmt/check, all 18 host tests, and `git diff --check`. The only non-failing
-notices were the known JSDOM canvas messages and Vite's large-chunk warning.
+Source `988b16df` repairs initial WebGL creation so it fails closed rather than
+publishing a partial or stuck 3D state. With WebGL2 deliberately unavailable,
+the app returned automatically to an interactive 2D view, disabled 3D/split,
+showed `3D 预览不可用` and `重试 3D`, and remained stable after retry. The
+Three.js context-creation errors observed during this injection are expected;
+normal Edge and Chrome paths had no unexpected console errors.
 
-After hash and shutdown verification, the generated ZIP/staging tree, Studio
-`dist/`, and the four explicitly resolved acceptance extraction directories
-were removed. The artifact is reproducible by the exact command above but is
-not currently retained in the worktree. This remains bounded evidence for this
-machine and the installed Edge/Chrome versions; no screenshot, signing,
-installer, external distribution, cross-device certification, or performance
-result is claimed.
+Final source bytes passed lint, 14/15 workspace typechecks, Node policy 80/81
+with one Windows symlink-privilege skip, Vitest 94/94 files and 1,720/1,720
+tests, Rust fmt/check, all 18 host tests, and `git diff --check`. Temporary
+staging, extraction, browser-cache, and runtime processes were removed; the
+verified ZIP alone remains ignored. This is bounded evidence for this machine
+and installed Edge/Chrome versions; no screenshot, signing, installer, external
+distribution, Firefox/macOS/ARM64 support, cross-device certification, or
+performance result is claimed.
 
 ## 10. Protected files
 
@@ -202,7 +235,9 @@ Do not modify, format, restore, stage, or commit these user-protected working-tr
 - `crates/desktop-host/Cargo.toml` — SHA-256 `3713E909384117E3D3E8D63B246642A44FFEA51F90CCAF4D64B4C601B6C5900E`
 - `packages/mode-showroom/src/index.ts`: preserved pre-existing working-tree entry; no Web Demo content change
 
-The Local Web Demo and portable-preview scopes exclude all three entries. The human integrator still owns final branch integration.
+The Local Web Demo and portable-preview scopes exclude all three entries. Their
+original worktree modifications remain untouched and must not enter the
+baseline PR.
 
 ## 11. Explicit exclusions
 
@@ -219,4 +254,9 @@ Local Web Demo Task 6 and portable Task 4 are separate, explicitly approved runt
 
 ## 12. Next operation
 
-Portable Task 4 acceptance is complete and generated artifacts are cleaned. The next human decision is branch integration or a fresh regeneration with the exact package command. Do not rebase, merge, reset, change the baseline, or resolve the `57 2` divergence without a human integration decision.
+The internal preview baseline is retained and identified by
+`aethertwin-preview-v0.1.0-internal.20260826`. The next operation is human
+review of `codex/aethertwin-baseline-20260826` against `master`. Do not
+squash, rebase, force-push, publish the ZIP, or move local `master` before that
+review; after an approved merge, synchronize local `master` with
+`git merge --ff-only origin/master`.

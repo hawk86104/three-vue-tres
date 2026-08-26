@@ -34,9 +34,9 @@ The Task 5 non-build source gate passed after recorded, attributable repairs: li
 
 ## Windows portable preview
 
-The internal, unsigned Windows 10/11 x64 portable preview completed its
-separately approved package and runtime acceptance on 2026-08-20. Regenerate it
-from `aethertwin/` with:
+The current internal, unsigned Windows 10/11 x64 portable preview baseline
+completed package, bilingual UI, runtime, WebGL fallback, integrity, and
+shutdown acceptance on 2026-08-26. Regenerate it from `aethertwin/` with:
 
 ```powershell
 pnpm.cmd package:web-demo:win-x64
@@ -49,26 +49,44 @@ installer. The visible console prints the actual loopback URL, preferring
 occupied. If the default browser cannot open, copy that printed URL. Close the
 console to stop the preview. Edge and Chrome are the acceptance baseline.
 
-The accepted ZIP was built from source commit
-`6ec8d499425f7578902fc18799839a00ee9e4bd9` and had SHA-256
-`AC144D56A47EC23C169B0616E7FF6A7596D2302C3CCADD07A0DE331B657E0F84`.
-Its fixed root contained `AetherTwin-Preview.exe`, `app/`, `README.txt`,
-`BUILD_INFO.json`, `SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`; all 26
-payload checksums and all relative HTML references were verified after
-extraction to a path containing Chinese characters and spaces. The generated
-ZIP, staging tree, Studio `dist/`, and acceptance extraction were then removed
-as required by the artifact policy, so this hash records the accepted artifact
-rather than promising that the ZIP remains in the worktree.
+The fixed internal preview baseline is:
+
+- artifact: `AetherTwin-Preview-win-x64.zip`;
+- version: `0.1.0`;
+- size: `2,595,766` bytes;
+- SHA-256: `CCC76399566C1056C949D7312333A554A6C791088BEBA6185BD214120D59BADF`;
+- source: `988b16dfc548823b333be4401b9940a410043834`;
+- accepted: `2026-08-26`;
+- status: internal, unsigned, Windows x64 preview baseline;
+- annotated source tag: `aethertwin-preview-v0.1.0-internal.20260826`.
+
+The ZIP is retained locally at `artifacts/AetherTwin-Preview-win-x64.zip` but
+remains ignored and is not committed or published. Its fixed root contains
+`AetherTwin-Preview.exe`, `app/`, `README.txt`, `BUILD_INFO.json`,
+`SHA256SUMS.txt`, and `THIRD_PARTY_NOTICES.md`. Independent verification found
+27 archive entries, matched `BUILD_INFO.json` to the source above, verified all
+26 payload checksums, and validated relative HTML references after extraction
+to a path containing Chinese characters and spaces.
 
 With PATH restricted to Windows system tools, the EXE used no Node.js or pnpm
-child process, bound `127.0.0.1:4173`, and selected another loopback port when
-4173 was deliberately occupied. Automated sessions using the installed Edge
-and Chrome binaries verified the canonical Showroom in 2D, synchronized 3D,
-and fixed split; shared selection, Back/refresh/restart reset behavior, the
-disabled desktop-only Export explanation, WebGL2, and 2D survival after forced
-WebGL context loss. Observed requests were limited to loopback plus owned
-Blob/data URLs, browser storage remained empty, and stopping each console
-process closed its listener.
+child process, bound `127.0.0.1:4173` when available, and selected
+`127.0.0.1:57448` during the controlled occupied-port run. Installed Edge and
+Chrome verified Simplified Chinese by default, English as the live optional
+language, the canonical Showroom in 2D, synchronized 3D and fixed split, shared
+selection, Back/refresh/restart reset behavior, and the disabled desktop-only
+Export explanation. Observed requests were limited to loopback plus owned Blob
+URLs, browser storage remained empty, and stopping the console released the
+host process and both tested listeners.
+
+The accepted WebGL repair at source `988b16df` makes initial renderer creation
+fail closed. With WebGL2 deliberately unavailable, the preview automatically
+returned to a complete interactive 2D view, disabled 3D and split, displayed
+the localized `3D 预览不可用` state with `重试 3D`, and remained stable across
+retry. Three.js context-creation errors were expected only in this injected
+failure case; the normal Edge and Chrome paths had no unexpected console
+errors. The final source gates passed lint and typecheck, Node policy 80/81
+with one Windows symlink-privilege skip, Vitest 94/94 files and 1,720/1,720
+tests, Rust fmt/check, all 18 portable-host tests, and `git diff --check`.
 
 This source does not add browser persistence, project open/save or recovery,
 native dialogs, remote services, `file://`, a single-file HTML build, Player,
@@ -100,10 +118,12 @@ console are intentionally outside this translation scope.
 
 The bilingual source gate consists of the localization, visible-action, Web
 Demo, and offline policy tests; the focused Studio/editor-shell Vitest suite;
-both TypeScript checks; lint; and `git diff --check`. Build, dev server,
-browser, Playwright, screenshot, WebGL, and packaged-runtime acceptance remain
-separately approved operations. Bilingual browser/build acceptance has not run
-as part of this source closure.
+both TypeScript checks; lint; and `git diff --check`. The separately approved
+2026-08-26 portable acceptance then verified the Chinese default, live English
+switch, refresh reset, 2D/3D/split copy, disabled Export explanation, and WebGL
+fallback copy in installed Edge and Chrome. This remains evidence for the
+retained internal artifact on this machine, not a Firefox, macOS, ARM64,
+cross-device visual-correctness, or performance claim.
 
 ## Ownership and dependency direction
 
