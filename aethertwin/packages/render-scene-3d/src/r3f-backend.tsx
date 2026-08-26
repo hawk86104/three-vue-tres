@@ -31,10 +31,11 @@ import {
   UnsignedByteType,
   Vector4,
   WebGLRenderTarget,
+  WebGLRenderer,
   type Object3D,
   type Texture,
   type ToneMapping,
-  type WebGLRenderer,
+  type WebGLRendererParameters,
 } from "three";
 import {
   renderSceneOffscreen,
@@ -294,6 +295,9 @@ export class R3FSceneSurface {
   constructor(
     private readonly dependencies: SceneRendererDependencies,
     private readonly textureLoader: SceneTextureLoader = new TextureLoader(),
+    private readonly createWebGLRenderer: (
+      parameters: WebGLRendererParameters,
+    ) => WebGLRenderer = (parameters) => new WebGLRenderer(parameters),
   ) {
     this.rootGroup.name = "AetherTwinSceneRecords";
   }
@@ -617,10 +621,18 @@ export class R3FSceneSurface {
             near: 0.01,
             far: 10_000,
           }}
-          gl={{
-            antialias: true,
-            alpha: false,
-            powerPreference: "high-performance",
+          gl={(parameters) => {
+            try {
+              return this.createWebGLRenderer({
+                ...parameters,
+                antialias: true,
+                alpha: false,
+                powerPreference: "high-performance",
+              });
+            } catch (error) {
+              this.failInitialization(error);
+              throw error;
+            }
           }}
           onCreated={(state) => this.handleCreated(state)}
           onPointerMissed={() => this.select(null)}

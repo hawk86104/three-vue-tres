@@ -61,6 +61,50 @@ describe("R3F nested React root lifecycle", () => {
     expect(renderer.shadowMap).toEqual({ enabled: true, type: 1 });
   });
 
+  it("rejects initialization when the WebGL renderer factory fails", async () => {
+    const failure = new Error("WebGL unavailable");
+    const surface = new R3FSceneSurface(
+      dependencies,
+      undefined,
+      () => {
+        throw failure;
+      },
+    );
+    const initialization = surface.init(document.createElement("div"), {
+      onSelectionChange() {},
+      onCameraChange() {},
+      onContextLost() {},
+    }).catch((error: unknown) => error);
+    const rendered = domRoot.render.mock.lastCall?.[0] as {
+      readonly props: {
+        readonly children: {
+          readonly props: {
+            readonly gl: (parameters: {
+              readonly canvas: HTMLCanvasElement;
+              readonly antialias: boolean;
+              readonly alpha: boolean;
+              readonly powerPreference: string;
+            }) => unknown;
+          };
+        };
+      };
+    };
+
+    try {
+      expect(typeof rendered.props.children.props.gl).toBe("function");
+      expect(() => rendered.props.children.props.gl({
+        canvas: document.createElement("canvas"),
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance",
+      })).toThrow(failure);
+      await expect(initialization).resolves.toBe(failure);
+    } finally {
+      surface.destroy();
+      await initialization;
+    }
+  });
+
   it("defers nested root unmount until the parent cleanup commit completes", async () => {
     domRoot.render.mockClear();
     domRoot.unmount.mockClear();
