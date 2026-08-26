@@ -136,7 +136,7 @@ describe("development scene gallery", () => {
       />,
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("WEB_SANDBOX_DISABLED");
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(screen.queryByRole("heading", {
       name: "AetherTwin 3D Scene Gallery",
     })).not.toBeInTheDocument();
@@ -156,7 +156,7 @@ describe("development scene gallery", () => {
 
     expect(moduleEvaluation).not.toHaveBeenCalled();
     render(<ProductionApp forceBackend="sandbox" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("WEB_SANDBOX_DISABLED");
+    expect(await screen.findByRole("alert")).toHaveTextContent("操作未能完成，请重试。");
     expect(moduleEvaluation).not.toHaveBeenCalled();
   });
 });

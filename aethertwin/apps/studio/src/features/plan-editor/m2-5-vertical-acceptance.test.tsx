@@ -100,7 +100,7 @@ describe("M2.5 Studio vertical acceptance", () => {
 
     const twoD = screen.getByRole("button", { name: "2D" });
     const threeD = screen.getByRole("button", { name: "3D" });
-    const split = screen.getByRole("button", { name: "Split" });
+    const split = screen.getByRole("button", { name: "分屏" });
     expect(twoD).toHaveAttribute("aria-pressed", "true");
     await user.click(split);
     await waitFor(() => expect(renderer.initCount).toBe(1));
@@ -110,10 +110,10 @@ describe("M2.5 Studio vertical acceptance", () => {
     await user.click(threeD);
     expect(fixture.sessionStore.getState().viewMode).toBe("3d");
 
-    const exportButton = screen.getByRole("button", { name: "Export" });
+    const exportButton = screen.getByRole("button", { name: "导出 PNG" });
     await waitFor(() => expect(exportButton).toBeEnabled());
     await user.click(exportButton);
-    const panel = screen.getByRole("complementary", { name: "Export PNG" });
+    const panel = screen.getByRole("complementary", { name: "导出 PNG" });
     const options = within(panel).getAllByRole("option");
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveValue("full-hd");
@@ -122,13 +122,13 @@ describe("M2.5 Studio vertical acceptance", () => {
     expect(document.querySelector(".studio-scene-viewport"))
       .toHaveClass("studio-scene-viewport--export");
 
-    await user.click(within(panel).getByRole("button", { name: "Export PNG" }));
+    await user.click(within(panel).getByRole("button", { name: "导出 PNG" }));
     await waitFor(() => expect(render).toHaveBeenCalledWith(captureRef.current, {
       preset: "full-hd",
       width: 1920,
       height: 1080,
     }));
-    expect(within(panel).getByRole("status")).toHaveTextContent("Rendering");
+    expect(within(panel).getByRole("status")).toHaveTextContent("正在渲染");
     expect(document.querySelector(".studio-scene-input-lock")).toBeInTheDocument();
     expect(twoD).toBeDisabled();
     expect(threeD).toBeDisabled();
@@ -143,9 +143,9 @@ describe("M2.5 Studio vertical acceptance", () => {
     await waitFor(() => {
       expect(fixture.sessionStore.getState().sessionGeneration).toBe(generation + 1);
     });
-    expect(screen.queryByRole("complementary", { name: "Export PNG" }))
+    expect(screen.queryByRole("complementary", { name: "导出 PNG" }))
       .not.toBeInTheDocument();
-    expect(document.activeElement).not.toHaveAccessibleName("Export");
+    expect(document.activeElement).not.toHaveAccessibleName("导出 PNG");
     renderGate.resolve({
       width: 1920,
       height: 1080,
