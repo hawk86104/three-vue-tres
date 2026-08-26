@@ -2,9 +2,13 @@
 
 English | [简体中文](./README_zh.md)
 
-## An Open-Source Framework for Rapid 3D Visualization Delivery
+## An AI-Collaborative Open-Source Web 3D Ecosystem
 
-TvT.js brings ThreeJS, Vue 3, and TresJS together for digital twins, industrial visualization, online 3D editors, and plugin-based project delivery. It is permanently open-source and free for commercial use.
+From requirements and Spec-driven AI development to image-to-3D generation, scene editing, and plugin-based delivery, TvT.js helps turn 3D ideas into real projects instead of one-off demos.
+
+TvT.js is an open-source Web 3D engineering ecosystem by ICEGL. Built on Three.js, Vue 3, TresJS, and Fes.js, it is designed for digital twins, industrial visualization, online 3D editors, and plugin-based project delivery. It is permanently open-source and free for commercial use.
+
+> **Requirement → Spec Constraints → AI-Assisted Implementation → Scene Validation → Plugin or Source-Code Delivery**
 
 <p align="center">
   <a href="https://github.com/hawk86104/three-vue-tres" target="_blank">
@@ -12,6 +16,9 @@ TvT.js brings ThreeJS, Vue 3, and TresJS together for digital twins, industrial 
   </a>
   <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/hawk86104/three-vue-tres">
   <img src="https://img.shields.io/github/license/hawk86104/three-vue-tres" />
+  <a href="https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html" target="_blank">
+    <img alt="AI Spec Driven" src="https://img.shields.io/badge/AI-Spec--Driven-6C63FF">
+  </a>
   <a target="_black" href="https://gitee.com/ice-gl/icegl-three-vue-tres">
     <img src="https://gitee.com/ice-gl/icegl-three-vue-tres/badge/star.svg?theme=dark" alt="gitee-starts" />
   </a>
@@ -48,6 +55,28 @@ TvT.js brings ThreeJS, Vue 3, and TresJS together for digital twins, industrial 
 </table>
 <br/>
 
+# 🤖 AI Collaboration: From a Requirement to a Deliverable 3D Project
+
+AI is now part of two connected workflows in TvT.js: 3D content creation and engineering development. It can help generate models and scene concepts, while also supporting requirements analysis, plugin implementation, and ongoing changes. Scene configuration, plugin contracts, and versioned Specs connect these workflows so that people and AI can work from the same project context.
+
+| Where AI Participates | TvT.js Practice | Outcome |
+| --- | --- | --- |
+| Requirements and architecture | The `openspec/` baseline captures framework rules, plugin contracts, runtime modes, and integration boundaries; larger changes can be described through `proposal`, `spec`, `design`, and `tasks` documents | Traceable requirements, verifiable behavior, and bounded changes |
+| Engineering collaboration | The `tvt-js-plugin-builder` AI skill captures conventions for plugin directories, routes, assets, dependencies, and cross-platform integrations | AI implements within project conventions instead of producing disposable code |
+| 3D content creation | The open-source Tencent Hunyuan3D workflow can be deployed locally to generate 3D models from images and bring them into TvT.js | 3D assets that remain editable and ready for scene integration |
+| Scene authoring | The zone scene editor can work with AI-generated assets and continues to explore MCP + LLM text-to-scene generation | A path from natural language or generated assets to editable visual scenes |
+| Reuse and delivery | A shared plugin contract, dynamic component service, scene configuration, and source export workflow | AI-assisted results that remain reviewable, reusable, maintainable, and deliverable |
+
+This is more than adding an AI button beside a 3D framework. Specs define **what the result must satisfy**; AI skills explain **how work should be completed in this repository**; plugins and editors then carry generated results into a maintainable delivery workflow.
+
+- [Explore the AI Collaboration and Spec Workflow](https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html)
+- [View the TvT.js OpenSpec Baseline](./openspec/)
+- [View the TvT.js Plugin Development AI Skill](./skills/tvt-js-plugin-builder/)
+- [Try Hunyuan3D Image-to-3D](https://opensource.icegl.cn/#/plugins/hunyuan3D/index)
+- [Open the Zone Scene Editor](https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index)
+
+> **Capability boundaries:** Image-to-3D requires a separately deployed model service, model weights, and suitable hardware. MCP + LLM text-to-scene generation remains an area of ongoing exploration. AI can accelerate generation, modification, and review, but business meaning, visual quality, performance budgets, licensing boundaries, and final releases still require human judgment.
+
 ## 🇨🇳 Web 3D Visualization Framework for Domestic / Xinchuang Environments 🚩
 
 For full localization and compatibility details, see the documentation: [Details](https://docs.icegl.cn/docs/three-vue-tres/guide/localization.html)
@@ -60,21 +89,22 @@ For full localization and compatibility details, see the documentation: [Details
 
 <a style="display:block;width:800px;max-width:100%;" href="https://www.bilibili.com/video/BV1JHqRB7ERB"><img src="./preview/bilibili.gif" alt="tres.js webgl three.js"></a>
 
-# Technical Ecosystem `@ThreeJS @Vue3.x @TresJS`
+# Technical Foundations & Ecosystem `@ThreeJS @Vue3.x @TresJS @FesJS`
 
-> Built by icegl. Permanently open-source, free for commercial use, and continuously updated. Please click the Star button in the upper-right corner to follow the project.
+> Built by ICEGL. Permanently open-source, free for commercial use, and continuously evolving. Star ⭐ the project to follow an open Web 3D ecosystem built for the AI era.
 
-This project sits at the intersection of three major ecosystems:
+The project is built on four open-source foundations. Plugins, editors, dynamic components, and an AI collaboration workflow extend this foundation from rendering into project delivery:
 
 | Ecosystem | Description |
 | --- | --- |
 | 🎲 [ThreeJS](https://threejs.org)<br><a href="https://www.npmjs.com/package/three"><img src="https://img.shields.io/npm/v/three?label=three" alt="three npm version"></a> | A widely used JavaScript 3D library for browser rendering. |
 | 🍀 [Vue3.x](https://cn.vuejs.org)<br><a href="https://www.npmjs.com/package/vue"><img src="https://img.shields.io/npm/v/vue?label=vue&color=%2342b883" alt="vue npm version"></a> | A modern frontend framework that is approachable, high-performance, and flexible across many Web use cases. |
 | ⚡ [TresJS](https://tresjs.org)<br><a href="https://www.npmjs.com/package/@tresjs/core"><img src="https://img.shields.io/npm/v/@tresjs/core?color=%2382DBCA&label=%40tresjs%2Fcore&logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTExLjY4NTQgMy40MjkxNkMxMi4wNzM4IDIuNzgxODIgMTMuMDEyIDIuNzgxODIgMTMuNDAwNCAzLjQyOTE1TDE5LjE3NzEgMTMuMDU2OUMxOS41NzcgMTMuNzIzNSAxOS4wOTY5IDE0LjU3MTQgMTguMzE5NiAxNC41NzE0SDYuNzY2MjRDNS45ODg5NCAxNC41NzE0IDUuNTA4ODMgMTMuNzIzNSA1LjkwODc1IDEzLjA1NjlMMTEuNjg1NCAzLjQyOTE2WiIgZmlsbD0iIzgyREJDNSIvPgo8cGF0aCBkPSJNMTUuNjg1NyAxMC41NDI5QzE1LjY4NTcgOS45OTA1OSAxNi4xMzM0IDkuNTQyODggMTYuNjg1NyA5LjU0Mjg4SDI2QzI2LjU1MjIgOS41NDI4OCAyNyA5Ljk5MDU5IDI3IDEwLjU0MjlWMTkuODU3MkMyNyAyMC40MDk0IDI2LjU1MjIgMjAuODU3MiAyNiAyMC44NTcySDE2LjY4NTdDMTYuMTMzNCAyMC44NTcyIDE1LjY4NTcgMjAuNDA5NCAxNS42ODU3IDE5Ljg1NzJWMTAuNTQyOVoiIGZpbGw9IiM0RjRGNEYiLz4KPGNpcmNsZSBjeD0iMTYiIGN5PSIyMiIgcj0iNiIgZmlsbD0iI0VGQUMzNSIvPgo8L3N2Zz4K" alt="tres npm version"></a> | A declarative Vue 3 way to build Three.js-powered 3D applications on the frontend. |
+| 🌈 [Fes.js](https://fesjs.mumblefe.cn)<br><a href="https://www.npmjs.com/package/@fesjs/fes"><img src="https://img.shields.io/npm/v/%40fesjs%2Ffes?label=%40fesjs%2Ffes" alt="fesjs npm version"></a> | Provides the routing, layouts, data models, permissions, internationalization, and API conventions needed to deliver production applications. |
 
 ## ✨ Dynamic Component Publishing & Loading Service: [🌏 dcser.icegl.cn](https://dcser.icegl.cn/)
 
-> A dynamic component publishing and loading service built around the tvt.js ecosystem, designed for more flexible modular application delivery.
+> A dynamic component publishing and loading service built around the TvT.js ecosystem for flexible modular application delivery. Component requirements can use Specs to define registration formats, parameter contracts, previews, and editor compatibility, allowing both human-built and AI-assisted components to be published independently, loaded remotely, configured, and evolved over time.
 
 <a style="display:block;width:800px;max-width:100%;" href="https://dcser.icegl.cn"><img src="./preview/dcser.gif" alt="tres.js webgl three.js"></a>
 
@@ -93,7 +123,7 @@ This project sits at the intersection of three major ecosystems:
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index"><strong>Online 3D Scene Editor</strong></a><br>
       <sub>Free source export + secondary development</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zone3Deditor/preview/index.png" alt="Online 3D Scene Editor">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://cdn.index.icegl.cn/uploads/20250519/94fbce573ef3a2ba59c1100a08339857.png" alt="Online 3D Scene Editor">
       </a>
     </td>
     <td width="50%" align="center" valign="top" style="padding:12px;width:50%;vertical-align:top;">
@@ -258,6 +288,8 @@ More demos are available on the preview site.
 
 ## User Guide: [🌏 docs.icegl.cn](https://docs.icegl.cn/)
 
+> Recommended starting point: [🤖 AI Collaboration and Spec Workflow](https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html). It covers image-to-3D generation, the OpenSpec baseline, the AI plugin development skill, and a workflow in which requirements become constraints before implementation moves toward delivery.
+
 <table style="border: none; width: 100%; text-align: center;">
   <tr>
     <td style="padding:10px;font-size:1.2em;">
@@ -311,7 +343,7 @@ More demos are available on the preview site.
 
 # 🧩 Rich Plugin Marketplace: [🌏 tvtstore](https://www.icegl.cn/tvtstore)
 
-#### [🌏 www.icegl.cn/tvtstore](https://www.icegl.cn/tvtstore) includes a wide variety of project scenarios and features. Plugins are an important part of the ICE community ecosystem, and in the marketplace both complete applications and smaller modules are collectively referred to as plugins.
+#### [🌏 www.icegl.cn/tvtstore](https://www.icegl.cn/tvtstore) brings together a wide range of project scenarios and capabilities. Plugins are a core part of the ICE community ecosystem and provide an engineering boundary between AI-assisted development, online editors, and project delivery. Complete applications, reusable components, AI-assisted features, and source exported from scene editors are all distributed through the marketplace as plugins.
 
 <table style="border: none; width: 100%; text-align: center;">
   <tr>

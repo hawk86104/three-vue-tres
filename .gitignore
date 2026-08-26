@@ -20,10 +20,6 @@
 yarn-error.log
 package-lock.json
 
-# 排除插件 可通过插件中心下载
-src/plugins/freeDigitalHome
-public/plugins/freeDigitalHome
-
 # 排除安装插件包
 !pluginMaker/install/请把下载的插件包放在这里。
 pluginMaker/install

@@ -2,9 +2,13 @@
 
 简体中文 | [English](./README.md)
 
-## 三维可视化项目快速落地的开源框架
+## AI 协同的 Web 3D 开源生态
 
-TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可视化、在线三维编辑器和项目插件化交付场景，永久开源且免费商用。
+从需求 Spec、AI 协同开发，到图生 3D、场景编辑与插件化交付，TvT.js 让三维创意不只停留在 Demo，而是沿着一条清晰的工程路径走向真实项目。
+
+TvT.js 是 ICEGL 开源的 Web 3D 工程生态，以 Three.js、Vue 3、TresJS 与 Fes.js 为技术底座，面向数字孪生、工业可视化、在线三维编辑器和项目插件化交付场景，永久开源且免费商用。
+
+> **需求描述 → Spec 约束 → AI 协同实现 → 场景验证 → 插件或源码交付**
 
 <p align="center">
 		<a href="https://github.com/hawk86104/three-vue-tres" target="_blank">
@@ -12,6 +16,9 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
 		</a>
 		<img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/hawk86104/three-vue-tres">
 		<img src="https://img.shields.io/github/license/hawk86104/three-vue-tres" />
+		<a href="https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html" target="_blank">
+			<img alt="AI Spec Driven" src="https://img.shields.io/badge/AI-Spec--Driven-6C63FF">
+		</a>
 		<a target="_black" href="https://gitee.com/ice-gl/icegl-three-vue-tres">
 			<img src="https://gitee.com/ice-gl/icegl-three-vue-tres/badge/star.svg?theme=dark" alt="gitee-starts" />
 		</a>
@@ -48,6 +55,28 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
 </table>
 <br/>
 
+# 🤖 AI 协同：从一句需求走向可交付三维项目
+
+TvT.js 与 AI 的结合已经进入内容生产和工程开发两条主线：AI 可以参与模型与场景的生成，也可以参与需求分析、插件开发和持续变更。场景配置、插件契约与版本化 Spec 将这两条主线连接起来，让人和 AI 在同一份上下文中协作。
+
+| AI 参与环节 | TvT.js 生态实践 | 形成的结果 |
+| --- | --- | --- |
+| 需求与架构 | 通过 `openspec/` 沉淀框架基线、插件契约、运行模式与集成边界；复杂需求可继续拆分为 `proposal`、`spec`、`design` 和 `tasks` | 需求可追踪、行为可验证、变更有边界 |
+| 工程协同 | `tvt-js-plugin-builder` AI 技能封装插件目录、路由、资源、依赖和多端集成规则 | AI 按项目约定实现，而不是生成难以维护的一次性代码 |
+| 三维内容生产 | 腾讯混元 3D 开源实践支持本地部署，从图片生成三维模型并导入 TvT.js | 从图片快速获得可继续编辑和集成的三维资产 |
+| 场景创作 | 区域场景编辑器可承接 AI 生成资产，并持续探索 MCP + 大模型文字生成场景 | 从自然语言或资产雏形继续走向可视化场景 |
+| 复用与交付 | 统一的插件契约、动态组件服务、场景配置与源码导出链路 | AI 参与的成果仍然可审查、可复用、可维护、可交付 |
+
+这不是在三维框架旁边简单增加一个 AI 入口。Spec 负责说明“结果必须满足什么”，AI 技能负责说明“在这个仓库里应该怎样完成”，插件与编辑器则承接生成结果，让需求、资产、场景和源码真正形成闭环。
+
+- [了解 AI 协同与 Spec 工作流](https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html)
+- [查看 TvT.js OpenSpec 基线](./openspec/)
+- [查看 TvT.js 插件开发 AI 技能](./skills/tvt-js-plugin-builder/)
+- [在线体验：混元 3D 图生模型](https://opensource.icegl.cn/#/plugins/hunyuan3D/index)
+- [打开区域场景编辑器](https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index)
+
+> **能力边界：**图生 3D 需要单独部署模型服务、权重与相应硬件环境；MCP + 大模型文字生成场景仍属于持续探索方向。AI 可以加速生成、修改与检查，但业务语义、视觉质量、性能预算、授权边界和最终发布仍应由人确认。
+
 ## 面向国产化 / 信创环境 Web三维可视化框架 🇨🇳 🚩
 
 [查看国产化说明文档](https://docs.icegl.cn/docs/three-vue-tres/guide/localization.html)
@@ -60,20 +89,21 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
 
 <a style="display:block;width:800px;max-width:100%;" href="https://www.bilibili.com/video/BV1JHqRB7ERB"><img src="./preview/bilibili.gif" alt="tres.js webgl three.js"></a>
 
-# 技术生态 `@ThreeJS @Vue3.x @TresJS`
+# 技术底座与生态 `@ThreeJS @Vue3.x @TresJS @FesJS`
 
-> icegl 出品，永久开源且免费商用，持续更新 ing，请点击右上角 start⭐ 关注
+> ICEGL 出品，永久开源且免费商用，持续更新 ing。欢迎点击右上角 Star ⭐，共同见证一个面向 AI 时代持续演进的 Web 3D 开源生态。
 
-本项目融合于三大生态系统中：
+本项目建立在四大开源技术底座之上，并通过插件、编辑器、动态组件与 AI 协同工作流，将渲染能力继续延伸到项目交付：
 
 | 生态 | 说明 |
 | --- | --- |
 | 🎲 [ThreeJS](https://threejs.org)<br><a href="https://www.npmjs.com/package/three"><img src="https://img.shields.io/npm/v/three?label=three" alt="three npm"></a> | 大名鼎鼎的基于浏览器渲染、使用 JavaScript 语言的 3D 库。 |
 | 🍀 [Vue3.x](https://cn.vuejs.org)<br><a href="https://www.npmjs.com/package/vue"><img src="https://img.shields.io/npm/v/vue?label=vue&color=%2342b883" alt="vue npm"></a> | 易学易用，性能出色，适用场景丰富的 Web 前端框架。 |
 | ⚡ [TresJS](https://tresjs.org)<br><a href="https://www.npmjs.com/package/@tresjs/core"><img src="https://img.shields.io/npm/v/@tresjs/core?color=%2382DBCA&label=%40tresjs%2Fcore&logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTExLjY4NTQgMy40MjkxNkMxMi4wNzM4IDIuNzgxODIgMTMuMDEyIDIuNzgxODIgMTMuNDAwNCAzLjQyOTE1TDE5LjE3NzEgMTMuMDU2OUMxOS41NzcgMTMuNzIzNSAxOS4wOTY5IDE0LjU3MTQgMTguMzE5NiAxNC41NzE0SDYuNzY2MjRDNS45ODg5NCAxNC41NzE0IDUuNTA4ODMgMTMuNzIzNSA1LjkwODc1IDEzLjA1NjlMMTEuNjg1NCAzLjQyOTE2WiIgZmlsbD0iIzgyREJDNSIvPgo8cGF0aCBkPSJNMTUuNjg1NyAxMC41NDI5QzE1LjY4NTcgOS45OTA1OSAxNi4xMzM0IDkuNTQyODggMTYuNjg1NyA5LjU0Mjg4SDI2QzI2LjU1MjIgOS41NDI4OCAyNyA5Ljk5MDU5IDI3IDEwLjU0MjlWMTkuODU3MkMyNyAyMC40MDk0IDI2LjU1MjIgMjAuODU3MiAyNiAyMC44NTcySDE2LjY4NTdDMTYuMTMzNCAyMC44NTcyIDE1LjY4NTcgMjAuNDA5NCAxNS42ODU3IDE5Ljg1NzJWMTAuNTQyOVoiIGZpbGw9IiM0RjRGNEYiLz4KPGNpcmNsZSBjeD0iMTYiIGN5PSIyMiIgcj0iNiIgZmlsbD0iI0VGQUMzNSIvPgo8L3N2Zz4K" alt="tresjs npm"></a> | 使用 Vue3.x 组件实现声明式 ThreeJS，做属于前端的三维项目。 |
+| 🌈 [Fes.js](https://fesjs.mumblefe.cn)<br><a href="https://www.npmjs.com/package/@fesjs/fes"><img src="https://img.shields.io/npm/v/%40fesjs%2Ffes?label=%40fesjs%2Ffes" alt="fesjs npm"></a> | 提供项目落地所需的路由、布局、数据模型、权限、多语言与 API 等工程能力。 |
 
 ## ✨ 动态组件发布与加载服务：[🌏 dcser.icegl.cn](https://dcser.icegl.cn/)
-> 基于 tvt.js 生态的动态组件发布与加载服务，用于构建更灵活的模块化应用体系。 
+> 基于 TvT.js 生态的动态组件发布与加载服务，用于构建更灵活的模块化应用体系。组件需求可通过 Spec 明确注册格式、参数协议、预览方式与编辑器兼容边界，让人工开发或 AI 协同生成的组件都能独立发布、在线加载、调参与持续演进。
 <a style="display:block;width:800px;max-width:100%;" href="https://dcser.icegl.cn"><img src="./preview/dcser.gif" alt="tres.js webgl three.js"></a>
 
 ## 🏕 在线预览：[🌏 opensource.icegl.cn](https://opensource.icegl.cn)
@@ -90,7 +120,7 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index"><strong>在线三维场景编辑器</strong></a><br>
       <sub>免费导出源码 + 二次开发</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zone3Deditor/preview/index.png" alt="在线三维场景编辑器">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://cdn.index.icegl.cn/uploads/20250519/94fbce573ef3a2ba59c1100a08339857.png" alt="在线三维场景编辑器">
       </a>
     </td>
     <td width="50%" align="center" valign="top" style="padding:12px;width:50%;vertical-align:top;">
@@ -246,6 +276,9 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
 # 📖 文档
 
 ## 使用说明：[🌏docs.icegl.cn](https://docs.icegl.cn/)
+
+> 推荐先读：[🤖 AI 协同与 Spec 工作流](https://docs.icegl.cn/docs/three-vue-tres/guide/ai-collaboration.html)。它介绍了图生 3D、OpenSpec 基线、AI 插件开发技能，以及“需求先成为约束、实现再进入交付”的协作方式。
+
 <table style="border: none; width: 100%; text-align: center;">
   <tr>
     <td style="padding:10px;font-size:1.2em;">
@@ -298,7 +331,7 @@ TvT.js 融合 ThreeJS、Vue 3 与 TresJS 生态，面向数字孪生、工业可
 </table>
 
 # 🧩 丰富的[插件应用市场🌏tvtstore](https://www.icegl.cn/tvtstore)
-#### [🌏www.icegl.cn/tvtstore](https://www.icegl.cn/tvtstore) 包含各式各样的项目场景和功能。插件是 ICE 社区生态中重要的一环，在应用市场中完整应用和普通插件统一称为插件。<br/>
+#### [🌏www.icegl.cn/tvtstore](https://www.icegl.cn/tvtstore) 汇集各式各样的项目场景和功能。插件是 ICE 社区生态中重要的一环，也是连接 AI 协同开发、在线编辑器与项目交付的工程边界；无论是完整应用、普通组件、AI 辅助实现的功能，还是由场景编辑器导出的源码，在应用市场中统一称为插件。<br/>
 <table style="border: none; width: 100%; text-align: center;">
   <tr>
     <td style="padding:10px;font-size:1.2em;">

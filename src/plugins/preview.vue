@@ -117,7 +117,7 @@
                 </f-sub-menu>
                 <f-sub-menu value="4">
                     <template #icon>
-                        <EditOutlined />
+                        <ProductOutlined />
                     </template>
                     <template #label
                         >区域场景编辑器 <FBadge :max="999" :value="getMenusCount().zoneEditor" class="count-fbdge big-cf" type="primary" size="small"
@@ -147,7 +147,7 @@
                 </f-sub-menu>
                 <f-sub-menu value="5">
                     <template #icon>
-                        <EditOutlined />
+                        <ManagementOutlined />
                     </template>
                     <template #label
                         >GIS地理空间编辑器 <FBadge :max="999" :value="getMenusCount().gisEditor" class="count-fbdge big-cf" type="primary" size="small"
@@ -177,7 +177,7 @@
                 </f-sub-menu>
                 <f-sub-menu value="animationEditorMenu">
                     <template #icon>
-                        <EditOutlined />
+                        <PlayOutlined />
                     </template>
                     <template #label
                         >动画编辑器 <FBadge :max="999" :value="getMenusCount().animationEditor" class="count-fbdge big-cf" type="primary" size="small"
@@ -205,9 +205,39 @@
                         </f-menu-item>
                     </template>
                 </f-sub-menu>
+                <f-sub-menu value="materialEditorMenu">
+                    <template #icon>
+                        <PictureOutlined />
+                    </template>
+                    <template #label
+                        >材质编辑器 <FBadge :max="999" :value="getMenusCount().materialEditor" class="count-fbdge big-cf" type="primary" size="small"
+                    /></template>
+                    <f-menu-item value="materialEditorIntroUrl">
+                        <template #label>
+                            <div class="flex absolute badge-group">
+                                <f-badge value="材质" class="tag-fbdge" type="danger" size="small" />
+                            </div>
+                            <span class="left-m-text">编辑器介绍</span>
+                        </template>
+                    </f-menu-item>
+                    <template v-for="(onePlugin, pkey) in filteredData">
+                        <f-menu-item v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'materialEditor'" :value="pkey">
+                            <template #label>
+                                <div class="flex absolute badge-group">
+                                    <f-badge value="free" class="tag-fbdge afree-tag" type="success" size="small" v-if="onePlugin.tvtstore === 'FREE'" />
+                                </div>
+                                <div class="flex absolute" style="top: 3px; right: 30px">
+                                    <f-badge :value="onePlugin.version" class="tag-fbdge" type="primary" size="small" />
+                                </div>
+                                <span class="left-m-text">{{ onePlugin.title }}</span>
+                                <FBadge :value="onePlugin.preview.length" class="count-fbdge" type="primary" size="small" />
+                            </template>
+                        </f-menu-item>
+                    </template>
+                </f-sub-menu>
                 <f-sub-menu value="6">
                     <template #icon>
-                        <EditOutlined />
+                        <CodeOutlined />
                     </template>
                     <template #label
                         >动态组件服务 <FBadge :max="999" :value="getMenusCount().loadDynamic" class="count-fbdge big-cf" type="primary" size="small"
@@ -277,6 +307,11 @@
                 </div>
             </template>
             <template v-for="(onePlugin, pkey) in filteredData" :key="pkey">
+                <div style="background-color: #f1f1f2" v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'materialEditor'" :ref="(el) => (tabListRef[pkey] = el)">
+                    <cardList :onePlugin="onePlugin" />
+                </div>
+            </template>
+            <template v-for="(onePlugin, pkey) in filteredData" :key="pkey">
                 <div style="background-color: #f1f1f2" v-if="pkey !== 'basic' && isTvtstore(onePlugin) === 'loadDynamic'" :ref="(el) => (tabListRef[pkey] = el)">
                     <cardList :onePlugin="onePlugin" />
                 </div>
@@ -290,7 +325,17 @@
 import { ref, provide, watch, onMounted, nextTick } from 'vue'
 import { defineRouteMeta, useRoute, useRouter } from '@fesjs/fes'
 import { FBadge, FDrawer, FMenu, FSubMenu, FMenuItem } from '@fesjs/fes-design'
-import { AppstoreOutlined, PictureOutlined, UpCircleOutlined, MoreCircleOutlined, ClusterOutlined, EditOutlined } from '@fesjs/fes-design/icon'
+import {
+    AppstoreOutlined,
+    PictureOutlined,
+    UpCircleOutlined,
+    MoreCircleOutlined,
+    ClusterOutlined,
+    ProductOutlined,
+    ManagementOutlined,
+    PlayOutlined,
+    CodeOutlined,
+} from '@fesjs/fes-design/icon'
 import { getPluginsConfig, getOnlinePluginConfig, detectDeviceType } from '../common/utils'
 import { useForPreviewStore } from '@/stores/forPreview'
 import cardList from '../components/forPreview/cardList.vue'
@@ -316,6 +361,9 @@ const menuGoto = (value: any) => {
 const tabListRef = ref([]) as any
 const pluginsConfig = ref(getPluginsConfig() as any)
 const router = useRouter()
+const scrollToPlugin = (name: string) => {
+    tabListRef.value[name]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 const goto = (value: any) => {
     if (value.value === 'tvtPluginUrl') {
         window.open('https://www.icegl.cn/tvtstore', '_blank')
@@ -325,24 +373,25 @@ const goto = (value: any) => {
         window.open('https://www.icegl.cn/tvtstore/gisPlaneEditor', '_blank')
     } else if (value.value === 'animationEditorIntroUrl') {
         window.open('https://www.icegl.cn/tvtstore/animationEditor.html', '_blank')
+    } else if (value.value === 'materialEditorIntroUrl') {
+        window.open('https://www.icegl.cn/tvtstore/materialEditor', '_blank')
     } else if (value.value === 'loadDynamicEcoUrl') {
         window.open('https://dcser.icegl.cn', '_blank')
     } else {
-        tabListRef.value[value.value]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        scrollToPlugin(value.value)
         router.replace({ hash: `#${value.value}` })
     }
 }
 
 const route = useRoute()
-onMounted(() => {
-    nextTick(() => {
-        const hash = route.hash
-        const tabdom = hash.startsWith('#') ? hash.slice(1) : (hash as any)
-        if (tabdom) {
-            tabListRef.value[tabdom]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-    })
-})
+const scrollToHash = async () => {
+    await nextTick()
+    const hash = route.hash
+    const tabdom = hash.startsWith('#') ? hash.slice(1) : hash
+    if (tabdom) {
+        scrollToPlugin(tabdom)
+    }
+}
 
 const scrollToTop = () => {
     document.querySelector('.right-page-list')?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -438,11 +487,17 @@ watch(pluginsConfig, refreshFilteredData, {
     deep: true,
 })
 const shouldCheckReleaseMenu = process.env.NODE_ENV === 'development' || process.env.FES_APP_ONLINE_API
-if (process.env.FES_APP_PLSNAME === undefined) {
-    getOnlinePluginConfig(pluginsConfig, {
-        checkReleaseMenu: shouldCheckReleaseMenu,
-    })
-}
+const onlinePluginConfigReady =
+    process.env.FES_APP_PLSNAME === undefined
+        ? getOnlinePluginConfig(pluginsConfig, {
+              checkReleaseMenu: shouldCheckReleaseMenu,
+          })
+        : Promise.resolve()
+onMounted(async () => {
+    await scrollToHash()
+    await onlinePluginConfigReady
+    await scrollToHash()
+})
 const getleftMenuBadge = (name: string) => {
     const tagOne = {
         recommend: { show: false, text: '荐' },
@@ -472,6 +527,8 @@ const isTvtstore = (onePlugin: any) => {
             return 'gisEditor'
         } else if (onePlugin.name.startsWith('animation')) {
             return 'animationEditor'
+        } else if (onePlugin.name.startsWith('material')) {
+            return 'materialEditor'
         } else if (onePlugin.name.startsWith('loadDynamic')) {
             return 'loadDynamic'
         }else {
@@ -490,6 +547,7 @@ const getMenusCount = () => {
         zoneEditor: 0,
         gisEditor: 0,
         animationEditor: 0,
+        materialEditor: 0,
     }
     for (const key in filteredData.value) {
         if (filteredData.value.hasOwnProperty(key)) {
@@ -510,6 +568,8 @@ const getMenusCount = () => {
                     reCount.gisEditor += filteredData.value[key].preview.length
                 } else if (isTvtstore(filteredData.value[key]) === 'animationEditor') {
                     reCount.animationEditor += filteredData.value[key].preview.length
+                } else if (isTvtstore(filteredData.value[key]) === 'materialEditor') {
+                    reCount.materialEditor += filteredData.value[key].preview.length
                 } else if (isTvtstore(filteredData.value[key]) === 'loadDynamic') {
                     reCount.loadDynamic += filteredData.value[key].preview.length
                 }
@@ -639,6 +699,12 @@ const openTopMune = () => {
 }
 </style>
 <style lang="less" scoped>
+@media (min-width: 901px) {
+    .right-page-list {
+        scroll-padding-top: 50px;
+    }
+}
+
 .toTop {
     position: fixed;
     right: 20px;

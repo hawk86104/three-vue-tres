@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watchEffect } from 'vue'
+import { ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from '@tresjs/cientos'
 import { randomLoading as loading } from 'PLS/UIdemo'
@@ -114,16 +114,19 @@ const controlsState = {
     target: new THREE.Vector3(0, 0.95, 0),
 }
 
-watchEffect(() => {
-    const camera = cameraRef.value
-    if (!camera) return
-    camera.position.set(1.89174259, 1.72206664, -3.39040327)
-    camera.quaternion.set(-0.0383492969, 0.957766235, 0.152613923, 0.240670472)
-    camera.fov = 30
-    camera.near = 0.03
-    camera.far = 100
-    camera.updateProjectionMatrix()
-})
+watch(
+    cameraRef,
+    (camera) => {
+        if (!camera) return
+        camera.position.set(1.89174259, 1.72206664, -3.39040327)
+        camera.quaternion.set(-0.0383492969, 0.957766235, 0.152613923, 0.240670472)
+        camera.fov = 30
+        camera.near = 0.03
+        camera.far = 100
+        camera.updateProjectionMatrix()
+    },
+    { immediate: true },
+)
 
 </script>
 

@@ -1,22 +1,22 @@
 <template>
     <div v-if="hasPreview">
-        <FTooltip mode="popover" :offset="-208" placement="bottom" :getContainer="getContainer" :disabled="detectDeviceType() !== 'PC'">
+        <FTooltip mode="popover" :offset="-248" placement="bottom" :getContainer="getContainer" :disabled="detectDeviceType() !== 'PC'">
             <FImage class="w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" lazy />
             <template #content>
-                <div style="width: 280px; height: 180px; display: flex; justify-content: center; align-items: center">
+                <div class="one-image-qr-popover">
                     <div class="one-item-qrcode">
-                        <FImage :src="urlMobile" @error="errH5Img">
+                        <span>H5移动端</span>
+                        <FImage class="one-item-qrcode__image" :src="urlMobile" @error="errH5Img">
                             <template #placeholder>
                                 <div class="image-slot">
                                     <div class="image-slot">生成中<span class="dot">...</span></div>
                                 </div>
                             </template>
                         </FImage>
-                        <span>H5移动端</span>
                     </div>
                     <div class="one-item-qrcode" style="border-left: 2px #a2a2a2 dashed">
                         <span>微信小程序</span>
-                        <FImage :src="urlmini" @error="errMiNiImg">
+                        <FImage class="one-item-qrcode__image" :src="urlmini" @error="errMiNiImg">
                             <template #placeholder>
                                 <div class="image-slot">
                                     <div class="image-slot">生成中<span class="dot">...</span></div>
@@ -60,28 +60,19 @@ const imgSrc = () => {
     return url
 }
 
-// console.log(props.onePreview)
-// console.log(props.onePlugin)
-
-function sanitizeFilename(filename: string) {
-    const invalidChars = /[\\\/:\*\?"<>\|]/g
-    const controlChars = /[\x00-\x1F\x7F]/g // 控制字符
-    let sanitized = filename.replace(invalidChars, '')
-    if (sanitized.startsWith('.')) {
-        sanitized = 'f' + sanitized // 或者你可以选择其他前缀
+const createQrCacheKey = (value: string) => {
+    let hash = 2166136261
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index)
+        hash = Math.imul(hash, 16777619)
     }
-    sanitized = sanitized.replace(controlChars, '')
-    if (sanitized.length > 255) {
-        sanitized = sanitized.substring(0, 255)
-    }
-    return sanitized
+    return `v2-${value.length.toString(36)}-${(hash >>> 0).toString(36)}`
 }
+
 let hasPreview = true
 let comUrl = 'https://oss.icegl.cn/#/plugins/'
-let imgName = ''
 if (props.onePreview.url) {
     comUrl = props.onePreview.url
-    imgName = encodeURIComponent(sanitizeFilename(comUrl).slice(-16))
     if (props.onePreview.url.startsWith('https://www.icegl.cn/tvtstore/') || props.onePreview.url.startsWith('https://www.bilibili.com/')) {
         hasPreview = false
     }
@@ -91,43 +82,38 @@ if (props.onePreview.url) {
     }
     comUrl += props.onePlugin.name + '/'
     comUrl += props.onePreview.name + '/'
-    imgName = encodeURIComponent((props.onePlugin.name + props.onePreview.name).slice(-16))
 }
 if (!process.env.FES_APP_ONLINE_API) {
     hasPreview = false
 }
-comUrl = encodeURIComponent(comUrl)
-let miniPre = `https://www.icegl.cn/addons/tvt/mini/onePreview?urlPath=${comUrl}`
-miniPre = encodeURIComponent(miniPre)
-const urlMobile = ref('https://www.icegl.cn/uploads/qrcode/b-' + imgName + '.png')
-const urlmini = ref('https://www.icegl.cn/uploads/qrcode/m-' + imgName + '.png')
-const errH5Img = (e: any) => {
-    fetch(
-        `https://icegl.cn/addons/qrcode/index/show?text=${comUrl}&logo=1&labelalignment=center&foreground=%23333333&background=%23ffffff&size=180&padding=1&logosize=30&errorcorrection=quartile&imgName=b-${imgName}`,
-    ).then((response) => {
-        response
-            .text()
-            .then((data) => {
-                urlMobile.value = data
-            })
-            .catch((error) => {
-                console.error('Error fetching volume data:', error)
-            })
-    })
+const imgName = createQrCacheKey(comUrl)
+const encodedComUrl = encodeURIComponent(comUrl)
+const miniPre = encodeURIComponent(`https://www.icegl.cn/addons/tvt/mini/onePreview?urlPath=${encodedComUrl}`)
+const qrStyleParams = 'logo=1&labelalignment=center&background=%23ffffff&size=360&padding=12&logosize=32&errorlevel=quartile'
+const mobileQrSrc = `https://www.icegl.cn/uploads/qrcode/b-${imgName}.png`
+const miniQrSrc = `https://www.icegl.cn/uploads/qrcode/m-${imgName}.png`
+const urlMobile = ref(mobileQrSrc)
+const urlmini = ref(miniQrSrc)
+
+const refreshQrImage = async (generateUrl: string, imageUrl: string, target: typeof urlMobile) => {
+    try {
+        const response = await fetch(generateUrl)
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+        }
+        target.value = `${imageUrl}?t=${Date.now()}`
+    } catch (error) {
+        console.error('Error generating QR code:', error)
+    }
 }
-const errMiNiImg = (e: any) => {
-    fetch(
-        `https://icegl.cn/addons/qrcode/index/show?text=${miniPre}&logo=1&labelalignment=center&foreground=%2300367b&background=%23ffffff&size=160&padding=1&logosize=30&errorcorrection=quartile&imgName=m-${imgName}`,
-    ).then((response) => {
-        response
-            .text()
-            .then((data) => {
-                urlmini.value = data
-            })
-            .catch((error) => {
-                console.error('Error fetching volume data:', error)
-            })
-    })
+
+const errH5Img = () => {
+    const generateUrl = `https://icegl.cn/addons/qrcode/index/show?text=${encodedComUrl}&foreground=%23333333&${qrStyleParams}&imgName=b-${imgName}`
+    refreshQrImage(generateUrl, mobileQrSrc, urlMobile)
+}
+const errMiNiImg = () => {
+    const generateUrl = `https://icegl.cn/addons/qrcode/index/show?text=${miniPre}&foreground=%2300367b&${qrStyleParams}&imgName=m-${imgName}`
+    refreshQrImage(generateUrl, miniQrSrc, urlmini)
 }
 
 const getContainer = (container: any) => {
@@ -139,16 +125,30 @@ const getContainer = (container: any) => {
 .fes-tooltip-popover {
     background-color: #000000ab;
 }
+.one-image-qr-popover {
+    width: 360px;
+    height: 220px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
 .one-item-qrcode {
     width: 50%;
     color: white;
     text-align: center;
     font-size: 16px;
     font-weight: bolder;
-    img {
-        width: 80%;
-        margin: 10px auto;
+    &__image {
+        width: 160px;
+        height: 160px;
+        margin: 8px auto;
         display: block;
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
     }
 }
 </style>

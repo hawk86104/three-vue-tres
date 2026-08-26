@@ -38,7 +38,6 @@
 - `src/plugins/basic/config.js`
 - `src/plugins/goView/config.js`
 - `src/plugins/qiankunTvt/config.js`
-- `src/plugins/zone3Deditor/config.js`
 - `src/plugins/uniAppView/config.js`
 
 ## 要求
@@ -233,16 +232,7 @@ TvT.js 插件 SHALL 使用单一插件标识作为主命名空间，并在源码
 
 ### Requirement: 插件市场与开源仓库边界
 
-TvT.js 的开源仓库插件清单 SHALL 与插件市场中的源码交付能力解耦。开源仓库 MAY 仅保留某些市场插件的配置、预览资源或接入点，而不直接包含其完整源码实现；此类插件应被视为“可预览、可登记、可安装”的插件条目，而不是“源码已随仓库分发”的插件。此类条目 SHALL 被视为可扩展集合，而不是单一特例；`zone3Deditor` 在当前开源仓库中 SHALL 被视为此类条目之一，而不是唯一条目。
-
-#### Scenario: zone3Deditor 在开源仓库中的形态
-
-- GIVEN 当前开源仓库存在 `src/plugins/zone3Deditor/config.js`
-- AND 当前开源仓库存在 `public/plugins/zone3Deditor/preview/...`
-- AND 当前开源仓库未包含 `src/plugins/zone3Deditor/pages/...` 等完整编辑器源码
-- WHEN 维护者阅读或扩展插件系统规范
-- THEN SHALL 将 `zone3Deditor` 视为区域场景编辑器的配置/预览接入条目
-- AND 不得默认推断其完整编辑器源码已随开源仓库一并提供
+TvT.js 的开源仓库插件清单 SHALL 与插件市场中的源码交付能力解耦。开源仓库 MAY 仅保留某些市场插件的配置、预览资源或接入点，而不直接包含其完整源码实现；此类插件应被视为“可预览、可登记、可安装”的插件条目，而不是“源码已随仓库分发”的插件。此类条目 SHALL 被视为可扩展集合，而不是单一特例。
 
 #### Scenario: 市场插件的授权安装
 

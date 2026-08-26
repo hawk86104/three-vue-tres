@@ -7,7 +7,7 @@
  * @LastEditTime: 2024-08-12 11:10:25
 -->
 <template>
-    <div v-if="!hasFinishLoading" class="absolute bg-grey-600 t-0 l-0 w-full h-full z-99999999 flex justify-center items-center text-black font-mono bg-black">
+    <div v-if="!displayFinished" class="absolute bg-grey-600 t-0 l-0 w-full h-full z-99999999 flex justify-center items-center text-black font-mono bg-black">
         <div class="text-center text-white">
             <div class="loader1" v-if="props.styleNum === 0"></div>
             <div class="loader2" v-else-if="props.styleNum === 1"></div>
@@ -17,7 +17,7 @@
             <div class="loader6" v-else-if="props.styleNum === 5"></div>
             <div class="loader7" v-else-if="props.styleNum === 6"></div>
 
-            <template v-if="showProgress">{{ progress }} %</template>
+            <template v-if="showProgress">{{ displayProgress }} %</template>
         </div>
     </div>
 </template>
@@ -26,6 +26,7 @@
 import { hasPlugin } from '@/common/utils'
 import { useProgress } from '@tresjs/cientos'
 import { Resource } from 'PLS/resourceManager'
+import { computed } from 'vue'
 
 const props = withDefaults(
     defineProps<{
@@ -33,6 +34,8 @@ const props = withDefaults(
         isDemo?: boolean
         showProgress?: boolean
         useResourceManager?: boolean
+        progressValue?: number
+        finished?: boolean
     }>(),
     {
         styleNum: 0,
@@ -57,6 +60,10 @@ if (props.useResourceManager) {
     progress = uP.progress
     hasFinishLoading = uP.hasFinishLoading
 }
+
+const usesControlledProgress = computed(() => props.progressValue !== undefined || props.finished !== undefined)
+const displayProgress = computed(() => usesControlledProgress.value ? Math.round(props.progressValue ?? 0) : progress.value)
+const displayFinished = computed(() => usesControlledProgress.value ? (props.finished ?? false) : hasFinishLoading.value)
 
 const animloop = () => {
     if (progress.value++ > 100) {

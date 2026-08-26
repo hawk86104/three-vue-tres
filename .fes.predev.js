@@ -7,9 +7,38 @@
  * @LastEditTime: 2026-06-01 16:00:37
  */
 import { defineBuildConfig } from '@fesjs/fes'
+import { readFileSync } from 'node:fs'
+import { posix } from 'node:path'
+import fg from 'fast-glob'
 // import viteCompression from 'vite-plugin-compression'
 import javascriptObfuscator from 'vite-plugin-javascript-obfuscator'
 import addExtraScriptPlugin from './src/common/addExtraScriptPlugin.js'
+
+const PLUGIN_SOURCE_GLOB = '**/*.{vue,js,ts,jsx,tsx}'
+const pluginPredevEntries = fg.sync('src/plugins/*/predev.config.json').flatMap((configFile) => {
+    const { sources = [] } = JSON.parse(readFileSync(configFile, 'utf8'))
+    return sources.map((source) => posix.join(posix.dirname(configFile), source, PLUGIN_SOURCE_GLOB))
+})
+
+function scanPluginSources(entries) {
+    return {
+        name: 'predev-scan-plugin-sources',
+        apply: 'serve',
+        async configResolved(config) {
+            const unoContext = config.plugins
+                .find((plugin) => plugin.name === 'unocss:api')
+                ?.api?.getContext()
+            if (!unoContext || !entries.length) return
+
+            // 在页面打开前完成插件样式扫描，避免首次懒加载触发 UnoCSS 全局热更新。
+            const unoConfig = await unoContext.getConfig()
+            unoConfig.content = {
+                ...unoConfig.content,
+                filesystem: [...(unoConfig.content?.filesystem || []), ...entries],
+            }
+        },
+    }
+}
 
 export default defineBuildConfig({
     layout: {
@@ -76,6 +105,10 @@ export default defineBuildConfig({
                         path: 'https://animationeditor.icegl.cn/#/plugins/animationEditor/index',
                         title: '🐛 草履虫动画编辑器',
                     },
+                    {
+                        path: 'https://materialeditor.icegl.cn/#/plugins/materialEditor/index',
+                        title: '🎨 材质编辑器',
+                    },
                 ],
             },
             {
@@ -123,8 +156,12 @@ export default defineBuildConfig({
         ],
     },
     viteOption: {
+        optimizeDeps: {
+            entries: ['index.html', ...pluginPredevEntries],
+        },
         plugins: [
             console.log('正在加载 TvT.js...'),
+            scanPluginSources(pluginPredevEntries),
             addExtraScriptPlugin(),
         ],
         server: {

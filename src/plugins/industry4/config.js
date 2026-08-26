@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-11-10 16:11:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-06-22 11:36:39
+ * @LastEditTime: 2026-07-24 09:27:49
  */
 
 export default {
@@ -90,12 +90,12 @@ export default {
             title: 'TSL齿轮分叉',
             referenceSource: { title: 'react-three/fiber', url: 'https://codesandbox.io/p/sandbox/webgpu-tsl-gears-forked-v3d959' },
         },
-        // {
-        //     src: 'plugins/industry4/bikeConfigurator/bike-poster.jpg',
-        //     type: 'img',
-        //     name: 'bikeConfigurator',
-        //     title: 'Bike Configurator',
-        //     referenceSource: { title: 'Needle Engine', url: 'https://engine.needle.tools/projects/bike/' },
-        // }
+        {
+            src: 'plugins/industry4/bikeConfigurator/bike-poster.jpg',
+            type: 'img',
+            name: 'bikeConfigurator',
+            title: 'Bike Configurator',
+            referenceSource: { title: 'Needle Engine', url: 'https://engine.needle.tools/projects/bike/' },
+        }
     ],
 }

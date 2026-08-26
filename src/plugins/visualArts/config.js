@@ -16,8 +16,15 @@ export default {
     state: 'active',
     creatTime: '2024-04-30',
     updateTime: '2024-04-30',
-    require: [],
+    require: ['UIdemo', 'resourceManager'],
     preview: [
+        {
+            src: 'plugins/visualArts/preview/porcelainBrassSubmarine.png',
+            type: 'img',
+            name: 'porcelainBrassSubmarine',
+            title: '瓷器黄铜潜艇',
+            referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
+        },
         {
             src: 'plugins/visualArts/preview/biineBee.png',
             type: 'img',

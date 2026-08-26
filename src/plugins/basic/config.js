@@ -14,7 +14,7 @@ export default {
     author: '地虎降天龙',
     website: 'www.icegl.cn',
     state: 'active',
-    require: [],
+    require: ['UIdemo', 'resourceManager'],
     child: [
         {
             name: 'base',
@@ -38,6 +38,20 @@ export default {
             intro: '各种衍生材质展示',
             pNode: 'basic',
             preview: [
+                {
+                    src: 'plugins/basic/materials/preview/physicalDiffractionGrating.png',
+                    type: 'img',
+                    name: 'physicalDiffractionGrating',
+                    title: '物理衍射光栅',
+                    referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
+                },
+                {
+                    src: 'plugins/basic/materials/preview/raytracedDiamond.png',
+                    type: 'img',
+                    name: 'raytracedDiamond',
+                    title: 'BVH光追钻石',
+                    referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
+                },
                 { src: 'plugins/basic/materials/preview/glassMaterial.png', type: 'img', name: 'glassMaterial', title: '玻璃材质' },
                 { src: 'plugins/basic/materials/preview/transmissionMaterial.png', type: 'img', name: 'transmissionMaterial', title: '玻璃材质2' },
                 { src: 'plugins/basic/materials/preview/wobbleMaterial.png', type: 'img', name: 'wobbleMaterial', title: '流体波动' },

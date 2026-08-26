@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2024-03-27 22:08:16
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-02-25 10:52:34
+ * @LastEditTime: 2026-07-16 10:43:27
  */
 
 import environmentForLightformers from './components/environmentForLightformers.vue'
@@ -24,6 +24,7 @@ const HDRfileList = {
 	shanghai: 'shanghai_bund_1k.hdr',
 	hangar: 'small_hangar_01_1k.hdr',
 	snowy: 'snowy_forest_path_01_1k.hdr',
+	equirectangular: 'equirectangular.hdr',
 }
 // const HDRfilePath = process.env.NODE_ENV === 'development' ? 'resource.cos' : 'https://opensource.cdn.icegl.cn'
 const HDRfilePath = './plugins/skyBox/hdr/'
