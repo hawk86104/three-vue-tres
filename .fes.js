@@ -15,7 +15,7 @@ import { templateCompilerOptions } from '@tresjs/core'
 import UnoCSS from 'unocss/vite'
 // eslint-disable-next-line import/no-extraneous-dependencies
 import glsl from 'vite-plugin-glsl'
-import federation from '@originjs/vite-plugin-federation'
+import { federation } from '@module-federation/vite'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -68,17 +68,20 @@ export default defineBuildConfig({
                 remotes: {
                     home: {
                         // 必须默认引用一个 不然会报错：ReferenceError: __rf_placeholder__shareScope is not defined
-                        external: `Promise.resolve('https://dcser.icegl.cn/assets/remoteEntry.js')`,
-                        externalType: "promise"
-                    }
+                        type: 'module',
+                        name: 'home',
+                        entry: 'https://dcser.icegl.cn/assets/remoteEntry.js',
+                        shareScope: 'default',
+                    },
                 },
+                filename: 'remoteEntry.js',
                 shared: {
                     vue: {},
                     three: { version: '0.180.0' },
                     // "@tresjs/cientos": { version: '5.2.0' },
                     // "@tresjs/core": { version: '5.2.0' },
                     // three: { import: false, generate: false }
-                }
+                },
             })
         ],
         build: {
@@ -87,20 +90,6 @@ export default defineBuildConfig({
             rollupOptions: {
                 output: {
                     minifyInternalExports: false,
-                    manualChunks: {
-                        three: ['three'],
-                        '3d-tiles-renderer': ['3d-tiles-renderer'],
-                    },
-                    // manualChunks (id) {
-                    //     // 自定义拆分策略，例如将特定的第三方库拆分为单独的 chunk
-                    //     if (id.includes('node_modules')) {
-                    //         const texts = id.toString().split('node_modules/')[1].split('/')[0]
-                    //         // if (texts) {
-                    //         //     console.log(id.toString(), texts)
-                    //         // }
-                    //         return texts
-                    //     }
-                    // },
                     format: 'es',
                     chunkFileNames: `js/[name].[hash]${timeStamp}.js`,
                     entryFileNames: `js/[name].[hash]${timeStamp}.js`,
