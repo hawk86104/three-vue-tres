@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2025-11-18 14:57:52
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2026-03-04 15:20:24
+ * @LastEditTime: 2026-09-17 11:18:31
 -->
 <template>
 
@@ -20,6 +20,12 @@ type HDRKey = keyof typeof HDRfileList
 const props = defineProps({
 	on: {
 		default: true
+	},
+	background: {
+		default: false
+	},
+	backgroundBlurriness: {
+		default: 0
 	},
 	type: {
 		default: 'sunset' as HDRKey,
@@ -57,13 +63,14 @@ declare global {
 }
 const { scene, camera, renderer } = useTres()
 const pTexture = ref(null) as any
-watch(() => [props.on, pTexture.value], ([on, p]) => {
+watch(() => [props.on, props.background, pTexture.value], ([on, background]) => {
 	if (scene.value) {
 		if (on && pTexture.value) {
 			scene.value.environment = pTexture.value
 		} else {
 			scene.value.environment = null
 		}
+		scene.value.background = background && pTexture.value ? pTexture.value : null
 		if (!window.globalTvtuseTres) {
 			window.globalTvtuseTres = {
 				scene: scene.value,
@@ -93,11 +100,19 @@ watch(() => props.environmentIntensity, (value) => {
 }, {
 	immediate: true,
 })
+watch(() => props.backgroundBlurriness, (value) => {
+	if (scene.value) {
+		scene.value.backgroundBlurriness = value
+	}
+}, {
+	immediate: true,
+})
 watch(() => props.environmentRotations, (value) => {
 	if (scene.value) {
 		const euler = toEuler(value)
 		if (euler) {
 			scene.value.environmentRotation.copy(euler)
+			scene.value.backgroundRotation.copy(euler)
 		}
 	}
 }, {
