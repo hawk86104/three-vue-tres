@@ -73,9 +73,9 @@ TvT.js 插件 SHALL 使用单一插件标识作为主命名空间，并在源码
 
 #### Scenario: 二级页面路由
 
-- GIVEN 存在页面文件 `src/plugins/basic/pages/base/theBasic.vue`
+- GIVEN 存在页面文件 `src/plugins/basic/pages/base/shapesPage.vue`
 - WHEN 预览类模式启用插件路由发现
-- THEN 系统 SHALL 为其注册路由 `/plugins/basic/base/theBasic`
+- THEN 系统 SHALL 为其注册路由 `/plugins/basic/base/shapesPage`
 
 #### Scenario: 不受支持的更深层级
 

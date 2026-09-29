@@ -21,7 +21,6 @@ export default {
     creatTime: '2024-01-12',
     updateTime: '2024-03-19',
     preview: [
-        { src: 'plugins/UIdemo/preview/divSample.png', type: 'img', name: 'divSample', title: '简单DIV' },
         { src: 'plugins/UIdemo/preview/divIllustrate.png', type: 'img', name: 'divIllustrate', title: 'DIV说明样例' },
         { src: 'plugins/UIdemo/preview/echartSample.png', type: 'img', name: 'echartSample', title: 'Echart表格样例' },
         { src: 'plugins/UIdemo/preview/sizeMark.png', type: 'img', name: 'sizeMark', title: '尺寸样式' },
