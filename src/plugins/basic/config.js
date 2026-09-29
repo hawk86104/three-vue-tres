@@ -80,7 +80,6 @@ export default {
             intro: '各种控制器',
             pNode: 'basic',
             preview: [
-                { src: 'plugins/basic/controls/preview/scrollControls.png', type: 'img', name: 'scrollControls', title: '滚轮控制器' },
                 {
                     src: 'plugins/basic/controls/preview/playerControls.png', type: 'img', name: 'playerControls',
                     referenceSource: { title: 'three-player-controller', url: 'https://github.com/hh-hang/three-player-controller' },
@@ -95,7 +94,6 @@ export default {
             pNode: 'basic',
             preview: [
                 { src: 'plugins/basic/htmls/preview/component3UI.png', type: 'img', name: 'component3UI', title: '引用UI组件' },
-                { src: 'plugins/basic/htmls/preview/website.png', type: 'img', name: 'website', title: '内嵌网页' },
                 { src: 'plugins/basic/htmls/preview/websiteReflector.png', type: 'img', name: 'websiteReflector', title: '网页电脑+镜面' },
             ],
         },
@@ -117,9 +115,6 @@ export default {
                     title: 'FakeGlow',
                     referenceSource: { title: 'FakeGlow', url: 'https://r3f-fake-glow-material.vercel.app/' },
                 },
-                { src: 'plugins/basic/shine/preview/bloomPass.png', type: 'img', name: 'bloomPass', title: '后期处理-效果叠加' },
-                { src: 'plugins/basic/shine/preview/MaskPass.png', type: 'img', name: 'MaskPass', title: '后期处理-掩膜通道' },
-                { src: 'plugins/basic/shine/preview/effectComposerLayers.png', type: 'img', name: 'effectComposerLayers', title: '后期处理-图层叠加' },
                 {
                     src: 'plugins/basic/shine/preview/effectComposerShaderPass.png',
                     type: 'img',
@@ -127,7 +122,6 @@ export default {
                     title: '后期处理-图层+ShaderPass',
                     referenceSource: { title: 'zerotoinfinity', url: 'https://www.cnblogs.com/zerotoinfinity/p/15910759.html' },
                 },
-                { src: 'plugins/basic/shine/preview/effectComposerMultiple.png', type: 'img', name: 'effectComposerMultiple', title: '后期处理-多个叠加' },
             ],
         },
         {
