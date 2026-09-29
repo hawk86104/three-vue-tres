@@ -25,72 +25,54 @@
     </FSpace>
     <div class="flex flex-wrap flex-justify-start content-start mt-6 pl-6">
         <div class="w-80 mr-10 mb-10 relative" :class="{'overflow-hidden':!isEditor(props.onePlugin, onePreview.name)}" v-for="(onePreview, okey) in onePlugin.preview" :key="okey">
-            <template v-if="onePlugin.waitForGit || onePreview.waitForGit">
-                <div v-if="hasStyle(props.onePlugin, onePreview.name)" class="tag-sheared" :class="classText(props.onePlugin, onePreview.name)">
-                    {{ hasStyle(props.onePlugin, onePreview.name) }}
+            <div v-if="hasStyle(props.onePlugin, onePreview.name)" class="tag-sheared" :class="classText(props.onePlugin, onePreview.name)">
+                {{ hasStyle(props.onePlugin, onePreview.name) }}
+            </div>
+            <FCard :header="onePreview.title" shadow="hover">
+                <video controls class="w-full max-h-70 h-14em" v-if="onePreview.type === 'video'">
+                    <source :src="publicPath + onePreview.src" type="video/mp4" autoplay="true" loop="true" />
+                </video>
+                <oneImageQr v-else-if="onePreview.type === 'img'" :onePreview="onePreview" :onePlugin="onePlugin" />
+                <div
+                    class="w-full h-48 text-3 text-left mb-2"
+                    style="background-color: rgb(55 56 61); overflow: hidden; border-radius: 10px"
+                    v-else-if="onePreview.type === 'text'"
+                >
+                    <div class="p-2" style="color: white" v-html="onePreview.src"></div>
                 </div>
-                <FCard :header="onePreview.title" shadow="hover">
-                    <div
-                        class="w-full h-48 text-5 line-height-1.5em text-left mb-2 text-#5384ff"
-                        style="background-color: rgb(55 56 61); overflow: hidden; border-radius: 10px"
-                    >
-                        <div class="p-2">官网已经更新样例功能，请git 更新代码!</div>
-                    </div>
-                    <div class="cursor-pointer text-right" style="margin-top: 6px; margin-bottom: -8px" @click="toPage(props.onePlugin, onePreview, true)">
-                        点击web端演示
-                    </div>
-                </FCard>
-            </template>
-            <template v-else>
-                <div v-if="hasStyle(props.onePlugin, onePreview.name)" class="tag-sheared" :class="classText(props.onePlugin, onePreview.name)">
-                    {{ hasStyle(props.onePlugin, onePreview.name) }}
+                <div class="cursor-pointer text-right" style="margin-top: 6px; margin-bottom: -8px" @click="toPage(props.onePlugin, onePreview)">
+                    点击web端演示
                 </div>
-                <FCard :header="onePreview.title" shadow="hover">
-                    <video controls class="w-full max-h-70 h-14em" v-if="onePreview.type === 'video'">
-                        <source :src="publicPath + onePreview.src" type="video/mp4" autoplay="true" loop="true" />
-                    </video>
-                    <oneImageQr v-else-if="onePreview.type === 'img'" :onePreview="onePreview" :onePlugin="onePlugin" />
-                    <div
-                        class="w-full h-48 text-3 text-left mb-2"
-                        style="background-color: rgb(55 56 61); overflow: hidden; border-radius: 10px"
-                        v-else-if="onePreview.type === 'text'"
+            </FCard>
+            <n-popover v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover" placement="top-end" :show-arrow="false">
+                <template #trigger>
+                    <button
+                        type="button"
+                        aria-label="编辑器引导"
+                        class="editor-guide-trigger absolute bottom-11 right--3 z-99999"
+                        @click.prevent.stop
                     >
-                        <div class="p-2" style="color: white" v-html="onePreview.src"></div>
-                    </div>
-                    <div class="cursor-pointer text-right" style="margin-top: 6px; margin-bottom: -8px" @click="toPage(props.onePlugin, onePreview)">
-                        点击web端演示
-                    </div>
-                </FCard>
-                <n-popover v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover" placement="top-end" :show-arrow="false">
-                    <template #trigger>
-                        <button
-                            type="button"
-                            aria-label="编辑器引导"
-                            class="editor-guide-trigger absolute bottom-11 right--3 z-99999"
-                            @click.prevent.stop
-                        >
-                            <n-icon size="14" class="editor-guide-trigger__icon">
-                                <LogoXbox />
-                            </n-icon>
-                            <span>编辑器</span>
-                        </button>
-                    </template>
-                    <div class="editor-guide-popover">
-                        <div class="editor-guide-tip">已规范封装，供给于编辑器生态中，灵活使用</div>
-                        <a
-                            v-for="item in editorGuideLinks"
-                            :key="item.label"
-                            :href="item.url"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="editor-guide-link"
-                        >
-                            <span class="editor-guide-link__label">{{ item.label }}</span>
-                            <span class="editor-guide-link__arrow">↗</span>
-                        </a>
-                    </div>
-                </n-popover>
-            </template>
+                        <n-icon size="14" class="editor-guide-trigger__icon">
+                            <LogoXbox />
+                        </n-icon>
+                        <span>编辑器</span>
+                    </button>
+                </template>
+                <div class="editor-guide-popover">
+                    <div class="editor-guide-tip">已规范封装，供给于编辑器生态中，灵活使用</div>
+                    <a
+                        v-for="item in editorGuideLinks"
+                        :key="item.label"
+                        :href="item.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="editor-guide-link"
+                    >
+                        <span class="editor-guide-link__label">{{ item.label }}</span>
+                        <span class="editor-guide-link__arrow">↗</span>
+                    </a>
+                </div>
+            </n-popover>
         </div>
     </div>
 </template>
@@ -155,17 +137,13 @@ const jumpType = (url: string, addPreUrl: boolean) => {
         })
     }
 }
-const toPage = (plugin: any, value: any, isOnline = false) => {
+const toPage = (plugin: any, value: any) => {
     if (value.url) {
         return jumpType(value.url, false)
     }
     let path = `/plugins/${plugin.name}/${value.name}`
     if (plugin.pNode) {
         path = `/plugins/${plugin.pNode}/${plugin.name}/${value.name}`
-    }
-    if (isOnline) {
-        path = 'https://oss.icegl.cn/#' + path
-        return jumpType(path, false)
     }
     let routeUrl = router.resolve({
         path: path,

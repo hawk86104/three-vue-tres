@@ -12,7 +12,6 @@ import { posix } from 'node:path'
 import fg from 'fast-glob'
 // import viteCompression from 'vite-plugin-compression'
 import javascriptObfuscator from 'vite-plugin-javascript-obfuscator'
-import addExtraScriptPlugin from './src/common/addExtraScriptPlugin.js'
 
 const PLUGIN_SOURCE_GLOB = '**/*.{vue,js,ts,jsx,tsx}'
 const pluginPredevEntries = fg.sync('src/plugins/*/predev.config.json').flatMap((configFile) => {
@@ -162,7 +161,6 @@ export default defineBuildConfig({
         plugins: [
             console.log('正在加载 TvT.js...'),
             scanPluginSources(pluginPredevEntries),
-            addExtraScriptPlugin(),
         ],
         server: {
             proxy: {

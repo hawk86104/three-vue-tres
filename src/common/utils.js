@@ -8,7 +8,6 @@
  */
 // 放工具函数
 import { request } from '@fesjs/fes'
-import { FMessage } from '@fesjs/fes-design'
 
 const OSS_ASSET_PREFIX = 'https://oss.icegl.cn/'
 const REMOTE_PLUGIN_MENU_URL = 'https://www.icegl.cn/addons/tvt/pluginsforpreivew/index'
@@ -130,60 +129,6 @@ const isValidRemoteMenuPayload = (menuPayload) => {
     return Object.keys(configs).some((key) => isValidRemotePluginConfig(configs[key]))
 }
 
-// 警告函数
-function showWarning() {
-    FMessage.warning?.({
-        content: '官网已经更新的插件功能，请git 更新代码!',
-        colorful: true,
-        duration: 5,
-    })
-}
-const formatMenu = (online, local) => {
-    const onlineConfigs = getMenuConfigs(online)
-    // 复制本地菜单
-    const result = { ...local }
-
-    for (const olKey in onlineConfigs) {
-        if (!hasOwn(onlineConfigs, olKey) || olKey === 'basic' || onlineConfigs[olKey].tvtstore !== undefined) {
-            continue
-        }
-        const olItem = onlineConfigs[olKey]
-        if (!isPlainObject(olItem)) {
-            continue
-        }
-        const loItem = local[olKey]
-        const onlinePreviews = getPreviewList(olItem.preview)
-
-        //  如果在线和本地都存在该键，比较它们的预览项
-        if (loItem) {
-            const localPreviews = new Map((loItem.preview || []).map((item) => [item.name, item]))
-            const mergedPreview = Array.isArray(result[olKey].preview) ? result[olKey].preview : []
-
-            // 检查并添加在线中缺少的预览到结果中
-            onlinePreviews.forEach((preview) => {
-                if (!localPreviews.has(preview.name)) {
-                    mergedPreview.push({ ...preview, waitForGit: true })
-                    showWarning()
-                }
-            })
-            result[olKey] = {
-                ...result[olKey],
-                preview: mergedPreview,
-            }
-        } else {
-            //如果本地不存在该键，则从在线添加整个部分
-            result[olKey] = {
-                ...olItem,
-                waitForGit: true,
-                preview: onlinePreviews,
-            }
-            showWarning()
-        }
-    }
-
-    return result
-}
-
 const mergeRemotePluginMenu = (remoteMenu, local) => {
     if (!isValidRemoteMenuPayload(remoteMenu)) {
         console.log('在线插件菜单配置格式异常，已使用本地插件菜单')
@@ -206,35 +151,14 @@ const mergeRemotePluginMenu = (remoteMenu, local) => {
     return result
 }
 
-export const getOnlinePluginConfig = (plConfig, options = {}) => {
-    const checkReleaseMenu = options.checkReleaseMenu !== false
-    const releaseMenuPromise = checkReleaseMenu
-        ? request(
-              `${process.env.NODE_ENV === 'development' ? 'api.icegl' : 'https://www.icegl.cn'}/addons/tvt/index/getRelaseMenuList`,
-              {},
-              {
-                  method: 'get',
-              },
-          )
-              .then((res) => {
-                  plConfig.value = formatMenu(res.code.menuList.configs, plConfig.value)
-              })
-              .catch((err) => {
-                  // 处理异常
-                  console.log(err, '请连接网络，获得插件的菜单更新')
-              })
-        : Promise.resolve()
-
-    const remotePluginMenuPromise = requestRemotePluginMenu()
+export const getOnlinePluginConfig = (plConfig) =>
+    requestRemotePluginMenu()
         .then((res) => {
             plConfig.value = mergeRemotePluginMenu(res, plConfig.value)
         })
         .catch((err) => {
             console.log(err, '请连接网络，获得在线插件菜单配置')
         })
-
-    return Promise.allSettled([releaseMenuPromise, remotePluginMenuPromise])
-}
 
 // 通过名称查找预览配置
 function findPreviewByName(previews, name) {

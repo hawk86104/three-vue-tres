@@ -486,12 +486,9 @@ watch(menuSetupFilter, refreshFilteredData)
 watch(pluginsConfig, refreshFilteredData, {
     deep: true,
 })
-const shouldCheckReleaseMenu = process.env.NODE_ENV === 'development' || process.env.FES_APP_ONLINE_API
 const onlinePluginConfigReady =
     process.env.FES_APP_PLSNAME === undefined
-        ? getOnlinePluginConfig(pluginsConfig, {
-              checkReleaseMenu: shouldCheckReleaseMenu,
-          })
+        ? getOnlinePluginConfig(pluginsConfig)
         : Promise.resolve()
 onMounted(async () => {
     await scrollToHash()
