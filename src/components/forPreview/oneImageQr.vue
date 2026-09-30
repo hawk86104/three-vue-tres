@@ -2,47 +2,47 @@
     <div v-if="!qrOnly" class="preview-image-frame">
         <FImage class="preview-thumbnail w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" :alt="onePreview.title || onePreview.name" :lazy="false" />
     </div>
-    <NPopover
-        v-else-if="hasPreview"
-        v-model:show="showQr"
-        trigger="hover"
-        placement="top"
-        :show-arrow="false"
-        :duration="180"
-        :theme-overrides="{ color: 'var(--catalog-surface, #fff)', textColor: 'var(--catalog-text, #18181b)', borderRadius: '14px', boxShadow: '0 12px 40px #00000030' }"
-        @clickoutside="showQr = false"
-    >
-        <template #trigger>
-            <button type="button" class="mobile-preview-trigger" :aria-label="'移动端预览：' + (onePreview.title || onePreview.name)" :aria-expanded="showQr" @click.stop="showQr = true" @focus="showQr = true" @blur="showQr = false" @keydown.esc.stop="showQr = false">
-                <QrCodeOutline /><span>移动端预览</span>
-            </button>
-        </template>
-        <div class="one-image-qr-popover">
-            <div class="qr-popover-heading">
-                <div><strong>扫码体验</strong><p>{{ onePreview.title || onePreview.name }}</p></div>
-                <button type="button" aria-label="关闭二维码" @mousedown.prevent @click="showQr = false"><CloseOutline /></button>
-            </div>
-            <div class="qr-popover-grid">
-                <div class="one-item-qrcode">
-                    <FImage class="one-item-qrcode__image" :src="urlMobile" alt="H5移动端二维码" @error="errH5Img">
-                        <template #placeholder><span class="qr-image-status">加载中…</span></template>
-                        <template #error><span class="qr-image-status">二维码暂不可用</span></template>
-                    </FImage>
-                    <strong>H5 移动端</strong><span>手机浏览器打开</span>
+    <template v-else-if="hasPreview">
+        <button ref="qrTrigger" type="button" class="mobile-preview-trigger" :aria-label="'移动端预览：' + (onePreview.title || onePreview.name)" :aria-expanded="showQr" @mouseenter="openQr" @mouseleave="scheduleQrClose" @click.stop="openQr" @focus="openQr" @blur="closeQr" @keydown.esc.stop="closeQr">
+            <QrCodeOutline /><span>移动端预览</span>
+        </button>
+        <NPopover
+            v-model:show="showQr"
+            trigger="manual"
+            placement="top-end"
+            :x="qrPosition.x"
+            :y="qrPosition.y"
+            :show-arrow="false"
+            :theme-overrides="{ color: 'var(--catalog-surface, #fff)', textColor: 'var(--catalog-text, #18181b)', borderRadius: '14px', boxShadow: '0 12px 40px #00000030' }"
+            @clickoutside="onQrClickOutside"
+        >
+            <div class="one-image-qr-popover" @mouseenter="cancelQrClose" @mouseleave="scheduleQrClose">
+                <div class="qr-popover-heading">
+                    <div><strong>扫码体验</strong><p>{{ onePreview.title || onePreview.name }}</p></div>
+                    <button type="button" aria-label="关闭二维码" @mousedown.prevent @click="closeQr"><CloseOutline /></button>
                 </div>
-                <div class="one-item-qrcode">
-                    <FImage class="one-item-qrcode__image" :src="urlmini" alt="微信小程序二维码" @error="errMiNiImg">
-                        <template #placeholder><span class="qr-image-status">加载中…</span></template>
-                        <template #error><span class="qr-image-status">二维码暂不可用</span></template>
-                    </FImage>
-                    <strong>微信小程序</strong><span>微信扫一扫打开</span>
+                <div class="qr-popover-grid">
+                    <div class="one-item-qrcode">
+                        <FImage class="one-item-qrcode__image" :src="urlMobile" alt="H5移动端二维码" @error="errH5Img">
+                            <template #placeholder><span class="qr-image-status">加载中…</span></template>
+                            <template #error><span class="qr-image-status">二维码暂不可用</span></template>
+                        </FImage>
+                        <strong>H5 移动端</strong><span>手机浏览器打开</span>
+                    </div>
+                    <div class="one-item-qrcode">
+                        <FImage class="one-item-qrcode__image" :src="urlmini" alt="微信小程序二维码" @error="errMiNiImg">
+                            <template #placeholder><span class="qr-image-status">加载中…</span></template>
+                            <template #error><span class="qr-image-status">二维码暂不可用</span></template>
+                        </FImage>
+                        <strong>微信小程序</strong><span>微信扫一扫打开</span>
+                    </div>
                 </div>
             </div>
-        </div>
-    </NPopover>
+        </NPopover>
+    </template>
 </template>
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { FImage } from '@fesjs/fes-design'
 import { NPopover } from 'naive-ui'
 import { CloseOutline, QrCodeOutline } from '@vicons/ionicons5'
@@ -64,6 +64,40 @@ const props = defineProps({
 })
 
 const showQr = ref(false)
+const qrTrigger = ref<HTMLButtonElement | null>(null)
+const qrPosition = ref({ x: 0, y: 0 })
+let qrCloseTimer: ReturnType<typeof setTimeout> | undefined
+const cancelQrClose = () => clearTimeout(qrCloseTimer)
+const closeQr = () => {
+    cancelQrClose()
+    showQr.value = false
+}
+const onQrClickOutside = (event: MouseEvent) => {
+    if (!qrTrigger.value?.contains(event.target as Node)) closeQr()
+}
+const scheduleQrClose = () => {
+    cancelQrClose()
+    if (showQr.value) qrCloseTimer = setTimeout(closeQr, 180)
+}
+const openQr = (event: Event) => {
+    cancelQrClose()
+    const trigger = event.currentTarget as HTMLElement
+    const card = trigger.closest('.fes-card') || trigger
+    // 对齐卡片右边界，纵向仍放在操作按钮上方。
+    qrPosition.value = { x: card.getBoundingClientRect().right, y: trigger.getBoundingClientRect().top }
+    showQr.value = true
+}
+watch(showQr, (visible, _, onCleanup) => {
+    if (!visible) return
+    // 手动定位的浮层在页面位置变化时收起，避免与卡片错位。
+    window.addEventListener('scroll', closeQr, true)
+    window.addEventListener('resize', closeQr)
+    onCleanup(() => {
+        cancelQrClose()
+        window.removeEventListener('scroll', closeQr, true)
+        window.removeEventListener('resize', closeQr)
+    })
+})
 const publicPath = process.env.BASE_URL || '/'
 const imgSrc = () => {
     let url = props.onePreview.src
