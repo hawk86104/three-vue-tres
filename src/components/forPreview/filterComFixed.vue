@@ -22,10 +22,13 @@
         </div>
         <div class="catalog-toolbar-actions">
             <nav class="catalog-community-links" aria-label="项目与社区">
-                <a href="https://github.com/hawk86104/three-vue-tres" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-                <a href="https://gitee.com/ice-gl/icegl-three-vue-tres" target="_blank" rel="noopener noreferrer">Gitee ↗</a>
-                <a href="https://space.bilibili.com/410503457" target="_blank" rel="noopener noreferrer">冰哥 B站 ↗</a>
-                <a href="https://space.bilibili.com/384558900" target="_blank" rel="noopener noreferrer">地虎 B站 ↗</a>
+                <a v-for="link in communityLinks" :key="link.id" :href="link.url" target="_blank" rel="noopener noreferrer">
+                    <span class="catalog-community-label">{{ link.label }}</span>
+                    <span class="catalog-community-stat" :title="communityCounts[link.id] === '—' ? '计数暂不可用' : undefined">
+                        <strong>{{ communityCounts[link.id] ?? '…' }}</strong><span>{{ link.metric }}</span>
+                    </span>
+                    <span class="catalog-community-arrow" aria-hidden="true">↗</span>
+                </a>
             </nav>
             <slot name="actions" />
         </div>
@@ -33,7 +36,7 @@
     </div>
 </template>
 <script setup lang="ts">
-import { inject, ref, type Ref } from 'vue'
+import { inject, onMounted, ref, type Ref } from 'vue'
 import { CloseOutline, SearchOutline } from '@vicons/ionicons5'
 
 const inputValue = inject<Ref<string>>('filterFixedInputValue', ref(''))
@@ -44,6 +47,28 @@ const statusFilters = [
     { value: 'recommend', label: '推荐' },
     { value: 'editor', label: '编辑器' },
 ]
+const dynamicCountUrl = (url: string, query: string) => 'https://img.shields.io/badge/dynamic/json.json?' + new URLSearchParams({ url, query })
+const communityLinks = [
+    { id: 'github', label: 'GitHub', metric: 'Stars', url: 'https://github.com/hawk86104/three-vue-tres', countUrl: 'https://img.shields.io/github/stars/hawk86104/three-vue-tres.json' },
+    { id: 'gitee', label: 'Gitee', metric: 'Stars', url: 'https://gitee.com/ice-gl/icegl-three-vue-tres', countUrl: dynamicCountUrl('https://gitee.com/api/v5/repos/ice-gl/icegl-three-vue-tres', '$.stargazers_count') },
+    { id: 'bingge', label: '冰哥 B站', metric: '关注', url: 'https://space.bilibili.com/410503457', countUrl: dynamicCountUrl('https://api.bilibili.com/x/relation/stat?vmid=410503457', 'data.follower') },
+    { id: 'dihu', label: '地虎 B站', metric: '关注', url: 'https://space.bilibili.com/384558900', countUrl: dynamicCountUrl('https://api.bilibili.com/x/relation/stat?vmid=384558900', 'data.follower') },
+]
+const communityCounts = ref<Record<string, string>>({})
+onMounted(() => {
+    // 沿用原徽章的数据服务，由 Shields 代取平台数据，避免直接请求时的跨域限制。
+    communityLinks.forEach(async (link) => {
+        try {
+            const response = await fetch(link.countUrl)
+            if (!response.ok) throw new Error('计数请求失败')
+            const { message } = await response.json()
+            if (typeof message !== 'string' || !/^\d[\d,.]*[kmb]?$/i.test(message)) throw new Error('计数暂不可用')
+            communityCounts.value[link.id] = Number.isFinite(Number(message)) ? Number(message).toLocaleString('zh-CN') : message
+        } catch {
+            communityCounts.value[link.id] = '—'
+        }
+    })
+})
 </script>
 <style lang="less" scoped>
 .filterFixed {
@@ -87,9 +112,16 @@ const statusFilters = [
 .catalog-status-filters input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .catalog-status-filters label:focus-within { outline: 2px solid var(--catalog-accent); outline-offset: 2px; }
 .catalog-toolbar-actions { display: flex; align-items: center; gap: 16px; margin-left: auto; }
-.catalog-community-links { display: flex; flex-wrap: wrap; gap: 12px; }
-.catalog-community-links a { font-size: 11px; color: var(--catalog-muted); text-decoration: none; white-space: nowrap; }
-.catalog-community-links a:hover { color: var(--catalog-text); }
+.catalog-community-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.catalog-community-links a { display: inline-flex; align-items: center; gap: 7px; padding: 5px 7px 5px 9px; border: 1px solid var(--catalog-border); border-radius: 8px; background: var(--catalog-surface); font-size: 11px; color: var(--catalog-muted); text-decoration: none; white-space: nowrap; transition: border-color .15s, background .15s; }
+.catalog-community-label { color: var(--catalog-text); font-weight: 500; }
+.catalog-community-stat { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 6px; border-radius: 5px; background: var(--catalog-raised); font-size: 10px; }
+.catalog-community-stat strong { min-width: 3ch; color: var(--catalog-text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.catalog-community-arrow { color: var(--catalog-faint); font-size: 10px; }
+.catalog-community-links a:hover { border-color: var(--catalog-accent); background: var(--catalog-hover); }
+.catalog-community-links a:hover .catalog-community-stat { background: var(--catalog-active); }
+.catalog-community-links a:hover :is(strong, .catalog-community-arrow) { color: var(--catalog-accent); }
+.catalog-community-links a:focus-visible { outline: 2px solid var(--catalog-accent); outline-offset: 2px; }
 @media (max-width: 1280px) { .catalog-community-links { display: none; } }
 @media (max-width: 900px) {
     .catalog-search { max-width: none; }
@@ -99,5 +131,5 @@ const statusFilters = [
     .catalog-search { flex-basis: 120px; min-width: 0; }
     .catalog-toolbar-actions { gap: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .catalog-status-filters label { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .catalog-status-filters label, .catalog-community-links a { transition: none; } }
 </style>
