@@ -51,7 +51,10 @@
                     <summary>说明与文档</summary><div v-html="sourcePlugin(onePreview).intro"></div>
                 </details>
                 <div class="catalog-card-actions">
-                    <a v-if="sourceUrl(onePreview)" :href="sourceUrl(onePreview)" target="_blank" rel="noopener noreferrer">源码</a>
+                    <span v-if="sourcePagePath(onePreview) || sourceUrl(onePreview)" class="catalog-card-code">
+                        <code v-if="sourcePagePath(onePreview)" class="catalog-card-page" :title="sourcePagePath(onePreview)">{{ sourcePageLabel(onePreview) }}</code>
+                        <a v-if="sourceUrl(onePreview)" :href="sourceUrl(onePreview)" target="_blank" rel="noopener noreferrer">源码</a>
+                    </span>
                     <a v-if="onePreview.catalog?.promptUrl" :href="onePreview.catalog.promptUrl" target="_blank" rel="noopener noreferrer">Prompt</a>
                     <a v-if="onePreview.catalog?.studioUrl" :href="onePreview.catalog.studioUrl" target="_blank" rel="noopener noreferrer">Studio</a>
                     <oneImageQr :onePreview="onePreview" :onePlugin="sourcePlugin(onePreview)" qr-only />
@@ -120,14 +123,24 @@ const publicPath = process.env.BASE_URL || '/'
 const localPages = import.meta.glob('/src/plugins/*/pages/**/*.vue')
 const sourcePlugin = (preview: any) => preview.sourcePluginConfig || props.onePlugin
 const mediaUrl = (src: string) => /^(https?:|data:|blob:)/.test(src) || src.startsWith('//') ? src : publicPath + src
+const sourcePagePath = (preview: any) => {
+    const plugin = sourcePlugin(preview)
+    if (plugin.remotePluginMenu) return ''
+    const page = plugin.pNode ? plugin.pNode + '/pages/' + plugin.name : plugin.name + '/pages'
+    const path = 'src/plugins/' + page + '/' + preview.name + '.vue'
+    return localPages['/' + path] ? path : ''
+}
+const sourcePageLabel = (preview: any) => {
+    const plugin = sourcePlugin(preview)
+    return plugin.pNode ? `${plugin.pNode} → ${plugin.name}/${preview.name}` : `${plugin.name} → ${preview.name}`
+}
 const sourceUrl = (preview: any) => {
     const plugin = sourcePlugin(preview)
     if (preview.disableSrcBtn) return ''
     if (preview.catalog?.sourceUrl) return preview.catalog.sourceUrl
     if (plugin.remotePluginMenu || preview.url) return ''
-    const page = plugin.pNode ? plugin.pNode + '/pages/' + plugin.name : plugin.name + '/pages'
-    if (!localPages['/src/plugins/' + page + '/' + preview.name + '.vue']) return ''
-    return 'https://gitee.com/ice-gl/icegl-three-vue-tres/blob/master/src/plugins/' + page + '/' + preview.name + '.vue'
+    const path = sourcePagePath(preview)
+    return path ? 'https://gitee.com/ice-gl/icegl-three-vue-tres/blob/master/' + path : ''
 }
 
 const editorGuideLinks = [
@@ -275,6 +288,9 @@ const isEditor = (plugin: any, value: any) => {
 .catalog-card-details :deep(a) { color: var(--catalog-accent); }
 .catalog-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 .catalog-card .catalog-card-actions { margin-top: auto; padding: 16px 2px 2px; }
+.catalog-card-code { display: inline-flex; align-items: center; flex: 1; min-width: 0; gap: 8px; }
+.catalog-card-code a { flex-shrink: 0; }
+.catalog-card-page { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--catalog-muted, #496bb4); font-family: inherit; font-size: 12px; line-height: 1.5; }
 .catalog-card-actions a { color: var(--catalog-muted, #496bb4); font-size: 12px; text-decoration: none; }
 .catalog-card-actions a:hover { color: var(--catalog-accent, #334e90); }
 .catalog-demo-button { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 0; border-radius: 7px; padding: 7px 11px; color: var(--catalog-button-text, #fff); background: var(--catalog-button, #334e90); font-size: 12px; cursor: pointer; transition: filter .18s; }
