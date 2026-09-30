@@ -95,6 +95,10 @@ const installPlugins = (pluginName) => {
         .uncompress(packagePath, './')
         .then(() => {
             console.log(`安装插件_:【 ${pluginName} 】 成功。地址：${pluginPath}。安装文件包请自行删除。`)
+            const configFile = path.join(pluginPath, 'config.js')
+            if (fs.existsSync(configFile) && /["']?tvtstore["']?\s*:\s*["']LOCAL["']/.test(fs.readFileSync(configFile, 'utf8'))) {
+                console.log('请在预览页 → 我的插件中查看。')
+            }
         })
         .catch((err) => {
             console.error(err)
@@ -151,10 +155,10 @@ const createPlugins = (pluginName) => {
                 fs.writeFile(configFile, data, 'utf8', (err) => {
                     if (err) throw err
                     console.log(`新建插件_:【 ${configFile} 】config修改完毕`)
+                    console.log(`新建插件_:【 ${pluginName} 】 成功。地址：${pluginPath}。请自行更改config.js`)
+                    console.log('请在预览页 → 我的插件中查看。')
                 })
             })
-
-            console.log(`新建插件_:【 ${pluginName} 】 成功。地址：${pluginPath}。请自行更改config.js`)
         })
         .catch((err) => {
             console.error(err)

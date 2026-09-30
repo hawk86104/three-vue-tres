@@ -1,6 +1,8 @@
 import { shallowRef } from 'vue'
 
 const CATALOG_TYPES_CACHE_KEY = 'tvt-catalog-types'
+export const MY_PLUGINS_SECTION = 'my-plugins'
+export const isLocalPlugin = (plugin) => plugin.tvtstore === 'LOCAL' && !plugin.remotePluginMenu
 const normalizeCatalogTypes = (types) => {
     if (!Array.isArray(types)) return []
     return types.filter((type) => type && typeof type.id === 'string' && type.id && typeof type.title === 'string'
@@ -47,7 +49,7 @@ export function createCatalog(configs, menuSetup = {}) {
                     ...preview,
                     catalog,
                     id: `${pluginKey}/${group === plugin ? '' : group.name + '/'}${preview.name}/${index}`,
-                    section: type ? `${type.id}/${catalog.category}` : 'unclassified',
+                    section: isLocalPlugin(plugin) ? MY_PLUGINS_SECTION : type ? `${type.id}/${catalog.category}` : 'unclassified',
                     sourcePluginConfig: source,
                     status: status?.taglist || '',
                     searchText: [preview.name, preview.title, pluginKey, plugin.title, group.title, type?.title, type?.categories[catalog.category], ...(catalog.tags || [])].join(' ').toLocaleLowerCase(),
@@ -59,6 +61,8 @@ export function createCatalog(configs, menuSetup = {}) {
 }
 
 export function groupCatalog(entries) {
+    const localPreviews = entries.filter((item) => item.section === MY_PLUGINS_SECTION)
+        .sort((a, b) => (Date.parse(b.sourcePluginConfig.creatTime) || 0) - (Date.parse(a.sourcePluginConfig.creatTime) || 0))
     const groups = catalogTypes.value.map((type) => ({
         ...type,
         sections: Object.entries(type.categories).map(([category, title]) => {
@@ -66,6 +70,7 @@ export function groupCatalog(entries) {
             return { id, name: id, title, preview: entries.filter((item) => item.section === id) }
         }).filter((section) => section.preview.length),
     }))
+    groups.unshift({ id: MY_PLUGINS_SECTION, title: '我的插件', sections: [{ id: MY_PLUGINS_SECTION, name: MY_PLUGINS_SECTION, title: '我的插件', preview: localPreviews }] })
     const unclassified = entries.filter((item) => item.section === 'unclassified')
     if (unclassified.length) groups.push({ id: 'unclassified', title: '待分类', sections: [{ id: 'unclassified', name: 'unclassified', title: '待分类内容', preview: unclassified }] })
     return groups.map((group) => ({ ...group, count: group.sections.reduce((count, section) => count + section.preview.length, 0) }))

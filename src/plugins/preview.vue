@@ -6,6 +6,9 @@
                 <button type="button" class="catalog-all" :class="{ active: !activeSection }" :aria-current="!activeSection ? 'page' : undefined" @click="selectSection('')">
                     <GridOutline /><span class="catalog-menu-label">全部内容</span><span class="catalog-count">{{ matchingEntries.length }}</span>
                 </button>
+                <button type="button" :class="{ active: activeSection === MY_PLUGINS_SECTION }" :aria-current="activeSection === MY_PLUGINS_SECTION ? 'page' : undefined" @click="selectSection(MY_PLUGINS_SECTION)">
+                    <FolderOutline /><span class="catalog-menu-label">我的插件</span><span class="catalog-count">{{ matchingLocalEntries.length }}</span>
+                </button>
                 <section v-for="group in menuGroups" :key="group.id" class="catalog-menu-group">
                     <h2>
                         <button type="button" class="catalog-group-toggle" :aria-expanded="!collapsedGroups.includes(group.id)" :aria-controls="'catalog-group-' + group.id" @click="toggleGroup(group.id)">
@@ -48,12 +51,16 @@
             </header>
             <template v-for="group in visibleGroups" :key="group.id">
                 <section v-for="section in group.sections" :key="section.id" class="catalog-section">
-                    <div v-if="!activeSection" class="catalog-section-title"><span>{{ group.title }}</span><h2>{{ section.title }}</h2><span>{{ section.preview.length }} 项</span></div>
+                    <div v-if="!activeSection" class="catalog-section-title"><span v-if="group.id !== MY_PLUGINS_SECTION">{{ group.title }}</span><h2>{{ section.title }}</h2><span>{{ section.preview.length }} 项</span></div>
                     <cardList :onePlugin="section" catalog-mode />
                 </section>
             </template>
             <div v-if="!visibleEntries.length" class="catalog-empty">
-                <h2>没有找到匹配内容</h2><p>试试其他关键词或取消筛选。</p><button @click="resetFilters">查看全部内容</button>
+                <template v-if="activeSection === MY_PLUGINS_SECTION && !entries.some((item) => item.section === MY_PLUGINS_SECTION)">
+                    <h2>还没有本地插件</h2><p>创建插件或安装编辑器导出的插件包后，会显示在这里。</p>
+                </template>
+                <template v-else><h2>没有找到匹配内容</h2><p>试试其他关键词或取消筛选。</p></template>
+                <button @click="resetFilters">查看全部内容</button>
             </div>
             <button type="button" class="toTop" aria-label="返回顶部" @click="contentRef?.scrollTo({ top: 0, behavior: 'smooth' })"><ArrowUpOutline /></button>
         </main>
@@ -63,12 +70,12 @@
 <script setup lang="ts">
 import { ref, computed, provide, watch } from 'vue'
 import { defineRouteMeta, useRoute, useRouter } from '@fesjs/fes'
-import { ArrowUpOutline, ChevronDownOutline, GridOutline, LayersOutline, MenuOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
+import { ArrowUpOutline, ChevronDownOutline, FolderOutline, GridOutline, LayersOutline, MenuOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
 import { getPluginsConfig, getOnlinePluginConfig } from '../common/utils'
 import { useForPreviewStore } from '@/stores/forPreview'
 import cardList from '../components/forPreview/cardList.vue'
 import filterComFixed from '../components/forPreview/filterComFixed.vue'
-import { createCatalog, groupCatalog, setCatalogTypes } from '../components/forPreview/catalog'
+import { createCatalog, groupCatalog, MY_PLUGINS_SECTION, setCatalogTypes } from '../components/forPreview/catalog'
 
 defineRouteMeta({ name: 'preview', title: 'TvT.js 内容中心' })
 const layoutConfigMenus = window.layoutConfig?.menus || []
@@ -105,7 +112,8 @@ const matchingEntries = computed(() => {
     return entries.value.filter((item) => (!search || item.searchText.includes(search))
         && (!menuSetupFilter.value.length || menuSetupFilter.value.includes(item.status)))
 })
-const menuGroups = computed(() => groupCatalog(matchingEntries.value))
+const matchingLocalEntries = computed(() => matchingEntries.value.filter((item) => item.section === MY_PLUGINS_SECTION))
+const menuGroups = computed(() => groupCatalog(matchingEntries.value).filter((group) => group.id !== MY_PLUGINS_SECTION))
 const visibleEntries = computed(() => matchingEntries.value.filter((item) => !activeSection.value || item.section === activeSection.value))
 const visibleGroups = computed(() => groupCatalog(visibleEntries.value).filter((group) => group.count))
 const selectSection = (id: string) => {

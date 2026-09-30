@@ -40,12 +40,13 @@
                 >
                     <div class="p-2" style="color: white" v-html="onePreview.src"></div>
                 </div>
-                <h3 v-if="catalogMode" class="catalog-card-title" :title="onePreview.title">{{ onePreview.title }}</h3>
+                <h3 v-if="catalogMode" class="catalog-card-title" :title="cardTitle(onePreview)">{{ cardTitle(onePreview) }}</h3>
+                <p v-if="catalogMode && isLocalPlugin(sourcePlugin(onePreview))" class="catalog-card-preview">{{ onePreview.title }}</p>
                 <div v-if="catalogMode" class="catalog-card-meta">
                     <span class="catalog-card-source" :title="[sourcePlugin(onePreview).title, sourcePlugin(onePreview).author].filter(Boolean).join(' · ')">
                         {{ sourcePlugin(onePreview).title }}<span v-if="sourcePlugin(onePreview).author"> · {{ sourcePlugin(onePreview).author }}</span>
                     </span>
-                    <span v-if="sourcePlugin(onePreview).tvtstore">{{ sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
+                    <span v-if="sourcePlugin(onePreview).tvtstore">{{ isLocalPlugin(sourcePlugin(onePreview)) ? '本地插件' : sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
                 </div>
                 <details v-if="catalogMode && sourcePlugin(onePreview).intro" class="catalog-card-details">
                     <summary>说明与文档</summary><div v-html="sourcePlugin(onePreview).intro"></div>
@@ -110,6 +111,7 @@ import oneImageQr from './oneImageQr.vue'
 import { loadJweixin, loadWebView } from 'PLS/uniAppView/lib/initScript'
 import { NPopover, NIcon } from 'naive-ui'
 import { LogoXbox } from '@vicons/ionicons5'
+import { isLocalPlugin } from './catalog'
 
 const props = withDefaults(
     defineProps<{
@@ -122,6 +124,7 @@ const { menuSetup } = useForPreviewStore()
 const publicPath = process.env.BASE_URL || '/'
 const localPages = import.meta.glob('/src/plugins/*/pages/**/*.vue')
 const sourcePlugin = (preview: any) => preview.sourcePluginConfig || props.onePlugin
+const cardTitle = (preview: any) => isLocalPlugin(sourcePlugin(preview)) ? sourcePlugin(preview).name : preview.title
 const mediaUrl = (src: string) => /^(https?:|data:|blob:)/.test(src) || src.startsWith('//') ? src : publicPath + src
 const sourcePagePath = (preview: any) => {
     const plugin = sourcePlugin(preview)
@@ -278,6 +281,7 @@ const isEditor = (plugin: any, value: any) => {
 .catalog-card :deep(.fes-img__placeholder), .catalog-card :deep(.fes-img__error) { background: var(--catalog-raised); color: var(--catalog-muted); }
 .catalog-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 16px 2px 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; transition: color .18s; }
 .catalog-card:hover .catalog-card-title { color: var(--catalog-accent); }
+.catalog-card-preview { margin: 4px 2px 0; color: var(--catalog-muted); font-size: 12px; overflow-wrap: anywhere; }
 .catalog-card-meta { display: flex; justify-content: space-between; gap: 10px; margin: 5px 2px 0; color: var(--catalog-muted); font-size: 11px; }
 .catalog-card-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .catalog-card-meta > span:not(.catalog-card-source) { flex-shrink: 0; }
