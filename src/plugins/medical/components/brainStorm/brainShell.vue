@@ -100,13 +100,20 @@ const material = new THREE.ShaderMaterial({
         varying vec3 vWorldNormal;
 
         float specularLight(vec3 normal, vec3 viewDir, vec3 lightDir, float shininess) {
-            vec3 halfVector = normalize(lightDir + viewDir);
-            float specAngle = max(dot(halfVector, normal), 0.0);
+            vec3 halfVector = lightDir + viewDir;
+            float halfLengthSquared = dot(halfVector, halfVector);
+            if (halfLengthSquared < 0.000001) {
+                return 0.0;
+            }
+            halfVector *= inversesqrt(halfLengthSquared);
+            float specAngle = clamp(dot(halfVector, normal), 0.0, 1.0);
             return pow(specAngle, shininess);
         }
 
         float fresnelLight(vec3 normal, vec3 viewDir, float power) {
-            return pow(1.0 - max(dot(normal, viewDir), 0.0), power);
+            // Clamp rounding errors so fractional powers cannot feed NaN into bloom/DOF.
+            float facing = clamp(dot(normal, viewDir), 0.0, 1.0);
+            return pow(1.0 - facing, power);
         }
 
         float ambientOcclusion(vec3 normal, vec3 viewDir) {

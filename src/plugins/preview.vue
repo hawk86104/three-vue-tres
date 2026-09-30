@@ -1,6 +1,6 @@
 <template>
     <div class="catalog-layout" :data-theme="theme" @keydown.esc="showTopMenu = false">
-        <aside class="catalog-sidebar" aria-label="内容目录">
+        <aside v-if="!isSinglePlugin" class="catalog-sidebar" aria-label="内容目录">
             <div class="catalog-brand"><LayersOutline /> <strong>TvT.js</strong><span>内容中心</span></div>
             <div class="catalog-sidebar-content">
                 <button type="button" class="catalog-all" :class="{ active: !activeSection }" :aria-current="!activeSection ? 'page' : undefined" @click="selectSection('')">
@@ -46,9 +46,12 @@
                 </template>
             </filterComFixed>
             <header class="catalog-heading">
-                <div><span class="catalog-eyebrow">EXPLORE / TVT.JS</span><h1>{{ activeTitle }}</h1><p>探索组件、场景与创作工具。</p></div>
-                <span class="catalog-result-count">{{ visibleEntries.length }} 个内容</span>
+                <div><span class="catalog-eyebrow">{{ isSinglePlugin ? 'PLUGIN / ' + singlePluginName : 'EXPLORE / TVT.JS' }}</span><h1>{{ activeTitle }}</h1><p>{{ isSinglePlugin ? '浏览当前插件的案例与演示。' : '探索组件、场景与创作工具。' }}</p></div>
+                <span class="catalog-result-count">{{ visibleEntries.length }} {{ isSinglePlugin ? '个案例' : '个内容' }}</span>
             </header>
+            <section v-if="isSinglePlugin && visibleEntries.length" class="catalog-section">
+                <cardList :onePlugin="{ preview: visibleEntries }" catalog-mode />
+            </section>
             <template v-for="group in visibleGroups" :key="group.id">
                 <section v-for="section in group.sections" :key="section.id" class="catalog-section">
                     <div v-if="!activeSection" class="catalog-section-title"><span v-if="group.id !== MY_PLUGINS_SECTION">{{ group.title }}</span><h2>{{ section.title }}</h2><span>{{ section.preview.length }} 项</span></div>
@@ -60,7 +63,7 @@
                     <h2>还没有本地插件</h2><p>创建插件或安装编辑器导出的插件包后，会显示在这里。</p>
                 </template>
                 <template v-else><h2>没有找到匹配内容</h2><p>试试其他关键词或取消筛选。</p></template>
-                <button @click="resetFilters">查看全部内容</button>
+                <button @click="resetFilters">{{ isSinglePlugin ? '查看全部案例' : '查看全部内容' }}</button>
             </div>
             <button type="button" class="toTop" aria-label="返回顶部" @click="contentRef?.scrollTo({ top: 0, behavior: 'smooth' })"><ArrowUpOutline /></button>
         </main>
@@ -78,6 +81,8 @@ import filterComFixed from '../components/forPreview/filterComFixed.vue'
 import { createCatalog, groupCatalog, MY_PLUGINS_SECTION, setCatalogTypes } from '../components/forPreview/catalog'
 
 defineRouteMeta({ name: 'preview', title: 'TvT.js 内容中心' })
+const singlePluginName = process.env.FES_APP_PLSNAME
+const isSinglePlugin = singlePluginName !== undefined
 const layoutConfigMenus = window.layoutConfig?.menus || []
 const showTopMenu = ref(false)
 const collapsedGroups = ref<string[]>([])
@@ -94,6 +99,7 @@ watch(theme, (value) => {
 })
 const contentRef = ref<HTMLElement | null>(null)
 const pluginsConfig = ref(getPluginsConfig())
+const singlePlugin = computed(() => singlePluginName === undefined ? undefined : pluginsConfig.value[singlePluginName])
 const { menuSetup } = useForPreviewStore()
 const filterFixedInputValue = ref('')
 const menuSetupFilter = ref<string[]>([])
@@ -106,7 +112,9 @@ const isExternal = (path: string) => /^(https?:)?\/\//.test(path)
 const navigationHref = (path: string) => isExternal(path) ? path : router.resolve({ path }).href
 const activeSection = ref('')
 const allGroups = computed(() => groupCatalog(entries.value))
-const activeTitle = computed(() => allGroups.value.flatMap((group) => group.sections).find((section) => section.id === activeSection.value)?.title || '全部内容')
+const activeTitle = computed(() => isSinglePlugin
+    ? singlePlugin.value?.title || singlePlugin.value?.name || singlePluginName
+    : allGroups.value.flatMap((group) => group.sections).find((section) => section.id === activeSection.value)?.title || '全部内容')
 const matchingEntries = computed(() => {
     const search = filterFixedInputValue.value.trim().toLocaleLowerCase()
     return entries.value.filter((item) => (!search || item.searchText.includes(search))
@@ -114,8 +122,8 @@ const matchingEntries = computed(() => {
 })
 const matchingLocalEntries = computed(() => matchingEntries.value.filter((item) => item.section === MY_PLUGINS_SECTION))
 const menuGroups = computed(() => groupCatalog(matchingEntries.value).filter((group) => group.id !== MY_PLUGINS_SECTION))
-const visibleEntries = computed(() => matchingEntries.value.filter((item) => !activeSection.value || item.section === activeSection.value))
-const visibleGroups = computed(() => groupCatalog(visibleEntries.value).filter((group) => group.count))
+const visibleEntries = computed(() => isSinglePlugin ? matchingEntries.value : matchingEntries.value.filter((item) => !activeSection.value || item.section === activeSection.value))
+const visibleGroups = computed(() => isSinglePlugin ? [] : groupCatalog(visibleEntries.value).filter((group) => group.count))
 const selectSection = (id: string) => {
     activeSection.value = id
     router.replace({ hash: id ? '#' + id : '' })
@@ -128,16 +136,16 @@ const resetFilters = () => {
 }
 // 新分类链接和原有 #插件名 / #basic子目录 链接均可进入对应分类。
 watch([() => route.hash, entries], () => {
+    if (isSinglePlugin) return
     let hash = route.hash.slice(1)
     try { hash = decodeURIComponent(hash) } catch { /* 保留非编码的旧链接 */ }
     const section = allGroups.value.flatMap((group) => group.sections).find((item) => item.id === hash)
     const legacy = entries.value.find((item) => item.sourcePluginConfig.name === hash || item.sourcePluginConfig.pNode === hash)
     activeSection.value = section?.id || legacy?.section || ''
 }, { immediate: true })
-getOnlinePluginConfig(pluginsConfig, {
-    onCatalogTypes: setCatalogTypes,
-    includeRemotePlugins: process.env.FES_APP_PLSNAME === undefined,
-})
+if (!isSinglePlugin) {
+    getOnlinePluginConfig(pluginsConfig, { onCatalogTypes: setCatalogTypes })
+}
 </script>
 
 <style lang="less">
