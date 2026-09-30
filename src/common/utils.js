@@ -129,6 +129,21 @@ const isValidRemoteMenuPayload = (menuPayload) => {
     return Object.keys(configs).some((key) => isValidRemotePluginConfig(configs[key]))
 }
 
+const mergePluginCatalog = (localPlugin, remotePlugin) => {
+    const remotePreviews = getPreviewList(remotePlugin.preview)
+    const mergePreviews = (previews) => getPreviewList(previews).map((preview) => {
+        const remotePreview = remotePreviews.find((item) => item.name === preview.name)
+        if (!isPlainObject(remotePreview?.catalog)) return preview
+        return { ...preview, catalog: { ...preview.catalog, ...remotePreview.catalog } }
+    })
+    return {
+        ...localPlugin,
+        catalog: { ...localPlugin.catalog, ...(isPlainObject(remotePlugin.catalog) ? remotePlugin.catalog : {}) },
+        preview: mergePreviews(localPlugin.preview),
+        ...(localPlugin.child ? { child: localPlugin.child.map((group) => ({ ...group, preview: mergePreviews(group.preview) })) } : {}),
+    }
+}
+
 const mergeRemotePluginMenu = (remoteMenu, local) => {
     if (!isValidRemoteMenuPayload(remoteMenu)) {
         console.log('在线插件菜单配置格式异常，已使用本地插件菜单')
@@ -142,22 +157,23 @@ const mergeRemotePluginMenu = (remoteMenu, local) => {
             continue
         }
         const olItem = remoteConfigs[olKey]
-        if (!isValidRemotePluginConfig(olItem) || olItem.tvtstore === undefined || result[olKey]) {
+        if (!isValidRemotePluginConfig(olItem) || olItem.tvtstore === undefined) {
             continue
         }
-        result[olKey] = normalizeRemotePluginConfig(olItem)
+        result[olKey] = result[olKey] ? mergePluginCatalog(result[olKey], olItem) : normalizeRemotePluginConfig(olItem)
     }
 
     return result
 }
 
-export const getOnlinePluginConfig = (plConfig) =>
+export const getOnlinePluginConfig = (plConfig, { onCatalogTypes, includeRemotePlugins = true } = {}) =>
     requestRemotePluginMenu()
         .then((res) => {
-            plConfig.value = mergeRemotePluginMenu(res, plConfig.value)
+            onCatalogTypes?.(res?.catalogTypes || res?.data?.catalogTypes || res?.result?.catalogTypes)
+            if (includeRemotePlugins) plConfig.value = mergeRemotePluginMenu(res, plConfig.value)
         })
         .catch((err) => {
-            console.log(err, '请连接网络，获得在线插件菜单配置')
+            console.log(err, '请连接网络，获得在线插件菜单与分类配置')
         })
 
 // 通过名称查找预览配置

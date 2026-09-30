@@ -1,20 +1,47 @@
-// 内容目录与插件发布方式独立；preview.catalog 优先于插件级 catalog。
-export const catalogTypes = [
-    { id: 'block', title: 'Blocks 基础能力', categories: { interaction: '基础与交互', material: '材质与 Shader', lighting: '光影与后处理', effects: '特效与动画', ui: 'UI / 标注 / 图表', environment: '环境 / 地面 / 水体', gis: 'GIS / 空间能力', rendering: '模型 / 渲染', physics: '物理 / XR' } },
-    { id: 'scene', title: 'Scenes 场景案例', categories: { city: '城市 / GIS', industry: '工业 / 园区', product: '产品 / 电商', medical: '医疗 / 科研', transport: '海洋 / 交通', art: '艺术 / 创意', reality: '高斯 / 实景' } },
-    { id: 'application', title: 'Applications 行业应用', categories: { industry: '工业数字孪生', city: '城市 / 园区', logistics: '仓储 / 物流', energy: '能源 / 管网', medical: '医疗 / 科研', data: '数据 / 金融', education: '文旅 / 教育', infrastructure: '机房 / 网络', home: '智能家居' } },
-    { id: 'tool', title: 'Tools 创作与工程', categories: { scene: '场景编辑', gis: 'GIS 编辑', animation: '动画编辑', material: '材质编辑', ui: 'UI / 大屏编辑', ai: 'AI 内容生成', integration: '工程集成', resources: '资源 / 动态组件' } },
-]
+import { shallowRef } from 'vue'
 
-export function createCatalog(configs, remoteCatalog, menuSetup = {}) {
+const CATALOG_TYPES_CACHE_KEY = 'tvt-catalog-types'
+const normalizeCatalogTypes = (types) => {
+    if (!Array.isArray(types)) return []
+    return types.filter((type) => type && typeof type.id === 'string' && type.id && typeof type.title === 'string'
+        && Object.prototype.toString.call(type.categories) === '[object Object]')
+        .map((type) => ({
+            id: type.id,
+            title: type.title,
+            categories: Object.fromEntries(Object.entries(type.categories).filter(([, title]) => typeof title === 'string')),
+        }))
+}
+
+const readCachedCatalogTypes = () => {
+    try {
+        return normalizeCatalogTypes(JSON.parse(localStorage.getItem(CATALOG_TYPES_CACHE_KEY) || '[]'))
+    } catch {
+        return []
+    }
+}
+
+// 字典由社区后台发布；缓存仅用于离线时复用，不在前台维护第二份定义。
+export const catalogTypes = shallowRef(readCachedCatalogTypes())
+
+export function setCatalogTypes(types) {
+    if (!Array.isArray(types)) return
+    const normalized = normalizeCatalogTypes(types)
+    if (types.length && !normalized.length) return
+    catalogTypes.value = normalized
+    try {
+        localStorage.setItem(CATALOG_TYPES_CACHE_KEY, JSON.stringify(normalized))
+    } catch { /* 存储不可用时仍使用本次接口返回的分类 */ }
+}
+
+// 内容目录与插件发布方式独立；preview.catalog 优先于插件级 catalog。
+export function createCatalog(configs, menuSetup = {}) {
     const entries = []
     for (const [pluginKey, plugin] of Object.entries(configs)) {
         for (const group of plugin.child || [plugin]) {
             const source = group === plugin ? plugin : { ...plugin, ...group, pNode: group.pNode || pluginKey }
-            const defaults = remoteCatalog[pluginKey] || {}
             ;(group.preview || []).forEach((preview, index) => {
-                const catalog = preview.catalog || group.catalog || plugin.catalog || defaults.preview?.[preview.name] || defaults.catalog || {}
-                const type = catalogTypes.find((item) => item.id === catalog.type && item.categories[catalog.category])
+                const catalog = { ...plugin.catalog, ...group.catalog, ...preview.catalog }
+                const type = catalogTypes.value.find((item) => item.id === catalog.type && item.categories[catalog.category])
                 const status = menuSetup[group.name]?.[preview.name]
                 entries.push({
                     ...preview,
@@ -32,7 +59,7 @@ export function createCatalog(configs, remoteCatalog, menuSetup = {}) {
 }
 
 export function groupCatalog(entries) {
-    const groups = catalogTypes.map((type) => ({
+    const groups = catalogTypes.value.map((type) => ({
         ...type,
         sections: Object.entries(type.categories).map(([category, title]) => {
             const id = `${type.id}/${category}`

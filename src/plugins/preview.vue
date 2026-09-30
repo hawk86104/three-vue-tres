@@ -68,8 +68,7 @@ import { getPluginsConfig, getOnlinePluginConfig } from '../common/utils'
 import { useForPreviewStore } from '@/stores/forPreview'
 import cardList from '../components/forPreview/cardList.vue'
 import filterComFixed from '../components/forPreview/filterComFixed.vue'
-import { createCatalog, groupCatalog } from '../components/forPreview/catalog'
-import remoteCatalog from '../components/forPreview/remoteCatalog'
+import { createCatalog, groupCatalog, setCatalogTypes } from '../components/forPreview/catalog'
 
 defineRouteMeta({ name: 'preview', title: 'TvT.js 内容中心' })
 const layoutConfigMenus = window.layoutConfig?.menus || []
@@ -93,7 +92,7 @@ const filterFixedInputValue = ref('')
 const menuSetupFilter = ref<string[]>([])
 provide('filterFixedInputValue', filterFixedInputValue)
 provide('menuSetupFilter', menuSetupFilter)
-const entries = computed(() => createCatalog(pluginsConfig.value, remoteCatalog, menuSetup.value))
+const entries = computed(() => createCatalog(pluginsConfig.value, menuSetup.value))
 const route = useRoute()
 const router = useRouter()
 const isExternal = (path: string) => /^(https?:)?\/\//.test(path)
@@ -127,7 +126,10 @@ watch([() => route.hash, entries], () => {
     const legacy = entries.value.find((item) => item.sourcePluginConfig.name === hash || item.sourcePluginConfig.pNode === hash)
     activeSection.value = section?.id || legacy?.section || ''
 }, { immediate: true })
-if (process.env.FES_APP_PLSNAME === undefined) getOnlinePluginConfig(pluginsConfig)
+getOnlinePluginConfig(pluginsConfig, {
+    onCatalogTypes: setCatalogTypes,
+    includeRemotePlugins: process.env.FES_APP_PLSNAME === undefined,
+})
 </script>
 
 <style lang="less">
