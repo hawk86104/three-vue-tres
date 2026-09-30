@@ -45,7 +45,7 @@ export default defineBuildConfig({
         navigation: 'top',
         multiTabs: false,
         isFixedHeader: true,
-        logo: 'logo.png',
+        logo: 'tvt-mark.svg',
         menus: [
             {
                 name: 'preview',

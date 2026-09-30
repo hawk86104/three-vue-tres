@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="-36 0 1096 1024" fill="none">
+    <title>TvT 三冰块 · 凝霜</title>
+    <desc>沿用 logo.png 的三冰块造型，冷光依次掠过，冰纹凝结后缓缓消退。</desc>
+    <defs>
+        <!-- 与 logo.png 同形的原始矢量轮廓，来自 UIdemo/image/冰块.svg。 -->
+        <path id="ice-right" pathLength="1" d="M1009.534 487.64c-0.34-0.42-0.703-0.82-1.06-1.226-0.202-0.228-0.394-0.464-0.602-0.688a39.95 39.95 0 0 0-19.732-11.746l-283.942-71.055a39.994 39.994 0 0 0-32.576 5.983l-186.758 130.12a40.216 40.216 0 0 0-2.773 1.963 39.999 39.999 0 0 0-15.379 31.524v238.923c0 18.358 12.497 34.36 30.309 38.809l285.783 71.363a40.001 40.001 0 0 0 34.311-7.285 39.941 39.941 0 0 0 5.678-5.434l178.61-124.178a40 40 0 0 0 17.166-32.843V512.95c0-9.39-3.296-18.286-9.035-25.31z m-307.107-2.691l180.98 45.29-99.766 69.509-180.979-45.29 99.765-69.509zM546.711 623.732l204.854 51.154v156.467l-204.854-51.154V623.732z m391.858 107.233l-106.075 73.748V663.225l106.075-73.747v141.487z" />
+        <path id="ice-left" pathLength="1" d="M552.334 532.674c-0.327-0.403-0.676-0.787-1.018-1.178-0.217-0.244-0.423-0.497-0.646-0.737a39.945 39.945 0 0 0-19.728-11.741L247 447.963a39.995 39.995 0 0 0-32.577 5.983L27.689 584.05a39.73 39.73 0 0 0-2.797 1.978 39.999 39.999 0 0 0-15.379 31.524v238.922c0 18.358 12.497 34.36 30.309 38.809l285.783 71.365a40.004 40.004 0 0 0 34.312-7.284 39.977 39.977 0 0 0 5.68-5.437l178.608-124.176a40 40 0 0 0 17.166-32.843V557.986a39.987 39.987 0 0 0-9.037-25.312z m-307.105-2.689l180.979 45.29-99.766 69.51-180.979-45.291 99.766-69.509zM89.513 668.769l204.854 51.154V876.39L89.513 825.234V668.769z m391.858 107.233l-106.075 73.747V708.261l106.075-73.748v141.489z" />
+        <path id="ice-top" pathLength="1" d="M758.416 142.353c-0.336-0.415-0.695-0.809-1.047-1.21-0.207-0.233-0.402-0.475-0.615-0.704a39.952 39.952 0 0 0-19.73-11.744L453.082 57.64a39.997 39.997 0 0 0-32.577 5.983l-186.75 130.113a40.196 40.196 0 0 0-2.781 1.968 40 40 0 0 0-15.379 31.525v238.922c0 18.359 12.497 34.36 30.309 38.808l285.783 71.366a40.007 40.007 0 0 0 34.312-7.284 40.056 40.056 0 0 0 5.686-5.442l178.601-124.17a40 40 0 0 0 17.167-32.843V167.664a40.001 40.001 0 0 0-9.037-25.311z m-307.106-2.689l180.979 45.289-99.766 69.508-180.978-45.29 99.765-69.507zM295.594 278.446L500.448 329.6v156.467l-204.854-51.156V278.446z m391.857 107.233l-106.074 73.747V317.938l106.074-73.747v141.488z" />
+        <path id="facets" d="M451.31 139.664 632.289 184.953 532.523 254.461 351.545 209.171ZM295.594 278.446 500.448 329.6V486.067L295.594 434.911ZM687.451 244.191 581.377 317.938V459.426L687.451 385.679Z" />
+        <clipPath id="facet-clip"><use href="#facets" /></clipPath>
+        <clipPath id="cube-clip"><path d="M758.416 142.353c-0.336-0.415-0.695-0.809-1.047-1.21-0.207-0.233-0.402-0.475-0.615-0.704a39.952 39.952 0 0 0-19.73-11.744L453.082 57.64a39.997 39.997 0 0 0-32.577 5.983l-186.75 130.113a40.196 40.196 0 0 0-2.781 1.968 40 40 0 0 0-15.379 31.525v238.922c0 18.359 12.497 34.36 30.309 38.808l285.783 71.366a40.007 40.007 0 0 0 34.312-7.284 40.056 40.056 0 0 0 5.686-5.442l178.601-124.17a40 40 0 0 0 17.167-32.843V167.664a40.001 40.001 0 0 0-9.037-25.311z" /></clipPath>
+        <linearGradient id="glass" x1="345" y1="150" x2="620" y2="480" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#c5f8ff" stop-opacity=".16" />
+            <stop offset=".5" stop-color="#78dfff" stop-opacity=".04" />
+            <stop offset="1" stop-color="#4baeff" stop-opacity=".13" />
+        </linearGradient>
+        <radialGradient id="frost" cx="30%" cy="25%" r="85%">
+            <stop stop-color="#f0fdff" stop-opacity=".85" />
+            <stop offset=".5" stop-color="#b1edff" stop-opacity=".38" />
+            <stop offset="1" stop-color="#80e1ff" stop-opacity="0" />
+        </radialGradient>
+        <linearGradient id="sheen">
+            <stop stop-color="#e0faff" stop-opacity="0" />
+            <stop offset=".48" stop-color="#fff" stop-opacity=".05" />
+            <stop offset=".55" stop-color="#fff" stop-opacity=".85" />
+            <stop offset="1" stop-color="#b4f2ff" stop-opacity="0" />
+        </linearGradient>
+        <filter id="cold-glow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+            <feGaussianBlur stdDeviation="5" />
+            <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <!-- 冰纹位于三个透明切面内；三个冰块共用局部细节，外轮廓保持各自原稿。 -->
+        <path id="veins" pathLength="1" d="M405 174 444 201 487 199 523 222 570 229M444 201 428 225M487 199 501 175 538 166M523 222 514 247M501 175 483 164M385 300 392 344 424 376 413 421 444 475M392 344 354 355 327 341M354 355 340 380M424 376 465 364 496 379M465 364 477 339M413 421 368 414 343 435M368 414 357 395M652 268 629 319 638 358 616 402 619 433M629 319 603 331 581 318M638 358 669 364 687 348M616 402 586 394" />
+        <path id="spark" d="m0-17 4 13 13 4-13 4-4 13-4-13-13-4 13-4Z" />
+    </defs>
+    <style>
+        .ice { color: #1c86e5; --delay: 0s; --rise: -7px; animation: drift 8s ease-in-out var(--delay) infinite; }
+        .ice-right { --delay: .9s; }
+        .ice-left { --delay: 1.8s; --rise: -5px; }
+        .ice-top { color: #80e1ff; --rise: -11px; }
+        .shell { fill: currentColor; }
+        .rim { stroke: #e1fbff; stroke-width: 7; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; filter: url(#cold-glow); animation: freeze-rim 8s ease-in-out var(--delay) infinite; }
+        .frost { fill: url(#frost); opacity: 0; animation: frost 8s ease-in-out var(--delay) infinite; }
+        .veins { stroke: #dffbff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; animation: freeze-veins 8s ease-in-out var(--delay) infinite; }
+        .sheen { fill: url(#sheen); opacity: 0; animation: sweep 8s ease-in-out var(--delay) infinite; }
+        .spark { fill: #f2feff; opacity: 0; filter: url(#cold-glow); animation: sparkle 8s ease-in-out var(--delay) infinite; }
+        @keyframes drift {
+            0%, 12%, 80%, 100% { transform: translateY(0); }
+            38%, 52% { transform: translateY(var(--rise)); }
+        }
+        @keyframes freeze-rim {
+            0%, 10%, 100% { opacity: 0; stroke-dashoffset: 1; }
+            16% { opacity: .85; stroke-dashoffset: 1; }
+            38%, 52% { opacity: .9; stroke-dashoffset: 0; }
+            76%, 92% { opacity: 0; stroke-dashoffset: 0; }
+        }
+        @keyframes frost {
+            0%, 14%, 78%, 100% { opacity: 0; }
+            38%, 50% { opacity: .7; }
+        }
+        @keyframes freeze-veins {
+            0%, 20%, 100% { opacity: 0; stroke-dashoffset: 1; }
+            24% { opacity: .2; stroke-dashoffset: 1; }
+            43%, 52% { opacity: .85; stroke-dashoffset: 0; }
+            76%, 92% { opacity: 0; stroke-dashoffset: 0; }
+        }
+        @keyframes sweep {
+            0%, 20% { opacity: 0; transform: translateX(-420px); }
+            26% { opacity: .8; }
+            48% { opacity: .6; transform: translateX(440px); }
+            52%, 100% { opacity: 0; transform: translateX(440px); }
+        }
+        @keyframes sparkle {
+            0%, 35%, 57%, 100% { opacity: 0; transform: scale(.4); }
+            44% { opacity: 1; transform: scale(1.15); }
+            49% { opacity: .5; transform: scale(.8); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .ice, .rim, .frost, .veins, .sheen, .spark { animation: none; }
+        }
+    </style>
+    <g class="ice ice-right">
+        <use class="shell" href="#ice-right" />
+        <g transform="translate(251.117 345.285)">
+            <use href="#facets" fill="url(#glass)" />
+            <use class="frost" href="#facets" />
+            <g clip-path="url(#facet-clip)"><use class="veins" href="#veins" /></g>
+            <g clip-path="url(#cube-clip)"><path class="sheen" d="M110-20H225L680 620H565Z" /></g>
+            <g transform="translate(653 294)"><use class="spark" href="#spark" /></g>
+        </g>
+        <use class="rim" href="#ice-right" />
+    </g>
+    <g class="ice ice-left">
+        <use class="shell" href="#ice-left" />
+        <g transform="translate(-206.082 390.323)">
+            <use href="#facets" fill="url(#glass)" />
+            <use class="frost" href="#facets" />
+            <g clip-path="url(#facet-clip)"><use class="veins" href="#veins" /></g>
+            <g clip-path="url(#cube-clip)"><path class="sheen" d="M110-20H225L680 620H565Z" /></g>
+            <g transform="translate(374 352)"><use class="spark" href="#spark" /></g>
+        </g>
+        <use class="rim" href="#ice-left" />
+    </g>
+    <g class="ice ice-top">
+        <use class="shell" href="#ice-top" />
+        <use href="#facets" fill="url(#glass)" />
+        <use class="frost" href="#facets" />
+        <g clip-path="url(#facet-clip)"><use class="veins" href="#veins" /></g>
+        <g clip-path="url(#cube-clip)"><path class="sheen" d="M110-20H225L680 620H565Z" /></g>
+        <g transform="translate(491 196)"><use class="spark" href="#spark" /></g>
+        <use class="rim" href="#ice-top" />
+    </g>
+</svg>

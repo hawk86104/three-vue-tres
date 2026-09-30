@@ -1,7 +1,7 @@
 <template>
     <div class="catalog-layout" :data-theme="theme" @keydown.esc="showTopMenu = false">
         <aside v-if="!isSinglePlugin" class="catalog-sidebar" aria-label="内容目录">
-            <div class="catalog-brand"><LayersOutline /> <strong>TvT.js</strong><span>内容中心</span></div>
+            <div class="catalog-brand"><LayersOutline /><strong>探索内容</strong><span>EXPLORE</span></div>
             <div class="catalog-sidebar-content">
                 <button type="button" class="catalog-all" :class="{ active: !activeSection }" :aria-current="!activeSection ? 'page' : undefined" @click="selectSection('')">
                     <GridOutline /><span class="catalog-menu-label">全部内容</span><span class="catalog-count">{{ matchingEntries.length }}</span>
@@ -197,7 +197,10 @@ body:has(.catalog-layout[data-theme='light']), .catalog-layout[data-theme='light
         box-shadow: none;
         overflow: hidden;
     }
-    .layout-logo { width: 200px; margin: 0 20px; color: var(--catalog-text); }
+    .layout-logo { width: 200px; flex-shrink: 0; margin: 0 20px; color: var(--catalog-text); }
+    .layout-logo .logo-img { width: 48px; height: 48px; filter: drop-shadow(0 2px 5px #38bdf830); transition: transform .35s, filter .35s; }
+    .layout-logo .logo-name { margin-left: 10px; font-size: 22px; letter-spacing: -.7px; }
+    .layout-logo:hover .logo-img { transform: scale(1.04); filter: drop-shadow(0 2px 8px #80e1ff70); }
     .layout-menu { background: transparent; }
     .layout-menu .fes-menu-item, .layout-menu .fes-sub-menu { color: var(--catalog-muted); font-size: 13px; }
     .layout-menu .fes-menu-item-wrapper, .layout-menu .fes-sub-menu-wrapper { color: var(--catalog-muted); }
@@ -223,6 +226,9 @@ body:has(.catalog-layout) .fes-sub-menu-popper {
 .catalog-layout *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 @media (max-width: 900px) {
     #tvt-app:has(.catalog-layout) .layout-header .layout-menu { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #tvt-app:has(.catalog-layout) .layout-logo .logo-img { transition: none; transform: none; }
 }
 </style>
 <style lang="less" scoped>
@@ -254,8 +260,8 @@ body:has(.catalog-layout) .fes-sub-menu-popper {
 }
 .catalog-brand { display: flex; align-items: center; gap: 10px; padding: 20px 18px; border-bottom: 1px solid var(--catalog-border); }
 .catalog-brand svg { color: var(--catalog-accent); }
-.catalog-brand strong { font-size: 19px; letter-spacing: -.6px; }
-.catalog-brand span { margin-left: auto; font-size: 12px; color: var(--catalog-muted); }
+.catalog-brand strong { font-size: 14px; font-weight: 600; }
+.catalog-brand span { margin-left: auto; font-size: 9px; letter-spacing: 1.5px; color: var(--catalog-faint); }
 .catalog-sidebar-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 10px 20px; }
 .catalog-sidebar button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 7px; padding: 9px 10px; background: transparent; color: var(--catalog-muted); text-align: left; transition: background .15s, color .15s; }
 .catalog-sidebar button:hover { background: var(--catalog-hover); color: var(--catalog-text); }
