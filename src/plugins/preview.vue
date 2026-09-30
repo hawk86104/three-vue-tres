@@ -48,7 +48,7 @@
             </header>
             <template v-for="group in visibleGroups" :key="group.id">
                 <section v-for="section in group.sections" :key="section.id" class="catalog-section">
-                    <div class="catalog-section-title"><span>{{ group.title }}</span><h2>{{ section.title }}</h2><span>{{ section.preview.length }} 项</span></div>
+                    <div v-if="!activeSection" class="catalog-section-title"><span>{{ group.title }}</span><h2>{{ section.title }}</h2><span>{{ section.preview.length }} 项</span></div>
                     <cardList :onePlugin="section" catalog-mode />
                 </section>
             </template>
@@ -142,10 +142,10 @@ body:has(.catalog-layout), .catalog-layout {
     --catalog-text: #f4f4f5;
     --catalog-muted: #a1a1aa;
     --catalog-faint: #71717a;
-    --catalog-accent: #b5a3ff;
-    --catalog-active: #262033;
-    --catalog-button: #ede9fe;
-    --catalog-button-text: #27164e;
+    --catalog-accent: #5384ff;
+    --catalog-active: #172849;
+    --catalog-button: #2563eb;
+    --catalog-button-text: #ffffff;
     --catalog-scrollbar: #3f3f46;
     --catalog-scrollbar-hover: #71717a;
     --catalog-shadow: 0 12px 32px #00000030;
@@ -160,9 +160,9 @@ body:has(.catalog-layout[data-theme='light']), .catalog-layout[data-theme='light
     --catalog-text: #18181b;
     --catalog-muted: #62626e;
     --catalog-faint: #767680;
-    --catalog-accent: #6d42cf;
-    --catalog-active: #f0eafa;
-    --catalog-button: #18181b;
+    --catalog-accent: #2563eb;
+    --catalog-active: #eaf1ff;
+    --catalog-button: #2563eb;
     --catalog-button-text: #ffffff;
     --catalog-scrollbar: #c4c4cc;
     --catalog-scrollbar-hover: #8c8c97;
@@ -242,6 +242,7 @@ body:has(.catalog-layout) .fes-sub-menu-popper {
 .catalog-sidebar button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 7px; padding: 9px 10px; background: transparent; color: var(--catalog-muted); text-align: left; transition: background .15s, color .15s; }
 .catalog-sidebar button:hover { background: var(--catalog-hover); color: var(--catalog-text); }
 .catalog-sidebar button.active { background: var(--catalog-active); color: var(--catalog-accent); }
+.catalog-sidebar button.active .catalog-count { background: var(--catalog-surface); color: var(--catalog-accent); }
 .catalog-menu-label { flex: 1; min-width: 0; }
 .catalog-count { min-width: 22px; padding: 1px 5px; border-radius: 5px; background: var(--catalog-raised); color: var(--catalog-muted); font-size: 10px; line-height: 17px; text-align: center; font-variant-numeric: tabular-nums; }
 .catalog-menu-group { margin-top: 22px; }

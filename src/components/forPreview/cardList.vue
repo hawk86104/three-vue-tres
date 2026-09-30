@@ -40,9 +40,11 @@
                 >
                     <div class="p-2" style="color: white" v-html="onePreview.src"></div>
                 </div>
-                <h3 v-if="catalogMode" class="catalog-card-title">{{ onePreview.title }}</h3>
+                <h3 v-if="catalogMode" class="catalog-card-title" :title="onePreview.title">{{ onePreview.title }}</h3>
                 <div v-if="catalogMode" class="catalog-card-meta">
-                    <span>{{ sourcePlugin(onePreview).title }}</span>
+                    <span class="catalog-card-source" :title="[sourcePlugin(onePreview).title, sourcePlugin(onePreview).author].filter(Boolean).join(' · ')">
+                        {{ sourcePlugin(onePreview).title }}<span v-if="sourcePlugin(onePreview).author"> · {{ sourcePlugin(onePreview).author }}</span>
+                    </span>
                     <span v-if="sourcePlugin(onePreview).tvtstore">{{ sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
                 </div>
                 <details v-if="catalogMode && sourcePlugin(onePreview).intro" class="catalog-card-details">
@@ -52,7 +54,8 @@
                     <a v-if="sourceUrl(onePreview)" :href="sourceUrl(onePreview)" target="_blank" rel="noopener noreferrer">源码</a>
                     <a v-if="onePreview.catalog?.promptUrl" :href="onePreview.catalog.promptUrl" target="_blank" rel="noopener noreferrer">Prompt</a>
                     <a v-if="onePreview.catalog?.studioUrl" :href="onePreview.catalog.studioUrl" target="_blank" rel="noopener noreferrer">Studio</a>
-                    <button type="button" @click="toPage(sourcePlugin(onePreview), onePreview)">{{ onePreview.url?.includes('/tvtstore/') ? '查看详情' : 'Web 演示 ↗' }}</button>
+                    <oneImageQr :onePreview="onePreview" :onePlugin="sourcePlugin(onePreview)" qr-only />
+                    <button type="button" class="catalog-demo-button" @click="toPage(sourcePlugin(onePreview), onePreview)">{{ onePreview.url?.includes('/tvtstore/') ? '查看详情' : 'Web 演示' }} <span aria-hidden="true">↗</span></button>
                 </div>
             </FCard>
             <n-popover
@@ -234,7 +237,7 @@ const isEditor = (plugin: any, value: any) => {
 </style>
 <style lang="less" scoped>
 .catalog-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 20px; }
-.catalog-card { min-width: 0; }
+.catalog-card { min-width: 0; transition: transform .28s cubic-bezier(.2, .7, .2, 1); }
 .catalog-card :deep(.fes-card) {
     display: flex;
     flex-direction: column;
@@ -246,9 +249,9 @@ const isEditor = (plugin: any, value: any) => {
     overflow: hidden;
     transition: border-color .18s, box-shadow .18s;
 }
-.catalog-card :deep(.fes-card:hover) { border-color: var(--catalog-faint); box-shadow: var(--catalog-shadow); }
+.catalog-card:hover :deep(.fes-card), .catalog-card:focus-within :deep(.fes-card) { border-color: var(--catalog-accent); box-shadow: var(--catalog-shadow); }
 .catalog-card :deep(.fes-card__body) { display: flex; flex-direction: column; flex: 1; padding: 12px; color: var(--catalog-text); }
-.catalog-card :deep(.fes-img), .catalog-card video {
+.catalog-card :deep(.preview-thumbnail), .catalog-card video {
     display: block;
     width: 100%;
     height: auto;
@@ -258,11 +261,13 @@ const isEditor = (plugin: any, value: any) => {
     background: var(--catalog-raised);
     object-fit: contain;
 }
-.catalog-card :deep(.fes-img img) { width: 100%; height: 100%; object-fit: contain; }
+.catalog-card :deep(.preview-thumbnail img) { width: 100%; height: 100%; object-fit: contain; transition: transform .5s cubic-bezier(.2, .7, .2, 1); }
 .catalog-card :deep(.fes-img__placeholder), .catalog-card :deep(.fes-img__error) { background: var(--catalog-raised); color: var(--catalog-muted); }
-.catalog-card-title { margin: 16px 2px 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.catalog-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 16px 2px 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; transition: color .18s; }
+.catalog-card:hover .catalog-card-title { color: var(--catalog-accent); }
 .catalog-card-meta { display: flex; justify-content: space-between; gap: 10px; margin: 5px 2px 0; color: var(--catalog-muted); font-size: 11px; }
-.catalog-card-meta span:last-child { flex-shrink: 0; }
+.catalog-card-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-card-meta > span:not(.catalog-card-source) { flex-shrink: 0; }
 .catalog-card-details { margin: 14px 2px 0; padding-top: 10px; border-top: 1px solid var(--catalog-border); font-size: 12px; color: var(--catalog-muted); overflow-wrap: anywhere; }
 .catalog-card-details summary { cursor: pointer; }
 .catalog-card-details summary:hover { color: var(--catalog-text); }
@@ -272,13 +277,22 @@ const isEditor = (plugin: any, value: any) => {
 .catalog-card .catalog-card-actions { margin-top: auto; padding: 16px 2px 2px; }
 .catalog-card-actions a { color: var(--catalog-muted, #496bb4); font-size: 12px; text-decoration: none; }
 .catalog-card-actions a:hover { color: var(--catalog-accent, #334e90); }
-.catalog-card-actions button { margin-left: auto; border: 0; border-radius: 7px; padding: 7px 11px; color: var(--catalog-button-text, #fff); background: var(--catalog-button, #334e90); font-size: 12px; cursor: pointer; }
-.catalog-card-actions button:hover { opacity: .85; }
+.catalog-demo-button { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 0; border-radius: 7px; padding: 7px 11px; color: var(--catalog-button-text, #fff); background: var(--catalog-button, #334e90); font-size: 12px; cursor: pointer; transition: filter .18s; }
+.catalog-demo-button:hover { filter: brightness(1.12); }
+.catalog-demo-button span { transition: transform .18s; }
+.catalog-demo-button:hover span { transform: translate(1px, -1px); }
 .catalog-card-actions :is(a, button):focus-visible, .catalog-card-details summary:focus-visible { outline: 2px solid var(--catalog-accent, #334e90); outline-offset: 3px; }
 .catalog-card > .tag-sheared { z-index: 1; width: auto; height: auto; right: 20px; top: 20px; margin: 0; padding: 2px 8px; font-size: 11px; line-height: 1.5; border-radius: 5px; transform: none; }
 .catalog-card .catalog-editor-guide { position: absolute; top: 20px; left: 20px; z-index: 1; background: var(--catalog-surface); color: var(--catalog-accent); border-color: var(--catalog-border); box-shadow: none; }
 .catalog-card .catalog-editor-guide .editor-guide-trigger__icon { color: inherit; }
-@media (prefers-reduced-motion: reduce) { .catalog-card :deep(.fes-card) { transition: none; } }
+@media (hover: hover) and (pointer: fine) {
+    .catalog-card:hover { transform: translateY(-3px) scale(1.008); }
+    .catalog-card:hover :deep(.preview-thumbnail img) { transform: scale(1.055); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .catalog-card, .catalog-card :deep(.fes-card), .catalog-card :deep(.preview-thumbnail img), .catalog-card-title, .catalog-demo-button, .catalog-demo-button span { transition: none; }
+    .catalog-card:hover, .catalog-card:hover :deep(.preview-thumbnail img), .catalog-demo-button:hover span { transform: none; }
+}
 
 .tag-sheared {
     background-color: #063667;

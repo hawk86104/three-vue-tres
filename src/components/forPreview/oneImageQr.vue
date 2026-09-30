@@ -1,46 +1,57 @@
 <template>
-    <div v-if="hasPreview">
-        <FTooltip mode="popover" :offset="-248" placement="bottom" :getContainer="getContainer" :disabled="detectDeviceType() !== 'PC'">
-            <FImage class="w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" lazy />
-            <template #content>
-                <div class="one-image-qr-popover">
-                    <div class="one-item-qrcode">
-                        <span>H5移动端</span>
-                        <FImage class="one-item-qrcode__image" :src="urlMobile" @error="errH5Img">
-                            <template #placeholder>
-                                <div class="image-slot">
-                                    <div class="image-slot">生成中<span class="dot">...</span></div>
-                                </div>
-                            </template>
-                        </FImage>
-                    </div>
-                    <div class="one-item-qrcode" style="border-left: 2px #a2a2a2 dashed">
-                        <span>微信小程序</span>
-                        <FImage class="one-item-qrcode__image" :src="urlmini" @error="errMiNiImg">
-                            <template #placeholder>
-                                <div class="image-slot">
-                                    <div class="image-slot">生成中<span class="dot">...</span></div>
-                                </div>
-                            </template>
-                        </FImage>
-                    </div>
+    <div v-if="!qrOnly" class="preview-image-frame">
+        <FImage class="preview-thumbnail w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" :alt="onePreview.title || onePreview.name" :lazy="false" />
+    </div>
+    <NPopover
+        v-else-if="hasPreview"
+        v-model:show="showQr"
+        trigger="hover"
+        placement="top"
+        :show-arrow="false"
+        :duration="180"
+        :theme-overrides="{ color: 'var(--catalog-surface, #fff)', textColor: 'var(--catalog-text, #18181b)', borderRadius: '14px', boxShadow: '0 12px 40px #00000030' }"
+        @clickoutside="showQr = false"
+    >
+        <template #trigger>
+            <button type="button" class="mobile-preview-trigger" :aria-label="'移动端预览：' + (onePreview.title || onePreview.name)" :aria-expanded="showQr" @click.stop="showQr = true" @focus="showQr = true" @blur="showQr = false" @keydown.esc.stop="showQr = false">
+                <QrCodeOutline /><span>移动端预览</span>
+            </button>
+        </template>
+        <div class="one-image-qr-popover">
+            <div class="qr-popover-heading">
+                <div><strong>扫码体验</strong><p>{{ onePreview.title || onePreview.name }}</p></div>
+                <button type="button" aria-label="关闭二维码" @mousedown.prevent @click="showQr = false"><CloseOutline /></button>
+            </div>
+            <div class="qr-popover-grid">
+                <div class="one-item-qrcode">
+                    <FImage class="one-item-qrcode__image" :src="urlMobile" alt="H5移动端二维码" @error="errH5Img">
+                        <template #placeholder><span class="qr-image-status">加载中…</span></template>
+                        <template #error><span class="qr-image-status">二维码暂不可用</span></template>
+                    </FImage>
+                    <strong>H5 移动端</strong><span>手机浏览器打开</span>
                 </div>
-            </template>
-        </FTooltip>
-    </div>
-    <div v-else>
-        <FImage class="w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" lazy />
-    </div>
+                <div class="one-item-qrcode">
+                    <FImage class="one-item-qrcode__image" :src="urlmini" alt="微信小程序二维码" @error="errMiNiImg">
+                        <template #placeholder><span class="qr-image-status">加载中…</span></template>
+                        <template #error><span class="qr-image-status">二维码暂不可用</span></template>
+                    </FImage>
+                    <strong>微信小程序</strong><span>微信扫一扫打开</span>
+                </div>
+            </div>
+        </div>
+    </NPopover>
 </template>
 <script setup lang="ts">
 import { ref } from 'vue'
-import { FImage, FTooltip } from '@fesjs/fes-design'
-import { detectDeviceType } from '../../common/utils'
+import { FImage } from '@fesjs/fes-design'
+import { NPopover } from 'naive-ui'
+import { CloseOutline, QrCodeOutline } from '@vicons/ionicons5'
 
 const props = defineProps({
     onePreview: {
         default: {
             src: '',
+            title: '',
             type: '',
             name: '',
             url: '',
@@ -49,12 +60,14 @@ const props = defineProps({
     onePlugin: {
         default: {},
     } as any,
+    qrOnly: Boolean,
 })
 
-const publicPath = process.env.BASE_URL
+const showQr = ref(false)
+const publicPath = process.env.BASE_URL || '/'
 const imgSrc = () => {
     let url = props.onePreview.src
-    if (!url.startsWith('http')) {
+    if (!/^(https?:|data:|blob:|\/\/)/.test(url)) {
         url = publicPath + url
     }
     return url
@@ -94,8 +107,12 @@ const mobileQrSrc = `https://www.icegl.cn/uploads/qrcode/b-${imgName}.png`
 const miniQrSrc = `https://www.icegl.cn/uploads/qrcode/m-${imgName}.png`
 const urlMobile = ref(mobileQrSrc)
 const urlmini = ref(miniQrSrc)
+const regenerationAttempted = new Set<string>()
 
 const refreshQrImage = async (generateUrl: string, imageUrl: string, target: typeof urlMobile) => {
+    // 一个二维码只尝试生成一次，避免图片服务异常时反复请求。
+    if (regenerationAttempted.has(imageUrl)) return
+    regenerationAttempted.add(imageUrl)
     try {
         const response = await fetch(generateUrl)
         if (!response.ok) {
@@ -116,40 +133,27 @@ const errMiNiImg = () => {
     refreshQrImage(generateUrl, miniQrSrc, urlmini)
 }
 
-const getContainer = (container: any) => {
-    return document.querySelector('#right-page-list-id')
-}
 </script>
-<style lang="less">
-.fes-tooltip-confirm,
-.fes-tooltip-popover {
-    background-color: #000000ab;
-}
+<style lang="less" scoped>
+.preview-image-frame { overflow: hidden; border-radius: 9px; }
+.mobile-preview-trigger { display: inline-flex; align-items: center; gap: 5px; padding: 6px 0; border: 0; background: transparent; color: var(--catalog-muted, #62626e); font: inherit; font-size: 12px; cursor: pointer; }
+.mobile-preview-trigger svg { width: 15px; height: 15px; }
+.mobile-preview-trigger:hover, .mobile-preview-trigger[aria-expanded='true'] { color: var(--catalog-accent, #5384ff); }
+.mobile-preview-trigger:focus-visible { outline: 2px solid var(--catalog-accent, #5384ff); outline-offset: 3px; border-radius: 4px; }
 .one-image-qr-popover {
-    width: 360px;
-    height: 220px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    width: min(344px, calc(100vw - 56px));
+    color: var(--catalog-text, #18181b);
 }
-.one-item-qrcode {
-    width: 50%;
-    color: white;
-    text-align: center;
-    font-size: 16px;
-    font-weight: bolder;
-    &__image {
-        width: 160px;
-        height: 160px;
-        margin: 8px auto;
-        display: block;
-
-        img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-        }
-    }
-}
+.qr-popover-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 14px; }
+.qr-popover-heading strong { font-size: 14px; }
+.qr-popover-heading p { margin: 4px 0 0; color: var(--catalog-muted, #62626e); font-size: 12px; overflow-wrap: anywhere; }
+.qr-popover-heading button { flex-shrink: 0; display: grid; place-items: center; padding: 4px; border: 0; border-radius: 5px; background: var(--catalog-raised, #f4f4f5); color: var(--catalog-muted, #62626e); cursor: pointer; }
+.qr-popover-heading svg { width: 16px; height: 16px; }
+.qr-popover-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.one-item-qrcode { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; text-align: center; }
+.one-item-qrcode__image { display: block; width: 100%; aspect-ratio: 1; padding: 6px; margin-bottom: 5px; box-sizing: border-box; border-radius: 10px; overflow: hidden; background: #fff; }
+.one-item-qrcode__image :deep(img) { width: 100%; height: 100%; object-fit: contain; }
+.one-item-qrcode strong { font-size: 12px; font-weight: 600; }
+.one-item-qrcode > span { color: var(--catalog-muted, #62626e); font-size: 11px; }
+.qr-image-status { display: grid; place-items: center; height: 100%; color: #62626e; font-size: 12px; }
 </style>
-<style lang="less" scoped></style>
