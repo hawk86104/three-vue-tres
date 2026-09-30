@@ -19,6 +19,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'tool', category: 'ui' },
             src: `
             1、使用goView低代码平台<a style="color: #5384ff;" href="https://vue.mtruning.club/" target="_blank">vue.mtruning.club</a>编辑好您的项目;</br>
             2、然后点击右下角的导出按钮，获得json配置文件;</br>
@@ -30,6 +31,7 @@ export default {
             title: 'goView项目纯前端',
         },
         {
+            catalog: { type: 'tool', category: 'ui' },
             src: 'plugins/goView/preview/goViewPlugin.png',
             type: 'img',
             name: 'index',
@@ -38,6 +40,7 @@ export default {
             title: '简单场景读取json配置',
         },
         {
+            catalog: { type: 'block', category: 'ui' },
             src: 'plugins/goView/preview/goViewComPage.png',
             type: 'img',
             name: 'goViewComPage',
@@ -46,6 +49,7 @@ export default {
             title: '配置组件化',
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/goView/preview/chartDataAPIPage.png',
             type: 'img',
             name: 'chartDataAPIPage',

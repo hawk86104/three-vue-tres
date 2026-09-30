@@ -17,6 +17,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'block', category: 'physics' },
             src: 'plugins/webxr/preview/theBasic.png',
             type: 'img',
             name: 'theBasic',
@@ -25,6 +26,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'block', category: 'physics' },
             src: 'plugins/webxr/preview/ballShooter.png',
             type: 'img',
             name: 'ballShooter',
@@ -33,6 +35,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'block', category: 'physics' },
             src: 'plugins/webxr/preview/interactiveBtns.png',
             type: 'img',
             name: 'interactiveBtns',

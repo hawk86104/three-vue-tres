@@ -22,8 +22,8 @@ export default {
             intro: '基础功能展示',
             pNode: 'basic',
             preview: [
-                { src: 'plugins/basic/base/preview/shapesPage.png', type: 'img', name: 'shapesPage', title: '图形合集组件' },
-                { src: 'plugins/basic/base/preview/shaderParticles.png', type: 'img', name: 'shaderParticles', title: '着色器实践' },
+                { catalog: { type: 'block', category: 'interaction' }, src: 'plugins/basic/base/preview/shapesPage.png', type: 'img', name: 'shapesPage', title: '图形合集组件' },
+                { catalog: { type: 'block', category: 'effects' }, src: 'plugins/basic/base/preview/shaderParticles.png', type: 'img', name: 'shaderParticles', title: '着色器实践' },
             ],
         },
         {
@@ -33,6 +33,7 @@ export default {
             pNode: 'basic',
             preview: [
                 {
+                    catalog: { type: 'block', category: 'material' },
                     src: 'plugins/basic/materials/preview/physicalDiffractionGrating.png',
                     type: 'img',
                     name: 'physicalDiffractionGrating',
@@ -40,18 +41,20 @@ export default {
                     referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
                 },
                 {
+                    catalog: { type: 'block', category: 'material' },
                     src: 'plugins/basic/materials/preview/raytracedDiamond.png',
                     type: 'img',
                     name: 'raytracedDiamond',
                     title: 'BVH光追钻石',
                     referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
                 },
-                { src: 'plugins/basic/materials/preview/transmissionMaterial.png', type: 'img', name: 'transmissionMaterial', title: '玻璃材质2' },
-                { src: 'plugins/basic/materials/preview/solidClippingMaterial.png', type: 'img', name: 'solidClippingMaterial', title: '裁剪材质补色' },
-                { src: 'plugins/basic/materials/preview/layerMaterial.png', type: 'img', name: 'layerMaterial', title: '图层材质' },
-                { src: 'plugins/basic/materials/preview/outline.png', type: 'img', name: 'outline', title: 'outline' },
-                { src: 'plugins/basic/materials/preview/clearcoat.png', type: 'img', name: 'clearcoat', title: '反光漆图层' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/transmissionMaterial.png', type: 'img', name: 'transmissionMaterial', title: '玻璃材质2' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/solidClippingMaterial.png', type: 'img', name: 'solidClippingMaterial', title: '裁剪材质补色' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/layerMaterial.png', type: 'img', name: 'layerMaterial', title: '图层材质' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/outline.png', type: 'img', name: 'outline', title: 'outline' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/clearcoat.png', type: 'img', name: 'clearcoat', title: '反光漆图层' },
                 {
+                    catalog: { type: 'block', category: 'material' },
                     src: 'plugins/basic/materials/preview/liquidMetal.png',
                     type: 'img',
                     name: 'liquidMetal',
@@ -59,19 +62,21 @@ export default {
                     referenceSource: { title: 'Liquid Metal', url: 'https://codepen.io/sabosugi/pen/yyabKEP' },
                 },
                 {
+                    catalog: { type: 'block', category: 'material' },
                     src: 'plugins/basic/materials/preview/jumpingBlockMaterial.svg',
                     type: 'img',
                     name: 'jumpingBlockMaterial',
                     title: '跳动块动画材质',
                 },
                 {
+                    catalog: { type: 'block', category: 'material' },
                     src: 'plugins/basic/materials/preview/instancedMeshCustomShaderMaterial.png',
                     type: 'img',
                     name: 'instancedMeshCustomShaderMaterial',
                     title: 'instanced和继承材质',
                 },
-                { src: 'plugins/basic/materials/preview/vertexSnapping.png', type: 'img', name: 'vertexSnapping', title: '顶点捕捉材质' },
-                { src: 'plugins/basic/materials/preview/materialSelector.png', type: 'img', name: 'materialSelector', title: '多材质切换组件' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/vertexSnapping.png', type: 'img', name: 'vertexSnapping', title: '顶点捕捉材质' },
+                { catalog: { type: 'block', category: 'material' }, src: 'plugins/basic/materials/preview/materialSelector.png', type: 'img', name: 'materialSelector', title: '多材质切换组件' },
             ],
         },
         {
@@ -81,6 +86,7 @@ export default {
             pNode: 'basic',
             preview: [
                 {
+                    catalog: { type: 'block', category: 'interaction' },
                     src: 'plugins/basic/controls/preview/playerControls.png', type: 'img', name: 'playerControls',
                     referenceSource: { title: 'three-player-controller', url: 'https://github.com/hh-hang/three-player-controller' },
                     title: '玩家控制器'
@@ -93,8 +99,8 @@ export default {
             intro: '内嵌网页元素',
             pNode: 'basic',
             preview: [
-                { src: 'plugins/basic/htmls/preview/component3UI.png', type: 'img', name: 'component3UI', title: '引用UI组件' },
-                { src: 'plugins/basic/htmls/preview/websiteReflector.png', type: 'img', name: 'websiteReflector', title: '网页电脑+镜面' },
+                { catalog: { type: 'block', category: 'ui' }, src: 'plugins/basic/htmls/preview/component3UI.png', type: 'img', name: 'component3UI', title: '引用UI组件' },
+                { catalog: { type: 'block', category: 'ui' }, src: 'plugins/basic/htmls/preview/websiteReflector.png', type: 'img', name: 'websiteReflector', title: '网页电脑+镜面' },
             ],
         },
         {
@@ -103,12 +109,14 @@ export default {
             intro: '关于物体发光的简单例子',
             pNode: 'basic',
             preview: [
-                { src: 'plugins/basic/shine/preview/shader.png', type: 'img', name: 'shader', title: '着色器方式' },
+                { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/basic/shine/preview/shader.png', type: 'img', name: 'shader', title: '着色器方式' },
                 {
+                    catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/shine/preview/geometricGlow.png', type: 'img', name: 'geometricGlow', title: 'geometric缩放',
                     referenceSource: { title: 'jeromeetienne', url: 'https://github.com/jeromeetienne/threex.geometricglow' },
                  },
                 {
+                    catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/shine/preview/fakeGlow.png',
                     type: 'img',
                     name: 'fakeGlow',
@@ -116,6 +124,7 @@ export default {
                     referenceSource: { title: 'FakeGlow', url: 'https://r3f-fake-glow-material.vercel.app/' },
                 },
                 {
+                    catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/shine/preview/effectComposerShaderPass.png',
                     type: 'img',
                     name: 'effectComposerShaderPass',
@@ -131,6 +140,7 @@ export default {
             pNode: 'basic',
             preview: [
                 {
+                    catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/tresProcessing/preview/fusion.png',
                     type: 'img',
                     name: 'fusion',
@@ -138,6 +148,7 @@ export default {
                     referenceSource: { title: 'post-processing.tresjs', url: 'https://post-processing.tresjs.org/guide/' },
                 },
                 {
+                    catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/tresProcessing/preview/outlinePass.png',
                     type: 'img',
                     name: 'outlinePass',

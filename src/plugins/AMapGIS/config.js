@@ -17,7 +17,7 @@ export default {
 	"state": "active",
 	"require": [],
 	"preview": [
-		{ "src": "plugins/AMapGIS/preview/cubeMesh.png", "type": "img", "name": "cubeMesh", "title": "正方体实例" },
-		{ "src": "plugins/AMapGIS/preview/buildings.png", "type": "img", "name": "buildings", "title": "建筑物" },
+		{ catalog: { type: 'block', category: 'gis' }, "src": "plugins/AMapGIS/preview/cubeMesh.png", "type": "img", "name": "cubeMesh", "title": "正方体实例" },
+		{ catalog: { type: 'block', category: 'gis' }, "src": "plugins/AMapGIS/preview/buildings.png", "type": "img", "name": "buildings", "title": "建筑物" },
 	]
 }

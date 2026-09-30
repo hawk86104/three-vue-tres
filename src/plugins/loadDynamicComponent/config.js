@@ -24,6 +24,7 @@ export default {
     "updateTime": "2026-05-12",
     "require": [],
     "preview": [{
+       catalog: { type: 'tool', category: 'resources' },
        src: `
             1、使用发布的开源动态组件:<a style="color: #5384ff;" href="https://dcser.icegl.cn" target="_blank">https://dcser.icegl.cn</a></br>
             2、动态组件库已开源：<a style="color: #5384ff;" href="https://gitee.com/ice-gl/dynamic-component-service" target="_blank">制作你自己的高级组件</a>
@@ -34,6 +35,7 @@ export default {
         disableFPSGraph: false,
         disableSrcBtn: false
     },{
+        catalog: { type: 'tool', category: 'resources' },
         "src": "plugins/loadDynamicComponent/preview/readConfig.png",
         "type": "img",
         "name": "readConfig",

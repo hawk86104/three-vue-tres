@@ -18,6 +18,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'scene', category: 'product' },
             src: 'plugins/eCommerce/preview/electricFan.png',
             type: 'img',
             name: 'electricFan',
@@ -25,6 +26,7 @@ export default {
             referenceSource: { title: 'AlvaroSaburido', url: 'https://lab.tresjs.org/experiments/product-landing-page' },
         },
         {
+            catalog: { type: 'block', category: 'material' },
             src: 'plugins/eCommerce/preview/ssrtGlass.png',
             type: 'img',
             name: 'ssrtGlass',
@@ -32,6 +34,7 @@ export default {
             referenceSource: { title: 'Domenicobrz', url: 'https://github.com/Domenicobrz/SS-refraction-through-depth-peeling-in-threejs?tab=readme-ov-file' },
         },
         {
+            catalog: { type: 'block', category: 'material' },
             src: 'plugins/eCommerce/preview/stencilMask.png',
             type: 'img',
             name: 'stencilMask',
@@ -39,6 +42,7 @@ export default {
             referenceSource: { title: 'jaimetorrealba', url: 'https://lab.jaimetorrealba.com/stencilmask_demos' },
         },
         {
+            catalog: { type: 'scene', category: 'product' },
             src: 'plugins/eCommerce/preview/sticker.png',
             type: 'img',
             name: 'sticker',
@@ -46,6 +50,7 @@ export default {
             referenceSource: { title: 'nikuscs', url: 'https://nikuscs.com/crafts/hybridly-sticker-effect/' },
         },
         {
+            catalog: { type: 'scene', category: 'product' },
             src: 'plugins/eCommerce/preview/arrangement.png',
             type: 'img',
             name: 'arrangement',
@@ -53,6 +58,7 @@ export default {
             referenceSource: { title: 'react-three-fiber', url: 'https://codesandbox.io/s/szj6p7' },
         },
         {
+            catalog: { type: 'scene', category: 'product' },
             src: 'plugins/eCommerce/preview/zipTopCan.png',
             type: 'img',
             name: 'zipTopCan',

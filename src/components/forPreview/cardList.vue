@@ -7,8 +7,8 @@
  * @LastEditTime: 2025-09-23 11:47:33
 -->
 <template>
-    <FDivider titlePlacement="left">{{ onePlugin.title + ' - ' + onePlugin.name }}</FDivider>
-    <FSpace vertical>
+    <FDivider v-if="!catalogMode" titlePlacement="left">{{ onePlugin.title + ' - ' + onePlugin.name }}</FDivider>
+    <FSpace v-if="!catalogMode" vertical>
         <span style="text-decoration: none; color: black">
             <FText
                 v-if="props.onePlugin.author"
@@ -23,16 +23,16 @@
         </span>
         <div class="p-2 ml-13" style="" v-html="props.onePlugin.intro"></div>
     </FSpace>
-    <div class="flex flex-wrap flex-justify-start content-start mt-6 pl-6">
-        <div class="w-80 mr-10 mb-10 relative" :class="{'overflow-hidden':!isEditor(props.onePlugin, onePreview.name)}" v-for="(onePreview, okey) in onePlugin.preview" :key="okey">
-            <div v-if="hasStyle(props.onePlugin, onePreview.name)" class="tag-sheared" :class="classText(props.onePlugin, onePreview.name)">
-                {{ hasStyle(props.onePlugin, onePreview.name) }}
+    <div :class="catalogMode ? 'catalog-card-grid' : 'flex flex-wrap flex-justify-start content-start mt-6 pl-6'">
+        <div class="relative" :class="catalogMode ? 'catalog-card' : 'w-80 mr-10 mb-10'" v-for="(onePreview, okey) in onePlugin.preview" :key="onePreview.id || okey">
+            <div v-if="hasStyle(sourcePlugin(onePreview), onePreview.name)" class="tag-sheared" :class="classText(sourcePlugin(onePreview), onePreview.name)">
+                {{ hasStyle(sourcePlugin(onePreview), onePreview.name) }}
             </div>
-            <FCard :header="onePreview.title" shadow="hover">
+            <FCard :header="catalogMode ? '' : onePreview.title" :shadow="catalogMode ? 'never' : 'hover'">
                 <video controls class="w-full max-h-70 h-14em" v-if="onePreview.type === 'video'">
-                    <source :src="publicPath + onePreview.src" type="video/mp4" autoplay="true" loop="true" />
+                    <source :src="mediaUrl(onePreview.src)" type="video/mp4" autoplay="true" loop="true" />
                 </video>
-                <oneImageQr v-else-if="onePreview.type === 'img'" :onePreview="onePreview" :onePlugin="onePlugin" />
+                <oneImageQr v-else-if="onePreview.type === 'img'" :onePreview="onePreview" :onePlugin="sourcePlugin(onePreview)" />
                 <div
                     class="w-full h-48 text-3 text-left mb-2"
                     style="background-color: rgb(55 56 61); overflow: hidden; border-radius: 10px"
@@ -40,16 +40,34 @@
                 >
                     <div class="p-2" style="color: white" v-html="onePreview.src"></div>
                 </div>
-                <div class="cursor-pointer text-right" style="margin-top: 6px; margin-bottom: -8px" @click="toPage(props.onePlugin, onePreview)">
-                    点击web端演示
+                <h3 v-if="catalogMode" class="catalog-card-title">{{ onePreview.title }}</h3>
+                <div v-if="catalogMode" class="catalog-card-meta">
+                    <span>{{ sourcePlugin(onePreview).title }}</span>
+                    <span v-if="sourcePlugin(onePreview).tvtstore">{{ sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
+                </div>
+                <details v-if="catalogMode && sourcePlugin(onePreview).intro" class="catalog-card-details">
+                    <summary>说明与文档</summary><div v-html="sourcePlugin(onePreview).intro"></div>
+                </details>
+                <div class="catalog-card-actions">
+                    <a v-if="sourceUrl(onePreview)" :href="sourceUrl(onePreview)" target="_blank" rel="noopener noreferrer">源码</a>
+                    <a v-if="onePreview.catalog?.promptUrl" :href="onePreview.catalog.promptUrl" target="_blank" rel="noopener noreferrer">Prompt</a>
+                    <a v-if="onePreview.catalog?.studioUrl" :href="onePreview.catalog.studioUrl" target="_blank" rel="noopener noreferrer">Studio</a>
+                    <button type="button" @click="toPage(sourcePlugin(onePreview), onePreview)">{{ onePreview.url?.includes('/tvtstore/') ? '查看详情' : 'Web 演示 ↗' }}</button>
                 </div>
             </FCard>
-            <n-popover v-if="isEditor(props.onePlugin, onePreview.name)" trigger="hover" placement="top-end" :show-arrow="false">
+            <n-popover
+                v-if="isEditor(sourcePlugin(onePreview), onePreview.name)"
+                trigger="hover"
+                placement="top-end"
+                :show-arrow="false"
+                :theme-overrides="catalogMode ? { color: 'var(--catalog-surface)', textColor: 'var(--catalog-text)', boxShadow: 'var(--catalog-shadow)' } : undefined"
+            >
                 <template #trigger>
                     <button
                         type="button"
                         aria-label="编辑器引导"
-                        class="editor-guide-trigger absolute bottom-11 right--3 z-99999"
+                        class="editor-guide-trigger"
+                        :class="catalogMode ? 'catalog-editor-guide' : 'absolute bottom-11 right--3 z-99999'"
                         @click.prevent.stop
                     >
                         <n-icon size="14" class="editor-guide-trigger__icon">
@@ -90,11 +108,24 @@ import { LogoXbox } from '@vicons/ionicons5'
 const props = withDefaults(
     defineProps<{
         onePlugin: any
+        catalogMode?: boolean
     }>(),
-    {},
+    { catalogMode: false },
 )
 const { menuSetup } = useForPreviewStore()
-let publicPath = process.env.BASE_URL
+const publicPath = process.env.BASE_URL || '/'
+const localPages = import.meta.glob('/src/plugins/*/pages/**/*.vue')
+const sourcePlugin = (preview: any) => preview.sourcePluginConfig || props.onePlugin
+const mediaUrl = (src: string) => /^(https?:|data:|blob:)/.test(src) || src.startsWith('//') ? src : publicPath + src
+const sourceUrl = (preview: any) => {
+    const plugin = sourcePlugin(preview)
+    if (preview.disableSrcBtn) return ''
+    if (preview.catalog?.sourceUrl) return preview.catalog.sourceUrl
+    if (plugin.remotePluginMenu || preview.url) return ''
+    const page = plugin.pNode ? plugin.pNode + '/pages/' + plugin.name : plugin.name + '/pages'
+    if (!localPages['/src/plugins/' + page + '/' + preview.name + '.vue']) return ''
+    return 'https://gitee.com/ice-gl/icegl-three-vue-tres/blob/master/src/plugins/' + page + '/' + preview.name + '.vue'
+}
 
 const editorGuideLinks = [
     {
@@ -122,7 +153,7 @@ const router = useRouter()
 
 // 小程序 uniapp端的跳转，若自己调试请更换地址  https://oss.icegl.cn
 const jumpType = (url: string, addPreUrl: boolean) => {
-    if (!uni.getEnv) {
+    if (typeof uni === 'undefined' || !uni.getEnv) {
         window.open(url, '_blank')
     } else {
         uni.getEnv((res: any) => {
@@ -202,6 +233,53 @@ const isEditor = (plugin: any, value: any) => {
 }
 </style>
 <style lang="less" scoped>
+.catalog-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 20px; }
+.catalog-card { min-width: 0; }
+.catalog-card :deep(.fes-card) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    border: 1px solid var(--catalog-border);
+    border-radius: 14px;
+    background: var(--catalog-surface);
+    color: var(--catalog-text);
+    overflow: hidden;
+    transition: border-color .18s, box-shadow .18s;
+}
+.catalog-card :deep(.fes-card:hover) { border-color: var(--catalog-faint); box-shadow: var(--catalog-shadow); }
+.catalog-card :deep(.fes-card__body) { display: flex; flex-direction: column; flex: 1; padding: 12px; color: var(--catalog-text); }
+.catalog-card :deep(.fes-img), .catalog-card video {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    aspect-ratio: 16 / 10;
+    border-radius: 9px;
+    background: var(--catalog-raised);
+    object-fit: contain;
+}
+.catalog-card :deep(.fes-img img) { width: 100%; height: 100%; object-fit: contain; }
+.catalog-card :deep(.fes-img__placeholder), .catalog-card :deep(.fes-img__error) { background: var(--catalog-raised); color: var(--catalog-muted); }
+.catalog-card-title { margin: 16px 2px 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.catalog-card-meta { display: flex; justify-content: space-between; gap: 10px; margin: 5px 2px 0; color: var(--catalog-muted); font-size: 11px; }
+.catalog-card-meta span:last-child { flex-shrink: 0; }
+.catalog-card-details { margin: 14px 2px 0; padding-top: 10px; border-top: 1px solid var(--catalog-border); font-size: 12px; color: var(--catalog-muted); overflow-wrap: anywhere; }
+.catalog-card-details summary { cursor: pointer; }
+.catalog-card-details summary:hover { color: var(--catalog-text); }
+.catalog-card-details div { max-height: 180px; overflow: auto; padding-top: 8px; }
+.catalog-card-details :deep(a) { color: var(--catalog-accent); }
+.catalog-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.catalog-card .catalog-card-actions { margin-top: auto; padding: 16px 2px 2px; }
+.catalog-card-actions a { color: var(--catalog-muted, #496bb4); font-size: 12px; text-decoration: none; }
+.catalog-card-actions a:hover { color: var(--catalog-accent, #334e90); }
+.catalog-card-actions button { margin-left: auto; border: 0; border-radius: 7px; padding: 7px 11px; color: var(--catalog-button-text, #fff); background: var(--catalog-button, #334e90); font-size: 12px; cursor: pointer; }
+.catalog-card-actions button:hover { opacity: .85; }
+.catalog-card-actions :is(a, button):focus-visible, .catalog-card-details summary:focus-visible { outline: 2px solid var(--catalog-accent, #334e90); outline-offset: 3px; }
+.catalog-card > .tag-sheared { z-index: 1; width: auto; height: auto; right: 20px; top: 20px; margin: 0; padding: 2px 8px; font-size: 11px; line-height: 1.5; border-radius: 5px; transform: none; }
+.catalog-card .catalog-editor-guide { position: absolute; top: 20px; left: 20px; z-index: 1; background: var(--catalog-surface); color: var(--catalog-accent); border-color: var(--catalog-border); box-shadow: none; }
+.catalog-card .catalog-editor-guide .editor-guide-trigger__icon { color: inherit; }
+@media (prefers-reduced-motion: reduce) { .catalog-card :deep(.fes-card) { transition: none; } }
+
 .tag-sheared {
     background-color: #063667;
     color: white;
@@ -262,7 +340,7 @@ const isEditor = (plugin: any, value: any) => {
 }
 
 .editor-guide-tip {
-    color: #64748b;
+    color: var(--catalog-muted, #64748b);
     font-size: 11px;
     line-height: 1.45;
     padding: 0 2px 4px;
@@ -275,20 +353,20 @@ const isEditor = (plugin: any, value: any) => {
     gap: 10px;
     padding: 8px 10px;
     border-radius: 10px;
-    color: #0f172a;
+    color: var(--catalog-text, #0f172a);
     font-size: 12px;
     font-weight: 500;
     line-height: 1.2;
     text-decoration: none;
-    background: #f8fafc;
+    background: var(--catalog-raised, #f8fafc);
     transition:
         background-color 0.2s ease,
         color 0.2s ease,
         transform 0.2s ease;
 
     &:hover {
-        background: #eff6ff;
-        color: #1d4ed8;
+        background: var(--catalog-hover, #eff6ff);
+        color: var(--catalog-accent, #1d4ed8);
         transform: translateX(1px);
     }
 }

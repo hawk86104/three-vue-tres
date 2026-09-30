@@ -24,6 +24,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'block', category: 'rendering' },
             src: 'plugins/gaussianSplatting/preview/plyPage.png',
             type: 'img',
             name: 'plyPage',
@@ -32,6 +33,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'block', category: 'rendering' },
             src: 'plugins/gaussianSplatting/preview/splatPage.png',
             type: 'img',
             name: 'splatPage',
@@ -40,6 +42,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'tool', category: 'resources' },
             src: 'plugins/gaussianSplatting/preview/glb.png',
             type: 'img',
             name: 'glb',
@@ -48,6 +51,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'block', category: 'rendering' },
             src: 'plugins/gaussianSplatting/preview/splatPage.png',
             type: 'img',
             name: 'gs3DcomPage',
@@ -56,6 +60,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'tool', category: 'resources' },
             src: 'plugins/gaussianSplatting/preview/hy2plyPage.png',
             type: 'img',
             name: 'hy2plyPage',
@@ -65,6 +70,7 @@ export default {
             referenceSource: { title: 'hunyuan3D', url: 'https://3d.hunyuan.tencent.com/sceneTo3D' },
         },
         {
+            catalog: { type: 'scene', category: 'reality' },
             src: 'plugins/gaussianSplatting/preview/hunyuanSpzPage.png',
             type: 'img',
             name: 'hunyuanSpzPage',

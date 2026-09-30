@@ -19,6 +19,7 @@ export default {
     updateTime: '2025-07-09',
     preview: [
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/tvtMqtt/preview/index.png',
             type: 'img',
             name: 'index',
@@ -27,6 +28,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/tvtMqtt/preview/withModel.png',
             type: 'img',
             name: 'withModel',

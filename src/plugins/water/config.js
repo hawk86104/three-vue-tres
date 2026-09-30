@@ -18,6 +18,7 @@ export default {
     require: ['UIdemo', 'resourceManager'],
     preview: [
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/spectralCascadeOcean.png',
             type: 'img',
             name: 'spectralCascadeOcean',
@@ -25,6 +26,7 @@ export default {
             referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
         },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/stylizedAboveBelowOcean.png',
             type: 'img',
             name: 'stylizedAboveBelowOcean',
@@ -32,18 +34,20 @@ export default {
             referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
         },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/submergedSnellOcean.png',
             type: 'img',
             name: 'submergedSnellOcean',
             title: '水下斯涅尔海洋',
             referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
         },
-        { src: 'plugins/water/preview/staticWaterPage.png', type: 'img', name: 'staticWaterPage', title: '静态水' },
-        { src: 'plugins/water/preview/tilingCaustics.png', type: 'img', name: 'tilingCaustics', title: '波纹A' },
-        { src: 'plugins/water/preview/waterGlass.png', type: 'img', name: 'waterGlass', title: '波浪B' },
-        { src: 'plugins/water/preview/waveC.png', type: 'img', name: 'waveC', title: '波浪C' },
-        { src: 'plugins/water/preview/threeExampleOcean.png', type: 'img', name: 'threeExampleOcean', title: 'three例子-海洋' },
+        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/staticWaterPage.png', type: 'img', name: 'staticWaterPage', title: '静态水' },
+        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/tilingCaustics.png', type: 'img', name: 'tilingCaustics', title: '波纹A' },
+        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/waterGlass.png', type: 'img', name: 'waterGlass', title: '波浪B' },
+        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/waveC.png', type: 'img', name: 'waveC', title: '波浪C' },
+        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/threeExampleOcean.png', type: 'img', name: 'threeExampleOcean', title: 'three例子-海洋' },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/customWater.png',
             type: 'img',
             name: 'customWater',
@@ -51,6 +55,7 @@ export default {
             referenceSource: { title: 'CustomShaderMaterial', url: 'https://github.com/FarazzShaikh/THREE-CustomShaderMaterial' },
         },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/realWater.png',
             type: 'img',
             name: 'realWater',
@@ -58,6 +63,7 @@ export default {
             referenceSource: { title: 'realWater', url: 'https://github.com/martinRenou/threejs-water' },
         },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/iceFloor.png',
             type: 'img',
             name: 'iceFloor',
@@ -65,6 +71,7 @@ export default {
             referenceSource: { title: 'ice-trails', url: 'https://github.com/rock-biter/ice-trails' },
         },
         {
+            catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/gerstnerWaterPage.png',
             type: 'img',
             name: 'gerstnerWaterPage',

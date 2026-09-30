@@ -22,6 +22,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'tool', category: 'ai' },
             src: 'plugins/hunyuan3D/preview/index.png',
             type: 'img',
             name: 'index',

@@ -21,6 +21,7 @@ export default {
 	"require": [],
 	"preview": [
 		{
+			catalog: { type: 'tool', category: 'resources' },
 			src: `
 			1、全局预加载所有资源：Resource.loadResources()</br>
 			2、loading加载等待页</br>
@@ -28,6 +29,7 @@ export default {
 			type: 'text', "name": "simpleLoading", "title": "简单加载实例", disableSrcBtn: true
 		},
 		{
+			catalog: { type: 'tool', category: 'resources' },
 			src: `
 			此实例使用了自定义loader:TQK.QuarksLoader</br>
 			只需要增加这行代码：Resource.loaderMapping.QuarksLoader = TQK.QuarksLoader</br>

@@ -20,6 +20,7 @@ export default {
     require: ['UIdemo','industry4','floor'],
     preview: [
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/uniAppView/preview/h5demo.png',
             type: 'img',
             name: 'h5demo',
@@ -28,6 +29,7 @@ export default {
             disableSrcBtn: true,
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/uniAppView/preview/threedemo.png',
             type: 'img',
             name: 'threedemo',

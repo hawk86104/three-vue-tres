@@ -18,6 +18,7 @@ export default {
     "updateTime": "2025-02-13",
     "require": [],
     "preview": [{
+        catalog: { type: 'scene', category: 'art' },
         "src": "plugins/heroSection/preview/earthMap.png",
         "type": "img",
         "name": "earthMap",
@@ -25,8 +26,9 @@ export default {
         disableFPSGraph: false,
         disableSrcBtn: false
     },
-    { src: 'plugins/heroSection/preview/pointsEarth.png', type: 'img', name: 'pointsEarth', title: '粒子球' },
+    { catalog: { type: 'scene', category: 'art' }, src: 'plugins/heroSection/preview/pointsEarth.png', type: 'img', name: 'pointsEarth', title: '粒子球' },
     {
+        catalog: { type: 'scene', category: 'art' },
         src: 'plugins/heroSection/preview/particleEarth.png', type: 'img', name: 'particleEarth', title: '粒子地球',
         referenceSource: { title: 'tsl-scifi-earth', url: 'https://github.com/hexianWeb/tsl-scifi-earth' },
     },

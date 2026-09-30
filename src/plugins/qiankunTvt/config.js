@@ -21,6 +21,7 @@ export default {
     require: ['floor','medical'],
     preview: [
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: `
             1、这里演示了在vue2的后台站点中，快速引用tvt.js框架，落地项目。</br>
             2、此站点作为qiankun的主应用,tvt.js作为子应用</br>
@@ -33,6 +34,7 @@ export default {
             url: 'https://cos.icegl.cn',
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/qiankunTvt/preview/theBasic.png',
             type: 'img',
             name: 'theBasic',
@@ -41,6 +43,7 @@ export default {
             disableSrcBtn: true,
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/qiankunTvt/preview/events.png',
             type: 'img',
             name: 'events',
@@ -49,6 +52,7 @@ export default {
             disableSrcBtn: true,
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: 'plugins/medical/preview/yuriBrain.png',
             type: 'img',
             name: 'other',

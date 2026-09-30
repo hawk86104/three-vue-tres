@@ -39,9 +39,9 @@ export default {
     require: [],
     tvtstore: 'FREE',
     preview: [
-        { src: './plugins/zoneFreeScene/preview/freeRefiningIndustry.png', type: 'img', name: 'freeRefiningIndustry', title: '低像素炼油厂', disableFPSGraph: false, disableSrcBtn: false },
-        { src: './plugins/zoneFreeScene/preview/freeTvtStack.png', type: 'img', name: 'freeTvtStack', title: 'TvT.js技术栈', disableFPSGraph: false, disableSrcBtn: false },
-        { src: './plugins/zoneFreeScene/preview/freeShipSea.png', type: 'img', name: 'freeShipSea', title: '海洋船运', disableFPSGraph: false, disableSrcBtn: false },
-        { src: './plugins/zoneFreeScene/preview/freeHYworld.png', type: 'img', name: 'freeHYworld', title: '混元世界', disableFPSGraph: false, disableSrcBtn: false }
+        { catalog: { type: 'scene', category: 'industry', studioUrl: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeRefiningIndustry' }, src: './plugins/zoneFreeScene/preview/freeRefiningIndustry.png', type: 'img', name: 'freeRefiningIndustry', title: '低像素炼油厂', disableFPSGraph: false, disableSrcBtn: false },
+        { catalog: { type: 'scene', category: 'art', studioUrl: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack' }, src: './plugins/zoneFreeScene/preview/freeTvtStack.png', type: 'img', name: 'freeTvtStack', title: 'TvT.js技术栈', disableFPSGraph: false, disableSrcBtn: false },
+        { catalog: { type: 'scene', category: 'transport', studioUrl: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeShipSea' }, src: './plugins/zoneFreeScene/preview/freeShipSea.png', type: 'img', name: 'freeShipSea', title: '海洋船运', disableFPSGraph: false, disableSrcBtn: false },
+        { catalog: { type: 'scene', category: 'reality', studioUrl: 'https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeHYworld' }, src: './plugins/zoneFreeScene/preview/freeHYworld.png', type: 'img', name: 'freeHYworld', title: '混元世界', disableFPSGraph: false, disableSrcBtn: false }
     ],
 }

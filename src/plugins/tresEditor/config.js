@@ -19,6 +19,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'tool', category: 'scene' },
             src: `<a style="color: #5384ff;" href="https://threejs.org/editor/" target="_blank">threejs.org/editor</a> 的国内镜像，为了让大家更方便使用。编辑好场景后，选择项目下的发布按钮，下载解压包，获得里面的:app.json。
             拿着它，使用旁边的<<a style="color: #5384ff;" href="https://opensource.icegl.cn/#/plugins/tresEditor/simpleImport" target="_blank">插件生成器</a>>，生成、安装插件。开始我们TvT.js的旅程吧！`,
             type: 'text',
@@ -27,6 +28,7 @@ export default {
             title: 'three原生Editor',
         },
         {
+            catalog: { type: 'tool', category: 'integration' },
             src: `<a style="color: #5384ff;" href="https://docs.icegl.cn/docs/three-vue-tres/editor/totvt.html" target="_blank">使用教程详见:导出/安装TvT插件包</a></br>
             1、载入原生Three.js编辑器的Json文件</br>
             2、--- 生成插件包【ZIP格式】---</br>
@@ -35,7 +37,7 @@ export default {
             name: 'simpleImport',
             title: '插件生成器',
         },
-        { src: 'plugins/tresEditor/preview/coffeeDemo.png', type: 'img', name: 'coffeeDemo', title: '编辑器直出咖啡☕️' },
-        { src: 'plugins/tresEditor/preview/svelteMachine.png', type: 'img', name: 'svelteMachine', title: '编辑器半出Svelte机械' },
+        { catalog: { type: 'scene', category: 'product' }, src: 'plugins/tresEditor/preview/coffeeDemo.png', type: 'img', name: 'coffeeDemo', title: '编辑器直出咖啡☕️' },
+        { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/tresEditor/preview/svelteMachine.png', type: 'img', name: 'svelteMachine', title: '编辑器半出Svelte机械' },
     ],
 }

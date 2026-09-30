@@ -18,7 +18,7 @@ export default {
 	"updateTime": "2024-04-18",
 	"require": [],
 	"preview": [
-		{ "src": "plugins/projectionShadow/preview/accumulativeShadows.png", "type": "img", "name": "accumulativeShadows", "title": "软阴影" },
-		{ "src": "plugins/projectionShadow/preview/causticsDemo.png", "type": "img", "name": "causticsDemo", "title": "投射" },
+		{ catalog: { type: 'block', category: 'lighting' }, "src": "plugins/projectionShadow/preview/accumulativeShadows.png", "type": "img", "name": "accumulativeShadows", "title": "软阴影" },
+		{ catalog: { type: 'block', category: 'lighting' }, "src": "plugins/projectionShadow/preview/causticsDemo.png", "type": "img", "name": "causticsDemo", "title": "投射" },
 	]
 }

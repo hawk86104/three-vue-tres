@@ -20,6 +20,7 @@ export default {
     require: [],
     preview: [
         {
+            catalog: { type: 'block', category: 'physics' },
             src: 'plugins/cannonPhysics/preview/theBasic.png',
             type: 'img',
             name: 'theBasic',
@@ -28,6 +29,7 @@ export default {
             disableSrcBtn: false,
         },
         {
+            catalog: { type: 'block', category: 'physics' },
             src: 'plugins/cannonPhysics/preview/terrainBalls.png',
             type: 'img',
             name: 'terrainBalls',

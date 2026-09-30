@@ -7,80 +7,97 @@
  * @LastEditTime: 2025-08-19 15:28:15
 -->
 <template>
-	<div class="filterFixed">
-		<FInput v-model="inputValue" class="FInput-input" placeholder="筛选关键字，如：城市" clearable>
-			<template #prepend> 检索 </template>
-			<template #suffix>
-				<SearchOutlined />
-			</template>
-		</FInput>
-
-		<FCheckboxGroup v-model="menuSetupFilter">
-			<FCheckbox value="hot">
-				热
-			</FCheckbox>
-			<FCheckbox value="new">
-				新
-			</FCheckbox>
-			<FCheckbox value="recommend">
-				荐
-			</FCheckbox>
-			<FCheckbox value="editor">
-				编辑器
-			</FCheckbox>
-		</FCheckboxGroup>
-
-		<a target="_black" href="https://gitee.com/ice-gl/icegl-three-vue-tres">
-			<img src="https://gitee.com/ice-gl/icegl-three-vue-tres/badge/star.svg?theme=dark" alt="gitee-starts">
-		</a>
-		<a href="https://github.com/hawk86104/three-vue-tres" target="_blank">
-			<img src="https://img.shields.io/github/stars/hawk86104/three-vue-tres" />
-		</a>
-		<a href="https://github.com/hawk86104/three-vue-tres" target="_blank">
-			<img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/hawk86104/three-vue-tres">
-		</a>
-		<a href="https://github.com/hawk86104/three-vue-tres" target="_blank">
-			<img src="https://img.shields.io/github/license/hawk86104/three-vue-tres" />
-		</a>
-		<a target="_black" href="https://space.bilibili.com/410503457">
-       <img alt="bilibili" src="https://img.shields.io/badge/dynamic/json?url=https://api.bilibili.com/x/relation/stat?vmid=410503457&query=data.follower&color=282c34&label=冰哥B站&labelColor=FE7398&logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAD7ElEQVR4nO2dW9WrMBCFK6ESkFAJSKiESqgEHCABCZWAhEpAAhL2ecik5dDc%2FpXLBDLfWnlqy0xmJ5BMQnq5CIIgCIIgCIIgCIIgCEIBAHQAemYfrgCunD6wAKAHsEKxALgx+bCQD8%2FS9tmgVqeDr1lLigDgZvDhXso+K9TyTBQRwRJ8AHjntl0Flh5QRAQK%2FmKxPeayWx2OXpBNBKiHvi34b7T2MC4pAvW6twR%2FRwkRKPizBN8CgEcuESj4Lwm+BwBjahEk+H8EwJRKhOaCDzW8e1JLfkUUH1NgmR3XmHffHR1l+72BSs8d7w8U+JDAnZERQMcV+CtUi7dNqFqibB4J7vtrq7xKCuAasbTMXCL4T+5aVk6+2xHUrWdhruAR6HIJcOeu2UHI8zyAe2ytWfEdWz9PVvQ8YAmIQ5dDAB9LFsMVAv8oMO2zAGrC5WNIarRiAuKR9jYEd9pY08aa6uUzIHGRdkgKd8pY0yc1WjEBAqypDYoAG0QAZkQAZkQAZkQAZk4vANQenjsSzS3I%2FwcSbXU5jQBUkRtdf4Rar90v8kSv3+I3ffCCSpk8I%2Fw+lgDkdI%2Fv2rEp2CaiWm1AsDQLlDAD+dlFXLMeAaCSeLZdaSFE5VUQNot38cKuEeBgAsSuG0flVZBmEanbXfNQAsS0fgBYIn2fIu3%2FBBMHEyBmDXlFfA8IzeHb+Ems4WAChKykrVA9ZfsQTL57jXzRg4A5wC%2FA8N4ADiZAZwm2XjW75Qh2KOTfA0p4kygPw28OJcCVgn3nDnYo2EwEYRgGH0qAMyICMCMCMCMCMCMCMCMCMCMCfP3qwHDOQ4AAUekTk8FaBRihJnZdYbvtCGC7LvmkM63GjVDINPFrQgCq5ETXfmMzI90FXzPvfqt7x4rEu%2FZaEcCUxFvgz2zO+BUn6UkoaEEAsptiMSX5e8FoRYCN7cVgb4Vq7U%2FH50Pq4JNP7Qiw8UFnJwcK+tXy+Wj6PLEvPgHSHv5UgwA1IQIwwyFAyLJin9RoxYgAzAQIkPwNmf26busC+OIx5TDqo5nDT+F%2FSS%2F9CYzwb+No49zNy2evkYv0LywGGAXUvp6eSneycqOic0w20k7CNgKE7jJunSGLACTCxF27ylmQc98T5MQUH49swd+I0HPXslLKnT0N+wnkrTKi9JZL%2FL9i1SorMmdeQ4TQQ7OFMxIMzGD45w8nUL1im7efENZLJpgPSw0pfz0cdt4U3230Td%2FTvx2R6d2FrHhEWLkq5PELOMsRPHCPnAZGv1xJteL7jbJiaW3sB2nDvPC%2FosSYvjRQz4cJ6n7KO3rYQL7M+L6nVtfDVRAEQRAEQRAEQRAEIZ5%2FSAXmdfXaoQsAAAAASUVORK5CYII%3D&cacheSeconds=3600">
-    </a>
-		<a target="_black" href="https://space.bilibili.com/384558900">
-       <img alt="bilibili" src="https://img.shields.io/badge/dynamic/json?url=https://api.bilibili.com/x/relation/stat?vmid=384558900&query=data.follower&color=282c34&label=地虎B站&labelColor=FE7398&logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAD7ElEQVR4nO2dW9WrMBCFK6ESkFAJSKiESqgEHCABCZWAhEpAAhL2ecik5dDc%2FpXLBDLfWnlqy0xmJ5BMQnq5CIIgCIIgCIIgCIIgCEIBAHQAemYfrgCunD6wAKAHsEKxALgx+bCQD8%2FS9tmgVqeDr1lLigDgZvDhXso+K9TyTBQRwRJ8AHjntl0Flh5QRAQK%2FmKxPeayWx2OXpBNBKiHvi34b7T2MC4pAvW6twR%2FRwkRKPizBN8CgEcuESj4Lwm+BwBjahEk+H8EwJRKhOaCDzW8e1JLfkUUH1NgmR3XmHffHR1l+72BSs8d7w8U+JDAnZERQMcV+CtUi7dNqFqibB4J7vtrq7xKCuAasbTMXCL4T+5aVk6+2xHUrWdhruAR6HIJcOeu2UHI8zyAe2ytWfEdWz9PVvQ8YAmIQ5dDAB9LFsMVAv8oMO2zAGrC5WNIarRiAuKR9jYEd9pY08aa6uUzIHGRdkgKd8pY0yc1WjEBAqypDYoAG0QAZkQAZkQAZkQAZk4vANQenjsSzS3I%2FwcSbXU5jQBUkRtdf4Rar90v8kSv3+I3ffCCSpk8I%2Fw+lgDkdI%2Fv2rEp2CaiWm1AsDQLlDAD+dlFXLMeAaCSeLZdaSFE5VUQNot38cKuEeBgAsSuG0flVZBmEanbXfNQAsS0fgBYIn2fIu3%2FBBMHEyBmDXlFfA8IzeHb+Ems4WAChKykrVA9ZfsQTL57jXzRg4A5wC%2FA8N4ADiZAZwm2XjW75Qh2KOTfA0p4kygPw28OJcCVgn3nDnYo2EwEYRgGH0qAMyICMCMCMCMCMCMCMCMCMCMCfP3qwHDOQ4AAUekTk8FaBRihJnZdYbvtCGC7LvmkM63GjVDINPFrQgCq5ETXfmMzI90FXzPvfqt7x4rEu%2FZaEcCUxFvgz2zO+BUn6UkoaEEAsptiMSX5e8FoRYCN7cVgb4Vq7U%2FH50Pq4JNP7Qiw8UFnJwcK+tXy+Wj6PLEvPgHSHv5UgwA1IQIwwyFAyLJin9RoxYgAzAQIkPwNmf26busC+OIx5TDqo5nDT+F%2FSS%2F9CYzwb+No49zNy2evkYv0LywGGAXUvp6eSneycqOic0w20k7CNgKE7jJunSGLACTCxF27ylmQc98T5MQUH49swd+I0HPXslLKnT0N+wnkrTKi9JZL%2FL9i1SorMmdeQ4TQQ7OFMxIMzGD45w8nUL1im7efENZLJpgPSw0pfz0cdt4U3230Td%2FTvx2R6d2FrHhEWLkq5PELOMsRPHCPnAZGv1xJteL7jbJiaW3sB2nDvPC%2FosSYvjRQz4cJ6n7KO3rYQL7M+L6nVtfDVRAEQRAEQRAEQRAEIZ5%2FSAXmdfXaoQsAAAAASUVORK5CYII%3D&cacheSeconds=3600">
-    </a>
-	</div>
+    <div class="filterFixed">
+        <slot name="leading" />
+        <div class="catalog-search">
+            <SearchOutline />
+            <input v-model="inputValue" type="search" aria-label="检索内容" placeholder="搜索组件、场景、工具…" />
+            <button v-if="inputValue" type="button" aria-label="清空搜索" @click="inputValue = ''"><CloseOutline /></button>
+        </div>
+        <div class="catalog-status-filters" role="group" aria-label="内容筛选">
+            <label v-for="filter in statusFilters" :key="filter.value" :class="{ selected: menuSetupFilter.includes(filter.value) }">
+                <input v-model="menuSetupFilter" type="checkbox" :value="filter.value" />
+                <span>{{ filter.label }}</span>
+            </label>
+        </div>
+        <div class="catalog-toolbar-actions">
+            <nav class="catalog-community-links" aria-label="项目与社区">
+                <a href="https://github.com/hawk86104/three-vue-tres" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+                <a href="https://gitee.com/ice-gl/icegl-three-vue-tres" target="_blank" rel="noopener noreferrer">Gitee ↗</a>
+                <a href="https://space.bilibili.com/410503457" target="_blank" rel="noopener noreferrer">冰哥 B站 ↗</a>
+                <a href="https://space.bilibili.com/384558900" target="_blank" rel="noopener noreferrer">地虎 B站 ↗</a>
+            </nav>
+            <slot name="actions" />
+        </div>
+        <slot name="navigation" />
+    </div>
 </template>
 <script setup lang="ts">
-import { inject } from 'vue'
-import { FInput, FCheckbox, FCheckboxGroup } from '@fesjs/fes-design'
-import { SearchOutlined } from '@fesjs/fes-design/icon'
+import { inject, ref, type Ref } from 'vue'
+import { CloseOutline, SearchOutline } from '@vicons/ionicons5'
 
-const inputValue = inject('filterFixedInputValue')
-const menuSetupFilter = inject('menuSetupFilter')
-
+const inputValue = inject<Ref<string>>('filterFixedInputValue', ref(''))
+const menuSetupFilter = inject<Ref<string[]>>('menuSetupFilter', ref([]))
+const statusFilters = [
+    { value: 'hot', label: '热门' },
+    { value: 'new', label: '最新' },
+    { value: 'recommend', label: '推荐' },
+    { value: 'editor', label: '编辑器' },
+]
 </script>
-
 <style lang="less" scoped>
 .filterFixed {
-	position: fixed;
-	top: 50px;
-	background-color: #fff;
-	padding: 8px 10px 6px;
-	z-index: 999;
-	box-shadow: -1px 3px 10px rgba(0, 0, 0, 0.2);
-	width: calc(100% - 200px);
-	display: flex;
-	align-items: flex-end;
-
-	.FInput-input {
-		scale: 0.9;
-		position: relative;
-		width: 20em;
-	}
-
-	a {
-		margin-left: 10px;
-		position: relative;
-	}
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 0 14px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--catalog-border);
+    background: var(--catalog-bg);
 }
+.catalog-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 220px;
+    max-width: 360px;
+    min-width: 150px;
+    height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--catalog-border);
+    border-radius: 9px;
+    background: var(--catalog-surface);
+    color: var(--catalog-faint);
+}
+.catalog-search:focus-within { border-color: var(--catalog-accent); }
+.catalog-search svg { width: 17px; height: 17px; flex-shrink: 0; }
+.catalog-search input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; font: inherit; font-size: 13px; background: transparent; color: var(--catalog-text); }
+.catalog-search input::placeholder { color: var(--catalog-faint); }
+.catalog-search input::-webkit-search-cancel-button { display: none; }
+.catalog-search button { display: grid; place-items: center; padding: 3px; border: 0; border-radius: 4px; background: transparent; color: var(--catalog-muted); cursor: pointer; }
+.catalog-status-filters { display: flex; align-items: center; gap: 4px; }
+.catalog-status-filters label { position: relative; padding: 7px 9px; border: 1px solid transparent; border-radius: 7px; color: var(--catalog-muted); font-size: 12px; cursor: pointer; transition: background .15s, color .15s; }
+.catalog-status-filters label:hover { background: var(--catalog-hover); color: var(--catalog-text); }
+.catalog-status-filters label.selected { border-color: var(--catalog-border); background: var(--catalog-active); color: var(--catalog-accent); }
+.catalog-status-filters input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.catalog-status-filters label:focus-within { outline: 2px solid var(--catalog-accent); outline-offset: 2px; }
+.catalog-toolbar-actions { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.catalog-community-links { display: flex; flex-wrap: wrap; gap: 12px; }
+.catalog-community-links a { font-size: 11px; color: var(--catalog-muted); text-decoration: none; white-space: nowrap; }
+.catalog-community-links a:hover { color: var(--catalog-text); }
+@media (max-width: 1280px) { .catalog-community-links { display: none; } }
+@media (max-width: 900px) {
+    .catalog-search { max-width: none; }
+    .catalog-status-filters { order: 3; flex-basis: 100%; }
+}
+@media (max-width: 540px) {
+    .catalog-search { flex-basis: 120px; min-width: 0; }
+    .catalog-toolbar-actions { gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .catalog-status-filters label { transition: none; } }
 </style>

@@ -20,6 +20,7 @@ export default {
     "require": [],
     "tvtstore": 'FREE',
     "preview": [{
+        catalog: { type: 'block', category: 'interaction' },
         "src": "plugins/useViewportGizmo/preview/index.png",
         "type": "img",
         "name": "index",

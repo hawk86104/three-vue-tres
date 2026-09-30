@@ -8,6 +8,6 @@ export default {
 	"state": "active",
 	"require": [],
 	"preview": [
-		{ "src": "plugins/volumeRendering/preview/basicVolume.png", "type": "img", "name": "basicVolume", "title": "基础体积渲染" },
+		{ catalog: { type: 'block', category: 'rendering' }, "src": "plugins/volumeRendering/preview/basicVolume.png", "type": "img", "name": "basicVolume", "title": "基础体积渲染" },
 	]
 }
