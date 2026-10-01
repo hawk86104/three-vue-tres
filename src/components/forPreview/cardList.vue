@@ -40,13 +40,19 @@
                 >
                     <div class="p-2" style="color: white" v-html="onePreview.src"></div>
                 </div>
-                <h3 v-if="catalogMode" class="catalog-card-title" :title="cardTitle(onePreview)">{{ cardTitle(onePreview) }}</h3>
-                <p v-if="catalogMode && isLocalPlugin(sourcePlugin(onePreview))" class="catalog-card-preview">{{ onePreview.title }}</p>
-                <div v-if="catalogMode" class="catalog-card-meta">
-                    <span class="catalog-card-source" :title="[sourcePlugin(onePreview).title, sourcePlugin(onePreview).author].filter(Boolean).join(' · ')">
-                        {{ sourcePlugin(onePreview).title }}<span v-if="sourcePlugin(onePreview).author"> · {{ sourcePlugin(onePreview).author }}</span>
+                <div v-if="catalogMode" class="catalog-card-heading">
+                    <h3 class="catalog-card-title" :title="cardTitle(onePreview)">{{ cardTitle(onePreview) }}</h3>
+                    <span
+                        v-if="sourceLabel(onePreview) && sourceLabel(onePreview) !== cardTitle(onePreview)"
+                        class="catalog-card-origin"
+                        :title="sourcePlugin(onePreview).title || sourcePlugin(onePreview).name"
+                    >{{ sourceLabel(onePreview) }}</span>
+                </div>
+                <div v-if="catalogMode && (sourcePlugin(onePreview).author || sourcePlugin(onePreview).tvtstore)" class="catalog-card-meta">
+                    <span v-if="sourcePlugin(onePreview).author" class="catalog-card-author" :title="'作者：' + sourcePlugin(onePreview).author">
+                        <UserOutlined aria-hidden="true" /><span>{{ sourcePlugin(onePreview).author }}</span>
                     </span>
-                    <span v-if="sourcePlugin(onePreview).tvtstore">{{ isLocalPlugin(sourcePlugin(onePreview)) ? '本地插件' : sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
+                    <span v-if="sourcePlugin(onePreview).tvtstore" class="catalog-card-kind">{{ isLocalPlugin(sourcePlugin(onePreview)) ? '本地插件' : sourcePlugin(onePreview).tvtstore === 'FREE' ? '免费插件' : '市场插件' }}</span>
                 </div>
                 <details v-if="catalogMode && sourcePlugin(onePreview).intro" class="catalog-card-details">
                     <summary>说明与文档</summary><div v-html="sourcePlugin(onePreview).intro"></div>
@@ -124,7 +130,11 @@ const { menuSetup } = useForPreviewStore()
 const publicPath = process.env.BASE_URL || '/'
 const localPages = import.meta.glob('/src/plugins/*/pages/**/*.vue')
 const sourcePlugin = (preview: any) => preview.sourcePluginConfig || props.onePlugin
-const cardTitle = (preview: any) => isLocalPlugin(sourcePlugin(preview)) ? sourcePlugin(preview).name : preview.title
+const cardTitle = (preview: any) => preview.title || preview.name
+const sourceLabel = (preview: any) => {
+    const plugin = sourcePlugin(preview)
+    return plugin.title || plugin.name
+}
 const mediaUrl = (src: string) => /^(https?:|data:|blob:)/.test(src) || src.startsWith('//') ? src : publicPath + src
 const sourcePagePath = (preview: any) => {
     const plugin = sourcePlugin(preview)
@@ -279,12 +289,15 @@ const isEditor = (plugin: any, value: any) => {
 }
 .catalog-card :deep(.preview-thumbnail img) { width: 100%; height: 100%; object-fit: contain; transition: transform .5s cubic-bezier(.2, .7, .2, 1); }
 .catalog-card :deep(.fes-img__placeholder), .catalog-card :deep(.fes-img__error) { background: var(--catalog-raised); color: var(--catalog-muted); }
-.catalog-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 16px 2px 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; transition: color .18s; }
+.catalog-card-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; margin: 16px 2px 0; }
+.catalog-card-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; margin: 0; color: var(--catalog-text); font-size: 15px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; transition: color .18s; }
 .catalog-card:hover .catalog-card-title { color: var(--catalog-accent); }
-.catalog-card-preview { margin: 4px 2px 0; color: var(--catalog-muted); font-size: 12px; overflow-wrap: anywhere; }
-.catalog-card-meta { display: flex; justify-content: space-between; gap: 10px; margin: 5px 2px 0; color: var(--catalog-muted); font-size: 11px; }
-.catalog-card-source { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.catalog-card-meta > span:not(.catalog-card-source) { flex-shrink: 0; }
+.catalog-card-origin { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--catalog-accent) 20%, transparent); border-radius: 6px; background: var(--catalog-active); color: var(--catalog-accent); font-size: 10px; font-weight: 500; line-height: 1.6; }
+.catalog-card-meta { display: flex; align-items: center; gap: 10px; margin: 9px 2px 0; color: var(--catalog-faint); font-size: 11px; line-height: 1.6; }
+.catalog-card-author { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.catalog-card-author > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-card-author > :first-child { flex-shrink: 0; font-size: 12px; }
+.catalog-card-kind { flex-shrink: 0; margin-left: auto; }
 .catalog-card-details { margin: 14px 2px 0; padding-top: 10px; border-top: 1px solid var(--catalog-border); font-size: 12px; color: var(--catalog-muted); overflow-wrap: anywhere; }
 .catalog-card-details summary { cursor: pointer; }
 .catalog-card-details summary:hover { color: var(--catalog-text); }

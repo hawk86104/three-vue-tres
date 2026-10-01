@@ -9,7 +9,7 @@
 
 export default {
 	"name": "AMapGIS",
-	"title": "结合高德API的GIS",
+	"title": "高德 GIS",
 	"intro": "基于高德地图的GIS应用例子",
 	"version": "0.0.1",
 	"author": "地虎降天龙",
