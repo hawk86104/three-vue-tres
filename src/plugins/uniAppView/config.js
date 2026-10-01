@@ -30,7 +30,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'integration' },
-            src: 'plugins/uniAppView/preview/threedemo.png',
+            src: 'plugins/uniAppView/preview/threedemo.webp',
             type: 'img',
             name: 'threedemo',
             title: '三维交互',

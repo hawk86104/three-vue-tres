@@ -29,7 +29,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'integration' },
-            src: 'plugins/tvtMqtt/preview/withModel.png',
+            src: 'plugins/tvtMqtt/preview/withModel.webp',
             type: 'img',
             name: 'withModel',
             title: 'MQTT与模型交互',

@@ -1,3 +1,11 @@
+<!--
+ * @Description: 
+ * @Version: 1.668
+ * @Autor: 地虎降天龙
+ * @Date: 2026-07-13 10:24:05
+ * @LastEditors: 地虎降天龙
+ * @LastEditTime: 2026-10-01 15:57:01
+-->
 <template>
     <div class="innovation-hub-ar">
         <loading v-if="!isSceneReady" />
@@ -73,6 +81,6 @@ function markSceneReady() {
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    background: #d6e8f7 url('/plugins/digitalPark/innovationHubAr/images/poster.webp') center / cover no-repeat;
+    background: #d6e8f7;
 }
 </style>

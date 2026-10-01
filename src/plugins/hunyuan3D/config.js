@@ -23,7 +23,7 @@ export default {
     preview: [
         {
             catalog: { type: 'tool', category: 'ai' },
-            src: 'plugins/hunyuan3D/preview/index.png',
+            src: 'plugins/hunyuan3D/preview/index.webp',
             type: 'img',
             name: 'index',
             title: '导入混元模型',

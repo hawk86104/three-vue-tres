@@ -16,9 +16,9 @@ export default {
     state: 'active',
     require: [],
     preview: [
-        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/postProcessing/preview/webgl帧缓冲DEMO.png', type: 'img', name: 'webglFrameBuffer', title: 'WebGL帧缓冲DEMO' },
-        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/postProcessing/preview/webgl实现后处理.png', type: 'img', name: 'webglPostProcessing', title: 'WebGL后处理DEMO' },
-        { catalog: { type: 'tool', category: 'material' }, src: 'plugins/postProcessing/preview/后处理编辑器.png', type: 'img', name: 'postProcessingEditor', title: '后处理编辑器' },
+        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/postProcessing/preview/webgl帧缓冲DEMO.webp', type: 'img', name: 'webglFrameBuffer', title: 'WebGL帧缓冲DEMO' },
+        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/postProcessing/preview/webgl实现后处理.webp', type: 'img', name: 'webglPostProcessing', title: 'WebGL后处理DEMO' },
+        { catalog: { type: 'tool', category: 'material' }, src: 'plugins/postProcessing/preview/后处理编辑器.webp', type: 'img', name: 'postProcessingEditor', title: '后处理编辑器' },
 
     ],
 };

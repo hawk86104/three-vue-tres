@@ -1,0 +1,50 @@
+{
+  "tvtViewHelper": {
+    "index": {
+      "originalSrc": "https://oss.icegl.cn/plugins/tvtViewHelper/preview/index.png",
+      "src": "plugins/tvtViewHelper/preview/index.png"
+    }
+  },
+  "topoEditor": {
+    "index": {
+      "originalSrc": "https://oss.icegl.cn/plugins/topoEditor/preview/topoEditorDialog.png",
+      "src": "plugins/topoEditor/preview/topoEditorDialog.png"
+    }
+  },
+  "useThreeGeospatial": {
+    "atmosphere": {
+      "originalSrc": "https://oss.icegl.cn/plugins/useThreeGeospatial/preview/atmosphere.png",
+      "src": "plugins/useThreeGeospatial/preview/atmosphere.png"
+    },
+    "clouds": {
+      "originalSrc": "https://oss.icegl.cn/plugins/useThreeGeospatial/preview/clouds.png",
+      "src": "plugins/useThreeGeospatial/preview/clouds.png"
+    },
+    "tilesAtmosphere": {
+      "originalSrc": "https://oss.icegl.cn/plugins/useThreeGeospatial/preview/tilesAtmosphere.png",
+      "src": "plugins/useThreeGeospatial/preview/tilesAtmosphere.png"
+    }
+  },
+  "map2BuildingRoad": {
+    "index": {
+      "originalSrc": "https://cdn.index.icegl.cn/uploads/20260708/c8ab6703ef3ef05f44b8a117e26739e3.png",
+      "src": "plugins/map2BuildingRoad/preview/c8ab6703ef3ef05f44b8a117e26739e3.png"
+    }
+  },
+  "freeDigitalHome": {
+    "demo": {
+      "originalSrc": "https://freedigitalhome.icegl.cn/plugins/freeDigitalHome/preview/freeDigitalHome.png",
+      "src": "plugins/freeDigitalHome/preview/freeDigitalHome.webp"
+    },
+    "tts": {
+      "originalSrc": "https://freedigitalhome.icegl.cn/plugins/freeDigitalHome/preview/linkWebsocket.png",
+      "src": "plugins/freeDigitalHome/preview/linkWebsocket.png"
+    }
+  },
+  "yht": {
+    "tribute": {
+      "originalSrc": "https://yht.icegl.cn/plugins/yht/preview/tribute.svg",
+      "src": "plugins/yht/preview/tribute.webp"
+    }
+  }
+}

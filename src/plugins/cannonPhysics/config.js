@@ -21,7 +21,7 @@ export default {
     preview: [
         {
             catalog: { type: 'block', category: 'physics' },
-            src: 'plugins/cannonPhysics/preview/theBasic.png',
+            src: 'plugins/cannonPhysics/preview/theBasic.webp',
             type: 'img',
             name: 'theBasic',
             title: '基础实例',
@@ -30,7 +30,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'physics' },
-            src: 'plugins/cannonPhysics/preview/terrainBalls.png',
+            src: 'plugins/cannonPhysics/preview/terrainBalls.webp',
             type: 'img',
             name: 'terrainBalls',
             title: '地形球',

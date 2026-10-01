@@ -27,7 +27,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'physics' },
-            src: 'plugins/webxr/preview/ballShooter.png',
+            src: 'plugins/webxr/preview/ballShooter.webp',
             type: 'img',
             name: 'ballShooter',
             title: '小球射击',
@@ -36,7 +36,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'physics' },
-            src: 'plugins/webxr/preview/interactiveBtns.png',
+            src: 'plugins/webxr/preview/interactiveBtns.webp',
             type: 'img',
             name: 'interactiveBtns',
             title: 'UI交互',

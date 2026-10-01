@@ -19,7 +19,7 @@ export default {
     preview: [
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/eCommerce/preview/electricFan.png',
+            src: 'plugins/eCommerce/preview/electricFan.webp',
             type: 'img',
             name: 'electricFan',
             title: '电风扇',
@@ -27,7 +27,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'material' },
-            src: 'plugins/eCommerce/preview/ssrtGlass.png',
+            src: 'plugins/eCommerce/preview/ssrtGlass.webp',
             type: 'img',
             name: 'ssrtGlass',
             title: '水晶玻璃化',
@@ -35,7 +35,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'material' },
-            src: 'plugins/eCommerce/preview/stencilMask.png',
+            src: 'plugins/eCommerce/preview/stencilMask.webp',
             type: 'img',
             name: 'stencilMask',
             title: '多重门',
@@ -43,7 +43,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/eCommerce/preview/sticker.png',
+            src: 'plugins/eCommerce/preview/sticker.webp',
             type: 'img',
             name: 'sticker',
             title: '镭射塑料袋',
@@ -51,7 +51,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/eCommerce/preview/arrangement.png',
+            src: 'plugins/eCommerce/preview/arrangement.webp',
             type: 'img',
             name: 'arrangement',
             title: '桌面陈设',
@@ -59,7 +59,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/eCommerce/preview/zipTopCan.png',
+            src: 'plugins/eCommerce/preview/zipTopCan.webp',
             type: 'img',
             name: 'zipTopCan',
             title: '易拉罐',

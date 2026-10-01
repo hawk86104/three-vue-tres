@@ -17,13 +17,13 @@ export default {
 	"state": "active",
 	"require": [],
 	"preview": [
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxA", "title": "单张:矩形图:着色器渲染" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxD", "title": "单张:矩形图:scene:env/background" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxB", "title": "单张:HDR渲染:着色器渲染" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxC", "title": "单张:HDR渲染:scene:env/background" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxE", "title": "多张:矩形图:scene:env/background" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBox.png", "type": "img", "name": "skyBoxF", "title": "多张:HDR渲染:scene:env/background" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/newEnvironment.png", "type": "img", "name": "newEnvironment", "title": "移植R3F的Environment" },
-		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/basiceEnvPage.png", "type": "img", "name": "basiceEnvPage", "title": "基础版环境贴图" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxA.webp", "type": "img", "name": "skyBoxA", "title": "单张:矩形图:着色器渲染" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxD.webp", "type": "img", "name": "skyBoxD", "title": "单张:矩形图:scene:env/background" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxB.webp", "type": "img", "name": "skyBoxB", "title": "单张:HDR渲染:着色器渲染" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxC.webp", "type": "img", "name": "skyBoxC", "title": "单张:HDR渲染:scene:env/background" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxE.webp", "type": "img", "name": "skyBoxE", "title": "多张:矩形图:scene:env/background" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/skyBoxF.webp", "type": "img", "name": "skyBoxF", "title": "多张:HDR渲染:scene:env/background" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/newEnvironment.webp", "type": "img", "name": "newEnvironment", "title": "移植R3F的Environment" },
+		{ catalog: { type: 'block', category: 'environment' }, "src": "plugins/skyBox/preview/basiceEnvPage.webp", "type": "img", "name": "basiceEnvPage", "title": "基础版环境贴图" },
 	]
 }

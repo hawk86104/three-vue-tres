@@ -32,7 +32,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'ui' },
-            src: 'plugins/goView/preview/goViewPlugin.png',
+            src: 'plugins/goView/preview/goViewPlugin.webp',
             type: 'img',
             name: 'index',
             disableFPSGraph: true,
@@ -41,7 +41,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'ui' },
-            src: 'plugins/goView/preview/goViewComPage.png',
+            src: 'plugins/goView/preview/goViewComPage.webp',
             type: 'img',
             name: 'goViewComPage',
             disableFPSGraph: false,
@@ -50,7 +50,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'integration' },
-            src: 'plugins/goView/preview/chartDataAPIPage.png',
+            src: 'plugins/goView/preview/chartDataAPIPage.webp',
             type: 'img',
             name: 'chartDataAPIPage',
             disableFPSGraph: false,

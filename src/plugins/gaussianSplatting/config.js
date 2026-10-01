@@ -25,7 +25,7 @@ export default {
     preview: [
         {
             catalog: { type: 'block', category: 'rendering' },
-            src: 'plugins/gaussianSplatting/preview/plyPage.png',
+            src: 'plugins/gaussianSplatting/preview/plyPage.webp',
             type: 'img',
             name: 'plyPage',
             title: '点云实例',
@@ -34,7 +34,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'rendering' },
-            src: 'plugins/gaussianSplatting/preview/splatPage.png',
+            src: 'plugins/gaussianSplatting/preview/splatPage.webp',
             type: 'img',
             name: 'splatPage',
             title: 'splat组件',
@@ -43,7 +43,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'resources' },
-            src: 'plugins/gaussianSplatting/preview/glb.png',
+            src: 'plugins/gaussianSplatting/preview/glb.webp',
             type: 'img',
             name: 'glb',
             title: '转glb',
@@ -52,7 +52,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'rendering' },
-            src: 'plugins/gaussianSplatting/preview/splatPage.png',
+            src: 'plugins/gaussianSplatting/preview/gs3DcomPage.webp',
             type: 'img',
             name: 'gs3DcomPage',
             title: '通用格式的高斯',
@@ -61,7 +61,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'resources' },
-            src: 'plugins/gaussianSplatting/preview/hy2plyPage.png',
+            src: 'plugins/gaussianSplatting/preview/hy2plyPage.webp',
             type: 'img',
             name: 'hy2plyPage',
             title: '混元2ply',
@@ -71,7 +71,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'reality' },
-            src: 'plugins/gaussianSplatting/preview/hunyuanSpzPage.png',
+            src: 'plugins/gaussianSplatting/preview/hunyuanSpzPage.webp',
             type: 'img',
             name: 'hunyuanSpzPage',
             title: '混元SPZ',

@@ -36,7 +36,7 @@ export default {
         disableSrcBtn: false
     },{
         catalog: { type: 'tool', category: 'resources' },
-        "src": "plugins/loadDynamicComponent/preview/readConfig.png",
+        "src": "plugins/loadDynamicComponent/preview/readConfig.webp",
         "type": "img",
         "name": "readConfig",
         "title": "读取远程配置实例",

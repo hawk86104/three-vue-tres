@@ -37,7 +37,7 @@ export default {
             name: 'simpleImport',
             title: '插件生成器',
         },
-        { catalog: { type: 'scene', category: 'product' }, src: 'plugins/tresEditor/preview/coffeeDemo.png', type: 'img', name: 'coffeeDemo', title: '编辑器直出咖啡☕️' },
-        { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/tresEditor/preview/svelteMachine.png', type: 'img', name: 'svelteMachine', title: '编辑器半出Svelte机械' },
+        { catalog: { type: 'scene', category: 'product' }, src: 'plugins/tresEditor/preview/coffeeDemo.webp', type: 'img', name: 'coffeeDemo', title: '编辑器直出咖啡☕️' },
+        { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/tresEditor/preview/svelteMachine.webp', type: 'img', name: 'svelteMachine', title: '编辑器半出Svelte机械' },
     ],
 }

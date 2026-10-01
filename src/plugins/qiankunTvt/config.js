@@ -35,7 +35,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'integration' },
-            src: 'plugins/qiankunTvt/preview/theBasic.png',
+            src: 'plugins/qiankunTvt/preview/theBasic.webp',
             type: 'img',
             name: 'theBasic',
             title: '简单实例',
@@ -53,7 +53,7 @@ export default {
         },
         {
             catalog: { type: 'tool', category: 'integration' },
-            src: 'plugins/medical/preview/yuriBrain.png',
+            src: 'plugins/qiankunTvt/preview/other.webp',
             type: 'img',
             name: 'other',
             title: '其他场景移植',

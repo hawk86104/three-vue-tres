@@ -20,7 +20,7 @@ export default {
     preview: [
         {
             catalog: { type: 'scene', category: 'art' },
-            src: 'plugins/visualArts/preview/porcelainBrassSubmarine.png',
+            src: 'plugins/visualArts/preview/porcelainBrassSubmarine.webp',
             type: 'img',
             name: 'porcelainBrassSubmarine',
             title: '瓷器黄铜潜艇',
@@ -28,7 +28,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'art' },
-            src: 'plugins/visualArts/preview/biineBee.png',
+            src: 'plugins/visualArts/preview/biineBee.webp',
             type: 'img',
             name: 'biineBee',
             title: 'Biine Bee',
@@ -36,7 +36,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'lighting' },
-            src: 'plugins/visualArts/preview/volumetricLightGodray.png',
+            src: 'plugins/visualArts/preview/volumetricLightGodray.webp',
             type: 'img',
             name: 'volumetricLightGodray',
             title: '电影体积光',
@@ -44,7 +44,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'art' },
-            src: 'plugins/visualArts/preview/roomup.png',
+            src: 'plugins/visualArts/preview/roomup.webp',
             type: 'img',
             name: 'roomup',
             title: '日式会厅',
@@ -52,28 +52,28 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/windLine.png',
+            src: 'plugins/visualArts/preview/windLine.webp',
             type: 'img',
             name: 'windLine',
             title: '流动风线',
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/气泡.png',
+            src: 'plugins/visualArts/preview/气泡.webp',
             type: 'img',
             name: 'bubble',
             title: '泡泡',
         },
         {
             catalog: { type: 'scene', category: 'art' },
-            src: 'plugins/visualArts/preview/玻璃.png',
+            src: 'plugins/visualArts/preview/玻璃.webp',
             type: 'img',
             name: 'mirror',
             title: '玻璃',
         },
         {
             catalog: { type: 'scene', category: 'art' },
-            src: 'plugins/visualArts/preview/galaxy.png',
+            src: 'plugins/visualArts/preview/galaxy.webp',
             type: 'img',
             name: 'galaxy',
             title: '银河',
@@ -81,7 +81,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/repulsionEffect.png',
+            src: 'plugins/visualArts/preview/repulsionEffect.webp',
             type: 'img',
             name: 'repulsionEffect',
             title: '排斥效果',
@@ -89,14 +89,14 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/lightNoise.png',
+            src: 'plugins/visualArts/preview/lightNoise.webp',
             type: 'img',
             name: 'lightNoise',
             title: '光噪声',
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/fragmentModel.png',
+            src: 'plugins/visualArts/preview/fragmentModel.webp',
             type: 'img',
             name: 'fragmentModel',
             title: '碎片模型',
@@ -104,7 +104,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/revealEffect.png',
+            src: 'plugins/visualArts/preview/revealEffect.webp',
             type: 'img',
             name: 'revealEffect',
             title: '揭露动画效果',
@@ -112,14 +112,14 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/visualArts/preview/imgParticle.png',
+            src: 'plugins/visualArts/preview/imgParticle.webp',
             type: 'img',
             name: 'imgParticle',
             title: '图片粒子化',
         },
         {
             catalog: { type: 'block', category: 'material' },
-            src: 'plugins/visualArts/preview/voxelizedShader.png',
+            src: 'plugins/visualArts/preview/voxelizedShader.webp',
             type: 'img',
             name: 'voxelizedShader',
             title: '物体体素化',

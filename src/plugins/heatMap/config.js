@@ -16,8 +16,8 @@ export default {
     state: 'active',
     require: [],
     preview: [
-        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/simpleExample.png', type: 'img', name: 'simpleExample', title: '简单例子' },
-        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/heatmapExample.png', type: 'img', name: 'heatmapExample', title: 'heatmap.js例子' },
-        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/heatmapClick.png', type: 'img', name: 'heatmapClick', title: 'heatmap鼠标点击' },
+        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/simpleExample.webp', type: 'img', name: 'simpleExample', title: '简单例子' },
+        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/heatmapExample.webp', type: 'img', name: 'heatmapExample', title: 'heatmap.js例子' },
+        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/heatMap/preview/heatmapClick.webp', type: 'img', name: 'heatmapClick', title: 'heatmap鼠标点击' },
     ],
 }

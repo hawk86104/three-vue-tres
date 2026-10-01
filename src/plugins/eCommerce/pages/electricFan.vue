@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2024-01-16 08:58:24
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-09-27 10:53:10
+ * @LastEditTime: 2026-10-01 15:51:27
 -->
 <script setup lang="ts">
 import { OrbitControls } from '@tresjs/cientos'
@@ -159,7 +159,7 @@ const onClick = (color) => {
 }
 
 .landingpage-bg {
-	background-image: url("@/../public/plugins/digitalCity/preview/heatmap2.png");
+	background-image: url("@/../public/plugins/digitalCity/preview/heatmap2.webp");
 	filter: blur(46px) hue-rotate(325deg) grayscale(100%);
 	/* 模糊度  色阶  灰度*/
 }

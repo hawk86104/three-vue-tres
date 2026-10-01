@@ -21,7 +21,7 @@ export default {
     "tvtstore": 'FREE',
     "preview": [{
         catalog: { type: 'block', category: 'interaction' },
-        "src": "plugins/useViewportGizmo/preview/index.png",
+        "src": "plugins/useViewportGizmo/preview/index.webp",
         "type": "img",
         "name": "index",
         "title": "调用示例",

@@ -19,17 +19,17 @@ export default {
     "require": [],
     "preview": [{
         catalog: { type: 'scene', category: 'art' },
-        "src": "plugins/heroSection/preview/earthMap.png",
+        "src": "plugins/heroSection/preview/earthMap.webp",
         "type": "img",
         "name": "earthMap",
         "title": "现代 UI 设计官网",
         disableFPSGraph: false,
         disableSrcBtn: false
     },
-    { catalog: { type: 'scene', category: 'art' }, src: 'plugins/heroSection/preview/pointsEarth.png', type: 'img', name: 'pointsEarth', title: '粒子球' },
+    { catalog: { type: 'scene', category: 'art' }, src: 'plugins/heroSection/preview/pointsEarth.webp', type: 'img', name: 'pointsEarth', title: '粒子球' },
     {
         catalog: { type: 'scene', category: 'art' },
-        src: 'plugins/heroSection/preview/particleEarth.png', type: 'img', name: 'particleEarth', title: '粒子地球',
+        src: 'plugins/heroSection/preview/particleEarth.webp', type: 'img', name: 'particleEarth', title: '粒子地球',
         referenceSource: { title: 'tsl-scifi-earth', url: 'https://github.com/hexianWeb/tsl-scifi-earth' },
     },
     ]

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2024-07-31 14:34:07
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2024-07-31 15:00:33
+ * @LastEditTime: 2026-10-01 15:58:34
 -->
 <template></template>
 
@@ -30,7 +30,7 @@ rootBlock.position.set(0, -0.5 + 0.4, 1)
 rootBlock.rotation.x = -0.33
 
 
-const { state: pTexture } = useTexture('./plugins/industry4/preview/showLambo.png')
+const { state: pTexture } = useTexture('./plugins/industry4/preview/showLambo.webp')
 watch(
     () => pTexture,
     (mapv) => {

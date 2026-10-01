@@ -19,12 +19,12 @@ export default {
     creatTime: '2023-11-12',
     updateTime: '2024-03-20',
     preview: [
-        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/industry4/preview/deviceLight.png', type: 'img', name: 'deviceLight', title: '设备发光' },
-        { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/industry4/preview/deviceLightReflector.png', type: 'img', name: 'deviceLightReflector', title: '设备发光+镜面+表格说明' },
-        { catalog: { type: 'block', category: 'interaction' }, src: 'plugins/industry4/preview/planeClipping.png', type: 'img', name: 'planeClipping', title: '飞机剖面' },
+        { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/industry4/preview/deviceLight.webp', type: 'img', name: 'deviceLight', title: '设备发光' },
+        { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/industry4/preview/deviceLightReflector.webp', type: 'img', name: 'deviceLightReflector', title: '设备发光+镜面+表格说明' },
+        { catalog: { type: 'block', category: 'interaction' }, src: 'plugins/industry4/preview/planeClipping.webp', type: 'img', name: 'planeClipping', title: '飞机剖面' },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/industry4/preview/showCar.png',
+            src: 'plugins/industry4/preview/showCar.webp',
             type: 'img',
             name: 'showCar',
             title: '911展示',
@@ -32,7 +32,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/industry4/preview/showLambo.png',
+            src: 'plugins/industry4/preview/showLambo.webp',
             type: 'img',
             name: 'showLambo',
             title: 'Lambo展示',
@@ -40,7 +40,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/industry4/preview/su7.png',
+            src: 'plugins/industry4/preview/su7.webp',
             type: 'img',
             name: 'su7',
             title: '来吧，小米su7',
@@ -48,7 +48,7 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'interaction' },
-            src: 'plugins/industry4/preview/collectTriangles.png',
+            src: 'plugins/industry4/preview/collectTriangles.webp',
             type: 'img',
             name: 'collectTriangles',
             title: '喷漆收集三角形',
@@ -57,14 +57,14 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/industry4/preview/dissolveEffect.png',
+            src: 'plugins/industry4/preview/dissolveEffect.webp',
             type: 'img',
             name: 'dissolveEffect',
             title: '溶解特效',
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/industry4/preview/dissolveEffectPlus.png',
+            src: 'plugins/industry4/preview/dissolveEffectPlus.webp',
             type: 'img',
             name: 'dissolveEffectPlus',
             title: '高级溶解特效',
@@ -72,7 +72,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'industry' },
-            src: 'plugins/industry4/preview/alternator.png',
+            src: 'plugins/industry4/preview/alternator.webp',
             type: 'img',
             name: 'alternator',
             title: '发电机展示',
@@ -80,21 +80,21 @@ export default {
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/industry4/preview/flexiblePipePage.png',
+            src: 'plugins/industry4/preview/flexiblePipePage.webp',
             type: 'img',
             name: 'flexiblePipePage',
             title: '伸缩管线',
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/industry4/preview/flexiblePipe2Page.png',
+            src: 'plugins/industry4/preview/flexiblePipe2Page.webp',
             type: 'img',
             name: 'flexiblePipe2Page',
             title: '伸缩管线2',
         },
         {
             catalog: { type: 'block', category: 'effects' },
-            src: 'plugins/industry4/preview/tslGearsForkedPage.png',
+            src: 'plugins/industry4/preview/tslGearsForkedPage.webp',
             type: 'img',
             name: 'tslGearsForkedPage',
             title: 'TSL齿轮分叉',
@@ -102,7 +102,7 @@ export default {
         },
         {
             catalog: { type: 'scene', category: 'product' },
-            src: 'plugins/industry4/bikeConfigurator/bike-poster.jpg',
+            src: 'plugins/industry4/preview/bikeConfigurator.webp',
             type: 'img',
             name: 'bikeConfigurator',
             title: 'Bike Configurator',
