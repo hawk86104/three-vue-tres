@@ -8,7 +8,6 @@
  */
 // 放工具函数
 import { request } from '@fesjs/fes'
-import previewImageOverrides from '../components/forPreview/previewImageOverrides.json'
 
 const OSS_ASSET_PREFIX = 'https://oss.icegl.cn/'
 const REMOTE_PLUGIN_MENU_URL = 'https://www.icegl.cn/addons/tvt/pluginsforpreivew/index'
@@ -81,13 +80,10 @@ const isRelativeUrl = (src) => typeof src === 'string' && src && !/^(?:[a-z][a-z
 
 const withOssPrefix = (src) => OSS_ASSET_PREFIX + src.replace(/^\.\//, '').replace(/^\//, '')
 
-const normalizePreviewSrc = (preview, pluginName) => {
-    if (preview?.type !== 'img') return preview
-    const src = isRelativeUrl(preview.src) ? withOssPrefix(preview.src) : preview.src
-    const replacement = previewImageOverrides[pluginName]?.[preview.name]
-    // 仅替换本次录制时的原图；在线菜单换图后继续使用其新资源。
-    if (replacement?.originalSrc === src) return { ...preview, src: replacement.src }
-    if (src !== preview.src) return { ...preview, src }
+const normalizePreviewSrc = (preview) => {
+    if (preview.type === 'img' && isRelativeUrl(preview.src)) {
+        return { ...preview, src: withOssPrefix(preview.src) }
+    }
     return preview
 }
 
@@ -100,7 +96,7 @@ const normalizeRemotePluginConfig = (pluginConfig) => {
     return {
         ...pluginConfig,
         remotePluginMenu: true,
-        preview: getPreviewList(pluginConfig.preview).map((preview) => normalizePreviewSrc(preview, pluginConfig.tvtstore === 'FREE' ? pluginConfig.name : undefined)),
+        preview: getPreviewList(pluginConfig.preview).map(normalizePreviewSrc),
     }
 }
 
