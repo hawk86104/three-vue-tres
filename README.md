@@ -139,14 +139,14 @@ The project is built on four open-source foundations. Plugins, editors, dynamic 
       <a href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeTvtStack"><strong>Tech Stack Topology</strong></a><br>
       <sub>Project-ready output from the editor</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeTvtStack.png" alt="Tech Stack Topology">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeTvtStack.webp" alt="Tech Stack Topology">
       </a>
     </td>
     <td width="50%" align="center" valign="top" style="padding:12px;width:50%;vertical-align:top;">
       <a href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeHYworld"><strong>Hunyuan World</strong></a><br>
       <sub>Project-ready output from the editor</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeHYworld" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeHYworld.png" alt="Hunyuan World">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeHYworld.webp" alt="Hunyuan World">
       </a>
     </td>
   </tr>
@@ -178,7 +178,7 @@ The project is built on four open-source foundations. Plugins, editors, dynamic 
       <a href="https://opensource.icegl.cn/#/#zoneFreeScene"><strong>Low-Poly Refinery</strong></a><br>
       <sub>Free case</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeRefiningIndustry" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeRefiningIndustry.png" alt="Low-Poly Refinery">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeRefiningIndustry.webp" alt="Low-Poly Refinery">
       </a>
     </td>
   </tr>
@@ -210,7 +210,7 @@ The project is built on four open-source foundations. Plugins, editors, dynamic 
       <a href="https://opensource.icegl.cn/#/#zoneFreeScene"><strong>Ocean Shipping Visualization</strong></a><br>
       <sub>Free case</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeShipSea" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeShipSea.png?imageMogr2/thumbnail/600x" alt="Ocean Shipping Visualization">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeShipSea.webp" alt="Ocean Shipping Visualization">
       </a>
     </td>
   </tr>
@@ -254,7 +254,7 @@ The project is built on four open-source foundations. Plugins, editors, dynamic 
 > You can reopen this scene in the online editor and export the source again for secondary development:
 > [Open in zone3Deditor](https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack)
 
-<a style="display:block;width:800px;max-width:100%;" href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeTvtStack"><img src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeTvtStack.png" alt="tres.js webgl three.js"></a>
+<a style="display:block;width:800px;max-width:100%;" href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeTvtStack"><img src="./public/plugins/zoneFreeScene/preview/freeTvtStack.webp" alt="tres.js webgl three.js"></a>
 
 > Because the project is updated and rebuilt frequently, please clear your browser cache if you encounter access or asset-loading issues.
 

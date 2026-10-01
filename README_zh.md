@@ -136,14 +136,14 @@ TvT.js 与 AI 的结合已经进入内容生产和工程开发两条主线：AI 
       <a href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeTvtStack"><strong>技术栈拓扑图</strong></a><br>
       <sub>编辑器直接落地项目</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeTvtStack" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeTvtStack.png" alt="技术栈拓扑图">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeTvtStack.webp" alt="技术栈拓扑图">
       </a>
     </td>
     <td width="50%" align="center" valign="top" style="padding:12px;width:50%;vertical-align:top;">
       <a href="https://opensource.icegl.cn/#/plugins/zoneFreeScene/freeHYworld"><strong>混元世界</strong></a><br>
       <sub>编辑器直接落地项目</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeHYworld" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeHYworld.png" alt="混元世界">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeHYworld.webp" alt="混元世界">
       </a>
     </td>
   </tr>
@@ -175,7 +175,7 @@ TvT.js 与 AI 的结合已经进入内容生产和工程开发两条主线：AI 
       <a href="https://opensource.icegl.cn/#/#zoneFreeScene"><strong>低像素炼油厂</strong></a><br>
       <sub>免费案例</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeRefiningIndustry" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeRefiningIndustry.png" alt="低像素炼油厂">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeRefiningIndustry.webp" alt="低像素炼油厂">
       </a>
     </td>
   </tr>
@@ -207,7 +207,7 @@ TvT.js 与 AI 的结合已经进入内容生产和工程开发两条主线：AI 
       <a href="https://opensource.icegl.cn/#/#zoneFreeScene"><strong>海洋船运可视化</strong></a><br>
       <sub>免费案例</sub><br><br>
       <a href="https://zone3deditor.icegl.cn/#/plugins/zone3Deditor/index?sceneConfig=freeShipSea" style="display:block;">
-        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="https://opensource.icegl.cn/plugins/zoneFreeScene/preview/freeShipSea.png?imageMogr2/thumbnail/600x" alt="海洋船运可视化">
+        <img width="480" height="270" style="width:100%;max-width:480px;height:270px;object-fit:cover;" src="./public/plugins/zoneFreeScene/preview/freeShipSea.webp" alt="海洋船运可视化">
       </a>
     </td>
   </tr>
