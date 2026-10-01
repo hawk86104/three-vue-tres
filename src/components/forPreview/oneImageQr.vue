@@ -1,6 +1,11 @@
 <template>
-    <div v-if="!qrOnly" class="preview-image-frame">
-        <FImage class="preview-thumbnail w-full max-h-70 h-14em" fit="contain" :src="imgSrc()" :alt="onePreview.title || onePreview.name" :lazy="false" />
+    <div v-if="!qrOnly" class="preview-image-frame" @mouseenter="setImageHovered(true)" @mouseleave="setImageHovered(false)">
+        <FImage :style="{ visibility: imageHovered && animationReady ? 'hidden' : 'visible' }" class="preview-thumbnail w-full max-h-70 h-14em" fit="contain" :src="posterSrc" :alt="onePreview.title || onePreview.name" :lazy="false">
+            <template v-if="imageLoadFailed" #placeholder>预览图暂不可用</template>
+        </FImage>
+        <div v-if="imageHovered && animationSrc" class="preview-thumbnail preview-animation w-full max-h-70 h-14em" :style="{ visibility: animationReady ? 'visible' : 'hidden' }">
+            <img :src="animationSrc" :alt="onePreview.title || onePreview.name" @load="onAnimationLoad" />
+        </div>
     </div>
     <template v-else-if="hasPreview">
         <button ref="qrTrigger" type="button" class="mobile-preview-trigger" :aria-label="'移动端预览：' + (onePreview.title || onePreview.name)" :aria-expanded="showQr" @mouseenter="openQr" @mouseleave="scheduleQrClose" @click.stop="openQr" @focus="openQr" @blur="closeQr" @keydown.esc.stop="closeQr">
@@ -46,6 +51,7 @@ import { ref, watch } from 'vue'
 import { FImage } from '@fesjs/fes-design'
 import { NPopover } from 'naive-ui'
 import { CloseOutline, QrCodeOutline } from '@vicons/ionicons5'
+import { createPreviewWebp } from './previewWebp'
 
 const props = defineProps({
     onePreview: {
@@ -106,6 +112,55 @@ const imgSrc = () => {
     }
     return url
 }
+
+const imageHovered = ref(false)
+const animationReady = ref(false)
+const imageLoadFailed = ref(false)
+const posterSrc = ref('')
+const animationSrc = ref('')
+const setImageHovered = (hovered: boolean) => {
+    animationReady.value = false
+    imageHovered.value = hovered
+}
+const onAnimationLoad = (event: Event) => {
+    const image = event.currentTarget as HTMLImageElement
+    // 等实际显示的图片加载完成，再覆盖首帧；忽略已移除图片的回调。
+    if (image.isConnected && imageHovered.value && image.getAttribute('src') === animationSrc.value) animationReady.value = true
+}
+watch(() => props.qrOnly ? '' : imgSrc(), async (url, _, onCleanup) => {
+    const isWebp = /\.webp(?:[?#]|$)/i.test(url)
+    posterSrc.value = isWebp ? '' : url
+    animationSrc.value = ''
+    animationReady.value = false
+    imageLoadFailed.value = false
+    if (!isWebp) return
+
+    const controller = new AbortController()
+    const objectUrls: string[] = []
+    onCleanup(() => {
+        controller.abort()
+        objectUrls.forEach((src) => URL.revokeObjectURL(src))
+    })
+    try {
+        const response = await fetch(url, { signal: controller.signal })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const images = createPreviewWebp(await response.arrayBuffer())
+        if (controller.signal.aborted) return
+        if (images) {
+            objectUrls.push(URL.createObjectURL(images.poster), URL.createObjectURL(images.animation))
+            posterSrc.value = objectUrls[0]
+            animationSrc.value = objectUrls[1]
+        } else {
+            posterSrc.value = url
+        }
+    } catch {
+        // 读取失败时保留静态占位，仅悬停后才尝试加载原动图。
+        if (!controller.signal.aborted) {
+            imageLoadFailed.value = true
+            animationSrc.value = url
+        }
+    }
+}, { immediate: true })
 
 const createQrCacheKey = (value: string) => {
     let hash = 2166136261
@@ -169,7 +224,9 @@ const errMiNiImg = () => {
 
 </script>
 <style lang="less" scoped>
-.preview-image-frame { overflow: hidden; border-radius: 9px; }
+.preview-image-frame { position: relative; overflow: hidden; border-radius: 9px; }
+.preview-animation { position: absolute; inset: 0; }
+.preview-animation img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .mobile-preview-trigger { display: inline-flex; align-items: center; gap: 5px; padding: 6px 0; border: 0; background: transparent; color: var(--catalog-muted, #62626e); font: inherit; font-size: 12px; cursor: pointer; }
 .mobile-preview-trigger svg { width: 15px; height: 15px; }
 .mobile-preview-trigger:hover, .mobile-preview-trigger[aria-expanded='true'] { color: var(--catalog-accent, #5384ff); }
