@@ -41,5 +41,6 @@ export default {
         { src: 'plugins/UIdemo/preview/line2RoundedRectPage.png', type: 'img', name: 'line2RoundedRectPage', title: '矩形线边框' },
         { src: 'plugins/UIdemo/preview/lineArrowPage.png', type: 'img', name: 'lineArrowPage', title: '箭头线组件' },
         { src: 'plugins/UIdemo/preview/generalFontPage.png', type: 'img', name: 'generalFontPage', title: '标准三维字体组件' },
+        { src: 'plugins/UIdemo/preview/domCanvas.svg', type: 'img', name: 'domCanvasPage', title: 'HTML三维纹理面板' },
     ],
 }
