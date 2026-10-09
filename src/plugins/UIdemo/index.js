@@ -18,12 +18,15 @@ import bannerLabel from 'PLS/UIdemo/components/bannerLabel.vue'
 import * as ThreeMeshUI from 'PLS/UIdemo/lib/three-mesh-ui.module'
 import reactor from 'PLS/UIdemo/components/loading/reactor.vue'
 import domPanel from 'PLS/UIdemo/components/domPanel.vue'
+import domCanvas from 'PLS/UIdemo/components/domCanvas.vue'
 import spriteImg from 'PLS/UIdemo/components/spriteImg.vue'
 import svgCom from 'PLS/UIdemo/components/svgCom.vue'
 import line2RoundedRect from 'PLS/UIdemo/components/line2RoundedRect.vue'
 import lineArrow from 'PLS/UIdemo/components/lineArrow.vue'
 import ScrollControls from 'PLS/UIdemo/components/ScrollControls.vue'
 import generalFont from 'PLS/UIdemo/components/generalFont.vue'
+
+export { domCanvasDefaults, domCanvasEditorConfig } from './common/domCanvas'
 
 export {
     reactor,
@@ -38,6 +41,7 @@ export {
     ThreeMeshUI,
     bannerLabel,
     domPanel,
+    domCanvas,
     spriteImg,
     svgCom,
     line2RoundedRect,

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="bg"><stop stop-color="#081629"/><stop offset="1" stop-color="#204e68"/></linearGradient>
+    <linearGradient id="glass" x2="1" y2="1"><stop stop-color="#83cbec" stop-opacity=".4"/><stop offset="1" stop-color="#c7ecff" stop-opacity=".08"/></linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <path d="M0 270 640 150M0 330 640 210M120 360 440 0M310 360 600 0" stroke="#68caff" opacity=".15"/>
+  <rect x="105" y="70" width="430" height="220" rx="26" fill="url(#glass)" stroke="#c0e6ff" stroke-opacity=".6"/>
+  <text x="145" y="142" fill="white" font-family="Arial,sans-serif" font-size="36" font-weight="bold">DOM · Canvas</text>
+  <text x="145" y="190" fill="#d3ebfa" font-family="Arial,sans-serif" font-size="20">HTML → Canvas → 3D Plane</text>
+  <text x="145" y="232" fill="#8bdfff" font-family="Arial,sans-serif" font-size="17">Alpha / Depth / Backdrop Blur</text>
+  <path d="m480 225 68-24 50 32-67 27z" fill="#66d9ef"/><path d="m480 225 51 35v64l-51-36z" fill="#288aa7"/><path d="m531 260 67-27v61l-67 30z" fill="#196681"/>
+</svg>

@@ -4,7 +4,7 @@
  * @Autor: 地虎降天龙
  * @Date: 2024-03-12 11:16:41
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-10-23 14:17:17
+ * @LastEditTime: 2026-10-09 10:36:02
  */
 export default {
     name: 'UIdemo',
@@ -41,5 +41,6 @@ export default {
         { catalog: { type: 'block', category: 'ui' }, src: 'plugins/UIdemo/preview/line2RoundedRectPage.webp', type: 'img', name: 'line2RoundedRectPage', title: '矩形线边框' },
         { catalog: { type: 'block', category: 'ui' }, src: 'plugins/UIdemo/preview/lineArrowPage.webp', type: 'img', name: 'lineArrowPage', title: '箭头线组件' },
         { catalog: { type: 'block', category: 'ui' }, src: 'plugins/UIdemo/preview/generalFontPage.webp', type: 'img', name: 'generalFontPage', title: '标准三维字体组件' },
+        { catalog: { type: 'block', category: 'ui' }, src: 'plugins/UIdemo/preview/domCanvas.svg', type: 'img', name: 'domCanvasPage', title: 'HTML三维纹理面板' },
     ],
 }
