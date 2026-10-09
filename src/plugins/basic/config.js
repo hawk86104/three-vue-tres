@@ -23,7 +23,6 @@ export default {
             pNode: 'basic',
             preview: [
                 { catalog: { type: 'block', category: 'interaction' }, src: 'plugins/basic/base/preview/shapesPage.webp', type: 'img', name: 'shapesPage', title: '图形合集组件' },
-                { catalog: { type: 'block', category: 'effects' }, src: 'plugins/basic/base/preview/shaderParticles.webp', type: 'img', name: 'shaderParticles', title: '着色器实践' },
             ],
         },
         {
@@ -109,7 +108,6 @@ export default {
             intro: '关于物体发光的简单例子',
             pNode: 'basic',
             preview: [
-                { catalog: { type: 'block', category: 'lighting' }, src: 'plugins/basic/shine/preview/shader.webp', type: 'img', name: 'shader', title: '着色器方式' },
                 {
                     catalog: { type: 'block', category: 'lighting' },
                     src: 'plugins/basic/shine/preview/geometricGlow.webp', type: 'img', name: 'geometricGlow', title: 'geometric缩放',

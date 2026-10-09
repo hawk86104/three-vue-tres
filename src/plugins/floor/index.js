@@ -19,7 +19,6 @@ import rubberTiles from './components/rubberTiles.vue'
 import reflectorRoundedBox from './components/reflectorRoundedBox.vue'
 import particleBase from './components/particleBase.vue'
 import topoBase from './components/topoBase.vue'
-import hexagonalWall from './components/hexagonalWall.vue'
 import mechaFloor from './components/mechaFloor.vue'
 import rippleFloor from './components/rippleFloor.vue'
 import hexagonalFloor from './components/hexagonalFloor.vue'
@@ -52,7 +51,6 @@ export {
     reflectorRoundedBox,
     particleBase,
     topoBase,
-    hexagonalWall,  
     mechaFloor,
     rippleFloor,
     hexagonalFloor,

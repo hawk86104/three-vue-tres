@@ -10466,11 +10466,6 @@ three-stdlib@^2.36.0:
     fflate "^0.6.9"
     potpack "^1.0.1"
 
-three-subdivide@^1.1.5:
-  version "1.1.5"
-  resolved "https://registry.npmmirror.com/three-subdivide/-/three-subdivide-1.1.5.tgz"
-  integrity sha512-eEWMevrsHIMnC1xbsZSQZIB8QBr8XeXZhTSAdYrLm3ZC/yTdR4ocOZ2Qi+gEyPJFOt3iirQ+SQR0jCamk7e6FQ==
-
 three-tile@0.11.10:
   version "0.11.10"
   resolved "https://registry.npmmirror.com/three-tile/-/three-tile-0.11.10.tgz"

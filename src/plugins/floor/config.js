@@ -18,7 +18,6 @@ export default {
     preview: [
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/ripperfloor.webp', type: 'img', name: 'rippleFloor', title: '波纹地板' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/mechaFloor.webp', type: 'img', name: 'mechaFloor', title: '机甲地板' },
-        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/sixface.webp', type: 'img', name: 'hexagonalWall', title: '六面柱地板' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/rubberTilesPage.webp', type: 'img', name: 'rubberTilesPage', title: '橡胶地板' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/simpleReflector.webp', type: 'img', name: 'simpleReflector', title: '简单镜面' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/floor/preview/meshReflectionFloor.png', type: 'img', name: 'meshReflectionFloor', title: '通用镜面地板' },

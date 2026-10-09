@@ -10,13 +10,6 @@ export default {
     "updateTime": "2024-03-10",
     require: [],
     preview: [
-        { catalog: { type: 'block', category: 'rendering' }, src: 'plugins/rayMarchingAndThreejs/preview/光追基础框架.webp', type: 'img', name: 'rayMarchingBasic', title: '光追基础框架' },
-        { catalog: { type: 'block', category: 'rendering' }, src: 'plugins/rayMarchingAndThreejs/preview/位置变换.webp', type: 'img', name: 'rayMarchingTranform', title: '光追基础变换' },
-        {
-            catalog: { type: 'block', category: 'rendering' },
-            src: 'plugins/rayMarchingAndThreejs/preview/多个sdf.webp', type: 'img', name: 'rayMarchingCombination', title: '光追创建多个实体',
-            referenceSource: { title: 'Inigo Quilez  ', url: 'https://iquilezles.org/articles/distfunctions/' }
-        },
         {
             catalog: { type: 'block', category: 'rendering' },
             src: 'plugins/rayMarchingAndThreejs/preview/创建复杂几何体.webp', type: 'img', name: 'rayMarchingFract', title: '光追创建复杂几何体',

@@ -25,7 +25,6 @@ export default {
             title: '头脑风暴',
             referenceSource: { title: 'SahilK-Brain', url: 'https://github.com/SahilK-027/Digital-Brain' },
         },
-        { catalog: { type: 'scene', category: 'medical' }, src: 'plugins/medical/preview/digitalBrain.webp', type: 'img', name: 'digitalBrain', title: '数字大脑' },
         { catalog: { type: 'scene', category: 'medical' }, src: 'plugins/medical/preview/digitalBrainFloor.webp', type: 'img', name: 'digitalBrainFloor', title: '数字大脑镜面' },
         {
             catalog: { type: 'scene', category: 'medical' },

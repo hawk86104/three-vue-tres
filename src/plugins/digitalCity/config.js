@@ -32,9 +32,7 @@ export default {
         },
         { catalog: { type: 'block', category: 'effects' }, src: 'plugins/digitalCity/preview/lightningStorm.webp', type: 'img', name: 'lightningStorm', title: '闪电' },
         { catalog: { type: 'block', category: 'effects' }, src: 'plugins/digitalCity/preview/stylizedTornado.webp', type: 'img', name: 'stylizedTornado', title: '漫画龙卷风' },
-        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/digitalCity/preview/clouds.webp', type: 'img', name: 'clouds', title: '云☁️' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/digitalCity/preview/clouds2.webp', type: 'img', name: 'clouds2', title: '云彩2☁️' },
-        { catalog: { type: 'block', category: 'effects' }, src: 'plugins/digitalCity/preview/fog.webp', type: 'img', name: 'fog', title: '迷雾' },
         { catalog: { type: 'block', category: 'effects' }, src: 'plugins/digitalCity/preview/smoke.webp', type: 'img', name: 'smoke', title: '烟' },
         {
             catalog: { type: 'block', category: 'effects' },

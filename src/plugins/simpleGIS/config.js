@@ -19,7 +19,6 @@ export default {
     creatTime: '2024-02-12',
     updateTime: '2024-03-19',
     preview: [
-        { catalog: { type: 'scene', category: 'city' }, src: 'plugins/simpleGIS/preview/chinaMap.webp', type: 'img', name: 'chinaMap', title: '中国地图展示' },
         {
             catalog: { type: 'scene', category: 'city' },
             src: 'plugins/simpleGIS/preview/jiangSuMap.webp',

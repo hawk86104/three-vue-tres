@@ -123,7 +123,6 @@
     "three": "0.180.0",
     "three-custom-shader-material": "6.3.7",
     "three-mesh-bvh": "0.9.1",
-    "three-subdivide": "^1.1.5",
     "three-tile": "0.11.10",
     "three.quarks": "^0.16.0",
     "tilebelt-wgs84": "1.1.4",

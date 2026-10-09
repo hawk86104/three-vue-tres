@@ -16,11 +16,7 @@ export default {
     state: 'active',
     require: [],
     preview: [
-        { catalog: { type: 'scene', category: 'city' }, src: 'plugins/earthSample/preview/earthA.webp', type: 'img', name: 'earthA', title: '样式A' },
         { catalog: { type: 'scene', category: 'city' }, src: 'plugins/earthSample/preview/menuA.webp', type: 'img', name: 'menuA', title: '菜单A' },
         { catalog: { type: 'scene', category: 'art' }, src: 'plugins/earthSample/preview/lowpolyPlanet.webp', type: 'img', name: 'lowpolyPlanet', title: '低像素多边形' },
-        { catalog: { type: 'block', category: 'effects' }, src: 'plugins/earthSample/preview/pointsScan.webp', type: 'img', name: 'pointsScan', title: '点扫描' },
-        { catalog: { type: 'block', category: 'effects' }, src: 'plugins/earthSample/preview/highlightScan.webp', type: 'img', name: 'highlightScan', title: '高光扫描' },
-        { catalog: { type: 'scene', category: 'art' }, src: 'plugins/earthSample/preview/smokeEarth.webp', type: 'img', name: 'smokeEarth', title: '烟雾球' },
     ],
 }

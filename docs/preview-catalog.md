@@ -15,12 +15,12 @@
 
 ## 分类结果
 
-2026-09-29 本地 271 项，线上补充 91 项。线上归类以当前配置中的标题、简介和入口为依据，未对商业应用业务流程进行运行验证。
+2026-10-09 本地配置共 245 项，已移除本轮指定的 27 项演示。下表在原迁移清单上同步删除这些条目；线上补充仍沿用 2026-09-29 的 91 项快照，未重新请求线上目录，也未对商业应用业务流程进行运行验证。
 
 | 一级目录 | 数量 |
 | --- | ---: |
-| Blocks 基础能力 | 239 |
-| Scenes 场景案例 | 67 |
+| Blocks 基础能力 | 217 |
+| Scenes 场景案例 | 62 |
 | Applications 行业应用 | 25 |
 | Tools 创作与工程 | 31 |
 
@@ -33,10 +33,6 @@
 | basic/controls/playerControls | 玩家控制器 | Blocks 基础能力 / 基础与交互 |
 | industry4/planeClipping | 飞机剖面 | Blocks 基础能力 / 基础与交互 |
 | industry4/collectTriangles | 喷漆收集三角形 | Blocks 基础能力 / 基础与交互 |
-| operationTool/explode | 炸开与还原 | Blocks 基础能力 / 基础与交互 |
-| operationTool/frameSelect | 框选实例 | Blocks 基础能力 / 基础与交互 |
-| operationTool/drawArrows | 绘制箭头 | Blocks 基础能力 / 基础与交互 |
-| operationTool/navigation | 导航 | Blocks 基础能力 / 基础与交互 |
 | useViewportGizmo/index | 调用示例 | Blocks 基础能力 / 基础与交互 |
 | basic/materials/physicalDiffractionGrating | 物理衍射光栅 | Blocks 基础能力 / 材质与 Shader |
 | basic/materials/raytracedDiamond | BVH光追钻石 | Blocks 基础能力 / 材质与 Shader |
@@ -54,9 +50,7 @@
 | eCommerce/stencilMask | 多重门 | Blocks 基础能力 / 材质与 Shader |
 | shadertoyToThreejs/argestCircle | 细胞 | Blocks 基础能力 / 材质与 Shader |
 | shadertoyToThreejs/shadertoyMaterial | shadertoyMaterial | Blocks 基础能力 / 材质与 Shader |
-| shadertoyToThreejs/noiseContourPage | 噪音轮廓 | Blocks 基础能力 / 材质与 Shader |
 | shadertoyToThreejs/lightning | 闪电 | Blocks 基础能力 / 材质与 Shader |
-| shadertoyToThreejs/tunnel | 隧道 | Blocks 基础能力 / 材质与 Shader |
 | shadertoyToThreejs/superTunnel | 超级隧道 | Blocks 基础能力 / 材质与 Shader |
 | shadertoyToThreejs/superPipeline | 超级管道 | Blocks 基础能力 / 材质与 Shader |
 | tsl/basicTsl | 最基本的TSL应用 | Blocks 基础能力 / 材质与 Shader |
@@ -65,7 +59,6 @@
 | tsl/tsg-case-3 | TSG案例3 - 故障效果 | Blocks 基础能力 / 材质与 Shader |
 | tsl/tsg-case-4 | TSG案例4 - 溶解效果 | Blocks 基础能力 / 材质与 Shader |
 | visualArts/voxelizedShader | 物体体素化 | Blocks 基础能力 / 材质与 Shader |
-| basic/shine/shader | 着色器方式 | Blocks 基础能力 / 光影与后处理 |
 | basic/shine/geometricGlow | geometric缩放 | Blocks 基础能力 / 光影与后处理 |
 | basic/shine/fakeGlow | FakeGlow | Blocks 基础能力 / 光影与后处理 |
 | basic/shine/effectComposerShaderPass | 后期处理-图层+ShaderPass | Blocks 基础能力 / 光影与后处理 |
@@ -74,7 +67,6 @@
 | digitalCity/buildingsPassA | 建筑物后期A | Blocks 基础能力 / 光影与后处理 |
 | industry4/deviceLight | 设备发光 | Blocks 基础能力 / 光影与后处理 |
 | postProcessing/webglFrameBuffer | WebGL帧缓冲DEMO | Blocks 基础能力 / 光影与后处理 |
-| postProcessing/webglPostProcessing | WebGL后处理DEMO | Blocks 基础能力 / 光影与后处理 |
 | projectionShadow/accumulativeShadows | 软阴影 | Blocks 基础能力 / 光影与后处理 |
 | projectionShadow/causticsDemo | 投射 | Blocks 基础能力 / 光影与后处理 |
 | visualArts/volumetricLightGodray | 电影体积光 | Blocks 基础能力 / 光影与后处理 |
@@ -83,14 +75,12 @@
 | digitalMapBlock/spaceLines | 间隔线 | Blocks 基础能力 / 特效与动画 |
 | flameFires/flameFireComponent | 大型横向喷火 | Blocks 基础能力 / 特效与动画 |
 | flameFires/flame4RealComponent | 仿真火焰B | Blocks 基础能力 / 特效与动画 |
-| basic/base/shaderParticles | 着色器实践 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/radars | 雷达 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/diffuseCircle | 扩散圈球 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/depthBufferDiffuse | 带深度的半球扩散 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/weather | 天气 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/lightningStorm | 闪电 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/stylizedTornado | 漫画龙卷风 | Blocks 基础能力 / 特效与动画 |
-| digitalCity/fog | 迷雾 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/smoke | 烟 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/fireA | 火A🔥效果 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/fireB | 火B🔥效果 | Blocks 基础能力 / 特效与动画 |
@@ -109,8 +99,6 @@
 | digitalCity/regionGlow | 区域内发光 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/rectangleGlowPage | 矩形渐变区域 | Blocks 基础能力 / 特效与动画 |
 | digitalCity/particleFirefly | 粒子萤火虫 | Blocks 基础能力 / 特效与动画 |
-| earthSample/pointsScan | 点扫描 | Blocks 基础能力 / 特效与动画 |
-| earthSample/highlightScan | 高光扫描 | Blocks 基础能力 / 特效与动画 |
 | floor/circleWave | 花纹圈动画 | Blocks 基础能力 / 特效与动画 |
 | floor/cartoonMagicZone | 卡通能量圈 | Blocks 基础能力 / 特效与动画 |
 | floor/lineMagicZone | 线条能量圈 | Blocks 基础能力 / 特效与动画 |
@@ -147,11 +135,8 @@
 | digitalCity/coneAnchorA | 浮锚标识A | Blocks 基础能力 / UI / 标注 / 图表 |
 | digitalCity/coneAnchorB | 浮锚标识B | Blocks 基础能力 / UI / 标注 / 图表 |
 | goView/goViewComPage | 配置组件化 | Blocks 基础能力 / UI / 标注 / 图表 |
-| heatMap/simpleExample | 简单例子 | Blocks 基础能力 / UI / 标注 / 图表 |
 | heatMap/heatmapExample | heatmap.js例子 | Blocks 基础能力 / UI / 标注 / 图表 |
 | heatMap/heatmapClick | heatmap鼠标点击 | Blocks 基础能力 / UI / 标注 / 图表 |
-| operationTool/tagging | 几何体标注 | Blocks 基础能力 / UI / 标注 / 图表 |
-| operationTool/legend | 动态图例（高级版本支持后处理效果，可定制开发） | Blocks 基础能力 / UI / 标注 / 图表 |
 | UIdemo/divIllustrate | DIV说明样例 | Blocks 基础能力 / UI / 标注 / 图表 |
 | UIdemo/echartSample | Echart表格样例 | Blocks 基础能力 / UI / 标注 / 图表 |
 | UIdemo/sizeMark | 尺寸样式 | Blocks 基础能力 / UI / 标注 / 图表 |
@@ -168,12 +153,10 @@
 | digitalMapBlock/baseFloorA | 底座A | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | digitalMapBlock/baseFloorB | 底座B | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | digitalCity/wetPuddleRain | 雨天地面积水 | Blocks 基础能力 / 环境 / 地面 / 水体 |
-| digitalCity/clouds | 云☁️ | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | digitalCity/clouds2 | 云彩2☁️ | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | digitalCity/cityRiver | 城市河流 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | floor/rippleFloor | 波纹地板 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | floor/mechaFloor | 机甲地板 | Blocks 基础能力 / 环境 / 地面 / 水体 |
-| floor/hexagonalWall | 六面柱地板 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | floor/rubberTilesPage | 橡胶地板 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | floor/simpleReflector | 简单镜面 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | floor/meshReflectionFloor | 通用镜面地板 | Blocks 基础能力 / 环境 / 地面 / 水体 |
@@ -206,8 +189,6 @@
 | water/stylizedAboveBelowOcean | 风格化水上/水下海洋 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | water/submergedSnellOcean | 水下斯涅尔海洋 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | water/staticWaterPage | 静态水 | Blocks 基础能力 / 环境 / 地面 / 水体 |
-| water/tilingCaustics | 波纹A | Blocks 基础能力 / 环境 / 地面 / 水体 |
-| water/waterGlass | 波浪B | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | water/waveC | 波浪C | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | water/threeExampleOcean | three例子-海洋 | Blocks 基础能力 / 环境 / 地面 / 水体 |
 | water/customWater | 自定义水 | Blocks 基础能力 / 环境 / 地面 / 水体 |
@@ -254,9 +235,6 @@
 | gaussianSplatting/plyPage | 点云实例 | Blocks 基础能力 / 模型 / 渲染 |
 | gaussianSplatting/splatPage | splat组件 | Blocks 基础能力 / 模型 / 渲染 |
 | gaussianSplatting/gs3DcomPage | 通用格式的高斯 | Blocks 基础能力 / 模型 / 渲染 |
-| rayMarchingAndThreejs/rayMarchingBasic | 光追基础框架 | Blocks 基础能力 / 模型 / 渲染 |
-| rayMarchingAndThreejs/rayMarchingTranform | 光追基础变换 | Blocks 基础能力 / 模型 / 渲染 |
-| rayMarchingAndThreejs/rayMarchingCombination | 光追创建多个实体 | Blocks 基础能力 / 模型 / 渲染 |
 | rayMarchingAndThreejs/rayMarchingFract | 光追创建复杂几何体 | Blocks 基础能力 / 模型 / 渲染 |
 | rayMarchingAndThreejs/rayMarchingColor | 颜色赋值 | Blocks 基础能力 / 模型 / 渲染 |
 | rayMarchingAndThreejs/rayMarchingMushroom | 光追构建蘑菇 | Blocks 基础能力 / 模型 / 渲染 |
@@ -280,12 +258,10 @@
 | gisPlaneEditor/sceneConfig1 | 多套倾斜摄影3D | Scenes 场景案例 / 城市 / GIS |
 | gisPlaneEditor/sceneConfig2 | 南京黑金漂亮地图 | Scenes 场景案例 / 城市 / GIS |
 | digitalCity/city2 | 城市新模型 | Scenes 场景案例 / 城市 / GIS |
-| earthSample/earthA | 样式A | Scenes 场景案例 / 城市 / GIS |
 | earthSample/menuA | 菜单A | Scenes 场景案例 / 城市 / GIS |
 | geokit/case-real-1 | 实战案例1 | Scenes 场景案例 / 城市 / GIS |
 | geokit/case-real-2 | 实战案例2 | Scenes 场景案例 / 城市 / GIS |
 | geokit/case-real-3 | 实战案例3 | Scenes 场景案例 / 城市 / GIS |
-| simpleGIS/chinaMap | 中国地图展示 | Scenes 场景案例 / 城市 / GIS |
 | simpleGIS/jiangSuMap | 江苏地图展示 | Scenes 场景案例 / 城市 / GIS |
 | simpleGIS/googleMapsExample | googleMaps演示 | Scenes 场景案例 / 城市 / GIS |
 | simpleGIS/mapBuildings | 地图和3DTiles结合 | Scenes 场景案例 / 城市 / GIS |
@@ -298,7 +274,6 @@
 | zonePixelLowMachinRoom/index | 实例 | Scenes 场景案例 / 工业 / 园区 |
 | zonePlasticProducts/index | 简单预览 | Scenes 场景案例 / 工业 / 园区 |
 | freeDigitalHome/demo | 不连接homeassitant的展示 | Scenes 场景案例 / 工业 / 园区 |
-| digitalPark/simplePark | 简单园区 | Scenes 场景案例 / 工业 / 园区 |
 | digitalPark/innovationHubAr | Innovation Hub AR | Scenes 场景案例 / 工业 / 园区 |
 | industry4/deviceLightReflector | 设备发光+镜面+表格说明 | Scenes 场景案例 / 工业 / 园区 |
 | industry4/alternator | 发电机展示 | Scenes 场景案例 / 工业 / 园区 |
@@ -314,7 +289,6 @@
 | industry4/bikeConfigurator | Bike Configurator | Scenes 场景案例 / 产品 / 电商 |
 | tresEditor/coffeeDemo | 编辑器直出咖啡☕️ | Scenes 场景案例 / 产品 / 电商 |
 | medical/brainStorm | 头脑风暴 | Scenes 场景案例 / 医疗 / 科研 |
-| medical/digitalBrain | 数字大脑 | Scenes 场景案例 / 医疗 / 科研 |
 | medical/digitalBrainFloor | 数字大脑镜面 | Scenes 场景案例 / 医疗 / 科研 |
 | medical/yuriBrain | Yuri's大脑 | Scenes 场景案例 / 医疗 / 科研 |
 | tvtAirport/index | 机场三维案例 | Scenes 场景案例 / 海洋 / 交通 |
@@ -322,7 +296,6 @@
 | zoneLowAltitudeUAV/secondaryCoding | 二次开发 | Scenes 场景案例 / 海洋 / 交通 |
 | zoneFreeScene/freeShipSea | 海洋船运 | Scenes 场景案例 / 海洋 / 交通 |
 | earthSample/lowpolyPlanet | 低像素多边形 | Scenes 场景案例 / 艺术 / 创意 |
-| earthSample/smokeEarth | 烟雾球 | Scenes 场景案例 / 艺术 / 创意 |
 | heroSection/earthMap | 现代 UI 设计官网 | Scenes 场景案例 / 艺术 / 创意 |
 | heroSection/pointsEarth | 粒子球 | Scenes 场景案例 / 艺术 / 创意 |
 | heroSection/particleEarth | 粒子地球 | Scenes 场景案例 / 艺术 / 创意 |

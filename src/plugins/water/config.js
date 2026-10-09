@@ -42,8 +42,6 @@ export default {
             referenceSource: { title: 'Three.js Awesome Graphics Agent Skills', url: 'https://github.com/scottstts/Threejs-Awesome-Graphics-Agent-Skills' },
         },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/staticWaterPage.webp', type: 'img', name: 'staticWaterPage', title: '静态水' },
-        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/tilingCaustics.webp', type: 'img', name: 'tilingCaustics', title: '波纹A' },
-        { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/waterGlass.webp', type: 'img', name: 'waterGlass', title: '波浪B' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/waveC.webp', type: 'img', name: 'waveC', title: '波浪C' },
         { catalog: { type: 'block', category: 'environment' }, src: 'plugins/water/preview/threeExampleOcean.webp', type: 'img', name: 'threeExampleOcean', title: 'three例子-海洋' },
         {
