@@ -44,7 +44,7 @@ const tcConfig = {
 }
 
 const basiceEnvState = reactive({
-	on: false,
+	on: true,
 	type: 'sunset' as any,
 	environmentIntensity: 1,
 	environmentRotations: { x: 0, y: 0, z: 0 }

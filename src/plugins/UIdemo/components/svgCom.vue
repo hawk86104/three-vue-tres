@@ -7,8 +7,8 @@
  * @LastEditTime: 2025-10-14 09:38:43
 -->
 <template>
-    <TresGroup>
-        <TresGroup v-if="!isLoading">
+    <TresGroup :scale="viewTransform.scale">
+        <TresGroup v-if="!isLoading" :position="viewTransform.position">
             <TresMesh v-for="(layer, index) in visibleLayers" :key="`layer-${index}`" :geometry="layer.geometry"
                 :render-order="index">
                 <TresMeshBasicMaterial v-bind="layer.material" />
@@ -19,6 +19,7 @@
 <script setup lang="ts">
 import { onUnmounted, computed, watch, ref } from 'vue'
 import { useSVG } from '@tresjs/cientos'
+import { Box3, Vector3 } from 'three'
 
 const props = defineProps({
     src: {
@@ -30,11 +31,28 @@ const props = defineProps({
     skipFills: {
         default: false,
     },
+    fitView: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const layers = ref([]) as any
 const isLoading = ref(true)
 let dispose = ref(() => { }) as any
+
+const viewTransform = computed(() => {
+    if (!props.fitView || !layers.value.length) return { scale: 1, position: [0, 0, 0] }
+    const bounds = new Box3()
+    for (const layer of layers.value) {
+        layer.geometry.computeBoundingBox()
+        bounds.union(layer.geometry.boundingBox)
+    }
+    if (bounds.isEmpty()) return { scale: 1, position: [0, 0, 0] }
+    const size = bounds.getSize(new Vector3())
+    const center = bounds.getCenter(new Vector3())
+    return { scale: 2 / (Math.max(size.x, size.y, size.z) || 1), position: center.negate().toArray() }
+})
 
 const visibleLayers = computed(() => {
     return layers.value.filter((layer: any) => {

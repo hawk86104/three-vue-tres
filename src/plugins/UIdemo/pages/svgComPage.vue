@@ -8,11 +8,11 @@
 -->
 <template>
     <TresCanvas v-bind="tcConfig">
-        <TresPerspectiveCamera :position="[-5, 3, 5]" :fov="50" :near="0.1" :far="10000" />
+        <TresPerspectiveCamera :position="[0, 0, 6]" :fov="50" :near="0.1" :far="10000" />
         <OrbitControls />
         <TresAmbientLight />
 
-        <svgCom v-bind="spriteImgConfig" />
+        <svgCom v-bind="spriteImgConfig" fit-view />
     </TresCanvas>
 </template>
 

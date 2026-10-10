@@ -64,11 +64,11 @@ export default defineBuildConfig({
                         title: '🧊 TvT框架文档',
                     },
                     {
-                        path: 'https://threejs.org/docs/index.html#manual/zh/introduction/Creating-a-scene',
+                        path: 'https://threejs.org/docs/',
                         title: '🎲 three.js',
                     },
                     {
-                        path: 'https://tresjs.org/guide/',
+                        path: 'https://docs.tresjs.org/',
                         title: '⚡ tres.js',
                     },
                     {

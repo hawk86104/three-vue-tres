@@ -49,7 +49,7 @@ const referenceSourceConfig = config?.preview?.referenceSource
 </script>
 <style scoped>
 .preview-scene {
-    height: 100%;
+    height: 100vh;
     position: relative;
 }
 </style>
