@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, onBeforeUnmount } from 'vue'
 import pagesShow from '../components/pagesShow.vue'
 import { fireB } from 'PLS/digitalCity'
 import { Pane } from 'tweakpane'
@@ -26,6 +26,7 @@ const fireConfig = reactive({
 	particleCount: 150,
 })
 const paneControl = new Pane()
+onBeforeUnmount(() => paneControl.dispose())
 paneControl.addBinding(fireConfig, 'color', {
     label: 'firecolor',
 })

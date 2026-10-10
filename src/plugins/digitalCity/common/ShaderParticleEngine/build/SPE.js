@@ -524,13 +524,8 @@ SPE.ShaderAttribute.prototype.flagUpdate = function () {
     'use strict'
 
     const attr = this.bufferAttribute
-    if (!attr.updateRange) {
-        attr.updateRange = {}
-    }
-    const range = attr.updateRange
-
-    range.offset = this.updateMin
-    range.count = Math.min((this.updateMax - this.updateMin) + this.componentSize, this.typedArray.array.length)
+    attr.clearUpdateRanges()
+    attr.addUpdateRange(this.updateMin, Math.min((this.updateMax - this.updateMin) + this.componentSize, this.typedArray.array.length))
     // console.log( range.offset, range.count, this.typedArray.array.length );
     // console.log( 'flagUpdate:', range.offset, range.count );
     attr.needsUpdate = true
@@ -574,8 +569,7 @@ SPE.ShaderAttribute.prototype.forceUpdateAll = function () {
     'use strict'
 
     this.bufferAttribute.array = this.typedArray.array
-    this.bufferAttribute.updateRange.offset = 0
-    this.bufferAttribute.updateRange.count = -1
+    this.bufferAttribute.clearUpdateRanges()
     // this.bufferAttribute.dynamic = false;
     // this.bufferAttribute.usage = this.dynamicBuffer ?
     // 	THREE.DynamicDrawUsage :
@@ -3541,8 +3535,7 @@ SPE.Emitter.prototype.reset = function (force) {
             array[index + 1] = 0.0
         }
 
-        attr.updateRange.offset = 0
-        attr.updateRange.count = -1
+        attr.clearUpdateRanges()
         attr.needsUpdate = true
     }
 

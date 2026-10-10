@@ -7,7 +7,7 @@
  * @LastEditTime: 2025-03-17 15:03:44
 -->
 <template>
-    <TresCanvas v-bind="state" ref="tcRef" window-size>
+    <TresCanvas v-bind="state" window-size>
         <TresPerspectiveCamera :position="[2, 3, 4]" :fov="45" :near="1" :far="1000" />
         <OrbitControls v-bind="controlsState" />
         <TresAmbientLight :intensity="0.5" />
@@ -39,8 +39,8 @@
 </template>
 
 <script setup lang="ts">
-import { ACESFilmicToneMapping, Color } from 'three'
-import { reactive, watchEffect, shallowRef } from 'vue'
+import { ACESFilmicToneMapping } from 'three'
+import { reactive, onBeforeUnmount } from 'vue'
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import { Environment } from 'PLS/basic'
@@ -53,17 +53,11 @@ const state = reactive({
     shadows: true,
     shadowMap: true,
     toneMapping: ACESFilmicToneMapping,
+    clearColor: 'grey',
 })
 const controlsState = reactive({
     enableDamping: true,
     autoRotate: false,
-})
-const tcRef = shallowRef()
-watchEffect(() => {
-    if (tcRef.value) {
-        const scene = tcRef.value.context.scene.value
-        scene.background = new Color('grey')
-    }
 })
 const shadowState = reactive({
     opacity: 0.8,
@@ -76,6 +70,7 @@ const shadowState = reactive({
     ambient: 0.5,
 })
 const paneControl = new Pane({ title: '参数' })
+onBeforeUnmount(() => paneControl.dispose())
 paneControl.addBinding(shadowState, 'opacity', {
     label: '透明度',
     min: 0,

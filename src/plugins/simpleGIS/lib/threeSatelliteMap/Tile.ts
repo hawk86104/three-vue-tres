@@ -30,10 +30,18 @@ class Tile extends Object3D {
     }
 
     private async ready() {
-        this.content = await this.map.provider.getTile(this.tileNo);
+        let content: Object3D;
+        try {
+            content = await this.map.provider.getTile(this.tileNo);
+        } catch (error) {
+            if (this.isDisposed) return;
+            throw error;
+        }
         if (this.isDisposed) {
+            this.map.provider.dispose(this.tileNo, content);
             return;
         }
+        this.content = content;
         this.add(this.content);
         //hawk add
         this.boundingBoxWorld.setFromObject(this.content).applyMatrix4(this.matrixWorld.makeRotationX(-Math.PI / 2));
@@ -109,6 +117,8 @@ class Tile extends Object3D {
     }
 
     dispose() {
+        if (this.isDisposed) return;
+        this.isDisposed = true;
         this.map.remove(this);
         this.map.provider!.abort(this.tileNo);
         this.childrenTiles.forEach(child => child.dispose());
@@ -118,7 +128,6 @@ class Tile extends Object3D {
             this.map.provider!.dispose(this.tileNo, this.content);
             this.content = undefined;
         }
-        this.isDisposed = true;
     }
 }
 

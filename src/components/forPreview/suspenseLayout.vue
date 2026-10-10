@@ -8,7 +8,11 @@
 -->
 <template>
     <Suspense>
-        <router-view />
+        <router-view v-slot="{ Component, route }">
+            <div :key="route.path" class="preview-scene">
+                <component :is="Component" />
+            </div>
+        </router-view>
     </Suspense>
     <showSrcBtn v-if="!config?.preview?.disableSrcBtn" :parts="parts" />
     <referenceSource :referenceSourceConfig="referenceSourceConfig" />
@@ -43,3 +47,9 @@ window.tvtPluginConfig = config
 
 const referenceSourceConfig = config?.preview?.referenceSource
 </script>
+<style scoped>
+.preview-scene {
+    height: 100%;
+    position: relative;
+}
+</style>

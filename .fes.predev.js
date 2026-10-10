@@ -156,7 +156,7 @@ export default defineBuildConfig({
     },
     viteOption: {
         optimizeDeps: {
-            entries: ['index.html', ...pluginPredevEntries],
+            entries: ['index.html', 'src/plugins/**/pages/**/*.vue', ...pluginPredevEntries],
         },
         plugins: [
             console.log('正在加载 TvT.js...'),

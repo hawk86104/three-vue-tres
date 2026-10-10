@@ -1,0 +1,21 @@
+diff --git a/node_modules/@tresjs/post-processing/dist/tres-post-processing.js b/node_modules/@tresjs/post-processing/dist/tres-post-processing.js
+--- a/node_modules/@tresjs/post-processing/dist/tres-post-processing.js
++++ b/node_modules/@tresjs/post-processing/dist/tres-post-processing.js
+@@ -2062,7 +2062,7 @@
+       uniforms: this.uniforms,
+       vertexShader: ue.vertexShader,
+       fragmentShader: ue.fragmentShader
+-    }), this.goWild = !1, this._heightMap = this._generateHeightmap(t), this.uniforms.tDisp.value = this.heightMap, this._fsQuad = new O(this.material), this._curF = 0, this._randX = 0, this._generateTrigger();
++    }), this.goWild = !1, this._heightMap = this._generateHeightmap(t), this.uniforms.tDisp.value = this._heightMap, this._fsQuad = new O(this.material), this._curF = 0, this._randX = 0, this._generateTrigger();
+   }
+   /**
+    * Performs the glitch pass.
+@@ -2083,7 +2083,7 @@
+    * method whenever the pass is no longer used in your app.
+    */
+   dispose() {
+-    this.material.dispose(), this.heightMap.dispose(), this._fsQuad.dispose();
++    this.material.dispose(), this._heightMap.dispose(), this._fsQuad.dispose();
+   }
+   // internals
+   _generateTrigger() {

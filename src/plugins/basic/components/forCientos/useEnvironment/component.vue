@@ -25,6 +25,7 @@ const texture: Ref<Texture | CubeTexture | null> = ref(null)
 defineExpose({ texture })
 
 const { extend, renderer, scene } = useTres()
+const componentSlots = useSlots()
 let slots = null as any
 let fbo = ref(null as null | WebGLCubeRenderTarget)
 let cubeCamera = null as null | CubeCamera
@@ -89,7 +90,7 @@ const makeFbo = () => {
     setTextureEnvAndBG(fbo.value)
 }
 watch(
-    () => useSlots().default,
+    () => componentSlots.default,
     (value) => {
         if (value) {
             if (!fbo.value || fbo.value.texture.type !== HalfFloatType) {

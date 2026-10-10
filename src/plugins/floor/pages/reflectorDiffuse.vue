@@ -28,7 +28,7 @@
 import { vLightHelper } from '@tresjs/core'
 import { OrbitControls, Box } from '@tresjs/cientos'
 
-import { reactive } from 'vue'
+import { reactive, onBeforeUnmount } from 'vue'
 import { Pane } from 'tweakpane'
 import reflectorDiffuse from '../components/reflectorDiffuse.vue'
 
@@ -43,6 +43,7 @@ const paneControl = new Pane({
 	title: '镜面参数',
 	expanded: true,
 })
+onBeforeUnmount(() => paneControl.dispose())
 paneControl.addBinding(configState, 'color', { label: '镜面颜色' })
 paneControl.addBinding(configState, 'showGridHelper', { label: '显示网格' })
 </script>

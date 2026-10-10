@@ -56,6 +56,9 @@ export default defineBuildConfig({
         },
     },
     viteOption: {
+        resolve: {
+            dedupe: ['vue', '@tresjs/core'],
+        },
         plugins: [
             UnoCSS({
                 /* options */

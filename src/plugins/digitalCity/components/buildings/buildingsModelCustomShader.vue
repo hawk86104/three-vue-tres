@@ -51,7 +51,6 @@ const setEffectMaterial = () => {
 		baseMaterial: CITY_UNTRIANGULATED.material,
 		vertexShader: vertexShader,
 		fragmentShader: fragmentShader,
-		silent: true, // Disables the default warning if true
 		uniforms: {
 			uMax: { value: max },
 			uMin: { value: min },

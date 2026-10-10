@@ -16,7 +16,7 @@ export default {
     state: 'active',
     creatTime: '2024-05-06',
     updateTime: '2024-05-06',
-    require: ['resourceManager', 'UIdemo', 'skyBox'],
+    require: ['skyBox'],
     preview: [
         { catalog: { type: 'scene', category: 'industry' }, src: 'plugins/digitalPark/preview/innovationHubAr.webp', type: 'img', name: 'innovationHubAr', title: 'Innovation Hub AR' },
     ],

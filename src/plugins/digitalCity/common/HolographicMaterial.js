@@ -231,7 +231,10 @@ class HolographicMaterial extends ShaderMaterial {
     };
 
     this.clock = new Clock()
-    this.setValues(parameters);
+    const materialParameters = { ...parameters };
+    delete materialParameters.blendMode;
+    Object.keys(this.uniforms).forEach((key) => delete materialParameters[key]);
+    this.setValues(materialParameters);
     this.depthTest = parameters.depthTest !== undefined ? parameters.depthTest : false;
     this.blending = parameters.blendMode !== undefined ? parameters.blendMode : AdditiveBlending;
     this.transparent = true;

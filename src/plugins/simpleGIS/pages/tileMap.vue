@@ -15,7 +15,7 @@
 
 
 <script setup lang="ts">
-import { reactive, shallowRef } from 'vue'
+import { reactive, shallowRef, onBeforeUnmount } from 'vue'
 
 import * as THREE from 'three'
 import { Pane } from 'tweakpane'
@@ -42,6 +42,7 @@ const tileMapState = reactive({
 })
 
 const paneControl = new Pane({ title: '参数' })
+onBeforeUnmount(() => paneControl.dispose())
 paneControl.addBinding(tileMapState, 'opposite', { label: '反色' })
 paneControl.addBinding(tileMapState, 'genBright', {
 	label: '高亮', min: 0.1,

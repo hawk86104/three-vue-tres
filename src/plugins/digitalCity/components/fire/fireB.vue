@@ -7,7 +7,7 @@
  * @LastEditTime: 2026-01-28 08:55:44
 -->
 <script setup lang="ts">
-import { watch, ref, toRaw, useAttrs } from 'vue'
+import { watch, shallowRef, toRaw, useAttrs } from 'vue'
 import { useTexture } from '@tresjs/cientos'
 import { useLoop } from '@tresjs/core'
 import * as THREE from 'three'
@@ -47,7 +47,7 @@ function normalizeVec3(
 const { state: pTexture } = useTexture('./plugins/digitalCity/image/smokeparticle.png')
 
 let particleGroup = null as any
-const objCloud = ref<THREE.Mesh | null>(null)
+const objCloud = shallowRef<THREE.Mesh | null>(null)
 
 const makeEmitter = () => {
   const tempscale = normalizeVec3(attrs?.scale, [1, 1, 1])
@@ -95,7 +95,7 @@ watch(
 watch(
   () => [props.color, props.particleCount],
   () => {
-    if (particleGroup.emitters[0]) {
+    if (particleGroup?.emitters[0]) {
       particleGroup.emitters[0].remove()
       makeEmitter()
     }

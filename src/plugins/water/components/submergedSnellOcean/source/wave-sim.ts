@@ -1,4 +1,5 @@
 import { HalfFloatType, LinearFilter, RepeatWrapping } from 'three'
+import type { Texture } from 'three'
 import { StorageTexture } from 'three/webgpu'
 import type { ComputeNode, WebGPURenderer } from 'three/webgpu'
 import {
@@ -36,6 +37,7 @@ export const OCEAN_PRESET = {
 }
 
 interface Cascade {
+  textures: Texture[]
   patchLength: number
   ifft: PackedIFFT
   evolve: ComputeNode
@@ -81,6 +83,7 @@ export class WaveSim {
   private readonly dtUniform = uniform(1 / 60)
   private current = 0
   private initialized = false
+  private disposed = false
 
   constructor(rng: Rng, sea: SeaState = DEFAULT_SEA_STATE) {
     const { resolution: n, patchLengths, boundaryFactor, choppiness, foamRecovery, amplitude } =
@@ -206,6 +209,7 @@ export class WaveSim {
         })().compute(n * n)
 
       return {
+        textures: [spectrum, freqPing, freqPong, ...displacementMaps, derivativesMap],
         patchLength: band.patchLength,
         ifft,
         evolve,
@@ -234,6 +238,7 @@ export class WaveSim {
   }
 
   update(renderer: WebGPURenderer, elapsed: number, dt: number): void {
+    if (this.disposed) return
     this.ensureInitialized(renderer)
     this.timeUniform.value = elapsed
     this.dtUniform.value = Math.min(dt, 0.1)
@@ -256,6 +261,15 @@ export class WaveSim {
     // Repoint material texture nodes at the freshly written maps.
     for (let i = 0; i < this.cascades.length; i++) {
       this.displacementNodes[i].value = this.cascades[i].displacementMaps[this.current === 0 ? 0 : 1]
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    for (const cascade of this.cascades) {
+      for (const node of [cascade.evolve, ...cascade.ifft.stages, ...cascade.assemble, ...cascade.clear]) node.dispose()
+      for (const texture of cascade.textures) texture.dispose()
     }
   }
 }

@@ -73,7 +73,6 @@ const setEffectMaterial = (mesh) => {
 		baseMaterial: MeshStandardMaterial,
 		vertexShader: vertexShader,
 		fragmentShader: fragmentShader,
-		silent: true,
 		uniforms: {
 			uMax: { value: max },
 			uMin: { value: min },

@@ -32,7 +32,7 @@ import * as THREE from 'three'
 import { vLightHelper } from '@tresjs/core'
 import { OrbitControls, Box } from '@tresjs/cientos'
 import skyBox from 'PLS/skyBox/components/skyBoxAmesh.vue'
-import { shallowRef, watchEffect, reactive } from 'vue'
+import { shallowRef, watchEffect, reactive, onBeforeUnmount } from 'vue'
 import { Pane } from 'tweakpane'
 import whiteFloorMesh from '../components/whiteFloorMesh.vue'
 
@@ -57,6 +57,7 @@ const paneControl = new Pane({
     title: '地板参数',
     expanded: true,
 })
+onBeforeUnmount(() => paneControl.dispose())
 paneControl.addBinding(configState, 'edge', {
     label: '边缘模糊',
     min: 0.2,

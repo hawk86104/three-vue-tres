@@ -31,6 +31,7 @@ class Map extends Object3D {
 
     rootTiles: Tile[] = [];
     lastUpdateTime = 0;
+    private isDisposed = false;
 
     constructor() {
         super()
@@ -74,7 +75,7 @@ class Map extends Object3D {
     }
 
     update() {
-        if (!this.visible || !this.camera) {
+        if (this.isDisposed || !this.visible || !this.camera) {
             return;
         }
 
@@ -105,7 +106,10 @@ class Map extends Object3D {
     }
 
     dispose() {
-        throw new Error('[Map.dispose] Method not implemented.');
+        if (this.isDisposed) return;
+        this.isDisposed = true;
+        this.rootTiles.forEach(tile => tile.dispose());
+        this.rootTiles = [];
     }
 
     regenerate() {

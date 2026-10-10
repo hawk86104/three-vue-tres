@@ -59,7 +59,7 @@ const controlsState = reactive({
     rotateSpeed: 1,
 })
 
-const sphereRef = ref()
+const sphereRef = shallowRef()
 const TDirectionalLight = shallowRef()
 
 const qiankunTvtStore = useQiankunTvtStore() as any
@@ -100,9 +100,9 @@ watchEffect(() => {
     }
 })
 
-const height = ref('auto')
+const height = ref(qiankunWindow.__POWERED_BY_QIANKUN__ ? '100%' : '100vh')
 onMounted(() => {
-    sphereRef.value.position.y = 4
+    if (!qiankunWindow.__POWERED_BY_QIANKUN__) return
     const parentElement = document.querySelector('.app-main')
     if (parentElement) {
         height.value = `${parentElement.clientHeight}px`

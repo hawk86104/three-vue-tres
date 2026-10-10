@@ -942,8 +942,7 @@ SPE.Emitter.prototype.reset = function (force) {
             array[index + 1] = 0.0;
         }
 
-        attr.updateRange.offset = 0;
-        attr.updateRange.count = -1;
+        attr.clearUpdateRanges();
         attr.needsUpdate = true;
     }
 

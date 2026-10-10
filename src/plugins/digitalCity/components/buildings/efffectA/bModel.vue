@@ -92,7 +92,6 @@ const setEffectMaterial = () => {
 			}
     }
 		`,
-		silent: true, // Disables the default warning if true
 		uniforms: {
 			uMax: { value: max },
 			uMin: { value: min },

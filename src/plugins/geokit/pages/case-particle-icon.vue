@@ -23,7 +23,7 @@ import { ref } from 'vue'
 import DevTDTTiles from '../components/DevTDTTiles.vue'
 
 const randomColor = () => {
-    return '#' + Math.floor(Math.random() * 16777215).toString(16)
+    return '#' + Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')
 }
 
 const handlePointClick = (d: any, i: number) => {

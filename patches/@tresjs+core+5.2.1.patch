@@ -1,0 +1,94 @@
+diff --git a/node_modules/@tresjs/core/dist/tres.js b/node_modules/@tresjs/core/dist/tres.js
+--- a/node_modules/@tresjs/core/dist/tres.js
++++ b/node_modules/@tresjs/core/dist/tres.js
+@@ -5,7 +5,7 @@
+   * description: Declarative ThreeJS using Vue Components
+   * author: Alvaro Saburido <hola@alvarosaburido.dev> (https://github.com/alvarosabu/)
+   */
+-import { Fragment, computed, createBlock, createCommentVNode, createElementBlock, createRenderer, defineComponent, getCurrentInstance, h, isRef, mergeProps, normalizeClass, normalizeStyle, onMounted, onUnmounted, openBlock, provide, reactive, readonly, ref, renderSlot, shallowRef, toValue, unref, useSlots, watch, watchEffect, withCtx } from "vue";
++import { Fragment, computed, createBlock, createCommentVNode, createElementBlock, createRenderer, defineComponent, getCurrentInstance, h, isRef, mergeProps, normalizeClass, normalizeStyle, onBeforeUnmount, onMounted, onUnmounted, openBlock, provide, reactive, readonly, ref, renderSlot, shallowRef, toValue, unref, useSlots, watch, watchEffect, withCtx } from "vue";
+ import * as THREE from "three";
+ import { ACESFilmicToneMapping, ArrowHelper, BackSide, BufferAttribute, BufferGeometry, Clock, Color, DirectionalLightHelper, DoubleSide, Float32BufferAttribute, HemisphereLightHelper, Layers, Line, LineBasicMaterial, Material, MathUtils, Mesh, MeshBasicMaterial, Object3D, PCFSoftShadowMap, PerspectiveCamera, PointLightHelper, Scene, SpotLightHelper, Vector3, WebGLRenderer } from "three";
+ import { createEventHook, createInjectionState, promiseTimeout, refDebounced, tryOnScopeDispose, unrefElement, useAsyncState, useDevicePixelRatio, useElementSize, useFps, useMemory, useRafFn, useTimeout, useWindowSize, whenever } from "@vueuse/core";
+@@ -328,7 +328,7 @@
+ //#region src/utils/index.ts
+ function disposeMaterial(material) {
+ 	const hasMap = (material$1) => "map" in material$1 && !!material$1.map;
+-	if (hasMap(material)) material.map.dispose();
++	if (hasMap(material) && typeof material.map.dispose === "function") material.map.dispose();
+ 	material.dispose();
+ }
+ function disposeObject3D(object) {
+@@ -1995,7 +1995,12 @@
+ 			dispose(context$1);
+ 			mountCustomRenderer(context$1);
+ 		};
++		const onAfterUpdate = ({ updates }) => {
++			if (updates.some((update) => update.type === "js-update" && !/\.css(?:\?|$)|[?&]type=style(?:&|$)/.test(update.path))) handleHMR(context.value);
++		};
+ 		const unmountCanvas = () => {
++			if (import.meta.hot) import.meta.hot.off("vite:afterUpdate", onAfterUpdate);
++			context.value.renderer.loop.stop();
+ 			dispose(context.value);
+ 			mountCustomRenderer(context.value, true);
+ 		};
+@@ -2044,12 +2049,12 @@
+ 		renderer.onReady(() => {
+ 			emit("ready", context.value);
+ 		});
+-		if (import.meta.hot) import.meta.hot.on("vite:afterUpdate", () => handleHMR(context.value));
++		if (import.meta.hot) import.meta.hot.on("vite:afterUpdate", onAfterUpdate);
+ 		onMounted(async () => {
+ 			await promiseTimeout(3e3);
+ 			if (!context.value.sizes.width || !context.value.sizes.height.value) console.warn(`TresCanvas: The canvas has no area, so nothing can be rendered. Set it manually on the parent element or use the prop windowSize.`);
+ 		});
+-		onUnmounted(unmountCanvas);
++		onBeforeUnmount(unmountCanvas);
+ 		return () => {};
+ 	}
+ });
+@@ -2415,8 +2420,7 @@
+ 
+ //#endregion
+ //#region src/directives/vLightHelper.ts
+-let CurrentHelper;
+-let currentInstance;
++const lightHelpers = new WeakMap();
+ const helpers = {
+ 	DirectionalLight: DirectionalLightHelper,
+ 	PointLight: PointLightHelper,
+@@ -2430,22 +2434,26 @@
+ 			logWarning(`${el.type} is not a light`);
+ 			return;
+ 		}
+-		CurrentHelper = helpers[el.type];
+-		el.parent?.add(new CurrentHelper(el, 1, el.color.getHex()));
++		const Helper = helpers[el.type];
++		if (!Helper) return;
++		const helper = new Helper(el, 1, el.color.getHex());
++		lightHelpers.set(el, helper);
++		el.parent?.add(helper);
+ 	},
+ 	updated: (el) => {
+-		currentInstance = el.parent.children.find((child) => child instanceof CurrentHelper);
+-		if (currentInstance instanceof RectAreaLightHelper) return;
+-		currentInstance.update();
++		const helper = lightHelpers.get(el);
++		if (helper instanceof RectAreaLightHelper) return;
++		helper?.update();
+ 	},
+ 	unmounted: (el) => {
+ 		if (!el.isLight) {
+ 			logWarning(`${el.type} is not a light`);
+ 			return;
+ 		}
+-		currentInstance = el.parent.children.find((child) => child instanceof CurrentHelper);
+-		if (currentInstance && currentInstance.dispose) currentInstance.dispose();
+-		if (el.parent) el.parent.remove(currentInstance);
++		const helper = lightHelpers.get(el);
++		helper?.removeFromParent();
++		helper?.dispose?.();
++		lightHelpers.delete(el);
+ 	}
+ };
+ 

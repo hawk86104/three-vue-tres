@@ -8,7 +8,7 @@
 -->
 <template>
     <div class="innovation-hub-ar">
-        <loading v-if="!isSceneReady" />
+        <div v-if="!isSceneReady" class="loading-overlay" role="status">正在加载园区…</div>
         <TresCanvas v-bind="canvasState">
             <TresPerspectiveCamera ref="cameraRef" :position="cameraPosition" :fov="45" :near="0.1" :far="1000" />
             <OrbitControls v-bind="controlsState" />
@@ -29,7 +29,6 @@
 import { reactive, ref, shallowRef, watch } from 'vue'
 import { OrbitControls } from '@tresjs/cientos'
 import { BloomPmndrs, EffectComposerPmndrs, TiltShiftPmndrs } from '@tresjs/post-processing'
-import { randomLoading as loading } from 'PLS/UIdemo'
 import * as THREE from 'three'
 import InnovationHubModel from '../components/innovationHubAr/InnovationHubModel.vue'
 
@@ -82,5 +81,15 @@ function markSceneReady() {
     height: 100dvh;
     overflow: hidden;
     background: #d6e8f7;
+}
+
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    background: #d6e8f7;
+    color: #234;
 }
 </style>
