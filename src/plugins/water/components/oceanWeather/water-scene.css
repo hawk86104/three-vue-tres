@@ -1,0 +1,105 @@
+.water-scene { position: absolute; inset: 0; overflow: hidden; background: #183b4e; color: #d8e6ee; font-family: Inter, 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 12px; }
+.water-scene * { box-sizing: border-box; }
+.water-canvas { position: absolute; inset: 0; }
+.water-canvas :deep(canvas) { display: block; width: 100%; height: 100%; outline: none; }
+.glass-panel { background: linear-gradient(145deg, #0e1b28ed, #05141ed6); border: 1px solid #89bbd02b; border-radius: 13px; box-shadow: 0 10px 35px #0003, inset 0 1px #ffffff0b; backdrop-filter: blur(14px); }
+button, select, input { font: inherit; }
+button, select { cursor: pointer; }
+button { color: inherit; border: 0; }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid #7bddff; outline-offset: 4px; }
+.camera-panel { position: absolute; left: 20px; top: 20px; width: 174px; padding: 12px; }
+.fps-readout { text-align: center; padding: 0 0 15px; border-bottom: 1px solid #8aa5b429; margin-bottom: 11px; }
+.fps-readout strong { display: block; font: 600 34px/1.1 Consolas, monospace; color: #84e2be; }
+.fps-readout strong.slow { color: #e3ce80; }
+.fps-readout > span { display: block; font-size: 9px; letter-spacing: 3px; color: #94a5b5; margin-top: 4px; }
+.camera-modes { display: flex; gap: 5px; }
+.camera-modes button { flex: 1; background: #020d176e; padding: 8px 3px; border-radius: 7px; color: #93a4b5; border: 1px solid transparent; transition: .2s; }
+.camera-modes button b { display: block; font-size: 12px; margin-bottom: 4px; }
+.camera-modes button span { font-size: 11px; }
+.camera-modes button.active { background: linear-gradient(#66bcfb, #2478cc); color: #072644; border-color: #8ad9ff65; box-shadow: 0 0 14px #219bfb35; }
+.camera-help { display: grid; gap: 11px; padding: 15px 0 12px; font-size: 10px; }
+.camera-help > span { display: flex; justify-content: space-between; align-items: center; }
+kbd { color: #bce7f9; border: 1px solid #54788e57; border-radius: 3px; padding: 1px 4px; font: 10px Consolas, monospace; background: #081926; }
+.camera-help em { color: #9be4ff; font-style: normal; }
+.dive-button { width: 100%; padding: 10px 0 0; border-top: 1px solid #8aa5b429; background: transparent; color: #87c8e0; font-size: 20px; }
+.dive-button span { font-size: 10px; vertical-align: 3px; margin-left: 3px; }
+.settings-panel { position: absolute; width: 286px; top: 20px; right: 20px; max-height: calc(100% - 72px); overflow: auto; scrollbar-width: thin; scrollbar-color: #446074 transparent; }
+.panel-heading { padding: 19px 18px 17px; border-bottom: 1px solid #88a8be36; }
+.panel-heading div { font-size: 12px; letter-spacing: 2.5px; font-weight: 400; }
+.panel-heading b { color: #63b7f1; font-weight: 600; }
+.panel-heading > span { font-size: 8px; letter-spacing: 3.7px; color: #8e9fad; display: block; margin-top: 8px; }
+.settings-body { padding: 17px 18px 13px; }
+.select-control { display: block; margin-bottom: 17px; }
+.select-control > span, .range-control > span { display: flex; align-items: center; font-size: 10px; letter-spacing: 1px; }
+small { font-size: 8px; letter-spacing: 1.1px; color: #8da2b3; margin-left: 6px; }
+select { width: 100%; height: 35px; background: #08121cc4; color: #e1eaf1; border: 1px solid #7597af35; border-radius: 7px; margin-top: 8px; padding: 0 10px; color-scheme: dark; }
+.range-control { display: block; margin-bottom: 20px; }
+output { margin-left: auto; color: #a4e7ff; font: 11px Consolas, monospace; letter-spacing: 0; }
+input[type=range] { appearance: none; width: 100%; height: 3px; display: block; margin: 18px 0 0; border-radius: 8px; background: linear-gradient(to right, #59aff5 var(--fill), #50627185 var(--fill)); cursor: pointer; }
+input[type=range]::-webkit-slider-thumb { appearance: none; width: 13px; height: 13px; border-radius: 50%; border: 2px solid #72c9ff; background: #e1f7ff; box-shadow: 0 0 0 3px #2383be25; }
+input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #72c9ff; background: #e1f7ff; }
+.control-divider { height: 1px; background: #7d9ca52c; margin: 24px 0 14px; }
+.switch-control { display: flex; align-items: center; justify-content: space-between; position: relative; padding: 6px 0; cursor: pointer; font-size: 10px; letter-spacing: .5px; }
+.switch-control input { position: absolute; right: 0; width: 35px; height: 21px; opacity: 0; cursor: pointer; }
+.switch-control i { width: 35px; height: 20px; border: 1px solid #607d9240; border-radius: 12px; background: #03101a; pointer-events: none; padding: 2px; }
+.switch-control i::after { content: ''; display: block; width: 14px; height: 14px; border-radius: 50%; background: #b7cad9; transition: .2s; }
+.switch-control input:checked + i { background: #2786bd; }
+.switch-control input:checked + i::after { transform: translateX(14px); background: #d7f5ff; }
+.switch-control input:focus-visible + i { outline: 2px solid #7bddff; outline-offset: 3px; }
+.pixel-control { margin: 18px 0 8px; }
+.primary-button { width: 100%; background: linear-gradient(105deg, #7cdbf4, #2878cb); padding: 11px; color: #062a43; border-radius: 7px; font-size: 12px; box-shadow: 0 0 18px #2185d61c; }
+.primary-button > span { float: right; font-size: 17px; line-height: 13px; }
+.secondary-actions { display: flex; gap: 8px; margin-top: 8px; }
+.secondary-actions button { flex: 1; border: 1px solid #658ea466; border-radius: 6px; background: #0717235c; padding: 10px 0; font-size: 11px; }
+.secondary-actions button:hover { border-color: #8fd4ed; background: #1e3a4d; }
+.reference-link { display: block; text-align: center; color: #7d98a8; font-size: 7px; letter-spacing: 1px; margin-top: 15px; text-decoration: none; }
+.reference-link:hover { color: #b9e6f6; }
+.panel-toggle { position: absolute; right: 20px; bottom: 20px; padding: 9px 13px; font-size: 10px; border-radius: 7px; z-index: 2; }
+.scene-caption { position: absolute; left: 25px; bottom: 30px; display: flex; gap: 13px; pointer-events: none; text-shadow: 0 1px 10px #00192566; }
+.caption-rule { width: 2px; background: linear-gradient(#bceeff, #bceeff00); }
+.scene-caption small { color: #d0e8efb8; font: 9px Consolas, monospace; letter-spacing: 2px; margin: 0; }
+.scene-caption h1 { font-weight: 400; font-size: 25px; letter-spacing: 5px; margin: 9px 0; color: #f0faff; }
+.scene-caption h1 span { font-size: 10px; margin-left: 14px; letter-spacing: 2px; color: #c6e1eb; }
+.scene-caption p { margin: 0; font-size: 10px; letter-spacing: 2px; color: #c6e1eb; }
+.scene-status { position: absolute; bottom: 23px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font: 8px Consolas, monospace; letter-spacing: 1.5px; color: #d9edf6; text-shadow: 0 1px 3px #001; }
+.scene-status i { width: 5px; height: 5px; background: #80e0bd; border-radius: 50%; box-shadow: 0 0 7px #80e0bd88; }
+.scene-status i.paused { background: #e5c16b; }
+.scene-status > span { border-left: 1px solid #9bb4be66; padding-left: 10px; color: #b0c8d5; }
+.loading-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: #10273d55; backdrop-filter: blur(5px); z-index: 15; }
+.loading-card { width: min(390px, 85vw); padding: 30px; text-align: center; }
+.loading-symbol { color: #82d7ef; font-size: 50px; line-height: 1; }
+.loading-card h2 { font-size: 18px; font-weight: 400; letter-spacing: 3px; margin: 20px 0 13px; }
+.loading-card p { font-size: 11px; color: #a9becb; overflow-wrap: anywhere; line-height: 1.8; }
+.loading-card small { letter-spacing: 0; }
+.loading-track { height: 3px; background: #465c6b; margin: 23px 0 12px; overflow: hidden; }
+.loading-track i { display: block; height: 100%; background: #7ad5fa; transition: width .4s; }
+.toast { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); background: #0b243bea; border: 1px solid #68b2d755; border-radius: 8px; padding: 12px 25px; z-index: 20; }
+.fade-enter-active, .fade-leave-active { transition: opacity .2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+@media (max-width: 1100px) { .camera-panel { top: 82px; width: 155px; } .settings-panel { top: 82px; max-height: calc(100% - 136px); width: 270px; } }
+@media (max-height: 760px) { .settings-body { padding-top: 12px; } .select-control { margin-bottom: 12px; } .range-control { margin-bottom: 17px; } .panel-heading { padding-top: 15px; padding-bottom: 13px; } .scene-caption h1 { font-size: 21px; } .control-divider { margin: 15px 0 10px; } .switch-control { padding: 4px 0; } .reference-link { margin-top: 11px; } .range-control input { margin-top: 14px; } }
+@media (max-width: 640px) { .camera-panel { left: 12px; width: 133px; padding: 10px; } .fps-readout { padding-bottom: 10px; } .fps-readout strong { font-size: 28px; } .settings-panel { right: 12px; width: 228px; } .settings-body { padding: 14px 12px; } .panel-heading { padding: 15px 12px; } .panel-heading div { font-size: 10px; } small { font-size: 7px; } .scene-caption { left: 15px; bottom: 65px; } .scene-caption h1 span { display: none; } .scene-status { left: 15px; transform: none; } .panel-toggle { right: 12px; } }
+
+/* Compact reference-style weather folders; range and numeric inputs stay aligned. */
+.weather-group { border-top: 1px solid #8aa5b429; margin: 0 -4px; }
+.weather-group summary { padding: 11px 4px; color: #dbeaf4; cursor: pointer; font: 600 11px Consolas, monospace; letter-spacing: .4px; }
+.weather-group summary::marker { color: #78badf; font-size: 9px; }
+.weather-group summary small { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; font-weight: 400; }
+.weather-content { padding: 0 4px 12px; }
+.weather-location { display: flex; justify-content: space-between; color: #839eaf; font-size: 8px; margin: 0 0 12px; }
+.weather-location span { color: #c4d9e5; font-family: Consolas, monospace; }
+.weather-control { display: grid; grid-template-columns: minmax(0, 1fr) 54px; align-items: center; gap: 0 7px; margin-bottom: 14px; }
+.weather-control label { color: #bdcede; font: 11px Consolas, monospace; }
+.weather-control label small { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; font-size: 8px; letter-spacing: 0; }
+.weather-control input[type=range] { grid-column: 1 / -1; margin-top: 10px; }
+.number-input { width: 54px; height: 24px; min-width: 0; color: #bdefff; background: #223548; border: 1px solid #709bb62e; border-radius: 4px; text-align: center; font: 11px Consolas, monospace; appearance: textfield; }
+.number-input::-webkit-inner-spin-button, .number-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.animate-button { width: 100%; border-radius: 5px; padding: 8px 0; background: #087cd7; color: #effaff; font: 11px Consolas, monospace; letter-spacing: .5px; }
+.animate-button:hover { background: #1b96eb; }
+.animate-button.running { background: #205d84; border: 1px solid #73bee26b; padding: 7px 0; }
+.sun-readout { display: flex; justify-content: space-between; color: #8fa7b7; font-size: 8px; margin-top: 10px; }
+.sun-readout b { color: #d1e4ee; font: 10px Consolas, monospace; margin-left: 4px; }
+.weather-hint { font-size: 8px; color: #748f9f; line-height: 1.6; margin: 6px 0 0; }
+.weather-content > .switch-control { margin-bottom: 13px; }
+.weather-content > .range-control:last-child { margin-bottom: 3px; }
+.pause-all { border-top: 1px solid #8aa5b429; padding: 13px 0 !important; margin-top: 1px; }

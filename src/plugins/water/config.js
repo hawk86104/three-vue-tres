@@ -4,19 +4,27 @@
  * @Autor: 地虎降天龙
  * @Date: 2023-11-10 16:11:27
  * @LastEditors: 地虎降天龙
- * @LastEditTime: 2025-12-05 10:14:27
+ * @LastEditTime: 2026-10-28 14:24:45
  */
 
 export default {
     name: 'water',
     title: '水相关',
     intro: '河流、水域、海洋等场景',
-    version: '0.0.1',
+    version: '1.0.0',
     author: '地虎降天龙',
     website: 'https://gitee.com/hawk86104',
     state: 'active',
     require: ['UIdemo', 'resourceManager'],
     preview: [
+        {
+            catalog: { type: 'block', category: 'environment' },
+            src: 'plugins/water/preview/oceanWeather.webp',
+            type: 'img',
+            name: 'oceanWeather',
+            title: '蔚蓝之境 · 海洋天气',
+            disableFPSGraph: true
+        },
         {
             catalog: { type: 'block', category: 'environment' },
             src: 'plugins/water/preview/spectralCascadeOcean.webp',
