@@ -19,11 +19,18 @@ function handleRateLimit(response) {
     checkRateLimit()
 }
 
-async function getJson(url) {
+async function getResponse(url, { allowNotFound = false } = {}) {
     checkRateLimit()
     const response = await fetch(url)
     if (response.status === 429) handleRateLimit(response)
+    if (allowNotFound && response.status === 404) return null
     if (!response.ok) throw new Error(`Polyfork API: ${response.status}`)
+    return response
+}
+
+async function getJson(url, options) {
+    const response = await getResponse(url, options)
+    if (!response) return null
     return response.json()
 }
 
@@ -40,6 +47,15 @@ export async function searchPolyforkAssets({ q, class: assetClass, max_triangles
 
 export function getPolyforkAsset(id) {
     return getJson(`${apiUrl}/assets/${encodeURIComponent(id)}`)
+}
+
+export function getPolyforkParams(id) {
+    return getJson(`https://polyfork.dev/cdn/${encodeURIComponent(id)}-params.json`, { allowNotFound: true })
+}
+
+export async function getPolyforkModuleSource(id) {
+    const response = await getResponse(`https://polyfork.dev/cdn/${encodeURIComponent(id)}.mjs`)
+    return response.text()
 }
 
 export async function addPolyforkAsset(scene, id, position = [0, 0, 0], { maxSize = 3 } = {}) {

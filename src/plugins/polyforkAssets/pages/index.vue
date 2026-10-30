@@ -79,6 +79,7 @@
                     <strong>{{ displayedAsset.title }}</strong>
                     <span>{{ displayedAsset.id }}</span>
                     <a :href="displayedAsset.page" target="_blank" rel="noopener noreferrer">查看原始资源 ↗</a>
+                    <a class="edit-link" :href="editorHref" target="_blank" rel="noopener noreferrer">修改模型 ↗</a>
                 </template>
                 <span v-else>{{ loadingId ? '正在加载模型…' : '选择一个模型开始查看' }}</span>
             </div>
@@ -89,7 +90,8 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from '@fesjs/fes'
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import { Group, NoToneMapping } from 'three'
@@ -112,6 +114,11 @@ const coverageHint = ref('')
 const loadError = ref('')
 const loadingId = ref('')
 const displayedAsset = ref(null)
+const router = useRouter()
+const editorHref = computed(() => router.resolve({
+    path: '/plugins/polyforkAssets/editor',
+    query: { id: displayedAsset.value?.id },
+}).href)
 const modelGroup = new Group()
 let filters = {}
 let currentModel = null
@@ -260,6 +267,7 @@ button:disabled { cursor: default; opacity: .5; }
 .viewer-info { top: 24px; display: grid; gap: 2px; max-width: calc(100% - 72px); }
 .viewer-info span { color: #70838e; font-size: 12px; overflow-wrap: anywhere; }
 .viewer-info a { color: #208b78; font-size: 12px; text-decoration: none; }
+.viewer-info .edit-link { margin-top: 7px; padding: 7px 10px; border-radius: 6px; color: #fff; font-weight: 600; text-align: center; background: #208b78; }
 .viewer-tip { bottom: 24px; color: #70838e; font-size: 12px; pointer-events: none; }
 .viewer-error { right: 24px; bottom: 70px; color: #a33939; overflow-wrap: anywhere; }
 @media (max-width: 720px) {
