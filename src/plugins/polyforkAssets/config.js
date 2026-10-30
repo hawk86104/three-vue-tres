@@ -9,7 +9,7 @@
 export default {
     name: 'polyforkAssets',
     title: 'Polyfork 模型搜索',
-    intro: '通过 Polyfork REST API 搜索模型，并直接加载其免费低模 GLB。',
+    intro: '通过 Polyfork REST API 搜索模型，并直接加载其免费低模 GLB。<a href="https://polyfork.dev" target="_blank" rel="noopener noreferrer">了解更多</a>',
     version: '1.1.0',
     state: 'active',
     creatTime: '2026-10-30',
@@ -17,8 +17,8 @@ export default {
     require: [],
     preview: [{
         catalog: { type: 'tool', category: 'resources' },
-        src: '搜索 Polyfork 模型，选择结果后在三维场景中查看。<a href="https://polyfork.dev" target="_blank" rel="noopener noreferrer">了解更多</a>',
-        type: 'text',
+        src: 'plugins/polyforkAssets/preview/index.webp',
+        type: 'img',
         name: 'index',
         title: '搜索并加载模型',
         disableFPSGraph: true,
