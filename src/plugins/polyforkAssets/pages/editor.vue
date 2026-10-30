@@ -7,7 +7,7 @@
                 <span v-if="asset" class="asset-name">{{ asset.title || asset.id }}</span>
             </div>
             <div class="actions">
-                <button :disabled="!ready" @click="resetParams">恢复默认</button>
+                <button :disabled="!ready" @click="resetParams">重置参数</button>
                 <button :disabled="!ready" @click="fileInput.click()">导入配置</button>
                 <button :disabled="!ready" @click="exportConfig">导出 JSON</button>
                 <button class="primary" :disabled="!ready" @click="saveConfig">保存配置</button>
@@ -18,12 +18,16 @@
         <div class="editor-body">
             <main class="viewer">
                 <TresCanvas clear-color="#e9eef3" :tone-mapping="NoToneMapping">
-                    <TresPerspectiveCamera :position="[5, 4, 7]" :fov="45" :near="0.01" :far="1000" />
-                    <OrbitControls :target="[0, 1, 0]" />
+                    <TresPerspectiveCamera ref="cameraRef" :position="[5, 4, 7]" :fov="45" :near="0.01" :far="1000" />
+                    <OrbitControls ref="controlsRef" :target="[0, 1, 0]" />
                     <TresAmbientLight :intensity="1.2" />
                     <TresDirectionalLight :position="[4, 8, 6]" :intensity="2" />
                     <TresGridHelper :args="[12, 12, 0x9aabb9, 0xc7d2db]" />
-                    <RemixPreview :model="modelGroup" />
+                    <RemixPreview :model="modelGroup" :on-frame="updateFrame" />
+                    <TresMesh v-if="ikTarget" :position="ikTarget">
+                        <TresSphereGeometry :args="[0.045, 16, 12]" />
+                        <TresMeshBasicMaterial color="#f2604a" :depth-test="false" />
+                    </TresMesh>
                 </TresCanvas>
                 <div class="viewer-caption">
                     <strong>{{ asset?.title || 'Polyfork 模型' }}</strong>
@@ -34,19 +38,22 @@
                 <div v-else-if="loadError" class="viewer-message error" role="alert">{{ loadError }}</div>
                 <div class="viewer-bottom">
                     <span>拖动旋转 · 滚轮缩放 · 预览已适配大小</span>
-                    <button :disabled="!ready" @click="fitModel">适配模型</button>
+                    <button :disabled="!ready" @click="fitCurrentModel">适配模型</button>
                 </div>
             </main>
 
             <aside class="panel">
                 <div class="panel-header">
                     <span class="eyebrow">MODEL PARAMETERS</span>
-                    <h2>模型参数</h2>
-                    <p>根据模型提供的参数实时调整外观和形状。</p>
+                    <h2>模型编辑</h2>
+                    <p>根据当前模型支持的能力进行调整。</p>
                 </div>
                 <p v-if="notice" class="notice" role="status">{{ notice }}</p>
                 <p v-if="editError" class="notice error" role="alert">{{ editError }}</p>
-                <div v-if="ready" class="parameters">
+                <div v-if="ready" class="tabs">
+                    <button v-for="item in tabs" :key="item.id" :class="{ active: activeTab === item.id }" @click="activeTab = item.id">{{ item.label }}</button>
+                </div>
+                <div v-if="ready" v-show="activeTab === 'params'" class="parameters">
                     <p v-if="!parameters.length" class="empty">这个模型没有提供可编辑参数。</p>
                     <div v-for="[key, parameter] in parameters" :key="key" class="parameter">
                         <div class="parameter-title">
@@ -68,6 +75,11 @@
                     </div>
                     <p v-if="unsupported.length" class="empty">暂不支持的参数类型：{{ unsupported.join('、') }}</p>
                 </div>
+                <SpecialControls v-if="ready" v-show="activeTab !== 'params'" ref="special" class="parameters"
+                    :tab="activeTab" :asset="asset" :model="modelRef" :root="rootRef" :rig="modelInfo.rig"
+                    :detachable="modelInfo.detach" :decals="modelInfo.decals" :parameters="schema.params" :initial-state="initialSpecial"
+                    @notice="showNotice" @error="editError = $event" @target="ikTarget = $event"
+                    @focus-decal="focusDecal" @reset-model="applyParams(overrides)" />
                 <div class="panel-footer">配置保存在当前浏览器，可导出 JSON 在其他设备恢复。模型来源：<a href="https://polyfork.dev" target="_blank" rel="noopener noreferrer">Polyfork ↗</a></div>
             </aside>
         </div>
@@ -75,16 +87,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { useRoute } from '@fesjs/fes'
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import { Box3, Group, NoToneMapping, Vector3 } from 'three'
 import RemixPreview from '../components/RemixPreview.vue'
+import SpecialControls from '../components/SpecialControls.vue'
 import { loadPolyforkRemix } from '../lib/remix.js'
 
 const route = useRoute()
 const fileInput = ref(null)
+const special = ref(null)
+const cameraRef = shallowRef(null)
+const controlsRef = shallowRef(null)
 const asset = ref(null)
 const schema = ref({ params: {}, presets: {} })
 const overrides = ref({})
@@ -93,9 +109,18 @@ const ready = ref(false)
 const loadError = ref('')
 const editError = ref('')
 const notice = ref('')
+const activeTab = ref('params')
+const ikTarget = ref(null)
+const modelRef = shallowRef(null)
+const rootRef = shallowRef(null)
+const modelInfo = shallowRef({ rig: {}, detach: [], decals: [] })
+const initialSpecial = ref({})
 const modelGroup = new Group()
 let createAsset = null
 let currentModel = null
+let currentRoot = null
+let previewScale = 1
+let previewPosition = [0, 0, 0]
 let disposed = false
 
 const isNumber = (parameter) => ['range', 'number'].includes(parameter.type)
@@ -114,6 +139,20 @@ const presetKey = computed(() => {
     return parameters.value.find(([, parameter]) => parameter.type === 'choice' && parameter.options.some((option) => names.includes(option)))?.[0]
 })
 const storageKey = () => `tvt.polyfork.remix.${asset.value.id}`
+const tabs = computed(() => {
+    const result = [{ id: 'params', label: '参数' }]
+    const info = modelInfo.value
+    let hasBones = false
+    let hasParts = false
+    modelRef.value?.traverse((object) => {
+        if (object.isBone) hasBones = true
+        if (object !== modelRef.value && object.name && !object.isBone && (object.isGroup || object.isMesh) && !object.userData?.decal) hasParts = true
+    })
+    if (Object.keys(info.rig).length || info.detach.length || hasParts || hasBones) result.push({ id: 'parts', label: '部件 / 骨骼' })
+    if (asset.value?.has_ik && ['arm', 'legs'].includes(asset.value.ik_type)) result.push({ id: 'ik', label: 'IK' })
+    result.push({ id: 'decal', label: '贴花' })
+    return result
+})
 
 function getValue(key, parameter) {
     if (Object.prototype.hasOwnProperty.call(overrides.value, key)) return overrides.value[key]
@@ -160,28 +199,78 @@ function disposeModel(model, retainedModel) {
 }
 
 function fitModel() {
-    if (!currentModel) return
-    modelGroup.position.set(0, 0, 0)
-    modelGroup.scale.setScalar(1)
+    if (!currentRoot) return
+    currentRoot.position.set(0, 0, 0)
+    currentRoot.scale.setScalar(1)
     modelGroup.updateMatrixWorld(true)
-    const bounds = new Box3().setFromObject(currentModel)
+    const bounds = new Box3().setFromObject(currentRoot)
     const size = bounds.getSize(new Vector3())
     const scale = 3 / Math.max(size.x, size.y, size.z)
     if (bounds.isEmpty() || !Number.isFinite(scale) || scale <= 0) return
     const center = bounds.getCenter(new Vector3())
-    modelGroup.scale.setScalar(scale)
-    modelGroup.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale)
+    previewScale = scale
+    previewPosition = [-center.x * scale, -bounds.min.y * scale, -center.z * scale]
+    currentRoot.scale.setScalar(previewScale)
+    currentRoot.position.set(...previewPosition)
+    modelGroup.updateMatrixWorld(true)
+}
+
+function fitCurrentModel() {
+    special.value?.beforeReplace()
+    fitModel()
+    special.value?.rebind()
+    const controls = controlsRef.value?.instance?.value || controlsRef.value?.instance
+    if (cameraRef.value && controls) {
+        cameraRef.value.position.set(5, 4, 7)
+        controls.target.set(0, 1, 0)
+        controls.update()
+    }
+}
+
+function focusDecal(area) {
+    const camera = cameraRef.value
+    const controls = controlsRef.value?.instance?.value || controlsRef.value?.instance
+    if (!camera || !controls || !currentModel || !Array.isArray(area.at) || !Array.isArray(area.normal)) return
+    currentModel.updateWorldMatrix(true, true)
+    const point = currentModel.localToWorld(new Vector3(...area.at))
+    const normal = new Vector3(...area.normal).transformDirection(currentModel.matrixWorld)
+    const up = new Vector3(...(area.up || (Math.abs(area.normal[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0]))).transformDirection(currentModel.matrixWorld)
+    const size = Math.max(...(area.size || [0.5, 0.5])) * currentRoot.scale.x
+    const distance = Math.max(0.75, size * 4)
+    camera.position.copy(point).addScaledVector(normal, distance).addScaledVector(up, distance * 0.12)
+    controls.target.copy(point)
+    controls.update()
 }
 
 function renderModel(nextParams, fit = false) {
     const next = createAsset(nextParams)
     if (!next?.isObject3D) throw new Error('模型程序没有返回可显示的三维对象')
     const previous = currentModel
-    modelGroup.add(next)
-    if (previous) modelGroup.remove(previous)
+    special.value?.beforeReplace()
+    if (currentRoot) modelGroup.remove(currentRoot)
+    currentRoot = new Group()
+    currentRoot.add(next)
+    modelGroup.add(currentRoot)
     currentModel = next
     if (fit) fitModel()
+    else {
+        currentRoot.scale.setScalar(previewScale)
+        currentRoot.position.set(...previewPosition)
+        modelGroup.updateMatrixWorld(true)
+    }
+    rootRef.value = currentRoot
+    modelRef.value = currentModel
     if (previous) disposeModel(previous, next)
+}
+
+function updateFrame(delta, elapsed) {
+    if (special.value) special.value.updateFrame(delta, elapsed)
+    else currentModel?.userData.tick?.(elapsed)
+}
+
+function showNotice(message) {
+    notice.value = message
+    editError.value = ''
 }
 
 function validateParams(input) {
@@ -228,14 +317,15 @@ function resetParams() {
 }
 
 function makeConfig() {
-    return { version: 1, source: 'polyfork', assetId: asset.value.id, params: { ...overrides.value } }
+    return { version: 2, source: 'polyfork', assetId: asset.value.id, params: { ...overrides.value }, controls: special.value?.getState() || {} }
 }
 
 function readConfig(config) {
-    if (!config || config.version !== 1 || config.source !== 'polyfork' || config.assetId !== asset.value.id) {
+    if (!config || ![1, 2].includes(config.version) || config.source !== 'polyfork' || config.assetId !== asset.value.id) {
         throw new Error('配置与当前模型不匹配')
     }
-    return validateParams(config.params)
+    if (config.version === 2 && (!config.controls || typeof config.controls !== 'object' || Array.isArray(config.controls))) throw new Error('模型控制配置不正确')
+    return { params: validateParams(config.params), controls: config.controls || {} }
 }
 
 function saveConfig() {
@@ -267,7 +357,11 @@ async function importConfig(event) {
     try {
         if (file.size > 1024 * 1024) throw new Error('配置文件不能超过 1 MB')
         const next = readConfig(JSON.parse(await file.text()))
-        if (applyParams(next, true)) notice.value = '配置已导入，点击保存可在本机恢复。'
+        if (applyParams(next.params, true)) {
+            await nextTick()
+            special.value?.restoreState(next.controls)
+            notice.value = '配置已导入，点击保存可在本机恢复。'
+        }
     } catch (error) {
         editError.value = `导入失败：${error.message || error}`
     }
@@ -282,8 +376,12 @@ onMounted(async () => {
             params: result.schema.params && typeof result.schema.params === 'object' ? result.schema.params : {},
             presets: result.schema.presets && typeof result.schema.presets === 'object' ? result.schema.presets : {},
         }
+        const rig = result.module.rig && Object.keys(result.module.rig).length ? result.module.rig : result.asset.rigged_parts || {}
+        const detach = [...new Set([...(result.module.detach || []), ...(result.asset.detachable_parts || [])])]
+        const decals = [result.schema.decals, result.asset.decals, result.module.decals].find((items) => Array.isArray(items) && items.length) || []
+        modelInfo.value = { rig, detach, decals }
         createAsset = result.createAsset
-        let initial = {}
+        let initial = { params: {}, controls: {} }
         try {
             const saved = localStorage.getItem(storageKey())
             if (saved) {
@@ -293,7 +391,8 @@ onMounted(async () => {
         } catch {
             notice.value = '本机保存的配置无法读取，已使用默认参数。'
         }
-        if (!applyParams(initial, true)) throw new Error(editError.value)
+        initialSpecial.value = initial.controls
+        if (!applyParams(initial.params, true)) throw new Error(editError.value)
         ready.value = true
     } catch (error) {
         if (!disposed) loadError.value = `加载失败：${error.message || error}`
@@ -305,7 +404,8 @@ onMounted(async () => {
 onUnmounted(() => {
     disposed = true
     if (currentModel) {
-        modelGroup.remove(currentModel)
+        special.value?.beforeReplace()
+        modelGroup.remove(currentRoot)
         disposeModel(currentModel)
     }
 })
@@ -339,6 +439,9 @@ a { color: #208b78; text-decoration: none; }
 .panel { display: flex; flex: 0 0 340px; flex-direction: column; min-height: 0; padding: 22px; background: #fff; box-shadow: -4px 0 24px #243d4d12; }
 .panel-header h2 { margin: 2px 0; font-size: 20px; }
 .panel-header p { margin: 4px 0 16px; color: #82919a; font-size: 12px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.tabs button { padding: 6px 9px; border: 1px solid #d8e5e2; border-radius: 6px; color: #607a74; font-size: 12px; background: #fff; }
+.tabs button.active { border-color: #208b78; color: #fff; background: #208b78; }
 .notice { margin: 0 0 12px; padding: 9px; border-radius: 6px; color: #287865; font-size: 12px; background: #edf8f5; overflow-wrap: anywhere; }
 .error { color: #a33939; background: #fff0ef; }
 .parameters { min-height: 0; overflow-y: auto; }
