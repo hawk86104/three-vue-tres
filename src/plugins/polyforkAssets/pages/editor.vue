@@ -96,7 +96,7 @@ import RemixPreview from '../components/RemixPreview.vue'
 import SpecialControls from '../components/SpecialControls.vue'
 import { loadPolyforkRemix } from '../lib/remix.js'
 import {
-    getPolyforkParameterValue, hasPolyforkRange as hasRange,
+    getPolyforkParameterValue, hasPolyforkRange as hasRange, isPolyforkNumber as isNumber,
     isPolyforkToggle as isToggle, isSupportedPolyforkParameter as isSupported,
     mergePolyforkParams, polyforkColorValue as colorValue, validatePolyforkParams,
 } from '../lib/parameters.js'
