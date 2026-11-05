@@ -4,7 +4,7 @@ export async function translateToEnglish(query) {
     const params = new URLSearchParams({ q: query })
     let response
     try {
-        response = await fetch(`${translateUrl}?${params}`)
+        response = await fetch(`${translateUrl}?${params}`, { signal: AbortSignal.timeout?.(20000) })
     } catch {
         throw new Error('无法连接翻译服务，请检查网络或跨域配置，也可以使用英文关键词')
     }

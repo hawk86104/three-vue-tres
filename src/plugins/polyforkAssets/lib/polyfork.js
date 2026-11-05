@@ -21,7 +21,10 @@ function handleRateLimit(response) {
 
 async function getResponse(url, { allowNotFound = false } = {}) {
     checkRateLimit()
-    const response = await fetch(url)
+    const response = await fetch(url, { signal: AbortSignal.timeout?.(20000) }).catch((error) => {
+        if (error.name === 'TimeoutError') throw new Error('Polyfork 请求超时，请稍后重试')
+        throw error
+    })
     if (response.status === 429) handleRateLimit(response)
     if (allowNotFound && response.status === 404) return null
     if (!response.ok) throw new Error(`Polyfork API: ${response.status}`)

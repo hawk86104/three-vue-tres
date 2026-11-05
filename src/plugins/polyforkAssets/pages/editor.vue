@@ -95,6 +95,11 @@ import { Box3, Group, NoToneMapping, Vector3 } from 'three'
 import RemixPreview from '../components/RemixPreview.vue'
 import SpecialControls from '../components/SpecialControls.vue'
 import { loadPolyforkRemix } from '../lib/remix.js'
+import {
+    getPolyforkParameterValue, hasPolyforkRange as hasRange,
+    isPolyforkToggle as isToggle, isSupportedPolyforkParameter as isSupported,
+    mergePolyforkParams, polyforkColorValue as colorValue, validatePolyforkParams,
+} from '../lib/parameters.js'
 
 const route = useRoute()
 const fileInput = ref(null)
@@ -123,21 +128,9 @@ let previewScale = 1
 let previewPosition = [0, 0, 0]
 let disposed = false
 
-const isNumber = (parameter) => ['range', 'number'].includes(parameter.type)
-const isToggle = (parameter) => ['toggle', 'bool'].includes(parameter.type)
-const hasRange = (parameter) => Number.isFinite(parameter.min) && Number.isFinite(parameter.max) && parameter.max > parameter.min
-const isSupported = (parameter) => parameter && (
-    (parameter.type === 'choice' && Array.isArray(parameter.options) && parameter.options.length) ||
-    parameter.type === 'color' || isToggle(parameter) || isNumber(parameter)
-)
 const entries = computed(() => Object.entries(schema.value.params || {}))
 const parameters = computed(() => entries.value.filter(([, parameter]) => isSupported(parameter)))
 const unsupported = computed(() => entries.value.filter(([, parameter]) => !isSupported(parameter)).map(([key]) => key))
-const presetKey = computed(() => {
-    if (schema.value.params?.colorway?.type === 'choice') return 'colorway'
-    const names = Object.keys(schema.value.presets || {})
-    return parameters.value.find(([, parameter]) => parameter.type === 'choice' && parameter.options.some((option) => names.includes(option)))?.[0]
-})
 const storageKey = () => `tvt.polyfork.remix.${asset.value.id}`
 const tabs = computed(() => {
     const result = [{ id: 'params', label: '参数' }]
@@ -154,21 +147,12 @@ const tabs = computed(() => {
     return result
 })
 
-function getValue(key, parameter) {
-    if (Object.prototype.hasOwnProperty.call(overrides.value, key)) return overrides.value[key]
-    const presetParam = schema.value.params?.[presetKey.value]
-    const selectedPreset = overrides.value[presetKey.value] ?? presetParam?.default
-    const preset = schema.value.presets?.[selectedPreset]
-    return preset?.[key] ?? parameter.default
+function getValue(key) {
+    return getPolyforkParameterValue(schema.value, overrides.value, key)
 }
 
 function choiceIndex(key, parameter) {
     return Math.max(0, parameter.options.indexOf(getValue(key, parameter)))
-}
-
-function colorValue(value) {
-    if (typeof value === 'number') return `#${(value & 0xffffff).toString(16).padStart(6, '0')}`
-    return /^#[\da-f]{6}$/i.test(value || '') ? value : '#ffffff'
 }
 
 function rangeStep(parameter) {
@@ -274,20 +258,7 @@ function showNotice(message) {
 }
 
 function validateParams(input) {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('参数格式不正确')
-    const result = {}
-    for (const [key, value] of Object.entries(input)) {
-        if (!Object.prototype.hasOwnProperty.call(schema.value.params, key) || ['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error(`未知参数：${key}`)
-        const parameter = schema.value.params[key]
-        let valid = false
-        if (parameter.type === 'choice') valid = Array.isArray(parameter.options) && parameter.options.includes(value)
-        else if (parameter.type === 'color') valid = typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
-        else if (isToggle(parameter)) valid = typeof value === 'boolean'
-        else if (isNumber(parameter)) valid = Number.isFinite(value) && (!Number.isFinite(parameter.min) || value >= parameter.min) && (!Number.isFinite(parameter.max) || value <= parameter.max)
-        if (!valid) throw new Error(`参数 ${key} 的值无效`)
-        result[key] = value
-    }
-    return result
+    return validatePolyforkParams(schema.value, input)
 }
 
 function applyParams(next, fit = false) {
@@ -304,12 +275,12 @@ function applyParams(next, fit = false) {
 }
 
 function setParam(key, value) {
-    const next = { ...overrides.value, [key]: value }
-    if (key === presetKey.value && schema.value.presets?.[value]) {
-        Object.keys(schema.value.presets[value]).forEach((name) => { delete next[name] })
-        next[key] = value
+    try {
+        const next = mergePolyforkParams(schema.value, overrides.value, { [key]: value })
+        if (applyParams(next)) notice.value = '参数已修改，保存后可在本机恢复。'
+    } catch (error) {
+        editError.value = `无法更新模型：${error.message || error}`
     }
-    if (applyParams(next)) notice.value = '参数已修改，保存后可在本机恢复。'
 }
 
 function resetParams() {
