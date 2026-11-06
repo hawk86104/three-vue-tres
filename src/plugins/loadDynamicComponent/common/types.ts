@@ -10,6 +10,7 @@ export interface RemoteComponentConfig {
   name: string
   type: string
   comFile: string
+  category?: string
 	previewPath?: string
 	default?:any
 	defaultObject3D?:any
@@ -20,5 +21,7 @@ export interface RemotePluginConfig {
   name: string
   version: string
   description?: string
+  categories?: readonly { id: string; name: string }[]
+  defaultCategory?: string
   components: RemoteComponentConfig[]
 }
