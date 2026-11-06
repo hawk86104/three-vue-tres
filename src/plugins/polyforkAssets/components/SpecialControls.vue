@@ -67,6 +67,7 @@
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { CanvasTexture, MathUtils, MeshStandardMaterial, SRGBColorSpace, Vector3 } from 'three'
 import { createPolyforkHelperLoader } from '../lib/remix.js'
+import { hasPolyforkVisibilityParam } from '../lib/parts.js'
 
 const props = defineProps({
     tab: { type: String, required: true },
@@ -118,24 +119,8 @@ const rigRange = (name) => Array.isArray(props.rig[name]?.range) && props.rig[na
 const rigMin = (name) => Math.min(...rigRange(name))
 const rigMax = (name) => Math.max(...rigRange(name))
 
-function words(value) {
-    return String(value || '').replace(/([a-z\d])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z\d]+/).filter(Boolean)
-}
-
-function matchesPart(name, key, parameter) {
-    const directions = new Set(['l', 'r', 'f', 'b', 'fl', 'fr', 'rl', 'rr', 'lf', 'rf', 'lr', 'left', 'right', 'front', 'rear', 'back'])
-    const part = words(name).filter((word) => !directions.has(word))
-    const terms = words(`${key} ${parameter.label || ''}`)
-    return part.length > 0 && part.every((word) => terms.some((term) => word === term || (Math.min(word.length, term.length) >= 4 && (word.startsWith(term) || term.startsWith(word)))))
-}
-
 function visibilityCovered(name) {
-    return Object.entries(props.parameters).some(([key, parameter]) => {
-        if (['toggle', 'bool'].includes(parameter?.type)) return matchesPart(name, key, parameter)
-        if (parameter?.type !== 'choice' || !Array.isArray(parameter.options)) return false
-        const options = parameter.options.map((value) => String(value).toLowerCase())
-        return options.some((value) => ['none', 'off', 'hidden'].includes(value)) && options.includes(name.toLowerCase())
-    })
+    return hasPolyforkVisibilityParam(name, props.parameters)
 }
 
 let boundModel = null

@@ -2,6 +2,7 @@ import { Box3, Group, Vector3 } from 'three'
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 import { loadPolyforkRemix } from './remix.js'
 import { mergePolyforkParams, validatePolyforkParams } from './parameters.js'
+import { createPolyforkPartBinding, mergePolyforkParts, readPolyforkParts } from './parts.js'
 
 const definitions = new Map()
 const instances = new WeakMap()
@@ -22,6 +23,7 @@ function loadDefinition(id) {
             let generation = Promise.resolve()
             return {
                 schema: { params: definition.schema.params || {}, presets: definition.schema.presets || {} },
+                rig: definition.module.rig && Object.keys(definition.module.rig).length ? definition.module.rig : definition.asset.rigged_parts || {},
                 // Some modules reuse mutable resources. Clone each result before
                 // allowing the next instance to invoke the same generator.
                 generate: (params, isStale) => {
@@ -51,7 +53,8 @@ function readConfig(input) {
         !Array.isArray(anchor.position) || anchor.position.length !== 3 || !anchor.position.every(Number.isFinite))) {
         throw new Error('Polyfork 固定锚点无效')
     }
-    return copy({ version: 1, assetId: input.assetId, params: input.params, ...(anchor ? { anchor } : {}) })
+    const parts = readPolyforkParts(input.parts)
+    return copy({ version: 1, assetId: input.assetId, params: input.params, ...(anchor ? { anchor } : {}), ...(Object.keys(parts).length ? { parts } : {}) })
 }
 
 // Never dispose a generator's resources: modules may cache them. Each displayed
@@ -96,7 +99,10 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
     if (instances.has(object)) throw new Error('Polyfork 实例已初始化')
     let config = readConfig(input)
     let desiredParams = copy(config.params)
+    let desiredParts = copy(config.parts || {})
     let schema = null
+    let partControls = []
+    let partWarnings = []
     let content = object.children[0] || null
     let owned = null
     let revision = 0
@@ -104,13 +110,14 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
     let disposed = false
     let pending = Promise.resolve(false)
 
-    const cancelPending = () => { revision += 1; cancellation += 1; desiredParams = copy(config.params) }
-    const restore = (inputConfig, { signal, beforeCommit } = {}) => {
+    const cancelPending = () => { revision += 1; cancellation += 1; desiredParams = copy(config.params); desiredParts = copy(config.parts || {}) }
+    const restore = (inputConfig, { signal, beforeCommit, requiredParts = [] } = {}) => {
         if (disposed) return Promise.resolve(false)
         const nextConfig = readConfig(inputConfig)
         if (nextConfig.assetId !== config.assetId) throw new Error('不能更换已有 Polyfork 实例的资产 ID')
         const version = ++revision
         desiredParams = copy(nextConfig.params)
+        desiredParts = copy(nextConfig.parts || {})
         const stale = () => disposed || version !== revision || signal?.aborted
         pending = (async () => {
             // Limit generation to the latest request in each display frame.
@@ -125,9 +132,14 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
             if (stale()) { next.dispose(); return false }
             let wrapper
             let anchor
+            let binding
+            let pose
             try {
                 beforeCommit?.()
+                // Fit the unposed tree once; posing must never move the anchor.
                 anchor = nextConfig.anchor || config.anchor || initialAnchor(next.object)
+                binding = createPolyforkPartBinding(next.object, definition.rig, schema.params)
+                pose = binding.apply(nextConfig.parts, requiredParts)
                 wrapper = new Group()
                 wrapper.name = 'polyfork-content'
                 wrapper.scale.setScalar(anchor.scale)
@@ -154,13 +166,18 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
             content = wrapper
             owned = next
             config = { version: 1, assetId: config.assetId, params, anchor: copy(anchor) }
+            if (Object.keys(pose.state).length) config.parts = pose.state
+            partControls = binding.controls
+            partWarnings = pose.warnings
             desiredParams = copy(params)
+            desiredParts = copy(pose.state)
             object.updateWorldMatrix(true, true)
             previous?.dispose()
             return true
         })().catch((error) => {
             if (stale()) return false
             desiredParams = copy(config.params)
+            desiredParts = copy(config.parts || {})
             throw new Error(`Polyfork [${config.assetId}] 更新失败：${error.message || error}`)
         })
         return pending
@@ -172,21 +189,33 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
         const definition = await loadDefinition(config.assetId)
         if (disposed || version !== cancellation) return false
         beforeUpdate?.()
-        return restore({ ...config, params: mergePolyforkParams(definition.schema, desiredParams, patch) }, { beforeCommit: beforeUpdate })
+        return restore({ ...config, params: mergePolyforkParams(definition.schema, desiredParams, patch), parts: desiredParts }, { beforeCommit: beforeUpdate })
     }
     const getParams = () => copy(config.params)
+    const getParts = () => copy(config.parts || {})
+    const setParts = (patch) => restore({ ...config, params: desiredParams, parts: mergePolyforkParts(desiredParts, patch) }, {
+        beforeCommit: beforeUpdate, requiredParts: Object.entries(patch).filter(([, value]) => value !== null).map(([name]) => name),
+    })
     const runtime = {
         object,
         get schema() { return schema },
+        get partControls() { return partControls },
+        get partWarnings() { return partWarnings },
         getConfig: () => copy(config),
         restore,
         setParams,
+        setParts,
         cancelPending,
         whenIdle: () => pending.catch(() => false),
         // Runtime bindings do not write editor configuration or operation history.
         bindingApi: Object.freeze({
             getParams,
             setParams: (patch) => setParams(patch).catch((error) => { console.error(error); return false }),
+            getParts,
+            setParts: async (patch) => {
+                try { return await setParts(patch) }
+                catch (error) { console.error(error); return false }
+            },
         }),
         dispose: () => {
             disposed = true
