@@ -25,7 +25,7 @@ export function getPolyforkParameterValue(schema, overrides, key) {
     return schema.presets?.[selected]?.[key] ?? schema.params?.[key]?.default
 }
 
-export function validatePolyforkParams(schema, input) {
+export function validatePolyforkParams(schema, input, { strictStep = false } = {}) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('参数格式不正确')
     const result = {}
     for (const [key, value] of Object.entries(input)) {
@@ -35,8 +35,14 @@ export function validatePolyforkParams(schema, input) {
         if (parameter?.type === 'choice') valid = Array.isArray(parameter.options) && parameter.options.includes(value)
         else if (parameter?.type === 'color') valid = typeof value === 'string' && /^#[\da-f]{6}$/i.test(value)
         else if (isPolyforkToggle(parameter)) valid = typeof value === 'boolean'
-        else if (isPolyforkNumber(parameter)) valid = Number.isFinite(value) &&
-            (!Number.isFinite(parameter.min) || value >= parameter.min) && (!Number.isFinite(parameter.max) || value <= parameter.max)
+        else if (isPolyforkNumber(parameter)) {
+            valid = Number.isFinite(value) && (!Number.isFinite(parameter.min) || value >= parameter.min)
+                && (!Number.isFinite(parameter.max) || value <= parameter.max)
+            if (valid && strictStep && Number.isFinite(parameter.step) && parameter.step > 0) {
+                const steps = (value - (Number.isFinite(parameter.min) ? parameter.min : 0)) / parameter.step
+                valid = Math.abs(steps - Math.round(steps)) <= 1e-7
+            }
+        }
         if (!valid) throw new Error(`参数 ${key} 的值无效`)
         result[key] = value
     }

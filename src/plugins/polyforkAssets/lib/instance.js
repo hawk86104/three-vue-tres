@@ -40,6 +40,23 @@ function loadDefinition(id) {
     return definitions.get(id)
 }
 
+async function waitForMeasurement(work, signal, onLateResult) {
+    // A measurement can stop waiting while the shared definition or generator is still in use.
+    let onAbort
+    try {
+        const aborted = new Promise(resolve => {
+            onAbort = () => resolve(null)
+            if (signal.aborted) onAbort()
+            else signal.addEventListener('abort', onAbort, { once: true })
+        })
+        const result = await Promise.race([work, aborted])
+        if (result === null && onLateResult) work.then(onLateResult).catch(() => {})
+        return result
+    } finally {
+        signal.removeEventListener('abort', onAbort)
+    }
+}
+
 function readConfig(input) {
     if (input?.version !== 1 || typeof input.assetId !== 'string' || !/^[a-z0-9-]+$/i.test(input.assetId)) {
         throw new Error('Polyfork 实例配置或版本无效')
@@ -111,7 +128,7 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
     let pending = Promise.resolve(false)
 
     const cancelPending = () => { revision += 1; cancellation += 1; desiredParams = copy(config.params); desiredParts = copy(config.parts || {}) }
-    const restore = (inputConfig, { signal, beforeCommit, requiredParts = [] } = {}) => {
+    const restore = (inputConfig, { signal, beforeCommit, requiredParts = [], strictStep = false, stopWaitingOnAbort = false } = {}) => {
         if (disposed) return Promise.resolve(false)
         const nextConfig = readConfig(inputConfig)
         if (nextConfig.assetId !== config.assetId) throw new Error('不能更换已有 Polyfork 实例的资产 ID')
@@ -119,15 +136,16 @@ export function attachPolyforkInstance(object, input, { beforeUpdate } = {}) {
         desiredParams = copy(nextConfig.params)
         desiredParts = copy(nextConfig.parts || {})
         const stale = () => disposed || version !== revision || signal?.aborted
+        const wait = (work, onLateResult) => stopWaitingOnAbort && signal ? waitForMeasurement(work, signal, onLateResult) : work
         pending = (async () => {
             // Limit generation to the latest request in each display frame.
             await nextFrame()
             if (stale()) return false
-            const definition = await loadDefinition(config.assetId)
-            if (stale()) return false
+            const definition = await wait(loadDefinition(config.assetId))
+            if (!definition || stale()) return false
             schema = definition.schema
-            const params = validatePolyforkParams(schema, nextConfig.params)
-            const next = await definition.generate(params, stale)
+            const params = validatePolyforkParams(schema, nextConfig.params, { strictStep })
+            const next = await wait(definition.generate(params, stale), (late) => late?.dispose())
             if (!next) return false
             if (stale()) { next.dispose(); return false }
             let wrapper
