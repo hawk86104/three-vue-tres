@@ -34,5 +34,14 @@ export default {
             title: "Yuri's大脑",
             referenceSource: { title: 'Yuri Artiukh', url: 'https://www.youtube.com/watch?v=OCjwL5QbiMg' },
         },
+        {
+            catalog: { type: 'scene', category: 'medical' },
+            src: 'plugins/medical/preview/openAnatomy3D.png',
+            type: 'img',
+            name: 'openAnatomy3D',
+            title: '三维人体解剖',
+            disableFPSGraph: true,
+            referenceSource: { title: '开放人体解剖项目', url: 'https://github.com/MervinR07/open-anatomy-3d' },
+        },
     ],
 }

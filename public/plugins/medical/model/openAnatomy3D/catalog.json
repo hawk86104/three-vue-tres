@@ -1,0 +1,1160 @@
+[
+  {
+    "key": "ankle_l",
+    "label": "Ankle Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.0877,
+      0.0658,
+      -0.0368
+    ],
+    "anchorFemale": [
+      0.129,
+      0.0691,
+      -0.0252
+    ]
+  },
+  {
+    "key": "ankle_r",
+    "label": "Ankle Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.0867,
+      0.0658,
+      -0.0374
+    ],
+    "anchorFemale": [
+      -0.129,
+      0.0691,
+      -0.0252
+    ]
+  },
+  {
+    "key": "elbow_l",
+    "label": "Elbow Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.2106,
+      1.1238,
+      -0.0315
+    ],
+    "anchorFemale": [
+      0.1899,
+      1.0517,
+      -0.0307
+    ]
+  },
+  {
+    "key": "elbow_r",
+    "label": "Elbow Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.2098,
+      1.1239,
+      -0.0319
+    ],
+    "anchorFemale": [
+      -0.1899,
+      1.0519,
+      -0.0307
+    ]
+  },
+  {
+    "key": "hip_l",
+    "label": "Hip Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.0966,
+      0.8944,
+      -0.024
+    ],
+    "anchorFemale": [
+      0.096,
+      0.8304,
+      -0.038
+    ]
+  },
+  {
+    "key": "hip_r",
+    "label": "Hip Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.0948,
+      0.8943,
+      -0.0244
+    ],
+    "anchorFemale": [
+      -0.096,
+      0.8305,
+      -0.038
+    ]
+  },
+  {
+    "key": "knee_l",
+    "label": "Knee Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.0765,
+      0.4495,
+      -0.025
+    ],
+    "anchorFemale": [
+      0.1178,
+      0.4544,
+      -0.0071
+    ]
+  },
+  {
+    "key": "knee_r",
+    "label": "Knee Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.074,
+      0.4496,
+      -0.025
+    ],
+    "anchorFemale": [
+      -0.1178,
+      0.4544,
+      -0.007
+    ]
+  },
+  {
+    "key": "shoulder_l",
+    "label": "Shoulder Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.1669,
+      1.3958,
+      -0.0212
+    ],
+    "anchorFemale": [
+      0.1563,
+      1.2876,
+      -0.0346
+    ]
+  },
+  {
+    "key": "shoulder_r",
+    "label": "Shoulder Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.1648,
+      1.394,
+      -0.0181
+    ],
+    "anchorFemale": [
+      -0.1563,
+      1.2878,
+      -0.0346
+    ]
+  },
+  {
+    "key": "wrist_l",
+    "label": "Wrist Joint (L)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      0.2519,
+      0.8912,
+      0.0137
+    ],
+    "anchorFemale": [
+      0.2195,
+      0.8405,
+      -0.0155
+    ]
+  },
+  {
+    "key": "wrist_r",
+    "label": "Wrist Joint (R)",
+    "system": "joints",
+    "category": "Musculoskeletal",
+    "color": "#ff9a3c",
+    "anchor": [
+      -0.2533,
+      0.8911,
+      0.014
+    ],
+    "anchorFemale": [
+      -0.2194,
+      0.8404,
+      -0.0155
+    ]
+  },
+  {
+    "key": "abdominal_muscles",
+    "label": "Abdominal Wall Muscles",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "back_muscles_l",
+    "label": "Back Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "back_muscles_r",
+    "label": "Back Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "calf_l",
+    "label": "Calf Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "calf_r",
+    "label": "Calf Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "chest_muscles_l",
+    "label": "Chest (Pectoral) Muscle (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "chest_muscles_r",
+    "label": "Chest (Pectoral) Muscle (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "deltoid_l",
+    "label": "Deltoid (Shoulder) (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "deltoid_r",
+    "label": "Deltoid (Shoulder) (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "diaphragm",
+    "label": "Diaphragm",
+    "system": "muscles",
+    "category": "Respiratory",
+    "color": "#b85a4a"
+  },
+  {
+    "key": "foot_muscles_l",
+    "label": "Foot Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "foot_muscles_r",
+    "label": "Foot Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "forearm_muscles_l",
+    "label": "Forearm Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "forearm_muscles_r",
+    "label": "Forearm Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "gluteal_l",
+    "label": "Gluteal Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "gluteal_r",
+    "label": "Gluteal Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "hamstrings_l",
+    "label": "Hamstrings (Back Thigh) (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "hamstrings_r",
+    "label": "Hamstrings (Back Thigh) (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "hand_muscles_l",
+    "label": "Hand Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "hand_muscles_r",
+    "label": "Hand Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "iliopsoas_l",
+    "label": "Hip Flexor (Iliopsoas) (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "iliopsoas_r",
+    "label": "Hip Flexor (Iliopsoas) (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "adductors_l",
+    "label": "Inner Thigh (Adductors) (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "adductors_r",
+    "label": "Inner Thigh (Adductors) (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "intercostals_l",
+    "label": "Intercostal Muscles (L)",
+    "system": "muscles",
+    "category": "Respiratory",
+    "color": "#b5463d"
+  },
+  {
+    "key": "intercostals_r",
+    "label": "Intercostal Muscles (R)",
+    "system": "muscles",
+    "category": "Respiratory",
+    "color": "#b5463d"
+  },
+  {
+    "key": "neck_muscles_l",
+    "label": "Neck Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "neck_muscles_r",
+    "label": "Neck Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "pelvic_floor",
+    "label": "Pelvic Floor",
+    "system": "muscles",
+    "category": "Renal / Urinary",
+    "color": "#b5463d"
+  },
+  {
+    "key": "quadriceps_l",
+    "label": "Quadriceps (Front Thigh) (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "quadriceps_r",
+    "label": "Quadriceps (Front Thigh) (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "rotator_cuff_l",
+    "label": "Rotator Cuff (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "rotator_cuff_r",
+    "label": "Rotator Cuff (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "shin_muscles_l",
+    "label": "Shin Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "shin_muscles_r",
+    "label": "Shin Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "shoulder_muscles_l",
+    "label": "Shoulder Girdle Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "shoulder_muscles_r",
+    "label": "Shoulder Girdle Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "trapezius_l",
+    "label": "Trapezius (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "trapezius_r",
+    "label": "Trapezius (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "upper_arm_muscles_l",
+    "label": "Upper Arm Muscles (L)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "upper_arm_muscles_r",
+    "label": "Upper Arm Muscles (R)",
+    "system": "muscles",
+    "category": "Musculoskeletal",
+    "color": "#b5463d"
+  },
+  {
+    "key": "cranial_nerves",
+    "label": "Cranial & Eye Nerves",
+    "system": "nerves",
+    "category": "Neurological",
+    "color": "#f2c14e"
+  },
+  {
+    "key": "spinal_cord",
+    "label": "Spinal Cord",
+    "system": "nerves",
+    "category": "Neurological",
+    "color": "#f2d27a"
+  },
+  {
+    "key": "adrenal_l",
+    "label": "Adrenal Gland (L)",
+    "system": "organs",
+    "category": "Endocrine",
+    "color": "#e0c068"
+  },
+  {
+    "key": "adrenal_r",
+    "label": "Adrenal Gland (R)",
+    "system": "organs",
+    "category": "Endocrine",
+    "color": "#e0c068"
+  },
+  {
+    "key": "appendix",
+    "label": "Appendix",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#c9847a"
+  },
+  {
+    "key": "brain",
+    "label": "Brain",
+    "system": "organs",
+    "category": "Neurological",
+    "color": "#e4aaa6"
+  },
+  {
+    "key": "brainstem",
+    "label": "Brainstem",
+    "system": "organs",
+    "category": "Neurological",
+    "color": "#cf8f8f"
+  },
+  {
+    "key": "breast_l",
+    "label": "Breast (L)",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#f0a8a0",
+    "sex": "female"
+  },
+  {
+    "key": "breast_r",
+    "label": "Breast (R)",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#f0a8a0",
+    "sex": "female"
+  },
+  {
+    "key": "bronchi",
+    "label": "Bronchi",
+    "system": "organs",
+    "category": "Respiratory",
+    "color": "#e3b7ad"
+  },
+  {
+    "key": "cerebellum",
+    "label": "Cerebellum",
+    "system": "organs",
+    "category": "Neurological",
+    "color": "#d99a9a"
+  },
+  {
+    "key": "esophagus",
+    "label": "Esophagus",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#c98a7a"
+  },
+  {
+    "key": "eye_l",
+    "label": "Eye (L)",
+    "system": "organs",
+    "category": "Eye / Sensory",
+    "color": "#f4f1ea"
+  },
+  {
+    "key": "eye_r",
+    "label": "Eye (R)",
+    "system": "organs",
+    "category": "Eye / Sensory",
+    "color": "#f4f1ea"
+  },
+  {
+    "key": "fallopian_tubes",
+    "label": "Fallopian Tubes",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#d98a8f",
+    "sex": "female"
+  },
+  {
+    "key": "gallbladder",
+    "label": "Gallbladder & Bile Ducts",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#6b8e5a"
+  },
+  {
+    "key": "heart",
+    "label": "Heart",
+    "system": "organs",
+    "category": "Cardiovascular",
+    "color": "#b8352c"
+  },
+  {
+    "key": "kidney_l",
+    "label": "Kidney (L)",
+    "system": "organs",
+    "category": "Renal / Urinary",
+    "color": "#8a3f35"
+  },
+  {
+    "key": "kidney_r",
+    "label": "Kidney (R)",
+    "system": "organs",
+    "category": "Renal / Urinary",
+    "color": "#8a3f35"
+  },
+  {
+    "key": "colon",
+    "label": "Large Intestine (Colon)",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#c07a64"
+  },
+  {
+    "key": "larynx",
+    "label": "Larynx (Voice Box)",
+    "system": "organs",
+    "category": "Respiratory",
+    "color": "#d8b8a6"
+  },
+  {
+    "key": "liver",
+    "label": "Liver",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#8a4a2e"
+  },
+  {
+    "key": "lung_l",
+    "label": "Lung (L)",
+    "system": "organs",
+    "category": "Respiratory",
+    "color": "#e8a5a0"
+  },
+  {
+    "key": "lung_r",
+    "label": "Lung (R)",
+    "system": "organs",
+    "category": "Respiratory",
+    "color": "#e8a5a0"
+  },
+  {
+    "key": "reproductive",
+    "label": "Male Reproductive Organs",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#d6a08c",
+    "sex": "male"
+  },
+  {
+    "key": "ovary_l",
+    "label": "Ovary (L)",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#e8b36a",
+    "sex": "female"
+  },
+  {
+    "key": "ovary_r",
+    "label": "Ovary (R)",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#e8b36a",
+    "sex": "female"
+  },
+  {
+    "key": "pancreas",
+    "label": "Pancreas",
+    "system": "organs",
+    "category": "Endocrine",
+    "color": "#e2c08d"
+  },
+  {
+    "key": "pharynx",
+    "label": "Pharynx (Throat)",
+    "system": "organs",
+    "category": "Oral / ENT",
+    "color": "#c98a7a"
+  },
+  {
+    "key": "pituitary",
+    "label": "Pituitary Gland",
+    "system": "organs",
+    "category": "Endocrine",
+    "color": "#e0a050"
+  },
+  {
+    "key": "prostate",
+    "label": "Prostate",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#c98f86",
+    "sex": "male"
+  },
+  {
+    "key": "salivary_glands",
+    "label": "Salivary Glands",
+    "system": "organs",
+    "category": "Oral / ENT",
+    "color": "#e3c7a0"
+  },
+  {
+    "key": "small_intestine",
+    "label": "Small Intestine",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#d99a88"
+  },
+  {
+    "key": "spleen",
+    "label": "Spleen",
+    "system": "organs",
+    "category": "Immune / Lymphatic",
+    "color": "#7a3f4a"
+  },
+  {
+    "key": "stomach",
+    "label": "Stomach",
+    "system": "organs",
+    "category": "Digestive",
+    "color": "#d49383"
+  },
+  {
+    "key": "thymus",
+    "label": "Thymus",
+    "system": "organs",
+    "category": "Immune / Lymphatic",
+    "color": "#e8c3b5"
+  },
+  {
+    "key": "tongue",
+    "label": "Tongue",
+    "system": "organs",
+    "category": "Oral / ENT",
+    "color": "#cf7d7d"
+  },
+  {
+    "key": "trachea",
+    "label": "Trachea",
+    "system": "organs",
+    "category": "Respiratory",
+    "color": "#d7a9a0"
+  },
+  {
+    "key": "ureter_l",
+    "label": "Ureter (L)",
+    "system": "organs",
+    "category": "Renal / Urinary",
+    "color": "#b07a70"
+  },
+  {
+    "key": "ureter_r",
+    "label": "Ureter (R)",
+    "system": "organs",
+    "category": "Renal / Urinary",
+    "color": "#b07a70"
+  },
+  {
+    "key": "bladder",
+    "label": "Urinary Bladder",
+    "system": "organs",
+    "category": "Renal / Urinary",
+    "color": "#d9a36a"
+  },
+  {
+    "key": "uterus",
+    "label": "Uterus",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#d9737a",
+    "sex": "female"
+  },
+  {
+    "key": "vagina",
+    "label": "Vagina",
+    "system": "organs",
+    "category": "Reproductive",
+    "color": "#cf8a86",
+    "sex": "female"
+  },
+  {
+    "key": "spine_cervical",
+    "label": "Cervical Spine (Neck)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "clavicle_l",
+    "label": "Collarbone (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "clavicle_r",
+    "label": "Collarbone (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "foot_l",
+    "label": "Foot (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "foot_r",
+    "label": "Foot (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "forearm_l",
+    "label": "Forearm Bones (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "forearm_r",
+    "label": "Forearm Bones (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "hand_l",
+    "label": "Hand (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "hand_r",
+    "label": "Hand (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "mandible",
+    "label": "Jaw (Mandible)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "patella_l",
+    "label": "Kneecap (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "patella_r",
+    "label": "Kneecap (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "spine_lumbar",
+    "label": "Lumbar Spine (Lower Back)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "pelvis",
+    "label": "Pelvis & Sacrum",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "ribs_l",
+    "label": "Ribs (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "ribs_r",
+    "label": "Ribs (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "lower_leg_l",
+    "label": "Shin Bones (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "lower_leg_r",
+    "label": "Shin Bones (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "scapula_l",
+    "label": "Shoulder Blade (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "scapula_r",
+    "label": "Shoulder Blade (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "skull",
+    "label": "Skull",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "sternum",
+    "label": "Sternum",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "teeth",
+    "label": "Teeth & Gums",
+    "system": "skeleton",
+    "category": "Oral / ENT",
+    "color": "#fbf8ef"
+  },
+  {
+    "key": "femur_l",
+    "label": "Thigh Bone (Femur) (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "femur_r",
+    "label": "Thigh Bone (Femur) (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "spine_thoracic",
+    "label": "Thoracic Spine",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "humerus_l",
+    "label": "Upper Arm Bone (L)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "humerus_r",
+    "label": "Upper Arm Bone (R)",
+    "system": "skeleton",
+    "category": "Musculoskeletal",
+    "color": "#efe6d2"
+  },
+  {
+    "key": "skin",
+    "label": "Skin",
+    "system": "skin",
+    "category": "Skin",
+    "color": "#e9b596"
+  },
+  {
+    "key": "aorta",
+    "label": "Aorta",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_abdomen",
+    "label": "Arteries — Abdomen",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_thorax",
+    "label": "Arteries — Chest",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_head",
+    "label": "Arteries — Head & Neck",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_arm_l",
+    "label": "Arteries — Left Arm",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_leg_l",
+    "label": "Arteries — Left Leg",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_pelvis",
+    "label": "Arteries — Pelvis",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_arm_r",
+    "label": "Arteries — Right Arm",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "arteries_leg_r",
+    "label": "Arteries — Right Leg",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "carotid_l",
+    "label": "Carotid Artery (L)",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "carotid_r",
+    "label": "Carotid Artery (R)",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#c0392b"
+  },
+  {
+    "key": "coronary_arteries",
+    "label": "Coronary Arteries",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#d6452f"
+  },
+  {
+    "key": "vena_cava_inferior",
+    "label": "Inferior Vena Cava",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "pulmonary_vessels",
+    "label": "Pulmonary Vessels",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#8e4bb0"
+  },
+  {
+    "key": "vena_cava_superior",
+    "label": "Superior Vena Cava",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_abdomen",
+    "label": "Veins — Abdomen",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_thorax",
+    "label": "Veins — Chest",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_arm_l",
+    "label": "Veins — Left Arm",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_leg_l",
+    "label": "Veins — Left Leg",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_pelvis",
+    "label": "Veins — Pelvis",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_arm_r",
+    "label": "Veins — Right Arm",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  },
+  {
+    "key": "veins_leg_r",
+    "label": "Veins — Right Leg",
+    "system": "vessels",
+    "category": "Cardiovascular",
+    "color": "#2e6db4"
+  }
+]
