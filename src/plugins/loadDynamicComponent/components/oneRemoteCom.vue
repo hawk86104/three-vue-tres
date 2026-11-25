@@ -7,7 +7,8 @@
  * @LastEditTime: 2025-12-30 11:31:16
 -->
 <template>
-	<component v-if="moduleWraped" ref="componentRef" :is="moduleWraped" v-bind="attrsData"></component>
+	<component v-if="moduleWraped" ref="componentRef" :is="moduleWraped" v-bind="attrsData"
+		v-on="syncConfig ? { configChange: patchAttrsData } : {}"></component>
 </template>
 
 <script setup lang="ts">
@@ -18,6 +19,7 @@ import { type ConfigPaneActionContext, createConfigPane } from '../common/create
 const props = defineProps<{
 	remoteName: string,
 	comName: string,
+	syncConfig?: boolean,
 	attrsData: any,
 	config: any
 }>()
@@ -64,7 +66,7 @@ const handleConfigAction = async ({ actionId }: ConfigPaneActionContext) => {
 
 pane = createConfigPane(
 	document.getElementById('pane'),
-	props.config,
+	props.config ?? {},
 	props.attrsData,
 	{
 		onAction: handleConfigAction,

@@ -11,6 +11,7 @@ export interface RemoteComponentConfig {
   type: string
   comFile: string
   category?: string
+  syncConfig?: boolean
 	previewPath?: string
 	default?:any
 	defaultObject3D?:any

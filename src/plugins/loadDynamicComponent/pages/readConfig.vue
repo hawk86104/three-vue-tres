@@ -67,11 +67,12 @@ const handleSelectComponent = (item: any) => {
 	attrsData.value = {}
 	comConfig.value = null
 	nextTick(() => {
-		attrsData.value = item?.default || {}
+		attrsData.value = item.syncConfig ? { ...item.default } : (item.default || {})
 		comConfig.value = item?.config || null
 		comState.value = {
 			remoteName: serviceData.value.name,
 			comName: item.type,
+			syncConfig: item.syncConfig === true,
 			position: [0, 0, 0],
 			rotation: [0, 0, 0],
 			scale: [1, 1, 1],
